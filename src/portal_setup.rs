@@ -270,6 +270,13 @@ fn restart_portal() {
     if std::env::var_os("RIVET_NO_PORTAL_RESTART").is_some() {
         return;
     }
+    // The session bus reads its list of startable services on demand only: without this, the
+    // portal's first call says Rivet's picker "is not activatable".
+    if let Ok(conn) = zbus::blocking::Connection::session()
+        && let Ok(proxy) = zbus::blocking::fdo::DBusProxy::new(&conn)
+    {
+        let _ = proxy.reload_config();
+    }
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "restart", "xdg-desktop-portal.service"])
         .stdout(std::process::Stdio::null())

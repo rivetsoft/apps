@@ -170,13 +170,29 @@ impl Chooser {
 }
 
 /// The program to run for each picker window: this one (or the AppImage it came from).
+///
+/// The command the service was started with comes first (`/usr/bin/rivet`): when Rivet is
+/// updated while this service runs, its own program file is replaced and `current_exe` points
+/// at the old, deleted one, which can't be started.
 fn picker_exe() -> PathBuf {
     if let (Some(img), Some(dir)) = (std::env::var_os("APPIMAGE"), std::env::var_os("APPDIR"))
         && std::env::current_exe().is_ok_and(|e| e.starts_with(&dir))
     {
         return PathBuf::from(img);
     }
-    std::env::current_exe().unwrap_or_else(|_| PathBuf::from("rivet"))
+    if let Some(arg0) = std::env::args_os().next().map(PathBuf::from)
+        && arg0.is_absolute()
+        && arg0.is_file()
+    {
+        return arg0;
+    }
+    match std::env::current_exe() {
+        Ok(e) => {
+            let s = e.to_string_lossy();
+            PathBuf::from(s.strip_suffix(" (deleted)").unwrap_or(&s).to_string())
+        }
+        Err(_) => PathBuf::from("rivet"),
+    }
 }
 
 fn get<T>(o: &Options, key: &str) -> Option<T>
@@ -255,17 +271,26 @@ fn results(r: &Request, a: &Answer) -> Results {
 /// Serve requests until idle for a while.
 pub fn run() -> Result<(), String> {
     let shared = Shared::default();
-    let _conn = zbus::blocking::connection::Builder::session()
+    let conn = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(BUS_NAME))
         .and_then(|b| b.serve_at(OBJECT_PATH, Chooser { shared: shared.clone() }))
         .and_then(|b| b.build())
         .map_err(|e| format!("Could not start the file picker service: {e}"))?;
     *shared.last_used.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+    let me = conn.unique_name().map(|n| n.to_string());
     loop {
-        std::thread::sleep(Duration::from_secs(30));
+        std::thread::sleep(Duration::from_secs(20));
         let busy = !shared.open.lock().unwrap_or_else(|e| e.into_inner()).is_empty();
         let idle = shared.last_used.lock().unwrap_or_else(|e| e.into_inner()).is_some_and(|t| t.elapsed() > IDLE_EXIT);
         if idle && !busy {
+            return Ok(());
+        }
+        // A newer copy took over the name (the bus started it after an update): leave to it.
+        let owner = zbus::blocking::fdo::DBusProxy::new(&conn)
+            .ok()
+            .and_then(|p| p.get_name_owner(BUS_NAME.try_into().ok()?).ok())
+            .map(|o| o.to_string());
+        if !busy && owner.is_some() && owner != me {
             return Ok(());
         }
     }

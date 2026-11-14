@@ -21,18 +21,15 @@ impl RivetApp {
         self.apps.iter().find(|a| bare(&a.id) == bare(&id)).map(|a| a.name.clone())
     }
 
-    /// Header bar: Cancel · title (and the asking app) · Open / Save. Then the name field when
-    /// saving. Call right after the window header so these sit at the very top.
+    /// The title across the top (and the app asking, under it). Call right after the window
+    /// header so it sits at the very top.
     pub(super) fn picker_header(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let Some(req) = picker::request() else { return };
         let fill = ctx.global_style().visuals.panel_fill;
         let app = self.picker_app_name();
-        let mut accept = false;
-        let mut cancel = false;
-        egui::Panel::top("picker-head").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(12, 8))).show(ui, |ui| {
+        egui::Panel::top("picker-head").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(12, 6))).show(ui, |ui| {
             let v = ui.visuals().clone();
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
-            // The title in the middle of the bar, the app below it in small type.
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), if app.is_some() { 34.0 } else { 24.0 }), Sense::hover());
             let title = req.window_title();
             let painter = ui.painter();
             match &app {
@@ -44,69 +41,93 @@ impl RivetApp {
                     painter.text(rect.center(), Align2::CENTER_CENTER, &title, crate::fonts::ui_font(14.5), v.strong_text_color());
                 }
             }
-            let mut left = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-            if left.add(egui::Button::new("Cancel").min_size(Vec2::new(84.0, 32.0))).on_hover_text("Esc").clicked() {
-                cancel = true;
-            }
-            let mut right = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
-            let c = v.selection.bg_fill;
-            let btn = egui::Button::new(egui::RichText::new(req.accept_label()).color(v.selection.stroke.color).strong()).fill(c).min_size(Vec2::new(84.0, 32.0));
-            if right.add_enabled(self.picker_ready(), btn).clicked() {
-                accept = true;
-            }
         });
-        if req.mode == Mode::Save {
-            egui::Panel::top("picker-name").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin { left: 12, right: 12, top: 0, bottom: 8 })).show(ui, |ui| {
+    }
+
+    /// The bottom strip: the name field when saving (or what's chosen), the app's file types,
+    /// Cancel and Open / Save. Call before the other panels so it sits outermost.
+    pub(super) fn picker_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let Some(req) = picker::request() else { return };
+        let fill = ctx.global_style().visuals.panel_fill;
+        let mut accept = false;
+        let mut cancel = false;
+        egui::Panel::bottom("picker").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(14, 10))).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.set_min_height(32.0);
+                ui.spacing_mut().item_spacing.x = 8.0;
                 let v = ui.visuals().clone();
-                let w = ui.available_width().min(520.0);
-                let full = ui.available_width();
-                ui.horizontal(|ui| {
-                    ui.add_space((full - w) / 2.0);
-                    ui.allocate_ui_with_layout(Vec2::new(w, 34.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new("Name").color(v.weak_text_color()));
-                        // The same raised surface as the location bar (a plain box in terminal mode).
-                        let (field_bg, shadow, stroke) = if self.s.terminal {
-                            (v.extreme_bg_color, egui::Shadow::NONE, super::tui_line(&v))
-                        } else {
-                            (
-                                crate::palette::mix(v.window_fill, v.text_color(), 0.04),
-                                egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: egui::Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) },
-                                egui::Stroke::NONE,
-                            )
-                        };
-                        let out = egui::Frame::NONE
-                            .fill(field_bg)
-                            .shadow(shadow)
-                            .stroke(stroke)
-                            .corner_radius(super::r_md())
-                            .inner_margin(egui::Margin::symmetric(10, 4))
-                            .show(ui, |ui| {
-                                egui::TextEdit::singleline(&mut self.pick_name)
-                                    .frame(egui::Frame::NONE)
-                                    .align(Align2::LEFT_CENTER)
-                                    .min_size(Vec2::new(0.0, 24.0))
-                                    .desired_width(f32::INFINITY)
-                                    .hint_text("File name")
-                                    .show(ui)
-                            })
-                            .inner;
-                        // First time: focus the name with the part before the extension selected.
-                        if self.pick_focus {
-                            self.pick_focus = false;
-                            out.response.request_focus();
-                            let stem = self.pick_name.rfind('.').filter(|&i| i > 0).unwrap_or(self.pick_name.len());
-                            let mut state = out.state.clone();
-                            let stem_chars = self.pick_name[..stem].chars().count();
-                            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(stem_chars))));
-                            state.store(ui.ctx(), out.response.id);
+                if req.mode == Mode::Save {
+                    ui.label(egui::RichText::new("Name").color(v.weak_text_color()));
+                    // The same raised surface as the location bar (a plain box in terminal mode).
+                    let (field_bg, shadow, stroke) = if self.s.terminal {
+                        (v.extreme_bg_color, egui::Shadow::NONE, super::tui_line(&v))
+                    } else {
+                        (
+                            crate::palette::mix(v.window_fill, v.text_color(), 0.04),
+                            egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: egui::Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) },
+                            egui::Stroke::NONE,
+                        )
+                    };
+                    let width = (ui.available_width() - 480.0).clamp(180.0, 380.0);
+                    let out = egui::Frame::NONE
+                        .fill(field_bg)
+                        .shadow(shadow)
+                        .stroke(stroke)
+                        .corner_radius(super::r_md())
+                        .inner_margin(egui::Margin::symmetric(10, 4))
+                        .show(ui, |ui| {
+                            egui::TextEdit::singleline(&mut self.pick_name)
+                                .frame(egui::Frame::NONE)
+                                .align(Align2::LEFT_CENTER)
+                                .min_size(Vec2::new(0.0, 24.0))
+                                .desired_width(width)
+                                .hint_text("File name")
+                                .show(ui)
+                        })
+                        .inner;
+                    // First time: focus the name with the part before the extension selected.
+                    if self.pick_focus {
+                        self.pick_focus = false;
+                        out.response.request_focus();
+                        let stem = self.pick_name.rfind('.').filter(|&i| i > 0).unwrap_or(self.pick_name.len());
+                        let mut state = out.state.clone();
+                        let stem_chars = self.pick_name[..stem].chars().count();
+                        state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(0), egui::text::CCursor::new(stem_chars))));
+                        state.store(ui.ctx(), out.response.id);
+                    }
+                    if out.response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                        accept = true;
+                    }
+                }
+                ui.label(egui::RichText::new(self.picker_summary()).color(v.weak_text_color()));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let c = v.selection.bg_fill;
+                    let btn = egui::Button::new(egui::RichText::new(req.accept_label()).color(v.selection.stroke.color).strong()).fill(c).min_size(Vec2::new(84.0, 32.0));
+                    if ui.add_enabled(self.picker_ready(), btn).clicked() {
+                        accept = true;
+                    }
+                    if ui.add(egui::Button::new("Cancel").min_size(Vec2::new(80.0, 32.0))).on_hover_text("Esc").clicked() {
+                        cancel = true;
+                    }
+                    // The file-type list the app offered.
+                    if !req.filters.is_empty() && !req.folders_only() {
+                        ui.add_space(6.0);
+                        let current = picker::chosen_filter();
+                        let shown = current.and_then(|i| req.filters.get(i)).map(|f| f.name.clone()).unwrap_or_else(|| "All files".into());
+                        let mut pick = current;
+                        egui::ComboBox::from_id_salt("picker-type").selected_text(shown).width(170.0).show_ui(ui, |ui| {
+                            for (i, f) in req.filters.iter().enumerate() {
+                                ui.selectable_value(&mut pick, Some(i), f.name.as_str());
+                            }
+                        });
+                        if pick != current {
+                            picker::set_chosen_filter(pick);
+                            self.resort_all();
                         }
-                        if out.response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                            accept = true;
-                        }
-                    });
+                    }
                 });
             });
-        }
+        });
         // Esc closes the picker when there's nothing else for it to do.
         let idle = matches!(self.dialog, super::Dialog::None)
             && !self.search_open
@@ -126,38 +147,6 @@ impl RivetApp {
             self.picker_accept(ctx);
         }
         self.picker_confirm(ctx);
-    }
-
-    /// The bottom strip: what's chosen, and the app's file types. Call before the other panels
-    /// so it sits outermost.
-    pub(super) fn picker_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let Some(req) = picker::request() else { return };
-        let fill = ctx.global_style().visuals.panel_fill;
-        egui::Panel::bottom("picker").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(14, 8))).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.set_min_height(28.0);
-                let v = ui.visuals().clone();
-                let text = self.picker_summary();
-                ui.label(egui::RichText::new(text).color(v.weak_text_color()));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // The file-type list the app offered.
-                    if !req.filters.is_empty() && !req.folders_only() {
-                        let current = picker::chosen_filter();
-                        let shown = current.and_then(|i| req.filters.get(i)).map(|f| f.name.clone()).unwrap_or_else(|| "All files".into());
-                        let mut pick = current;
-                        egui::ComboBox::from_id_salt("picker-type").selected_text(shown).width(200.0).show_ui(ui, |ui| {
-                            for (i, f) in req.filters.iter().enumerate() {
-                                ui.selectable_value(&mut pick, Some(i), f.name.as_str());
-                            }
-                        });
-                        if pick != current {
-                            picker::set_chosen_filter(pick);
-                            self.resort_all();
-                        }
-                    }
-                });
-            });
-        });
     }
 
     /// Right-click on an item while picking: choose it, and a few harmless extras.
@@ -223,7 +212,7 @@ impl RivetApp {
         }
         if req.mode == Mode::Save {
             let here = self.current_dir().and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "/".into());
-            return format!("Saving in “{here}”");
+            return format!("in “{here}”");
         }
         let files = sel.iter().filter(|e| !e.is_dir).count();
         match files {
