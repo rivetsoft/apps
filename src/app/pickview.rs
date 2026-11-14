@@ -182,9 +182,6 @@ impl RivetApp {
         } else if req.mode == Mode::Save && ui.button("Use This Name").clicked() {
             self.pick_name = e.name.clone();
         }
-        if ui.button("Preview").clicked() {
-            self.pending.push(Action::QuickView(e.path.clone()));
-        }
         ui.separator();
         if ui.button("Rename…").clicked() {
             self.pending.push(Action::Rename(e.path.clone()));
