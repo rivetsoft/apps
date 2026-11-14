@@ -57,29 +57,40 @@ impl RivetApp {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let v = ui.visuals().clone();
                 if req.mode == Mode::Save {
-                    ui.label(egui::RichText::new("Name").color(v.weak_text_color()));
-                    // The same raised surface as the location bar (a plain box in terminal mode).
-                    let (field_bg, shadow, stroke) = if self.s.terminal {
+                    ui.label(egui::RichText::new("Name").size(14.5).strong().color(v.strong_text_color()));
+                    // The same raised surface as the location bar (a plain box in terminal mode),
+                    // outlined in the accent while you type in it.
+                    let field_id = Id::unique("picker-name");
+                    let focused = ui.memory(|m| m.has_focus(field_id));
+                    let accent = super::accent_color(&self.s);
+                    let (field_bg, shadow, mut stroke) = if self.s.terminal {
                         (v.extreme_bg_color, egui::Shadow::NONE, super::tui_line(&v))
                     } else {
                         (
                             crate::palette::mix(v.window_fill, v.text_color(), 0.04),
                             egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: egui::Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) },
-                            egui::Stroke::NONE,
+                            egui::Stroke::new(1.5, egui::Color32::TRANSPARENT),
                         )
                     };
-                    let width = (ui.available_width() - 480.0).clamp(180.0, 380.0);
+                    if focused {
+                        stroke = egui::Stroke::new(1.5, accent);
+                    }
+                    // As wide as the strip allows, leaving room for the types list and buttons.
+                    let reserve = if !req.filters.is_empty() { 420.0 } else { 220.0 };
+                    let width = (ui.available_width() - reserve).clamp(220.0, 700.0);
                     let out = egui::Frame::NONE
                         .fill(field_bg)
                         .shadow(shadow)
                         .stroke(stroke)
                         .corner_radius(super::r_md())
-                        .inner_margin(egui::Margin::symmetric(10, 4))
+                        .inner_margin(egui::Margin::symmetric(12, 5))
                         .show(ui, |ui| {
                             egui::TextEdit::singleline(&mut self.pick_name)
+                                .id(field_id)
                                 .frame(egui::Frame::NONE)
+                                .font(crate::fonts::ui_font(15.0))
                                 .align(Align2::LEFT_CENTER)
-                                .min_size(Vec2::new(0.0, 24.0))
+                                .min_size(Vec2::new(0.0, 26.0))
                                 .desired_width(width)
                                 .hint_text("File name")
                                 .show(ui)
