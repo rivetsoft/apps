@@ -34,19 +34,37 @@ pub fn ffmpeg_version() -> Option<String> {
     c.as_ref().and_then(|(_, v)| v.clone())
 }
 
-/// Look for ffmpeg again (at most every few seconds), e.g. while Preferences is open,
-/// so installing or removing it is noticed without restarting.
-pub fn recheck() -> Option<String> {
-    {
-        let c = CHECKED.lock().unwrap();
-        if let Some((at, v)) = c.as_ref()
-            && at.elapsed() < Duration::from_secs(4) {
-                return v.clone();
-            }
+/// Start finding out whether ffmpeg is installed, without waiting (starting ffmpeg takes a
+/// noticeable moment). Anything that needs the answer before it's in waits for it.
+pub fn check_in_background() {
+    std::thread::spawn(|| {
+        let _ = ffmpeg_version();
+    });
+}
+
+static RECHECKING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What's known about ffmpeg right now — Some(version or None), or None while the first look is
+/// still going — and look again in the background every few seconds (while Preferences is open,
+/// so installing or removing it is noticed without restarting, and without the window pausing).
+pub fn recheck() -> Option<Option<String>> {
+    use std::sync::atomic::Ordering;
+    let (known, stale) = match CHECKED.try_lock() {
+        Ok(c) => match c.as_ref() {
+            Some((at, v)) => (Some(v.clone()), at.elapsed() >= Duration::from_secs(4)),
+            None => (None, true),
+        },
+        // The first look is under way.
+        Err(_) => (None, false),
+    };
+    if stale && !RECHECKING.swap(true, Ordering::AcqRel) {
+        std::thread::spawn(|| {
+            let v = probe();
+            *CHECKED.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), v));
+            RECHECKING.store(false, Ordering::Release);
+        });
     }
-    let v = probe();
-    *CHECKED.lock().unwrap() = Some((Instant::now(), v.clone()));
-    v
+    known
 }
 
 pub fn available() -> bool {

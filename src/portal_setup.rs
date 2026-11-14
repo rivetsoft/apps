@@ -240,7 +240,10 @@ pub fn disable() -> Result<(), String> {
     let field = |k: &str| state.lines().find_map(|l| l.strip_prefix(&format!("{k}=")).map(|v| v.to_string()));
     let config = field("config").map(PathBuf::from).unwrap_or_else(target_config);
     if let Ok(text) = std::fs::read_to_string(&config) {
-        let restored = if field("had_line").as_deref() == Some("1") {
+        let restored = if state.is_empty() {
+            // Rivet didn't set this up (or forgot how): only take "rivet" out of the list.
+            without_rivet(&text)
+        } else if field("had_line").as_deref() == Some("1") {
             set_preferred(&text, INTERFACE, field("line").as_deref())
         } else {
             set_preferred(&text, INTERFACE, None)
@@ -262,6 +265,21 @@ pub fn disable() -> Result<(), String> {
     let _ = std::fs::remove_file(state_file());
     restart_portal();
     Ok(())
+}
+
+/// The config with "rivet" removed from the FileChooser list (the rest left as it was); the
+/// line goes only if nothing else was on it.
+fn without_rivet(text: &str) -> String {
+    let Some(v) = preferred(text, INTERFACE) else { return text.to_string() };
+    let rest: Vec<&str> = v.split(';').map(|s| s.trim()).filter(|s| !s.is_empty() && *s != PORTAL_NAME).collect();
+    if rest.len() == v.split(';').filter(|s| !s.trim().is_empty()).count() {
+        return text.to_string();
+    }
+    if rest.is_empty() {
+        set_preferred(text, INTERFACE, None)
+    } else {
+        set_preferred(text, INTERFACE, Some(&format!("{};", rest.join(";"))))
+    }
 }
 
 /// The portal reads its configuration when it starts.
@@ -309,6 +327,16 @@ mod tests {
         // Removing it again leaves the rest alone.
         let t = set_preferred("[preferred]\ndefault=gtk;\norg.freedesktop.impl.portal.FileChooser=rivet;\n", INTERFACE, None);
         assert_eq!(t, "[preferred]\ndefault=gtk;\n");
+    }
+
+    #[test]
+    fn turning_off_without_a_record_only_removes_rivet() {
+        let mine = "[preferred]\norg.freedesktop.impl.portal.FileChooser=gnome;\n";
+        assert_eq!(without_rivet(mine), mine);
+        let with = "[preferred]\norg.freedesktop.impl.portal.FileChooser=rivet;dfiles;gnome;\n";
+        assert_eq!(preferred(&without_rivet(with), INTERFACE).as_deref(), Some("dfiles;gnome;"));
+        let only = "[preferred]\ndefault=gtk;\norg.freedesktop.impl.portal.FileChooser=rivet;\n";
+        assert_eq!(without_rivet(only), "[preferred]\ndefault=gtk;\n");
     }
 
     #[test]

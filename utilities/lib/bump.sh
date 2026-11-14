@@ -6,7 +6,7 @@
 #   utilities/rivet-dev bump major      0.1.1 -> 1.0.0
 #   utilities/rivet-dev bump 0.3.0      an exact version
 #
-# Updates Cargo.toml and Cargo.lock, starts a CHANGELOG.md section from the commit
+# Updates Cargo.toml and Cargo.lock, adds the release to the app metadata, starts a CHANGELOG.md section from the commit
 # messages since the last release tag, and commits it all as "Release X.Y.Z".
 # Edit the changelog afterwards if you like (then `git commit --amend -a --no-edit`),
 # and publish with utilities/rivet-dev release --publish
@@ -56,6 +56,12 @@ else
     mv CHANGELOG.md.new CHANGELOG.md
 fi
 
-git add Cargo.toml Cargo.lock CHANGELOG.md
+# App metadata (software centers show these): add this release at the top of <releases>.
+META=packaging/flatpak/io.github.ulinaaron.rivet-files.metainfo.xml
+if [ -f "$META" ] && ! grep -q "<release version=\"$NEW\"" "$META"; then
+    sed -i "0,/<releases>/s//<releases>\n    <release version=\"$NEW\" date=\"$(date +%Y-%m-%d)\"\/>/" "$META"
+fi
+
+git add Cargo.toml Cargo.lock CHANGELOG.md "$META"
 git commit -q -m "Release $NEW"
 echo "Bumped $OLD -> $NEW and committed. Review CHANGELOG.md, then run utilities/rivet-dev release --publish"

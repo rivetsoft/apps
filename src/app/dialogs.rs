@@ -1587,8 +1587,9 @@ impl RivetApp {
                     PrefsTab::Modules => {
                         // One list: each module is a name, a line about it, and a switch.
                         // Look again while this page is open, so installing ffmpeg is noticed.
-                        let ffmpeg = crate::media::recheck();
-                        if ffmpeg.is_none() && self.s.media_tools {
+                        let known = crate::media::recheck();
+                        let ffmpeg = known.clone().flatten();
+                        if matches!(known, Some(None)) && self.s.media_tools {
                             // The module can't work without ffmpeg: switch it off.
                             self.s.media_tools = false;
                             changed = true;

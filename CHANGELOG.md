@@ -4,18 +4,15 @@
 
 ### New
 - **File picker**: Rivet can be the Open and Save window every app shows, through the desktop
-  portal (xdg-desktop-portal). Open one or several files, choose a folder, save with a name field
-  (the name is selected up to its extension), save several files into a folder, filter by the
-  app's file types, and confirm before replacing. The app cancelling closes the window. Turn it on
-  in Preferences → System → File picker or with `rivet --file-picker on`: it adds Rivet in front
-  of the pickers used before (kept as fallbacks) in your `<desktop>-portals.conf`, and turning it
-  off restores that line exactly and removes the files it added. Not available inside Flatpak.
-  (The D-Bus support it needs adds about 2.5 MB to the program.)
-  The picker window has the title (and the app asking) across the top, a short toolbar and the
-  list view, and one strip along the bottom with the name field, the file types,
-  Cancel and Open / Save; no menu bar, status bar, Peek, tabs or Trash, and nothing that moves,
-  deletes or changes files. The picker keeps working after Rivet is updated while its service
-  runs, and turning it on makes the session bus pick up the new service right away.
+  portal (xdg-desktop-portal). Open one or several files, pick a folder, save (the name is
+  selected up to its extension), or save several files into a folder; filter by the app's file
+  types; confirm before replacing. The window is a picker, not the file manager: the title and
+  the app asking at the top, a short toolbar, the list view, and one strip at the bottom with the
+  name, the file types, Cancel and Open / Save — nothing in it moves, deletes or changes files.
+  Turn it on in Preferences → System → File picker or with `rivet --file-picker on`: Rivet goes in
+  front of the pickers you had (kept as fallbacks) in `<desktop>-portals.conf`, and turning it off
+  restores that line exactly (and only ever removes Rivet from a list it didn't set up). Not
+  available inside Flatpak. (Its D-Bus support adds about 2.5 MB, 1 MB to the AppImage.)
 - **Crash reports**: if Rivet stops because of a bug, it saves a plain-text report on this computer
   (`~/.local/state/rivet/crashes`) — version, what went wrong and where, the stack, and the system.
   Nothing is sent anywhere. The next start shows it once, with Copy Report, Open Folder and Report
@@ -23,11 +20,17 @@
   the saved reports.
 
 ### Improved
+- **Starts about 0.2 s faster** (back under 0.4 s for 100,000 files): checking whether ffmpeg is
+  installed no longer holds up the window, and the monospace font loads in the background
+  (terminal mode still gets it from the first frame). Preferences → Modules no longer pauses the
+  window every few seconds while it looks for ffmpeg.
 - **New Folder / New Document** redone: the folder (or file type) icon, where it goes, a raised
   name field outlined in the accent, and a live check under it — taken names and “/” are caught
   as you type (Create waits until the name works), and a leading dot is flagged as hidden. In
   the file picker, a new folder opens right away.
 - The code passes Rust's linter (clippy) cleanly, and CI now fails on any new clippy warning.
+- The Flatpak's bundled sources include the new D-Bus libraries, and the app metadata lists every
+  release (`rivet-dev bump` now adds each new one).
 
 ## 0.5.0
 

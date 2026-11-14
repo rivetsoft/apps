@@ -65,7 +65,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 
 **Under the hood**
 - ⚡ **Fast** — opens a 100,000-file folder in under 0.4 s; no CPU use when idle
-- 🦀 **Small** — one 16 MB binary or a 6 MB AppImage; ffmpeg is optional (video previews and conversion)
+- 🦀 **Small** — one 16 MB binary or a 7 MB AppImage; ffmpeg is optional (video previews and conversion)
 - 🩹 **Crash reports** — saved on your computer and shown on the next start; nothing is sent unless you choose to share it
 
 ## 🎨 Follows your colors
@@ -213,14 +213,14 @@ counts (`5j`, `10G`), `V` visual selection, `yy` `dd` `p` copy / cut / paste, `c
 ## ⚡ Performance
 
 **100,000 files** — one folder of empty files on btrfs, a fresh launch each time, median of five runs
-(`utilities/rivet-dev bench`). *First window* is when the compositor lists the window,
+(`utilities/rivet-dev bench`), measured with the current release build. *First window* is when the compositor lists the window,
 *settled* is when the process has used no CPU for 500 ms, *PSS* is memory, *CPU* is total
 processor time up to that point — the same method as [Flea's benchmark](https://github.com/thisisgm/flea#performance).
 
 | | First window | Settled | PSS | CPU |
 | --- | ---: | ---: | ---: | ---: |
-| **Rivet** 0.1.1, list | 385 ms | 0.42 s | 76.8 MiB | 1.05 s |
-| **Rivet** 0.1.1, icons | 385 ms | 0.43 s | 76.9 MiB | 1.05 s |
+| **Rivet**, list | 367 ms | 0.50 s | 75.6 MiB | 1.30 s |
+| **Rivet**, icons | 375 ms | 0.51 s | 77.6 MiB | 1.29 s |
 
 For context, Flea publishes these figures from **their own machine** with the same method
 (we have not run these apps here, so treat it as a rough comparison):
@@ -245,11 +245,12 @@ Release build on Fedora, Wayland, NVMe SSD:
 
 | | |
 | --- | --- |
-| Drawing a frame (100,000 items) | ~2 ms |
-| Reading 2,092 / 100,000 items | ~19 ms / ~156 ms |
+| Drawing a frame (100,000 items) | ~1.8 ms |
+| Reading 100,000 items | ~152 ms |
 | Sorting 100,000 items by name / type | ~17 ms / ~27 ms |
-| Indexing icon themes (once) | ~26 ms |
-| Binary size (stripped) | ~16 MB (AppImage ~6 MB) |
+| Finding icons for 100,000 items (first time / cached) | ~35 ms / ~14 ms |
+| Indexing an icon theme (once) | ~4 ms |
+| Binary size (stripped) | ~16 MB (AppImage ~7 MB) |
 
 Reproduce with `rivet --bench [FOLDER…]`, `RIVET_FRAME_STATS=1 rivet --screenshot out.png`
 and `utilities/rivet-dev bench`.
@@ -258,7 +259,6 @@ and `utilities/rivet-dev bench`.
 
 ## 🗺️ Roadmap
 
-- Freedesktop file picker integration
 - Tagging and pinning files
 
 ## 🛠️ For developers

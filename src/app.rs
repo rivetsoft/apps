@@ -297,6 +297,10 @@ pub struct RivetApp {
     font_name: String,
     /// The monospace family in use, and the Nerd Font found for terminal mode's icons.
     mono_name: String,
+    /// The monospace font, once found and read: (the choice it's for, (family, file, bytes)).
+    mono_loaded: Option<(String, MonoFont)>,
+    /// Finding it in the background (outside terminal mode it isn't needed for the first frame).
+    mono_rx: Option<std::sync::mpsc::Receiver<(String, MonoFont)>>,
     nerd_font: Option<Arc<crate::nerd::NerdFont>>,
     font_families: Vec<String>,
     mono_families: Vec<String>,
@@ -444,6 +448,15 @@ pub(crate) fn arrow_label(ui: &mut egui::Ui, color: Color32) {
     ui.painter().line_segment([c + Vec2::new(1.5, 4.0), c + Vec2::new(5.5, 0.0)], st);
 }
 
+/// A monospace font found on the system: (family, file, its bytes).
+type MonoFont = Option<(String, PathBuf, Arc<Vec<u8>>)>;
+
+fn load_mono(choice: &str) -> MonoFont {
+    let (name, path) = crate::fonts::resolve_mono(choice)?;
+    let bytes = std::fs::read(&path).ok()?;
+    Some((name, path, Arc::new(bytes)))
+}
+
 /// Terminal mode's box line.
 pub(crate) fn tui_line(v: &egui::Visuals) -> Stroke {
     Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color)
@@ -586,6 +599,8 @@ impl RivetApp {
             applied_font: None,
             font_name: String::new(),
             mono_name: String::new(),
+            mono_loaded: None,
+            mono_rx: None,
             nerd_font: None,
             font_families: Vec::new(),
             mono_families: Vec::new(),
@@ -603,11 +618,10 @@ impl RivetApp {
             dirty_settings: false,
         };
         app.apply_visuals(&ctx);
-        // Convert & Resize needs ffmpeg: switch the module off when it isn't installed.
-        if app.s.media_tools && !crate::media::available() {
-            app.s.media_tools = false;
-            app.dirty_settings = true;
-        }
+        // Convert & Resize needs ffmpeg: find out in the background (starting ffmpeg takes about
+        // a fifth of a second, which the window shouldn't wait for). Its menu items only show
+        // once ffmpeg is known to be there.
+        crate::media::check_in_background();
         // Test hooks for checks: open a window straight away.
         if std::env::var_os("RIVET_OPEN_PREFS").is_some() {
             app.prefs_open = true;
@@ -761,6 +775,12 @@ impl RivetApp {
             crate::fonts::desktop_font_cached().map(|(_, pt)| crate::fonts::points_to_ui(pt)).unwrap_or(crate::fonts::BASE_SIZE)
         };
         crate::fonts::set_scale(size / crate::fonts::BASE_SIZE);
+        // The monospace font arrived from the background: build the fonts again with it.
+        if let Some(got) = self.mono_rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+            self.mono_rx = None;
+            self.mono_loaded = Some(got);
+            self.applied_font = None;
+        }
         let key = format!("{}|{}|{}", self.s.ui_font, self.s.mono_font, self.s.terminal);
         if self.applied_font.as_deref() == Some(key.as_str()) {
             return;
@@ -773,20 +793,43 @@ impl RivetApp {
                 defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "ui-font".into());
                 self.font_name = name;
             }
-        // The monospace font: text previews, and every label in terminal mode.
-        let mono = crate::fonts::resolve_mono(&self.s.mono_font);
-        if let Some((name, path)) = &mono
-            && let Ok(bytes) = std::fs::read(path) {
-                defs.font_data.insert("mono-font".into(), Arc::new(egui::FontData::from_owned(bytes)));
-                defs.families.entry(egui::FontFamily::Monospace).or_default().insert(0, "mono-font".into());
-                if self.s.terminal {
-                    defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "mono-font".into());
-                }
-                self.mono_name = name.clone();
+        // The monospace font: text previews, and every label in terminal mode. Only terminal mode
+        // needs it for the very first frame; otherwise it's found in the background, so looking
+        // it up doesn't hold up the window opening.
+        let choice = self.s.mono_font.clone();
+        let mono: MonoFont = match self.mono_loaded.as_ref().filter(|(c, _)| *c == choice) {
+            Some((_, m)) => m.clone(),
+            None if self.s.terminal => {
+                let m = load_mono(&choice);
+                self.mono_loaded = Some((choice, m.clone()));
+                m
             }
+            None => {
+                if self.mono_rx.is_none() {
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let c = ctx.clone();
+                    std::thread::spawn(move || {
+                        let m = load_mono(&choice);
+                        let _ = tx.send((choice, m));
+                        c.request_repaint();
+                    });
+                    self.mono_rx = Some(rx);
+                }
+                None
+            }
+        };
+        let mono_path: Option<(String, PathBuf)> = mono.as_ref().map(|(n, p, _)| (n.clone(), p.clone()));
+        if let Some((name, _, bytes)) = &mono {
+            defs.font_data.insert("mono-font".into(), Arc::new(egui::FontData::from_owned(bytes.as_ref().clone())));
+            defs.families.entry(egui::FontFamily::Monospace).or_default().insert(0, "mono-font".into());
+            if self.s.terminal {
+                defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "mono-font".into());
+            }
+            self.mono_name = name.clone();
+        }
         // Nerd Font glyphs for terminal mode's icons: from the monospace font if it has them.
-        if self.s.terminal && self.nerd_font.as_ref().is_none_or(|f| mono.as_ref().is_some_and(|(_, p)| *p != f.path)) {
-            self.nerd_font = crate::nerd::find(mono.as_ref().map(|(_, p)| p.as_path())).map(Arc::new);
+        if self.s.terminal && self.nerd_font.as_ref().is_none_or(|f| mono_path.as_ref().is_some_and(|(_, p)| *p != f.path)) {
+            self.nerd_font = crate::nerd::find(mono_path.as_ref().map(|(_, p)| p.as_path())).map(Arc::new);
         }
         ctx.set_fonts(defs);
     }
