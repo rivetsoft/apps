@@ -260,6 +260,21 @@ impl RivetApp {
         let mut close = false;
         let mut next: Option<Dialog> = None;
         let dir = self.current_dir();
+        // New Folder / New Document: its icon (textures need &mut self, so before the match).
+        let new_icon = match &self.dialog {
+            Dialog::NewItem { folder: true, .. } => self.icon(ctx, &["folder"], 40.0),
+            Dialog::NewItem { template: Some(t), .. } => {
+                let mime = self.mime.guess(t, false, false);
+                let names = self.mime.icon_names(&mime);
+                let refs: Vec<&str> = names.iter().map(|s| s.as_str()).chain(["text-x-generic"]).collect();
+                self.icon(ctx, &refs, 40.0)
+            }
+            Dialog::NewItem { .. } => self.icon(ctx, &["text-x-generic", "text-plain"], 40.0),
+            _ => None,
+        };
+        let accent = super::accent_color(&self.s);
+        let terminal = self.s.terminal;
+        let picking = crate::picker::active();
         match &mut self.dialog {
             Dialog::None => {}
             Dialog::Rename { path, text, focus } => {
@@ -321,30 +336,107 @@ impl RivetApp {
                 }
             }
             Dialog::NewItem { folder, text, focus, template } => {
-                let r = egui::Modal::new(Id::unique("newitem")).show(ctx, |ui| {
-                    ui.set_width(340.0);
-                    ui.heading(if *folder { "New Folder" } else { "New Document" });
-                    ui.add_space(6.0);
-                    let resp = ui.add(egui::TextEdit::singleline(text).desired_width(f32::INFINITY));
+                let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(super::r_lg());
+                // What's wrong with the name, checked as you type (None = fine to create).
+                let name = text.trim().to_string();
+                let problem: Option<String> = if name.is_empty() {
+                    Some(String::new())
+                } else if name.contains('/') {
+                    Some("Names can't contain “/”.".into())
+                } else if name == "." || name == ".." {
+                    Some("That name is taken by the system.".into())
+                } else if dir.as_ref().is_some_and(|d| d.join(&name).symlink_metadata().is_ok()) {
+                    Some(format!("“{name}” already exists here."))
+                } else {
+                    None
+                };
+                let r = egui::Modal::new(Id::unique("newitem")).frame(frame).show(ctx, |ui| {
+                    ui.set_width(400.0);
+                    let v = ui.visuals().clone();
+                    // Icon, title, and where it goes.
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        if let Some(t) = &new_icon {
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
+                            super::paint_tex(ui.painter(), t, r, Color32::WHITE);
+                        }
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(egui::RichText::new(if *folder { "New Folder" } else { "New Document" }).heading().color(v.strong_text_color()));
+                            let here = dir.as_ref().and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "/".into());
+                            ui.label(egui::RichText::new(format!("in “{here}”")).color(v.weak_text_color()));
+                        });
+                    });
+                    ui.add_space(16.0);
+                    // The name, on a raised field outlined in the accent while you type.
+                    let field_id = Id::unique("newitem-name");
+                    let focused = ui.memory(|m| m.has_focus(field_id));
+                    let bad = problem.as_ref().is_some_and(|p| !p.is_empty());
+                    let danger = super::status(ui.ctx()).danger;
+                    let (fill, shadow, mut stroke) = if terminal {
+                        (v.extreme_bg_color, egui::Shadow::NONE, super::tui_line(&v))
+                    } else {
+                        (
+                            crate::palette::mix(v.window_fill, v.text_color(), 0.06),
+                            egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) },
+                            Stroke::new(1.5, Color32::TRANSPARENT),
+                        )
+                    };
+                    if bad {
+                        stroke = Stroke::new(1.5, danger);
+                    } else if focused {
+                        stroke = Stroke::new(1.5, accent);
+                    }
+                    let resp = egui::Frame::NONE
+                        .fill(fill)
+                        .shadow(shadow)
+                        .stroke(stroke)
+                        .corner_radius(super::r_md())
+                        .inner_margin(egui::Margin::symmetric(12, 6))
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(text)
+                                    .id(field_id)
+                                    .frame(egui::Frame::NONE)
+                                    .font(crate::fonts::ui_font(15.0))
+                                    .min_size(Vec2::new(0.0, 24.0))
+                                    .desired_width(f32::INFINITY)
+                                    .hint_text(if *folder { "Folder name" } else { "File name" }),
+                            )
+                        })
+                        .inner;
                     if *focus {
                         resp.request_focus();
                         select_stem(ctx, resp.id, text, *folder);
                         *focus = false;
                     }
+                    // One quiet line under the field: what's wrong, or a heads-up about hidden names.
+                    ui.add_space(6.0);
+                    let note = match &problem {
+                        Some(p) if !p.is_empty() => Some((p.clone(), danger)),
+                        None if name.starts_with('.') => Some(("Starts with a dot, so it will be hidden.".to_string(), v.weak_text_color())),
+                        _ => None,
+                    };
+                    let (note_text, note_color) = note.unwrap_or((String::new(), v.weak_text_color()));
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 16.0), Sense::hover());
+                    ui.painter().text(r.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, note_text, crate::fonts::ui_font(12.0), note_color);
                     let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| (ui.button("Create").clicked() || enter, ui.button("Cancel").clicked())).inner
+                    ui.add_space(14.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.spacing_mut().button_padding = Vec2::new(14.0, 5.0);
+                        let create = egui::Button::new(egui::RichText::new("Create").color(v.selection.stroke.color).strong()).fill(v.selection.bg_fill);
+                        let ok = ui.add_enabled(problem.is_none(), create).clicked() || (enter && problem.is_none());
+                        let cancel = ui.button("Cancel").clicked();
+                        (ok, cancel)
+                    })
+                    .inner
                 });
                 let (ok, cancel) = r.inner;
                 if ok {
                     if let Some(d) = &dir {
-                        let name = text.trim();
-                        let p = d.join(name);
-                        let res = if name.is_empty() || name.contains('/') {
-                            Err(std::io::Error::other("Names cannot be empty or contain “/”."))
-                        } else if p.exists() {
-                            Err(std::io::Error::other(format!("“{name}” already exists.")))
-                        } else if *folder {
+                        let p = d.join(&name);
+                        let res = if *folder {
                             std::fs::create_dir(&p)
                         } else if let Some(t) = template {
                             std::fs::copy(t, &p).map(|_| ())
@@ -354,11 +446,16 @@ impl RivetApp {
                         match res {
                             Ok(()) => {
                                 self.history.record(crate::undo::Step::Created(p.clone()));
-                                let t = &mut self.tabs[self.active];
-                                t.reload(&self.mime, &self.s);
-                                t.selected.clear();
-                                t.selected.insert(p.clone());
-                                t.scroll_to = Some(p);
+                                if picking && *folder {
+                                    // Picking: a new folder is somewhere to put things, so go in.
+                                    self.pending.push(Action::Navigate(crate::model::Location::Dir(p)));
+                                } else {
+                                    let t = &mut self.tabs[self.active];
+                                    t.reload(&self.mime, &self.s);
+                                    t.selected.clear();
+                                    t.selected.insert(p.clone());
+                                    t.scroll_to = Some(p);
+                                }
                             }
                             Err(e) => next = Some(Dialog::Message("Could not create".into(), e.to_string())),
                         }

@@ -671,6 +671,8 @@ impl RivetApp {
                 let sel = app.tab().selected_paths();
                 app.pending.push(Action::BulkRename(sel));
             }
+            Ok("newfolder") => app.pending.push(Action::NewFolder),
+            Ok("newfile") => app.pending.push(Action::NewFile(None)),
             Ok("rename") => {
                 if let Some(p) = app.tab().selected_paths().first().cloned() {
                     app.pending.push(Action::Rename(p));

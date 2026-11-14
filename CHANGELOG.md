@@ -23,6 +23,10 @@
   the saved reports.
 
 ### Improved
+- **New Folder / New Document** redone: the folder (or file type) icon, where it goes, a raised
+  name field outlined in the accent, and a live check under it — taken names and “/” are caught
+  as you type (Create waits until the name works), and a leading dot is flagged as hidden. In
+  the file picker, a new folder opens right away.
 - The code passes Rust's linter (clippy) cleanly, and CI now fails on any new clippy warning.
 
 ## 0.5.0
