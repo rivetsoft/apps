@@ -19,6 +19,9 @@ mod desktop;
 mod media;
 mod mime;
 mod nerd;
+mod picker;
+mod portal;
+mod portal_setup;
 mod network;
 mod model;
 mod palette;
@@ -53,10 +56,43 @@ fn main() -> eframe::Result {
     let mut view: Option<String> = None;
     let mut tree = false;
     let mut hide_menubar = false;
+    let mut pick = false;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--screenshot" => screenshot = args.next().map(PathBuf::from),
+            // The desktop's file picker service (started by the session bus; see portal.rs).
+            "--portal" => {
+                if let Err(e) = portal::run() {
+                    eprintln!("{e}");
+                    std::process::exit(1);
+                }
+                return Ok(());
+            }
+            // One picker window; the request comes on stdin (see picker.rs).
+            "--pick" => pick = true,
+            // Make Rivet the desktop's file picker, or stop (same as Preferences → System).
+            "--file-picker" => {
+                let r = match args.next().as_deref() {
+                    Some("on") => portal_setup::enable().map(|_| "Rivet is now the file picker.".to_string()),
+                    Some("off") => portal_setup::disable().map(|_| "Rivet is no longer the file picker.".to_string()),
+                    Some("status") | None => Ok(match portal_setup::status() {
+                        portal_setup::Status::On => "File picker: Rivet".into(),
+                        portal_setup::Status::Off(Some(o)) => format!("File picker: {o}"),
+                        portal_setup::Status::Off(None) => "File picker: another app".into(),
+                        portal_setup::Status::Unavailable(why) => format!("File picker: unavailable ({why})"),
+                    }),
+                    Some(other) => Err(format!("Unknown choice “{other}”: use on, off or status")),
+                };
+                match r {
+                    Ok(msg) => println!("{msg}"),
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(1);
+                    }
+                }
+                return Ok(());
+            }
             "--measure" => {
                 let secs = args.next().and_then(|v| v.parse().ok()).unwrap_or(15.0);
                 let _ = MEASURE_SECS.set(secs);
@@ -123,11 +159,15 @@ fn main() -> eframe::Result {
         filters::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     // Checks use the default look so they are comparable from run to run.
+    // Test hook for checks: a picker started by the portal service runs in screenshot mode.
+    if pick && screenshot.is_none() {
+        screenshot = std::env::var_os("RIVET_PICK_SCREENSHOT").map(PathBuf::from);
+    }
     let mut settings = if screenshot.is_some() || measuring() { settings::Settings::default() } else { settings::Settings::load() };
     // Screenshots for checks show a neutral sample folder, never the person's own files,
     // unless a folder was named on purpose.
     let mut demo: Option<PathBuf> = None;
-    if screenshot.is_some() && start.is_none() && std::env::var_os("RIVET_REAL_HOME").is_none() {
+    if screenshot.is_some() && start.is_none() && !pick && std::env::var_os("RIVET_REAL_HOME").is_none() {
         demo = places::make_demo_dir();
         start = demo.clone();
     }
@@ -221,10 +261,34 @@ fn main() -> eframe::Result {
         settings.window_h = 700.0;
     }
 
+    // A picker: read the request, start in its folder.
+    let pick_title = if pick {
+        use std::io::Read;
+        let mut text = String::new();
+        let _ = std::io::stdin().read_to_string(&mut text);
+        // Test hook for checks: RIVET_PICK_REQUEST holds the request when there is no stdin.
+        if text.trim().is_empty() {
+            text = std::env::var("RIVET_PICK_REQUEST").unwrap_or_default().replace("\\n", "\n").replace("\\t", "\t");
+        }
+        let r = picker::Request::parse(&text);
+        if start.is_none() {
+            start = Some(picker::start_folder(&r));
+        }
+        if screenshot.is_none() && !measuring() {
+            settings.window_w = settings.window_w.min(1000.0);
+            settings.window_h = settings.window_h.min(640.0);
+        }
+        let t = r.window_title();
+        picker::begin(r);
+        Some(t)
+    } else {
+        None
+    };
+
     // Flatpak sets this to the app id so the desktop matches the window.
     let app_id = std::env::var("FLATPAK_ID").unwrap_or_else(|_| "rivet-files".into());
     let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Rivet")
+        .with_title(pick_title.unwrap_or_else(|| "Rivet".into()))
         .with_app_id(app_id)
         .with_inner_size([settings.window_w, settings.window_h])
         .with_min_inner_size([520.0, 340.0])
@@ -253,9 +317,20 @@ fn main() -> eframe::Result {
         std::process::exit(1);
     }
 
-    eframe::run_native(
+    let result = eframe::run_native(
         "Rivet",
         options,
         Box::new(move |cc| Ok(Box::new(app::RivetApp::new(cc, settings, start, screenshot, demo)))),
-    )
+    );
+    // A picker reports what was chosen on stdout (exit 0), or exits 1 when cancelled.
+    if picker::active() {
+        match picker::answer() {
+            Some(a) => {
+                print!("{}", a.to_text());
+                std::process::exit(0);
+            }
+            None => std::process::exit(1),
+        }
+    }
+    result
 }

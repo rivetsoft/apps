@@ -1059,6 +1059,7 @@ impl RivetApp {
         let mut pick_tab: Option<PrefsTab> = None;
         let mut show_shortcuts = false;
         let mut show_crash: Option<std::path::PathBuf> = None;
+        let mut picker_change: Option<bool> = None;
         self.app_icon_texture(ctx);
         let about_icon = self.app_icon.clone();
         let tab_icons: Vec<Option<egui::TextureHandle>> = PrefsTab::ALL.iter().map(|t| self.icon(ctx, t.icons(), 16.0)).collect();
@@ -1619,6 +1620,29 @@ impl RivetApp {
                                 });
                             }
                         });
+                        // Rivet as the "Open" / "Save" window other apps show.
+                        section(ui, "File picker", &mut |ui| {
+                            let status = crate::portal_setup::status();
+                            let (ok, text) = match &status {
+                                crate::portal_setup::Status::On => (Some(true), "Rivet".to_string()),
+                                crate::portal_setup::Status::Off(Some(other)) => (None, format!("Another app ({other})")),
+                                crate::portal_setup::Status::Off(None) => (None, "Another app".to_string()),
+                                crate::portal_setup::Status::Unavailable(why) => (Some(false), why.clone()),
+                            };
+                            row(ui, "Open and Save windows", None, ok, &text, &mut |ui| match &status {
+                                crate::portal_setup::Status::On => {
+                                    if ui.button("Stop Using Rivet").on_hover_text("Puts back the file picker used before").clicked() {
+                                        picker_change = Some(false);
+                                    }
+                                }
+                                crate::portal_setup::Status::Off(_) => {
+                                    if ui.button("Use Rivet").on_hover_text("Apps that ask the desktop for a file picker get Rivet; the one used now stays as the fallback").clicked() {
+                                        picker_change = Some(true);
+                                    }
+                                }
+                                crate::portal_setup::Status::Unavailable(_) => {}
+                            });
+                        });
                         // Reports from crashes, kept on this computer only.
                         section(ui, "Crash reports", &mut |ui| {
                             let reports = crate::crash::reports();
@@ -1678,6 +1702,12 @@ impl RivetApp {
         }
         if show_shortcuts {
             self.dialog = Dialog::Shortcuts;
+        }
+        if let Some(on) = picker_change {
+            let r = if on { crate::portal_setup::enable() } else { crate::portal_setup::disable() };
+            if let Err(e) = r {
+                self.message("Could not change the file picker", &e);
+            }
         }
         if let Some(r) = show_crash.and_then(|p| crate::crash::Report::load(&p)) {
             self.dialog = Dialog::Crash(Box::new(r), false);

@@ -39,6 +39,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 - 🔍 **Search** — type to filter the folder; Enter searches subfolders too
 - ⌨️ **Vim keys** (optional) — `hjkl`, `gg` `G`, counts, visual mode, `yy` `dd` `p`
 - 🌐 **Network** — browse servers, open SMB shares, or connect to an address
+- 📂 **File picker** — Rivet can be the Open and Save window every app shows (Preferences → System)
 
 **Working with files**
 - 📋 **The basics** — copy, cut, paste, drag and drop, rename, Trash with restore
@@ -64,7 +65,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 
 **Under the hood**
 - ⚡ **Fast** — opens a 100,000-file folder in under 0.4 s; no CPU use when idle
-- 🦀 **Small** — one 14 MB binary or a 6 MB AppImage; ffmpeg is optional (video previews and conversion)
+- 🦀 **Small** — one 16 MB binary or a 6 MB AppImage; ffmpeg is optional (video previews and conversion)
 - 🩹 **Crash reports** — saved on your computer and shown on the next start; nothing is sent unless you choose to share it
 
 ## 🎨 Follows your colors
@@ -138,6 +139,16 @@ from a few letters. Quick Actions (Ctrl+Shift+P) runs any command or setting by 
     <td><img src="docs/screenshots/quick-open-wide.png" alt="Quick Open jumping to a folder"></td>
   </tr>
 </table>
+
+### 📂 File picker
+
+Rivet can be the Open and Save window for every app that asks the desktop for one (through
+xdg-desktop-portal): your sidebar, views, Quick Open and theme, with a name field when saving, the
+app's file types, and a check before replacing a file. Turn it on in Preferences → System → File
+picker, or run `rivet --file-picker on`. The picker you used before stays as the fallback, and
+turning it off puts your settings back as they were.
+
+![Rivet as another app's Save window](docs/screenshots/file-picker-wide.png)
 
 ### 🖥️ Terminal mode
 
@@ -238,7 +249,7 @@ Release build on Fedora, Wayland, NVMe SSD:
 | Reading 2,092 / 100,000 items | ~19 ms / ~156 ms |
 | Sorting 100,000 items by name / type | ~17 ms / ~27 ms |
 | Indexing icon themes (once) | ~26 ms |
-| Binary size (stripped) | ~14 MB (AppImage ~6 MB) |
+| Binary size (stripped) | ~16 MB (AppImage ~6 MB) |
 
 Reproduce with `rivet --bench [FOLDER…]`, `RIVET_FRAME_STATS=1 rivet --screenshot out.png`
 and `utilities/rivet-dev bench`.
@@ -277,6 +288,9 @@ cargo build --release
 | `--bench [FOLDER...]` | Time folder reads without a window, then exit |
 | `--export-icons [DIR]` | Write the logo icons and exit (default `data/icons`) |
 | `--install-desktop-entry` | Add Rivet to the app launcher and exit |
+| `--file-picker on\|off\|status` | Make Rivet the file picker other apps use, stop, or show which one is |
+| `--portal` | Run the file picker service (the session bus starts this) |
+| `--pick` | Show one picker window for a request read from stdin |
 
 A global `rivet` command that always runs your latest build: `utilities/rivet-dev link` (system-wide, asks for
 your password) or `utilities/rivet-dev link --user` (`~/.local/bin`). Preferences → System has the same buttons.

@@ -230,6 +230,10 @@ impl Tab {
                 if !((show_hidden || !e.hidden) && (f.is_empty() || e.name.to_lowercase().contains(&f))) {
                     return false;
                 }
+                // Picking for another app: only what it can use (and folders to get there).
+                if !crate::picker::shows(e) {
+                    return false;
+                }
                 if let Some(r) = &rule
                     && !r.matches(e, now) {
                         hidden_by_rule += 1;

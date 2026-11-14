@@ -30,6 +30,7 @@ mod windows;
 mod zen;
 mod commands;
 mod crashview;
+mod pickview;
 mod keymap;
 
 #[derive(Clone)]
@@ -212,6 +213,11 @@ pub struct RivetApp {
     vim_visual: bool,
     /// What's typed in the keyboard map's search field.
     keymap_filter: String,
+    /// File picker: the name being saved as, focus it once, files waiting on "Replace?", done.
+    pick_name: String,
+    pick_focus: bool,
+    pick_confirm: Option<Vec<PathBuf>>,
+    picked: bool,
     /// Folders visited this session, newest first (Quick Open ranks them first).
     recent_dirs: Vec<PathBuf>,
     net_scan_rx: Option<std::sync::mpsc::Receiver<netview::NetResult>>,
@@ -519,6 +525,10 @@ impl RivetApp {
             vim_goto: None,
             vim_visual: false,
             keymap_filter: String::new(),
+            pick_name: crate::picker::request().map(|r| r.name.clone()).unwrap_or_default(),
+            pick_focus: crate::picker::request().is_some_and(|r| r.mode == crate::picker::Mode::Save),
+            pick_confirm: None,
+            picked: false,
             recent_dirs: Vec::new(),
             net_scan_rx: None,
             connect_ask: None,
@@ -622,6 +632,7 @@ impl RivetApp {
         }
         // Rivet crashed last time: show the report once. (Checks show it only when asked.)
         if app.screenshot.is_none()
+            && !crate::picker::active()
             && let Some(r) = crate::crash::unseen() {
                 crate::crash::mark_seen(&r);
                 app.dialog = Dialog::Crash(Box::new(r), false);
@@ -1221,6 +1232,7 @@ impl RivetApp {
         let actions = std::mem::take(&mut self.pending);
         for a in actions {
             match a {
+                Action::Open(p) if crate::picker::active() => self.picker_open(ctx, &p),
                 Action::Open(p) => self.open_entry(&p, false),
                 Action::OpenInNewTab(p) => self.open_entry(&p, true),
                 Action::Navigate(l) => self.navigate(l),
@@ -1708,7 +1720,10 @@ impl RivetApp {
             && let Some(d) = self.current_dir() {
                 self.start_op(OpKind::Copy, dropped, Some(d));
             }
-        let title = self.tab().loc.title();
+        let mut title = self.tab().loc.title();
+        if let Some(r) = crate::picker::request() {
+            title = format!("{} — {title}", r.window_title());
+        }
         if title != self.last_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.last_title = title;
@@ -2311,6 +2326,8 @@ impl eframe::App for RivetApp {
             self.window_resize_edges(&ctx);
         }
         self.header(ui, &ctx);
+        // Answering another app's Open / Save: its bar sits along the bottom.
+        self.picker_bar(ui, &ctx);
         let zen = self.s.zen;
         // What's left below the title bar: Zen mode's panels slide in at its edges.
         let zen_area = ui.available_rect_before_wrap();
@@ -2382,7 +2399,8 @@ impl eframe::App for RivetApp {
         self.process_actions(&ctx);
 
         if self.dirty_settings && self.screenshot.is_none() && !crate::measuring() {
-            if let Some(r) = ctx.input(|i| i.viewport().inner_rect) {
+            // A picker window's size isn't the main window's.
+            if let Some(r) = ctx.input(|i| i.viewport().inner_rect).filter(|_| !crate::picker::active()) {
                 self.s.window_w = r.width();
                 self.s.window_h = r.height();
             }

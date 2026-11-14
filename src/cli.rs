@@ -161,6 +161,10 @@ Options:
       --bench [FOLDER...]     Time folder reads without a window, then exit
       --export-icons [DIR]    Write the logo icons and exit (default: data/icons)
       --install-desktop-entry Add Rivet to the app launcher and exit
+      --file-picker on|off|status
+                              Make Rivet the file picker other apps use, stop, or show which one is
+      --portal                Run the file picker service (the session bus starts this)
+      --pick                  Show one picker window for a request read from stdin
 ",
         version = env!("CARGO_PKG_VERSION"),
     )
@@ -238,6 +242,9 @@ mod tests {
             "--bench",
             "--export-icons",
             "--install-desktop-entry",
+            "--file-picker",
+            "--portal",
+            "--pick",
         ] {
             assert!(help.contains(flag), "help omits {flag}");
         }
@@ -265,6 +272,9 @@ mod tests {
             "--bench",
             "--export-icons",
             "--install-desktop-entry",
+            "--file-picker",
+            "--portal",
+            "--pick",
         ] {
             assert!(readme.contains(flag), "README omits {flag}");
         }

@@ -3,6 +3,14 @@
 ## Unreleased
 
 ### New
+- **File picker**: Rivet can be the Open and Save window every app shows, through the desktop
+  portal (xdg-desktop-portal). Open one or several files, choose a folder, save with a name field
+  (the name is selected up to its extension), save several files into a folder, filter by the
+  app's file types, and confirm before replacing. The app cancelling closes the window. Turn it on
+  in Preferences → System → File picker or with `rivet --file-picker on`: it adds Rivet in front
+  of the pickers used before (kept as fallbacks) in your `<desktop>-portals.conf`, and turning it
+  off restores that line exactly and removes the files it added. Not available inside Flatpak.
+  (The D-Bus support it needs adds about 2.5 MB to the program.)
 - **Crash reports**: if Rivet stops because of a bug, it saves a plain-text report on this computer
   (`~/.local/state/rivet/crashes`) — version, what went wrong and where, the stack, and the system.
   Nothing is sent anywhere. The next start shows it once, with Copy Report, Open Folder and Report
