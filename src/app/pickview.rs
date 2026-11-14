@@ -64,12 +64,31 @@ impl RivetApp {
                     ui.add_space((full - w) / 2.0);
                     ui.allocate_ui_with_layout(Vec2::new(w, 34.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.label(egui::RichText::new("Name").color(v.weak_text_color()));
-                        let field_bg = crate::palette::mix(v.extreme_bg_color, v.text_color(), 0.05);
+                        // The same raised surface as the location bar (a plain box in terminal mode).
+                        let (field_bg, shadow, stroke) = if self.s.terminal {
+                            (v.extreme_bg_color, egui::Shadow::NONE, super::tui_line(&v))
+                        } else {
+                            (
+                                crate::palette::mix(v.window_fill, v.text_color(), 0.04),
+                                egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: egui::Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) },
+                                egui::Stroke::NONE,
+                            )
+                        };
                         let out = egui::Frame::NONE
                             .fill(field_bg)
+                            .shadow(shadow)
+                            .stroke(stroke)
                             .corner_radius(super::r_md())
-                            .inner_margin(egui::Margin::symmetric(10, 6))
-                            .show(ui, |ui| egui::TextEdit::singleline(&mut self.pick_name).frame(egui::Frame::NONE).desired_width(f32::INFINITY).hint_text("File name").show(ui))
+                            .inner_margin(egui::Margin::symmetric(10, 4))
+                            .show(ui, |ui| {
+                                egui::TextEdit::singleline(&mut self.pick_name)
+                                    .frame(egui::Frame::NONE)
+                                    .align(Align2::LEFT_CENTER)
+                                    .min_size(Vec2::new(0.0, 24.0))
+                                    .desired_width(f32::INFINITY)
+                                    .hint_text("File name")
+                                    .show(ui)
+                            })
                             .inner;
                         // First time: focus the name with the part before the extension selected.
                         if self.pick_focus {
