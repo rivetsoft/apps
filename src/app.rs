@@ -1229,6 +1229,43 @@ impl RivetApp {
     // ---------------------------------------------------------------- actions
 
     fn process_actions(&mut self, ctx: &egui::Context) {
+        // A picker chooses files; it doesn't move, delete or change them (whether asked by a key,
+        // a menu, Vim keys or a drag). Opening in a tab just opens.
+        if crate::picker::active() {
+            self.pending.retain(|a| {
+                !matches!(
+                    a,
+                    Action::Cut
+                        | Action::Copy
+                        | Action::Paste(_)
+                        | Action::Trash
+                        | Action::Delete
+                        | Action::AskDelete
+                        | Action::Restore
+                        | Action::EmptyTrash
+                        | Action::NewFile(_)
+                        | Action::Terminal(_)
+                        | Action::Transfer(..)
+                        | Action::Undo
+                        | Action::Redo
+                        | Action::BulkRename(_)
+                        | Action::Convert(_)
+                        | Action::Resize(_)
+                        | Action::Compress(_)
+                        | Action::ExtractHere(_)
+                        | Action::OpenWithDialog(_)
+                        | Action::Launch(..)
+                        | Action::Run(_)
+                        | Action::NewTab
+                        | Action::Unmount(_)
+                )
+            });
+            for a in &mut self.pending {
+                if let Action::OpenInNewTab(p) = a {
+                    *a = Action::Open(p.clone());
+                }
+            }
+        }
         let actions = std::mem::take(&mut self.pending);
         for a in actions {
             match a {
@@ -1933,8 +1970,8 @@ impl RivetApp {
             self.search_open = true;
             self.search_focus = true;
         }
-        // Ctrl+, opens Preferences (or closes it when it is already open).
-        if cmd && pressed(Key::Comma) {
+        // Ctrl+, opens Preferences (or closes it when it is already open). Not while picking.
+        if cmd && pressed(Key::Comma) && !crate::picker::active() {
             if self.prefs_open {
                 self.prefs_open = false;
             } else {
@@ -2326,7 +2363,8 @@ impl eframe::App for RivetApp {
             self.window_resize_edges(&ctx);
         }
         self.header(ui, &ctx);
-        // Answering another app's Open / Save: its bar sits along the bottom.
+        // Answering another app's Open / Save: a title across the top, its bar along the bottom.
+        self.picker_header(ui, &ctx);
         self.picker_bar(ui, &ctx);
         let zen = self.s.zen;
         // What's left below the title bar: Zen mode's panels slide in at its edges.
@@ -2398,7 +2436,7 @@ impl eframe::App for RivetApp {
         self.drag_overlay(&ctx);
         self.process_actions(&ctx);
 
-        if self.dirty_settings && self.screenshot.is_none() && !crate::measuring() {
+        if self.dirty_settings && self.screenshot.is_none() && !crate::measuring() && !crate::picker::active() {
             // A picker window's size isn't the main window's.
             if let Some(r) = ctx.input(|i| i.viewport().inner_rect).filter(|_| !crate::picker::active()) {
                 self.s.window_w = r.width();

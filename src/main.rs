@@ -275,9 +275,19 @@ fn main() -> eframe::Result {
             start = Some(picker::start_folder(&r));
         }
         if screenshot.is_none() && !measuring() {
-            settings.window_w = settings.window_w.min(1000.0);
-            settings.window_h = settings.window_h.min(640.0);
+            settings.window_w = 920.0;
+            settings.window_h = 600.0;
         }
+        // A picker, not the file manager: no menu bar, status bar, Peek, tabs or Zen; a short
+        // toolbar; the list view. None of this is saved.
+        use settings::ToolItem::*;
+        settings.toolbar = vec![Back, Forward, Up, PathBar, Search, NewFolder, ShowHidden, ViewList, ViewIcons];
+        settings.show_menubar = false;
+        settings.show_statusbar = false;
+        settings.show_peek = false;
+        settings.zen = false;
+        settings.view = settings::ViewMode::List;
+        settings.sidebar_width = settings.sidebar_width.min(180.0);
         let t = r.window_title();
         picker::begin(r);
         Some(t)

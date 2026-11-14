@@ -113,7 +113,7 @@ RIVET_ICON_THEME=Papirus RIVET_ZEN=1 RIVET_ZEN_SHOW=toolbar,sidebar \
 RIVET_ICON_THEME=Papirus RIVET_ZEN=1 RIVET_SPOTLIGHT=p \
     "$BIN" "$H" --screenshot "$OUT/quick-open-wide.png"
 # The file picker answering another app's Save request.
-RIVET_ICON_THEME=Papirus RIVET_PICK_REQUEST="mode=save\\ntitle=Export Report\\nname=quarterly-report.pdf\\nfolder=$H/Documents\\nfilter=PDF documents\\tglob:*.pdf\\nfilter=All files\\tglob:*" \
+RIVET_ICON_THEME=Papirus RIVET_PICK_REQUEST="mode=save\\ntitle=Save As\\napp=org.mozilla.firefox\\nname=quarterly-report.pdf\\nfolder=$H/Documents\\nfilter=PDF documents\\tglob:*.pdf\\nfilter=All files\\tglob:*" \
     "$BIN" --pick --screenshot "$OUT/file-picker-wide.png" </dev/null
 
 # Terminal mode on a code file (needs a Nerd Font installed for the glyph icons).

@@ -60,6 +60,8 @@ pub struct Request {
     pub current_filter: Option<usize>,
     /// The names to save (SaveFiles).
     pub files: Vec<String>,
+    /// The app asking ("org.mozilla.firefox"), when the portal says.
+    pub app: String,
 }
 
 /// Keep a value on one line of the request text.
@@ -84,6 +86,7 @@ impl Request {
             t.push_str(&format!("folder={}\n", one_line(&f.to_string_lossy())));
         }
         t.push_str(&format!("name={}\n", one_line(&self.name)));
+        t.push_str(&format!("app={}\n", one_line(&self.app)));
         for f in &self.filters {
             let mut line = one_line(&f.name);
             for g in &f.globs {
@@ -121,6 +124,7 @@ impl Request {
                 "directory" => r.directory = v == "1",
                 "folder" if !v.is_empty() => r.folder = Some(PathBuf::from(v)),
                 "name" => r.name = v.to_string(),
+                "app" => r.app = v.to_string(),
                 "filter" => {
                     let mut parts = v.split('\t');
                     let mut f = TypeFilter { name: parts.next().unwrap_or_default().to_string(), ..Default::default() };
@@ -303,6 +307,7 @@ mod tests {
             ],
             current_filter: Some(1),
             files: vec![],
+            app: "org.example.App".into(),
         };
         let back = Request::parse(&r.to_text());
         assert_eq!(back.title, "Export image");
@@ -310,6 +315,7 @@ mod tests {
         assert_eq!(back.current_filter, Some(1));
         assert_eq!(back.folder, r.folder);
         assert_eq!(back.mode, Mode::Save);
+        assert_eq!(back.app, "org.example.App");
     }
 
     #[test]

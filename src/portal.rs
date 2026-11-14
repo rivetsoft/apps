@@ -67,8 +67,9 @@ impl Chooser {
         title: String,
         options: Options,
     ) -> (u32, Results) {
-        let _ = (app_id, parent_window);
+        let _ = parent_window;
         let mut r = request(Mode::Open, title, &options);
+        r.app = app_id;
         r.multiple = get::<bool>(&options, "multiple").unwrap_or(false);
         r.directory = get::<bool>(&options, "directory").unwrap_or(false);
         self.serve(conn, handle, r).await
@@ -83,8 +84,9 @@ impl Chooser {
         title: String,
         options: Options,
     ) -> (u32, Results) {
-        let _ = (app_id, parent_window);
+        let _ = parent_window;
         let mut r = request(Mode::Save, title, &options);
+        r.app = app_id;
         r.name = get::<String>(&options, "current_name").unwrap_or_default().replace('/', "_");
         if let Some(file) = bytes_path(&options, "current_file") {
             r.folder = file.parent().map(|p| p.to_path_buf()).or(r.folder);
@@ -104,8 +106,9 @@ impl Chooser {
         title: String,
         options: Options,
     ) -> (u32, Results) {
-        let _ = (app_id, parent_window);
+        let _ = parent_window;
         let mut r = request(Mode::SaveFiles, title, &options);
+        r.app = app_id;
         r.files = get::<Vec<Vec<u8>>>(&options, "files")
             .unwrap_or_default()
             .into_iter()

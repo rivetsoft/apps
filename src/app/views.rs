@@ -546,6 +546,10 @@ impl RivetApp {
 
     fn item_menu(&mut self, ui: &mut egui::Ui, e: &Entry) {
         Self::comfy_menu(ui);
+        if crate::picker::active() {
+            self.picker_item_menu(ui, e);
+            return;
+        }
         let in_trash = matches!(self.tab().loc, Location::Trash);
         if !self.tab().selected.contains(&e.path) {
             let t = self.tab_mut();
@@ -677,6 +681,10 @@ impl RivetApp {
 
     pub(super) fn background_menu(&mut self, ui: &mut egui::Ui) {
         Self::comfy_menu(ui);
+        if crate::picker::active() {
+            self.picker_background_menu(ui);
+            return;
+        }
         if matches!(self.tab().loc, Location::Trash) {
             if ui.button("Empty Trash").clicked() {
                 self.pending.push(Action::EmptyTrash);

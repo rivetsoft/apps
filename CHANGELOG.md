@@ -11,6 +11,9 @@
   of the pickers used before (kept as fallbacks) in your `<desktop>-portals.conf`, and turning it
   off restores that line exactly and removes the files it added. Not available inside Flatpak.
   (The D-Bus support it needs adds about 2.5 MB to the program.)
+  The picker window is laid out like GNOME's: Cancel, the title (and the app asking) and the
+  Open / Save button across the top, the name field under it, a short toolbar and the list view;
+  no menu bar, status bar, Peek, tabs or Trash, and nothing that moves, deletes or changes files.
 - **Crash reports**: if Rivet stops because of a bug, it saves a plain-text report on this computer
   (`~/.local/state/rivet/crashes`) — version, what went wrong and where, the stack, and the system.
   Nothing is sent anywhere. The next start shows it once, with Copy Report, Open Folder and Report

@@ -1332,6 +1332,10 @@ impl RivetApp {
                 let _ = resp.on_hover_text("The computer's /usr, /bin and /etc. Flatpak keeps its own copies of those at the top of File System.");
             }
         }
+        // A file picker has no use for the Trash.
+        if crate::picker::active() {
+            return;
+        }
         let trash_icon: &[&str] = if self.trash_empty { &["user-trash"] } else { &["user-trash-full", "user-trash"] };
         let (resp, _) = self.place_row(ui, ctx, trash_icon, "Trash", Some(Location::Trash), None, false);
         resp.context_menu(|ui| {
