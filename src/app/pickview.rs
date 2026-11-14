@@ -99,7 +99,10 @@ impl RivetApp {
                         accept = true;
                     }
                 }
-                ui.label(egui::RichText::new(self.picker_summary()).color(v.weak_text_color()));
+                let summary = self.picker_summary();
+                if !summary.is_empty() {
+                    ui.label(egui::RichText::new(summary).color(v.weak_text_color()));
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let c = v.selection.bg_fill;
                     let btn = egui::Button::new(egui::RichText::new(req.accept_label()).color(v.selection.stroke.color).strong()).fill(c).min_size(Vec2::new(84.0, 32.0));
@@ -210,9 +213,9 @@ impl RivetApp {
                 _ => format!("Folder: {folder}"),
             };
         }
+        // Saving: the path bar already says where.
         if req.mode == Mode::Save {
-            let here = self.current_dir().and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string())).unwrap_or_else(|| "/".into());
-            return format!("in “{here}”");
+            return String::new();
         }
         let files = sel.iter().filter(|e| !e.is_dir).count();
         match files {

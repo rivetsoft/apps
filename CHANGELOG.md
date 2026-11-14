@@ -12,7 +12,7 @@
   off restores that line exactly and removes the files it added. Not available inside Flatpak.
   (The D-Bus support it needs adds about 2.5 MB to the program.)
   The picker window has the title (and the app asking) across the top, a short toolbar and the
-  list view, and one strip along the bottom with the name field, where it saves, the file types,
+  list view, and one strip along the bottom with the name field, the file types,
   Cancel and Open / Save; no menu bar, status bar, Peek, tabs or Trash, and nothing that moves,
   deletes or changes files. The picker keeps working after Rivet is updated while its service
   runs, and turning it on makes the session bus pick up the new service right away.
