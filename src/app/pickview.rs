@@ -27,20 +27,18 @@ impl RivetApp {
         let Some(req) = picker::request() else { return };
         let fill = ctx.global_style().visuals.panel_fill;
         let app = self.picker_app_name();
-        egui::Panel::top("picker-head").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(12, 6))).show(ui, |ui| {
+        egui::Panel::top("picker-head").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin { left: 12, right: 12, top: 6, bottom: 0 })).show(ui, |ui| {
             let v = ui.visuals().clone();
-            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), if app.is_some() { 34.0 } else { 24.0 }), Sense::hover());
-            let title = req.window_title();
-            let painter = ui.painter();
-            match &app {
-                Some(a) => {
-                    painter.text(Pos2::new(rect.center().x, rect.center().y - 7.0), Align2::CENTER_CENTER, &title, crate::fonts::ui_font(14.5), v.strong_text_color());
-                    painter.text(Pos2::new(rect.center().x, rect.center().y + 9.0), Align2::CENTER_CENTER, a, crate::fonts::ui_font(11.5), v.weak_text_color());
-                }
-                None => {
-                    painter.text(rect.center(), Align2::CENTER_CENTER, &title, crate::fonts::ui_font(14.5), v.strong_text_color());
-                }
+            // One line: the title, then the app asking in lighter type ("Save As · Firefox").
+            let mut job = egui::text::LayoutJob::default();
+            let fmt = |size: f32, color| egui::TextFormat { font_id: crate::fonts::ui_font(size), color, valign: egui::Align::Center, ..Default::default() };
+            job.append(&req.window_title(), 0.0, fmt(14.0, v.strong_text_color()));
+            if let Some(a) = &app {
+                job.append(&format!("  ·  {a}"), 0.0, fmt(12.5, v.weak_text_color()));
             }
+            let g = ui.painter().layout_job(job);
+            let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), g.size().y.max(18.0)), Sense::hover());
+            ui.painter().galley(Pos2::new(rect.center().x - g.size().x / 2.0, rect.center().y - g.size().y / 2.0), g, v.strong_text_color());
         });
     }
 
