@@ -49,8 +49,10 @@ pub fn run(size: [f32; 2], make: impl FnOnce(&eframe::CreationContext) -> Box<dy
             app.logic(&ctx, &mut frame);
             app.ui(ui, &mut frame);
         });
-        // Keep the textures the frame uses (fonts, icons, thumbnails).
+        // Keep the textures the frame uses (fonts, icons, thumbnails). The update is handled
+        // right here, in full; epaint panics if one is dropped unread.
         let mut delta = std::mem::take(&mut out.textures_delta);
+        let freed: Vec<TextureId> = delta.free.iter().copied().collect();
         for (id, deltas) in &delta.set {
             for d in deltas {
                 let ImageData::Color(img) = &d.image;
@@ -73,6 +75,7 @@ pub fn run(size: [f32; 2], make: impl FnOnce(&eframe::CreationContext) -> Box<dy
                 }
             }
         }
+        delta.clear();
         let mut close = false;
         let commands = out.viewport_output.get(&ViewportId::ROOT).map(|v| v.commands.clone()).unwrap_or_default();
         for cmd in commands {
@@ -87,10 +90,10 @@ pub fn run(size: [f32; 2], make: impl FnOnce(&eframe::CreationContext) -> Box<dy
                 _ => {}
             }
         }
-        for id in &delta.free {
+        // Freed after this frame is drawn, as a GPU painter does.
+        for id in &freed {
             textures.remove(id);
         }
-        delta.clear();
         if close || start.elapsed() > LIMIT {
             if !close {
                 eprintln!("screenshot timed out");

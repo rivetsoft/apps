@@ -10,6 +10,10 @@ use std::path::{Path, PathBuf};
 /// How many reports to keep (older ones are removed when a new one is written).
 const KEEP: usize = 20;
 
+/// Set for screenshot and measuring runs: a check that panics prints to the terminal but never
+/// writes into the person's own crash reports (RIVET_CRASH_TEST still writes, to test them).
+pub static NO_WRITE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn dir() -> PathBuf {
     crate::places::state_home().join("rivet/crashes")
 }
@@ -28,7 +32,9 @@ pub fn install() {
             .unwrap_or_else(|| "(no message)".into());
         let place = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_else(|| "unknown".into());
         let stack = std::backtrace::Backtrace::force_capture();
-        let _ = write_report(&thread, &what, &place, &trim_stack(&stack.to_string()));
+        if !NO_WRITE.load(std::sync::atomic::Ordering::Relaxed) || std::env::var_os("RIVET_CRASH_TEST").is_some() {
+            let _ = write_report(&thread, &what, &place, &trim_stack(&stack.to_string()));
+        }
         previous(info);
     }));
 }
