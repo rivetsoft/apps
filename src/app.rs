@@ -478,6 +478,14 @@ fn load_mono(choice: &str) -> MonoFont {
     Some((name, path, Arc::new(bytes)))
 }
 
+/// The pixel size icons are rendered at: the next of a few fixed steps, so dragging the zoom
+/// slider doesn't leave a copy of every icon at every size in memory (they're drawn scaled).
+fn icon_px(px: f32) -> u32 {
+    const STEPS: [u32; 16] = [16, 20, 24, 32, 40, 48, 64, 80, 96, 128, 160, 192, 256, 320, 384, 512];
+    let want = px.round().max(8.0) as u32;
+    STEPS.iter().copied().find(|&s| s >= want).unwrap_or(want)
+}
+
 /// Terminal mode's box line.
 pub(crate) fn tui_line(v: &egui::Visuals) -> Stroke {
     Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color)
@@ -1053,7 +1061,7 @@ impl RivetApp {
 
     fn icon(&mut self, ctx: &egui::Context, names: &[&str], px: f32) -> Option<egui::TextureHandle> {
         let ppp = ctx.pixels_per_point();
-        self.icons.texture(ctx, names, (px * ppp).round().max(8.0) as u32)
+        self.icons.texture(ctx, names, icon_px(px * ppp))
     }
 
     /// An icon for a highlighted row: the very same icon shown when it isn't highlighted,
@@ -1061,7 +1069,7 @@ impl RivetApp {
     /// Returns (texture, is_single_color).
     fn accent_icon(&mut self, ctx: &egui::Context, names: &[&str], px: f32) -> Option<(egui::TextureHandle, bool)> {
         let ppp = ctx.pixels_per_point();
-        self.icons.mask(ctx, names, (px * ppp).round().max(8.0) as u32).map(|t| (t, true))
+        self.icons.mask(ctx, names, icon_px(px * ppp)).map(|t| (t, true))
     }
 
     fn entry_texture(&mut self, ctx: &egui::Context, e: &Entry, px: f32) -> Option<egui::TextureHandle> {
@@ -1108,7 +1116,7 @@ impl RivetApp {
     fn icon_or_mask(&mut self, ctx: &egui::Context, names: &[&str], px: f32, mask: bool) -> Option<egui::TextureHandle> {
         if mask {
             let ppp = ctx.pixels_per_point();
-            self.icons.mask(ctx, names, (px * ppp).round().max(8.0) as u32)
+            self.icons.mask(ctx, names, icon_px(px * ppp))
         } else {
             self.icon(ctx, names, px)
         }
@@ -1780,11 +1788,11 @@ impl RivetApp {
                 changed = true;
                 if op.kind == OpKind::EmptyTrash {
                     history.forget_trash();
-                } else if let Some(step) = crate::undo::Step::from_op(op.kind, op.done.lock().unwrap().clone()) {
+                } else if let Some(step) = crate::undo::Step::from_op(op.kind, op.done.lock().unwrap_or_else(|e| e.into_inner()).clone()) {
                     history.record_role(step, op.role);
                 }
-                created.extend(op.created.lock().unwrap().iter().cloned());
-                errors.extend(op.errors.lock().unwrap().iter().cloned());
+                created.extend(op.created.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned());
+                errors.extend(op.errors.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned());
                 false
             } else {
                 true
@@ -1832,7 +1840,7 @@ impl RivetApp {
             }
         }
         // Tell the watcher what to look at: every open folder and the colour files.
-        let mut watched: Vec<PathBuf> = self.tabs.iter().filter_map(|t| t.watched_dir()).collect();
+        let mut watched: Vec<PathBuf> = self.tabs.iter().chain(self.split.as_ref()).filter_map(|t| t.watched_dir()).collect();
         watched.push(places::trash_dir().join("files"));
         watched.extend(self.color_watch.files().iter().cloned());
         self.watch.set_paths(watched);
@@ -2443,13 +2451,11 @@ impl eframe::App for RivetApp {
                 self.apply_visuals(ctx);
                 self.flash("Desktop theme changed — colors updated");
             }
-            for i in 0..self.tabs.len() {
-                if self.tabs[i].needs_refresh() {
-                    let t = &mut self.tabs[i];
+            // Every open folder, including the other pane in split view.
+            for t in self.tabs.iter_mut().chain(self.split.as_mut()) {
+                // (Thumbnails notice a changed file by its modified time.)
+                if t.needs_refresh() {
                     t.reload(&self.mime, &self.s);
-                    for e in &t.entries {
-                        self.thumbs.forget(&e.path);
-                    }
                 }
             }
             if self.screenshot.is_none() {
@@ -2617,12 +2623,58 @@ impl eframe::App for RivetApp {
                     }
                 continue;
             }
+            // "key:ctrl+shift+n@N" presses that key (egui key names; ctrl / shift / alt) at frame N.
+            if let Some(spec) = xy.trim().strip_prefix("key:") {
+                // The modifiers go up again the frame after.
+                if let Ok(f) = f.trim().parse::<u32>()
+                    && self.frames + 1 == f + 1
+                    && spec.contains('+')
+                {
+                    raw.events.push(egui::Event::ModifiersChanged(egui::Modifiers::default()));
+                }
+                if let Ok(f) = f.trim().parse::<u32>()
+                    && self.frames + 1 == f
+                {
+                    let mut modifiers = egui::Modifiers::default();
+                    let mut name = "";
+                    for part in spec.split('+') {
+                        match part.to_lowercase().as_str() {
+                            "ctrl" => {
+                                modifiers.ctrl = true;
+                                modifiers.command = true;
+                            }
+                            "shift" => modifiers.shift = true,
+                            "alt" => modifiers.alt = true,
+                            _ => name = part,
+                        }
+                    }
+                    let up = name.to_uppercase();
+                    let key = egui::Key::from_name(name).or_else(|| egui::Key::from_name(&up)).or_else(|| {
+                        let mut c = name.chars();
+                        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).and_then(|n| egui::Key::from_name(&n))
+                    });
+                    if let Some(key) = key {
+                        raw.events.push(egui::Event::ModifiersChanged(modifiers));
+                        raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+                    }
+                }
+                continue;
+            }
             // "type:TEXT@N" types TEXT at frame N.
             if let Some(text) = xy.trim().strip_prefix("type:") {
                 if let Ok(f) = f.trim().parse::<u32>()
                     && self.frames + 1 == f {
                         raw.events.push(egui::Event::Text(text.to_string()));
                     }
+                continue;
+            }
+            // "paste@N" pastes at frame N (what Rivet copied last; checks have no real clipboard).
+            if xy.trim() == "paste" {
+                if let Ok(f) = f.trim().parse::<u32>()
+                    && self.frames + 1 == f
+                {
+                    raw.events.push(egui::Event::Paste(self.clipboard_text.clone()));
+                }
                 continue;
             }
             // "copy@N" sends Ctrl+C at frame N.

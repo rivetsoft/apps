@@ -27,7 +27,7 @@ static CHECKED: Mutex<Option<(Instant, Option<String>)>> = Mutex::new(None);
 /// ffmpeg's version, if ffmpeg is installed. Checked once and then remembered;
 /// see [`recheck`] for looking again.
 pub fn ffmpeg_version() -> Option<String> {
-    let mut c = CHECKED.lock().unwrap();
+    let mut c = CHECKED.lock().unwrap_or_else(|e| e.into_inner());
     if c.is_none() {
         *c = Some((Instant::now(), probe()));
     }
@@ -264,17 +264,17 @@ pub fn spawn_convert(files: Vec<PathBuf>, kind: Kind, ext: String, quality: u32,
             if pp.cancel.load(Ordering::Relaxed) {
                 break;
             }
-            *pp.current.lock().unwrap() = name_of(&f);
+            *pp.current.lock().unwrap_or_else(|e| e.into_inner()) = name_of(&f);
             match convert_one(&f, kind, &ext, quality, keep, &pp) {
                 Ok(out) => {
-                    pp.created.lock().unwrap().push(out.clone());
+                    pp.created.lock().unwrap_or_else(|e| e.into_inner()).push(out.clone());
                     // Only new files kept next to the originals can be undone (moved to the Trash).
                     if keep == Keep::Originals {
-                        pp.done.lock().unwrap().push((f, out));
+                        pp.done.lock().unwrap_or_else(|e| e.into_inner()).push((f, out));
                     }
                 }
                 Err(e) if e == "Cancelled" => {}
-                Err(e) => pp.errors.lock().unwrap().push(format!("{}: {e}", name_of(&f))),
+                Err(e) => pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(format!("{}: {e}", name_of(&f))),
             }
             pp.done_items.fetch_add(1, Ordering::Relaxed);
         }
@@ -292,16 +292,16 @@ pub fn spawn_resize(files: Vec<PathBuf>, size: Size, keep: Keep) -> Arc<Progress
             if pp.cancel.load(Ordering::Relaxed) {
                 break;
             }
-            *pp.current.lock().unwrap() = name_of(&f);
+            *pp.current.lock().unwrap_or_else(|e| e.into_inner()) = name_of(&f);
             match resize_one(&f, size, keep, &pp) {
                 Ok(out) => {
-                    pp.created.lock().unwrap().push(out.clone());
+                    pp.created.lock().unwrap_or_else(|e| e.into_inner()).push(out.clone());
                     if keep == Keep::Originals {
-                        pp.done.lock().unwrap().push((f, out));
+                        pp.done.lock().unwrap_or_else(|e| e.into_inner()).push((f, out));
                     }
                 }
                 Err(e) if e == "Cancelled" => {}
-                Err(e) => pp.errors.lock().unwrap().push(format!("{}: {e}", name_of(&f))),
+                Err(e) => pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(format!("{}: {e}", name_of(&f))),
             }
             pp.done_items.fetch_add(1, Ordering::Relaxed);
         }
@@ -343,13 +343,13 @@ mod tests {
         // Convert, keeping the original.
         let p = spawn_convert(vec![src.clone()], Kind::Image, "jpg".into(), 90, Keep::Originals);
         wait(&p);
-        assert!(p.errors.lock().unwrap().is_empty(), "{:?}", p.errors.lock().unwrap());
+        assert!(p.errors.lock().unwrap_or_else(|e| e.into_inner()).is_empty(), "{:?}", p.errors.lock().unwrap_or_else(|e| e.into_inner()));
         assert!(src.exists());
         assert_eq!(image::image_dimensions(dir.join("pic.jpg")).unwrap(), (64, 40));
         // Resize to half, as a new file.
         let p = spawn_resize(vec![src.clone()], Size::Percent(50), Keep::Originals);
         wait(&p);
-        assert!(p.errors.lock().unwrap().is_empty(), "{:?}", p.errors.lock().unwrap());
+        assert!(p.errors.lock().unwrap_or_else(|e| e.into_inner()).is_empty(), "{:?}", p.errors.lock().unwrap_or_else(|e| e.into_inner()));
         assert_eq!(image::image_dimensions(dir.join("pic (32×20).png")).unwrap(), (32, 20));
         // Resize in place.
         let p = spawn_resize(vec![src.clone()], Size::Fit(16, 16), Keep::Replace);

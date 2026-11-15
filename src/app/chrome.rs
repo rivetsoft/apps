@@ -1031,7 +1031,7 @@ impl RivetApp {
                             if let Some(op) = self.ops.first().cloned() {
                                 let done = op.done_items.load(Ordering::Relaxed) as f32;
                                 ui.add(egui::ProgressBar::new(done / op.total_items as f32).desired_width(120.0).desired_height(10.0));
-                                ui.label(format!("{} “{}”…", op.kind.verb(), op.current.lock().unwrap()));
+                                ui.label(format!("{} “{}”…", op.kind.verb(), op.current.lock().unwrap_or_else(|e| e.into_inner())));
                                 if ui.small_button("Cancel").clicked() {
                                     op.cancel.store(true, Ordering::Relaxed);
                                 }

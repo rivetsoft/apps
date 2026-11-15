@@ -253,14 +253,14 @@ pub fn spawn_compress(sources: Vec<PathBuf>, archive: PathBuf, format: Format) -
     let p = Arc::new(Progress::blank(OpKind::Compress, 1, 0));
     let pp = p.clone();
     std::thread::spawn(move || {
-        *pp.current.lock().unwrap() = name_of(&archive);
+        *pp.current.lock().unwrap_or_else(|e| e.into_inner()) = name_of(&archive);
         match compress(&sources, &archive, format, &pp) {
             Ok(()) => {
-                pp.created.lock().unwrap().push(archive.clone());
-                pp.done.lock().unwrap().push((sources[0].clone(), archive));
+                pp.created.lock().unwrap_or_else(|e| e.into_inner()).push(archive.clone());
+                pp.done.lock().unwrap_or_else(|e| e.into_inner()).push((sources[0].clone(), archive));
             }
             Err(e) if e == "Cancelled" => {}
-            Err(e) => pp.errors.lock().unwrap().push(format!("{}: {e}", name_of(&archive))),
+            Err(e) => pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(format!("{}: {e}", name_of(&archive))),
         }
         pp.done_items.fetch_add(1, Ordering::Relaxed);
         pp.finished.store(true, Ordering::Release);
@@ -277,14 +277,14 @@ pub fn spawn_extract(archives: Vec<PathBuf>, into: PathBuf) -> Arc<Progress> {
             if pp.cancel.load(Ordering::Relaxed) {
                 break;
             }
-            *pp.current.lock().unwrap() = name_of(&a);
+            *pp.current.lock().unwrap_or_else(|e| e.into_inner()) = name_of(&a);
             match extract(&a, &into, &pp) {
                 Ok(made) => {
-                    pp.created.lock().unwrap().push(made.clone());
-                    pp.done.lock().unwrap().push((a, made));
+                    pp.created.lock().unwrap_or_else(|e| e.into_inner()).push(made.clone());
+                    pp.done.lock().unwrap_or_else(|e| e.into_inner()).push((a, made));
                 }
                 Err(e) if e == "Cancelled" => {}
-                Err(e) => pp.errors.lock().unwrap().push(format!("{}: {e}", name_of(&a))),
+                Err(e) => pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(format!("{}: {e}", name_of(&a))),
             }
             pp.done_items.fetch_add(1, Ordering::Relaxed);
         }
@@ -330,12 +330,12 @@ mod tests {
             let arc = out.join(format!("Folder{}", f.ext()));
             let p = spawn_compress(vec![src.join("Folder")], arc.clone(), f);
             wait(&p);
-            assert!(p.errors.lock().unwrap().is_empty(), "{f:?}: {:?}", p.errors.lock().unwrap());
+            assert!(p.errors.lock().unwrap_or_else(|e| e.into_inner()).is_empty(), "{f:?}: {:?}", p.errors.lock().unwrap_or_else(|e| e.into_inner()));
             let x = base.join(format!("x1-{}", f.ext().trim_matches('.').replace('.', "-")));
             std::fs::create_dir_all(&x).unwrap();
             let e = spawn_extract(vec![arc], x.clone());
             wait(&e);
-            assert!(e.errors.lock().unwrap().is_empty(), "{f:?}: {:?}", e.errors.lock().unwrap());
+            assert!(e.errors.lock().unwrap_or_else(|e| e.into_inner()).is_empty(), "{f:?}: {:?}", e.errors.lock().unwrap_or_else(|e| e.into_inner()));
             assert_eq!(std::fs::read_to_string(x.join("Folder/inner/a.txt")).unwrap(), "hello", "{f:?}");
             // two items → a folder named after the archive
             let arc2 = out.join(format!("Both{}", f.ext()));

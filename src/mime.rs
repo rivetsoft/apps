@@ -240,7 +240,7 @@ impl MimeDb {
 
     /// Human-readable description, e.g. "PNG image".
     pub fn describe(&self, mime: &str) -> String {
-        if let Some(c) = self.comments.lock().unwrap().get(mime) {
+        if let Some(c) = self.comments.lock().unwrap_or_else(|e| e.into_inner()).get(mime) {
             return c.clone();
         }
         let mut desc = None;
@@ -257,7 +257,7 @@ impl MimeDb {
             "inode/directory" => "Folder".into(),
             _ => mime.to_string(),
         });
-        self.comments.lock().unwrap().insert(mime.to_string(), d.clone());
+        self.comments.lock().unwrap_or_else(|e| e.into_inner()).insert(mime.to_string(), d.clone());
         d
     }
 }

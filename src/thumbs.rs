@@ -34,10 +34,17 @@ struct Job {
 
 pub struct Thumbnailer {
     tx: Sender<Job>,
-    rx: Receiver<(PathBuf, Option<egui::ColorImage>)>,
+    rx: Receiver<(PathBuf, Option<SystemTime>, Option<egui::ColorImage>)>,
     pending: HashSet<PathBuf>,
-    done: HashMap<PathBuf, Option<egui::TextureHandle>>,
+    /// Finished thumbnails: the texture, when it was last asked for, and the file's modified
+    /// time it was made from (a newer file gets a new thumbnail).
+    done: HashMap<PathBuf, (Option<egui::TextureHandle>, u64, Option<SystemTime>)>,
+    tick: u64,
 }
+
+/// Thumbnails kept in memory (the least recently shown go first; they come back from the disk
+/// cache quickly when needed again).
+const KEEP: usize = 800;
 
 /// Pictures Rivet decodes itself.
 pub fn can_thumbnail(mime: &str) -> bool {
@@ -63,38 +70,48 @@ impl Thumbnailer {
                 let job = { wrx.lock().unwrap_or_else(|e| e.into_inner()).recv() };
                 let Ok(job) = job else { break };
                 let img = thumbnail(&job);
-                if wtx.send((job.path, img)).is_err() {
+                if wtx.send((job.path, job.mtime, img)).is_err() {
                     break;
                 }
                 ctx.request_repaint();
             });
         }
-        Self { tx, rx, pending: HashSet::new(), done: HashMap::new() }
+        Self { tx, rx, pending: HashSet::new(), done: HashMap::new(), tick: 0 }
     }
 
     pub fn poll(&mut self, ctx: &egui::Context) {
-        while let Ok((p, img)) = self.rx.try_recv() {
+        while let Ok((p, mtime, img)) = self.rx.try_recv() {
             self.pending.remove(&p);
             let tex = img.map(|i| ctx.load_texture(format!("thumb:{}", p.display()), i, egui::TextureOptions::LINEAR));
-            self.done.insert(p, tex);
+            self.tick += 1;
+            self.done.insert(p, (tex, self.tick, mtime));
+        }
+        if self.done.len() > KEEP + KEEP / 4 {
+            let mut ages: Vec<u64> = self.done.values().map(|(_, t, _)| *t).collect();
+            ages.sort_unstable();
+            let cut = ages[ages.len() - KEEP];
+            self.done.retain(|_, (_, t, _)| *t >= cut);
         }
     }
 
     pub fn get(&mut self, path: &Path, size: u64, mime: &str, mtime: Option<SystemTime>) -> Option<egui::TextureHandle> {
-        if let Some(t) = self.done.get(path) {
-            return t.clone();
+        self.tick += 1;
+        if let Some((t, used, made_from)) = self.done.get_mut(path) {
+            // Still the same file: keep it (even while a new one is being made).
+            *used = self.tick;
+            if *made_from == mtime || self.pending.contains(path) {
+                return t.clone();
+            }
         }
         let ours = can_thumbnail(mime);
         if (!ours || size <= MAX_FILE) && !self.pending.contains(path) {
             self.pending.insert(path.to_path_buf());
             let _ = self.tx.send(Job { path: path.to_path_buf(), mime: mime.to_string(), mtime });
         }
-        None
+        // A changed file keeps its old thumbnail until the new one is ready.
+        self.done.get(path).and_then(|(t, _, _)| t.clone())
     }
 
-    pub fn forget(&mut self, path: &Path) {
-        self.done.remove(path);
-    }
 }
 
 // ------------------------------------------------------------------ one thumbnail

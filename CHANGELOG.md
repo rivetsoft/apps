@@ -26,6 +26,13 @@
   a chat, an editor or another file manager.
 
 ### Fixed
+- A background job that fails (a copy, a thumbnail, a search) can no longer take the window down
+  with it.
+- Dragging the zoom slider no longer keeps a copy of every icon at every size in memory, and
+  thumbnails beyond the last 800 shown are let go (they come back quickly from the disk cache).
+- When a file changes, only its own thumbnail is redone (the old one stays until then), instead of
+  every thumbnail in the folder.
+- In split view, the other pane now updates when files change on disk too.
 - Copy Location (and every other text copy: crash reports, the terminal link command) reaches
   other apps again, and pasting text into Rivet's fields from other apps works.
 

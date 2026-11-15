@@ -67,7 +67,7 @@ pub fn desktop_font_cached() -> Option<(String, f32)> {
     use std::time::Instant;
     type Cached = Option<(Instant, Option<(String, f32)>)>;
     static CACHE: Mutex<Cached> = Mutex::new(None);
-    let mut g = CACHE.lock().unwrap();
+    let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((t, v)) = g.as_ref()
         && t.elapsed().as_secs() < 5 {
             return v.clone();

@@ -338,6 +338,7 @@ Preferences → *Add Rivet template to matugen* registers a dedicated template i
 <details>
 <summary><b>Screenshots, logo and releases</b></summary>
 
+- **QA**: `utilities/rivet-dev qa` opens every dialog and mode looking for crashes, then runs the common file workflows (new folder, rename, Trash and undo, split view copy, compress, bulk rename) — all in a throwaway home folder.
 - **All developer tasks** run through one command: `utilities/rivet-dev help` lists them (the scripts behind it live in `utilities/lib/`).
 - **Screenshots** come from a throwaway sample home folder: `utilities/rivet-dev screenshots`
 - **Logo** master is `data/rivet-files.svg`; regenerate the PNG set with

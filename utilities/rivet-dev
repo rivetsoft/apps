@@ -41,6 +41,8 @@ Using your build
 Docs and checks
   screenshots                      Regenerate the README screenshots (sample home folder)
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
+  qa                               Open every dialog and mode looking for crashes, then run the
+                                   common file workflows (all in a throwaway home folder)
 
   help                             This text
 EOF
@@ -61,6 +63,7 @@ case "$cmd" in
     link)          exec sh "$LIB/link.sh" "$@" ;;
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
+    qa)            exec sh "$LIB/qa.sh" "$@" ;;
     help|-h|--help) usage ;;
     *)
         echo "Unknown command: $cmd" >&2

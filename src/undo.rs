@@ -136,7 +136,7 @@ mod tests {
         let p = spawn_op_role(OpKind::Trash, vec![f.clone()], None, 0);
         wait(&p);
         assert!(!f.exists());
-        let Some(Step::Trashed(pairs)) = Step::from_op(OpKind::Trash, p.done.lock().unwrap().clone()) else { panic!("not recorded") };
+        let Some(Step::Trashed(pairs)) = Step::from_op(OpKind::Trash, p.done.lock().unwrap_or_else(|e| e.into_inner()).clone()) else { panic!("not recorded") };
         assert!(pairs[0].1.starts_with(root.join("data/Trash/files")));
         let back = spawn_op_role(OpKind::Restore, pairs.into_iter().map(|(_, t)| t).collect(), None, 1);
         wait(&back);
@@ -176,7 +176,7 @@ mod tests {
         // Move a/x.txt -> b, then undo by moving it back.
         let p = spawn_op_role(OpKind::Move, vec![a.join("x.txt")], Some(b.clone()), 0);
         wait(&p);
-        let Some(Step::Moved(pairs)) = Step::from_op(OpKind::Move, p.done.lock().unwrap().clone()) else { panic!() };
+        let Some(Step::Moved(pairs)) = Step::from_op(OpKind::Move, p.done.lock().unwrap_or_else(|e| e.into_inner()).clone()) else { panic!() };
         assert!(b.join("x.txt").exists());
         let back = spawn_move_pairs(pairs.into_iter().map(|(s, d)| (d, s)).collect(), 1);
         wait(&back);
@@ -185,7 +185,7 @@ mod tests {
         // Copy a/x.txt -> b records the new copy.
         let p = spawn_op_role(OpKind::Copy, vec![a.join("x.txt")], Some(b.clone()), 0);
         wait(&p);
-        match Step::from_op(OpKind::Copy, p.done.lock().unwrap().clone()) {
+        match Step::from_op(OpKind::Copy, p.done.lock().unwrap_or_else(|e| e.into_inner()).clone()) {
             Some(Step::Copied(c)) => assert_eq!(c, vec![b.join("x.txt")]),
             other => panic!("{other:?}"),
         }

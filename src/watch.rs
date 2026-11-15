@@ -40,7 +40,7 @@ impl Watch {
                 let mut prev: Option<(Vec<PathBuf>, Vec<Stamp>, u64)> = None;
                 loop {
                     std::thread::sleep(Duration::from_millis(700));
-                    let list = p.lock().unwrap().clone();
+                    let list = p.lock().unwrap_or_else(|e| e.into_inner()).clone();
                     let stamps: Vec<Stamp> = list.iter().map(|x| stamp(x)).collect();
                     let mounts = mounts_hash();
                     let now = (list, stamps, mounts);
@@ -64,7 +64,7 @@ impl Watch {
     pub fn set_paths(&self, mut list: Vec<PathBuf>) {
         list.sort();
         list.dedup();
-        let mut g = self.paths.lock().unwrap();
+        let mut g = self.paths.lock().unwrap_or_else(|e| e.into_inner());
         if *g != list {
             *g = list;
         }

@@ -82,17 +82,17 @@ pub fn spawn_move_pairs(pairs: Vec<(PathBuf, PathBuf)>, role: u8) -> Arc<Progres
     let pp = p.clone();
     std::thread::spawn(move || {
         for (src, dst) in pairs {
-            *pp.current.lock().unwrap() = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            *pp.current.lock().unwrap_or_else(|e| e.into_inner()) = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             let target = if dst.symlink_metadata().is_ok() { unique_target(dst.parent().unwrap_or(Path::new("/")), &dst) } else { dst };
             if let Some(parent) = target.parent() {
                 let _ = std::fs::create_dir_all(parent);
             }
             match move_path(&src, &target, &pp) {
                 Ok(()) => {
-                    pp.created.lock().unwrap().push(target.clone());
-                    pp.done.lock().unwrap().push((src, target));
+                    pp.created.lock().unwrap_or_else(|e| e.into_inner()).push(target.clone());
+                    pp.done.lock().unwrap_or_else(|e| e.into_inner()).push((src, target));
                 }
-                Err(e) => pp.errors.lock().unwrap().push(format!("{}: {e}", src.display())),
+                Err(e) => pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(format!("{}: {e}", src.display())),
             }
             pp.done_items.fetch_add(1, Ordering::Relaxed);
         }
@@ -107,13 +107,13 @@ pub fn spawn_op_role(kind: OpKind, sources: Vec<PathBuf>, dest: Option<PathBuf>,
     std::thread::spawn(move || {
         if kind == OpKind::EmptyTrash
             && let Err(e) = empty_trash() {
-                pp.errors.lock().unwrap().push(e.to_string());
+                pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(e.to_string());
             }
         for src in sources {
             if pp.cancel.load(Ordering::Relaxed) {
                 break;
             }
-            *pp.current.lock().unwrap() = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            *pp.current.lock().unwrap_or_else(|e| e.into_inner()) = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
             let res: std::io::Result<Option<PathBuf>> = match kind {
                 OpKind::Copy => {
                     let d = dest.as_ref().unwrap();
@@ -139,14 +139,14 @@ pub fn spawn_op_role(kind: OpKind, sources: Vec<PathBuf>, dest: Option<PathBuf>,
             };
             match res {
                 Ok(Some(c)) => {
-                    pp.done.lock().unwrap().push((src.clone(), c.clone()));
+                    pp.done.lock().unwrap_or_else(|e| e.into_inner()).push((src.clone(), c.clone()));
                     // Trashed items aren't "created" in the folder you're looking at.
                     if kind != OpKind::Trash {
-                        pp.created.lock().unwrap().push(c);
+                        pp.created.lock().unwrap_or_else(|e| e.into_inner()).push(c);
                     }
                 }
                 Ok(None) => {}
-                Err(e) => pp.errors.lock().unwrap().push(format!(
+                Err(e) => pp.errors.lock().unwrap_or_else(|e| e.into_inner()).push(format!(
                     "{}: {}",
                     src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default(),
                     e
@@ -407,7 +407,7 @@ mod tests {
         // moving a folder into itself is refused
         let p = spawn_op(OpKind::Move, vec![b.clone()], Some(b.join("sub")));
         wait(&p);
-        assert_eq!(p.errors.lock().unwrap().len(), 1);
+        assert_eq!(p.errors.lock().unwrap_or_else(|e| e.into_inner()).len(), 1);
         // delete
         let p = spawn_op(OpKind::Delete, vec![b.join("sub")], None);
         wait(&p);
