@@ -42,7 +42,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 - 📂 **File picker** — Rivet can be the Open and Save window every app shows (Preferences → System)
 
 **Working with files**
-- 📋 **The basics** — copy, cut, paste, drag and drop, rename, Trash with restore
+- 📋 **The basics** — copy, cut, paste, drag and drop (with other apps too: drag files out to a browser or chat, copy here and paste in another file manager or a terminal), rename, Trash with restore
 - ↩️ **Undo and redo** — copies, moves, renames, Trash, new items, compress and extract
 - ✏️ **Bulk Rename** — insert text, dates or numbers, remove, replace, change case; every new name previewed first
 - 🔄 **Convert and resize** — pictures, video and audio to other formats; resize pictures (needs ffmpeg)

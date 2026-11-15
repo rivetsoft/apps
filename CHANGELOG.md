@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### New
+- **Copy and paste with other apps**: Copy or Cut in Rivet and paste in Dolphin, GNOME Files,
+  Nemo or a terminal; copy files there and paste them into Rivet (a cut there moves them). Rivet
+  offers files the standard ways (`text/uri-list`, `x-special/gnome-copied-files`, KDE's cut flag
+  and plain paths), and only pastes its own copy while it's still the newest one. On X11 files go
+  across as paths.
+- **Drag files out to other apps** (Wayland): drag files out of the window into a browser upload,
+  a chat, an editor or another file manager.
+
+### Fixed
+- Copy Location (and every other text copy: crash reports, the terminal link command) reaches
+  other apps again, and pasting text into Rivet's fields from other apps works.
+
 ## 0.6.0
 
 ### New

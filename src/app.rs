@@ -189,6 +189,17 @@ pub struct RivetApp {
     tabs: Vec<Tab>,
     active: usize,
     clipboard: Option<(Vec<PathBuf>, bool)>,
+    /// The text that went with our last file copy (to tell, on X11, whether a paste is ours).
+    clipboard_text: String,
+    /// The Wayland clipboard / drag worker has been started.
+    wl_started: bool,
+    /// Where files read from another app's copy go.
+    paste_target: Option<PathBuf>,
+    /// A drag of files handed to the desktop (the files), and a button release to feed egui
+    /// once it ends (the desktop took the pointer, so the window never saw it).
+    drag_out: Option<Vec<PathBuf>>,
+    inject_release: bool,
+    last_pointer: Option<Pos2>,
     /// The Network page (servers, shares, connecting).
     net: netview::NetState,
     /// The Peek panel's preview and video player.
@@ -526,6 +537,12 @@ impl RivetApp {
             tabs: vec![tab],
             active: 0,
             clipboard: None,
+            clipboard_text: String::new(),
+            wl_started: false,
+            paste_target: None,
+            drag_out: None,
+            inject_release: false,
+            last_pointer: None,
             net: Default::default(),
             peek: Default::default(),
             quick: None,
@@ -1334,7 +1351,11 @@ impl RivetApp {
                     let sel = self.tab().selected_paths();
                     if !sel.is_empty() && !matches!(self.tab().loc, Location::Trash) {
                         let text = sel.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n");
-                        ctx.copy_text(text);
+                        // Wayland: offer the files the way other apps want them; else as text.
+                        if !crate::wlclip::set_files(sel.clone(), cut) {
+                            ctx.copy_text(text.clone());
+                        }
+                        self.clipboard_text = text;
                         let n = sel.len();
                         self.flash(&format!(
                             "{} {n} item{} — paste to {} {}",
@@ -1348,7 +1369,11 @@ impl RivetApp {
                 }
                 Action::Paste(target) => {
                     let Some(dest) = target.or_else(|| self.current_dir()) else { continue };
-                    if let Some((files, cut)) = self.clipboard.clone() {
+                    if self.clipboard.is_none() && crate::wlclip::others_have_files() {
+                        // Files another app copied: read them, then copy or move (below).
+                        self.paste_target = Some(dest);
+                        crate::wlclip::read_files();
+                    } else if let Some((files, cut)) = self.clipboard.clone() {
                         self.start_op(if cut { OpKind::Move } else { OpKind::Copy }, files, Some(dest));
                         if cut {
                             self.clipboard = None;
@@ -1798,8 +1823,11 @@ impl RivetApp {
         // files dropped from other applications: copy into the current folder
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).collect());
         let dropped: Vec<PathBuf> = dropped.into_iter().filter(|p| !p.as_os_str().is_empty()).collect();
+        // Our own drag, out and back into the folder it came from: nothing to do.
+        let home_again = |d: &Path| dropped.iter().all(|p| p.parent() == Some(d));
         if !dropped.is_empty()
-            && let Some(d) = self.current_dir() {
+            && let Some(d) = self.current_dir()
+            && !home_again(&d) {
                 self.start_op(OpKind::Copy, dropped, Some(d));
             }
         let mut title = self.tab().loc.title();
@@ -2078,7 +2106,12 @@ impl RivetApp {
                 egui::Event::Copy => self.pending.push(Action::Copy),
                 egui::Event::Cut => self.pending.push(Action::Cut),
                 egui::Event::Paste(text) => {
-                    if self.clipboard.is_some() {
+                    // Ours when Rivet's copy is still the newest one (on X11: the same text).
+                    let ours = self.clipboard.is_some() && (crate::wlclip::available() || text.trim() == self.clipboard_text.trim());
+                    if ours || crate::wlclip::others_have_files() {
+                        if !ours {
+                            self.clipboard = None;
+                        }
                         self.pending.push(Action::Paste(None));
                     } else if let Some(d) = self.current_dir() {
                         // Paths copied from other applications.
@@ -2391,13 +2424,14 @@ impl eframe::App for RivetApp {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let frame_start = Instant::now();
         let ctx = ui.ctx().clone();
         // Test hook: RIVET_CRASH_TEST=1 panics on the third frame (to check crash reports).
         if self.frames == 3 && std::env::var_os("RIVET_CRASH_TEST").is_some() {
             panic!("Crash test (RIVET_CRASH_TEST)");
         }
+        self.system_clipboard(&ctx, frame);
         set_square(self.s.terminal);
         self.apply_font(&ctx);
         self.apply_visuals(&ctx);
@@ -2501,6 +2535,15 @@ impl eframe::App for RivetApp {
 
     /// Test hook for screenshots: RIVET_CLICKS="x,y@frame;x,y@frame" clicks there.
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // A drag handed to the desktop has ended: the button went up out of the window's sight.
+        if std::mem::take(&mut self.inject_release) {
+            raw.events.push(egui::Event::PointerButton {
+                pos: self.last_pointer.unwrap_or_default(),
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: Default::default(),
+            });
+        }
         if self.screenshot.is_none() {
             return;
         }
@@ -2576,6 +2619,59 @@ impl eframe::App for RivetApp {
         }
         if let Some(d) = self.demo_dir.take() {
             places::remove_demo_dir(&d);
+        }
+    }
+}
+
+impl RivetApp {
+    /// The desktop's clipboard and drags out of the window (Wayland; see wlclip.rs).
+    fn system_clipboard(&mut self, ctx: &egui::Context, frame: &eframe::Frame) {
+        if self.screenshot.is_some() || crate::picker::active() {
+            return;
+        }
+        if !self.wl_started {
+            self.wl_started = true;
+            use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
+            if let (Ok(d), Ok(w)) = (frame.display_handle(), frame.window_handle())
+                && let (RawDisplayHandle::Wayland(d), RawWindowHandle::Wayland(w)) = (d.as_raw(), w.as_raw())
+            {
+                crate::wlclip::start(d.display.as_ptr(), w.surface.as_ptr(), ctx.clone());
+            }
+        }
+        // Another app copied something since: Rivet's own copy is no longer the one to paste.
+        if self.clipboard.is_some() && crate::wlclip::available() && !crate::wlclip::still_ours() {
+            self.clipboard = None;
+        }
+        // Files read from another app's copy arrived.
+        if let Some((files, cut)) = crate::wlclip::take_pasted()
+            && let Some(dest) = self.paste_target.take()
+            && !files.is_empty()
+        {
+            self.start_op(if cut { OpKind::Move } else { OpKind::Copy }, files, Some(dest));
+        }
+        // A drag of files leaving the window becomes the desktop's drag, for other apps.
+        if let Some(p) = ctx.input(|i| i.pointer.latest_pos()) {
+            self.last_pointer = Some(p);
+        }
+        if self.drag_out.is_none()
+            && let Some(files) = egui::DragAndDrop::payload::<DragFiles>(ctx)
+        {
+            // Out of the window: the pointer is past its edge (Wayland keeps reporting it during a
+            // drag) or the window lost it.
+            let outside = ctx.input(|i| {
+                let gone = !i.pointer.has_pointer();
+                let past = i.pointer.latest_pos().is_none_or(|p| !i.content_rect().shrink(2.0).contains(p));
+                (gone || past) && i.pointer.primary_down()
+            });
+            if outside && crate::wlclip::drag(files.0.clone()) {
+                self.drag_out = Some(files.0.clone());
+                egui::DragAndDrop::clear_payload(ctx);
+            }
+        }
+        if self.drag_out.is_some() && crate::wlclip::drag_ended() {
+            self.drag_out = None;
+            self.inject_release = true;
+            ctx.request_repaint();
         }
     }
 }

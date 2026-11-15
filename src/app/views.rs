@@ -643,7 +643,7 @@ impl RivetApp {
         if ui.button("Copy").clicked() {
             self.pending.push(Action::Copy);
         }
-        if e.is_dir && self.clipboard.is_some() && ui.button("Paste Into Folder").clicked() {
+        if e.is_dir && (self.clipboard.is_some() || crate::wlclip::others_have_files()) && ui.button("Paste Into Folder").clicked() {
             self.pending.push(Action::Paste(Some(e.path.clone())));
         }
         if ui.button("Copy Location").clicked() {
@@ -719,7 +719,7 @@ impl RivetApp {
             self.pending.push(Action::Terminal(dir.clone()));
         }
         ui.separator();
-        if ui.add_enabled(self.clipboard.is_some(), egui::Button::new("Paste")).clicked() {
+        if ui.add_enabled(self.clipboard.is_some() || crate::wlclip::others_have_files(), egui::Button::new("Paste")).clicked() {
             self.pending.push(Action::Paste(None));
         }
         if ui.button("Select All").clicked() {

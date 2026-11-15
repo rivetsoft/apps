@@ -249,7 +249,7 @@ impl RivetApp {
             if ui.add_enabled(has && !in_trash, egui::Button::new("Copy").shortcut_text("Ctrl+C")).clicked() {
                 self.pending.push(Action::Copy);
             }
-            if ui.add_enabled(self.clipboard.is_some() && in_dir.is_some(), egui::Button::new("Paste").shortcut_text("Ctrl+V")).clicked() {
+            if ui.add_enabled((self.clipboard.is_some() || crate::wlclip::others_have_files()) && in_dir.is_some(), egui::Button::new("Paste").shortcut_text("Ctrl+V")).clicked() {
                 self.pending.push(Action::Paste(None));
             }
             ui.separator();

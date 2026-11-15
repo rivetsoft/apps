@@ -32,6 +32,7 @@ mod settings;
 mod thumbs;
 mod undo;
 mod watch;
+mod wlclip;
 
 use eframe::egui;
 use std::path::PathBuf;
