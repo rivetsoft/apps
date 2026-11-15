@@ -214,6 +214,8 @@ pub struct RivetApp {
     actions: Option<commands::QuickActions>,
     /// Vim keys: the first key of a two-key command (gg, yy, dd).
     vim_pending: Option<char>,
+    /// The "Vim keys are on: press / to search" hint was shown this session.
+    vim_hint_shown: bool,
     /// Vim keys: a count typed before a motion (5j, 10G); 0 when none.
     vim_count: usize,
     /// Vim keys: how far the next movement goes (set from the count).
@@ -550,6 +552,7 @@ impl RivetApp {
             spotlight: None,
             actions: None,
             vim_pending: None,
+            vim_hint_shown: false,
             vim_count: 0,
             vim_mult: 1,
             vim_goto: None,
@@ -1940,6 +1943,11 @@ impl RivetApp {
                                 self.search_focus = true;
                             }
                             (_, ':') => self.toggle_actions(),
+                            // A letter that isn't a command: likely trying to type a name.
+                            (_, c) if c.is_alphanumeric() && !self.vim_hint_shown => {
+                                self.vim_hint_shown = true;
+                                self.flash("Vim keys are on: press / to search, or turn them off in Preferences, Behavior");
+                            }
                             _ => {}
                         }
                     }
