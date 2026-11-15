@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 ### New
 - **File picker**: Rivet can be the Open and Save window every app shows, through the desktop
