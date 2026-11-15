@@ -52,6 +52,8 @@ const VIEW: Group = ("View", &[
 ]);
 
 const WINDOW: Group = ("Panels and modes", &[
+    ("F3", "Split view"),
+    ("F6", "The other pane (split view)"),
     ("F7", "Terminal mode"),
     ("F8", "Status bar"),
     ("F9", "Sidebar"),

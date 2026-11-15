@@ -31,6 +31,7 @@ mod zen;
 mod commands;
 mod crashview;
 mod pickview;
+mod split;
 mod keymap;
 
 #[derive(Clone)]
@@ -262,6 +263,13 @@ pub struct RivetApp {
     filters_toggled: bool,
     filters_rect: Option<Rect>,
     files_rect: Option<Rect>,
+    /// Split view: the other pane's folder (the active pane is the current tab), which side
+    /// the active pane is on, where the panes were drawn, and which pane is being drawn now
+    /// (it keeps widget ids apart when both show the same folder).
+    split: Option<Tab>,
+    split_right: bool,
+    pane_rects: [Option<Rect>; 2],
+    pane_salt: u8,
     /// A text field or drop-down list in Preferences was active last frame (Esc then only
     /// leaves it, instead of closing Preferences).
     prefs_busy_last: bool,
@@ -583,6 +591,10 @@ impl RivetApp {
             filters_toggled: false,
             filters_rect: None,
             files_rect: None,
+            split: None,
+            split_right: false,
+            pane_rects: [None, None],
+            pane_salt: 0,
             prefs_busy_last: false,
             file_list_focus: None,
             kb_nav: false,
@@ -671,6 +683,16 @@ impl RivetApp {
                 crate::crash::mark_seen(&r);
                 app.dialog = Dialog::Crash(Box::new(r), false);
             }
+        // Test hook for checks: RIVET_SPLIT=1 (or a folder for the other pane) opens split view.
+        if let Ok(v) = std::env::var("RIVET_SPLIT") {
+            app.toggle_split();
+            if v != "1"
+                && let Some(t) = app.split.as_mut()
+            {
+                t.loc = Location::Dir(PathBuf::from(v));
+                t.reload(&app.mime, &app.s);
+            }
+        }
         match std::env::var("RIVET_DIALOG").as_deref() {
             Ok("crash") => {
                 if let Some(r) = crate::crash::reports().first().and_then(|p| crate::crash::Report::load(p)) {
@@ -1241,14 +1263,14 @@ impl RivetApp {
     }
 
     fn reload_all(&mut self) {
-        for t in &mut self.tabs {
+        for t in self.tabs.iter_mut().chain(self.split.as_mut()) {
             t.reload(&self.mime, &self.s);
         }
         self.trash_empty = places::trash_is_empty();
     }
 
     fn resort_all(&mut self) {
-        for t in &mut self.tabs {
+        for t in self.tabs.iter_mut().chain(self.split.as_mut()) {
             t.resort(&self.mime, &self.s);
         }
         self.dirty_settings = true;
@@ -2024,6 +2046,13 @@ impl RivetApp {
         if pressed(Key::F12) && !modal {
             self.toggle_zen();
         }
+        // F3: split view; F6: the other pane.
+        if pressed(Key::F3) && !modal && !crate::picker::active() {
+            self.toggle_split();
+        }
+        if pressed(Key::F6) && !modal && self.split.is_some() {
+            self.focus_pane(!self.split_right);
+        }
         if pressed(Key::F7) && !modal {
             self.s.terminal = !self.s.terminal;
             self.dirty_settings = true;
@@ -2440,6 +2469,8 @@ impl eframe::App for RivetApp {
             panic!("Crash test (RIVET_CRASH_TEST)");
         }
         self.system_clipboard(&ctx, frame);
+        // Split view: a press in a pane makes it the active one first.
+        self.split_follow_pointer(&ctx);
         set_square(self.s.terminal);
         self.apply_font(&ctx);
         self.apply_visuals(&ctx);

@@ -32,6 +32,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 - 🪜 **Stepped path bar** — each folder in the path is its own button; click one to jump straight to it
 - 🔮 **Fuzzy suggestions** — type a path and matching folders appear as you go, even from a few scattered letters; Tab completes
 - 🗂️ **Three views** — icons, list and compact, with tabs
+- 🪟 **Split view** (F3) — two folders side by side; drag between them, or Copy / Move to Other Pane
 - 🧭 **Sidebar** — places, bookmarks, drives with usage bars and network shares, or a folder tree; left or right
 - 🔦 **Quick Open** (Ctrl+P) — fuzzy-find any folder and open it
 - ⚙️ **Quick Actions** (Ctrl+Shift+P) — every command and setting in one searchable list
@@ -198,6 +199,7 @@ Rivet talks to X11 or Wayland directly. It does not use GTK or Qt. A normal desk
 | `F2` · `Delete` | Rename (Bulk Rename with several selected) · move to Trash |
 | `Ctrl+M` | Show or hide the menu bar |
 | `Ctrl+P` · `Ctrl+Shift+P` | Quick Open: go to any folder · Quick Actions: any command or option |
+| `F3` · `F6` | Split view · the other pane |
 | `F7` · `F8` · `F9` · `F11` · `F12` | Terminal mode · status bar · sidebar · Peek panel · Zen mode |
 | `Ctrl+Shift+F` | Filters |
 | `Space` · `←` `→` · `Return` | Preview the selection · previous / next file · open it |

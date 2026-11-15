@@ -45,71 +45,15 @@ impl RivetApp {
             inner = inner.stroke(super::tui_line(&ctx.global_style().visuals)).inner_margin(egui::Margin { left: 6, top: 10, right: 1, bottom: 4 });
         }
         let mut box_rect = None;
+        let split = self.split.is_some() && !crate::picker::active();
         let central = egui::CentralPanel::no_frame().frame(outer).show(ui, |ui| {
+            if split {
+                cols = self.split_panes(ui, ctx, inner, term);
+                return;
+            }
             let r = inner.show(ui, |ui| {
             ui.set_min_size(ui.available_size());
-            // Keyboard: the whole file list is one Tab stop (files themselves aren't), and while
-            // it has focus the arrow keys move through the files instead of between widgets.
-            let anchor = ui.interact(ui.max_rect(), egui::Id::unique("file-list-focus"), Sense::FOCUSABLE);
-            ui.memory_mut(|m| {
-                m.set_focus_lock_filter(anchor.id, egui::EventFilter { tab: false, horizontal_arrows: true, vertical_arrows: true, escape: false })
-            });
-            self.file_list_focus = Some(anchor.id);
-            self.filter_strip(ui);
-            let loc = self.tab().loc.clone();
-            if matches!(loc, Location::Trash) {
-                egui::Frame::NONE.fill(ui.visuals().faint_bg_color).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Trash").strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.add_enabled(!self.tab().entries.is_empty(), egui::Button::new("Empty Trash")).clicked() {
-                                self.pending.push(Action::EmptyTrash);
-                            }
-                            let any = !self.tab().selected.is_empty();
-                            if ui.add_enabled(any, egui::Button::new("Restore Selected Items")).clicked() {
-                                self.pending.push(Action::Restore);
-                            }
-                        });
-                    });
-                });
-            }
-            if matches!(loc, Location::Network) {
-                self.network_page(ui, ctx);
-                return;
-            }
-            if let Some(err) = self.tab().error.clone() {
-                ui.centered_and_justified(|ui| {
-                    ui.label(egui::RichText::new(err).size(15.0).color(ui.visuals().weak_text_color()));
-                });
-                return;
-            }
-            if self.tab().visible.is_empty() {
-                let msg = match &loc {
-                    Location::Trash => "Trash is empty",
-                    Location::Network => "No network locations are mounted",
-                    Location::Search { .. } if self.tab().searching => "Searching…",
-                    Location::Search { .. } => "No matching files",
-                    _ if !self.tab().filter.is_empty() => "No items match the filter",
-                    _ => "Folder is empty",
-                };
-                let rect = ui.available_rect_before_wrap();
-                let resp = ui.allocate_rect(rect, Sense::click());
-                ui.painter().text(rect.center(), Align2::CENTER_CENTER, msg, crate::fonts::ui_font(15.0), ui.visuals().weak_text_color());
-                resp.context_menu(|ui| self.background_menu(ui));
-                if let Some(p) = resp.dnd_release_payload::<DragFiles>()
-                    && let Some(d) = self.current_dir() {
-                        self.pending.push(Action::Transfer(p.0.clone(), d, ctx.input(|i| i.modifiers.ctrl)));
-                    }
-                return;
-            }
-            cols = match self.s.view {
-                ViewMode::Icons => self.icon_view(ui, ctx),
-                ViewMode::List => {
-                    self.list_view(ui, ctx);
-                    1
-                }
-                ViewMode::Compact => self.compact_view(ui, ctx),
-            };
+            cols = self.pane_contents(ui, ctx, true);
             });
             box_rect = Some(r.response.rect);
         });
@@ -129,6 +73,79 @@ impl RivetApp {
         }
         // Remembered so the Filters panel can drop down over the files.
         self.files_rect = Some(central.response.rect);
+        cols
+    }
+
+    /// One pane of files (the whole file area, or one side of split view): the strip, the
+    /// Trash and empty notes, and the chosen view. `active` = this pane has the keyboard.
+    pub(super) fn pane_contents(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, active: bool) -> usize {
+        let mut cols = 1;
+        ui.set_min_size(ui.available_size());
+        // Keyboard: the whole file list is one Tab stop (files themselves aren't), and while
+        // it has focus the arrow keys move through the files instead of between widgets.
+        // (In split view only the active pane takes the keyboard.)
+        if active {
+            let anchor = ui.interact(ui.max_rect(), egui::Id::unique("file-list-focus"), Sense::FOCUSABLE);
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(anchor.id, egui::EventFilter { tab: false, horizontal_arrows: true, vertical_arrows: true, escape: false })
+            });
+            self.file_list_focus = Some(anchor.id);
+        }
+        self.filter_strip(ui);
+        let loc = self.tab().loc.clone();
+        if matches!(loc, Location::Trash) {
+            egui::Frame::NONE.fill(ui.visuals().faint_bg_color).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("Trash").strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add_enabled(!self.tab().entries.is_empty(), egui::Button::new("Empty Trash")).clicked() {
+                            self.pending.push(Action::EmptyTrash);
+                        }
+                        let any = !self.tab().selected.is_empty();
+                        if ui.add_enabled(any, egui::Button::new("Restore Selected Items")).clicked() {
+                            self.pending.push(Action::Restore);
+                        }
+                    });
+                });
+            });
+        }
+        if matches!(loc, Location::Network) {
+            self.network_page(ui, ctx);
+            return cols;
+        }
+        if let Some(err) = self.tab().error.clone() {
+            ui.centered_and_justified(|ui| {
+                ui.label(egui::RichText::new(err).size(15.0).color(ui.visuals().weak_text_color()));
+            });
+            return cols;
+        }
+        if self.tab().visible.is_empty() {
+            let msg = match &loc {
+                Location::Trash => "Trash is empty",
+                Location::Network => "No network locations are mounted",
+                Location::Search { .. } if self.tab().searching => "Searching…",
+                Location::Search { .. } => "No matching files",
+                _ if !self.tab().filter.is_empty() => "No items match the filter",
+                _ => "Folder is empty",
+            };
+            let rect = ui.available_rect_before_wrap();
+            let resp = ui.allocate_rect(rect, Sense::click());
+            ui.painter().text(rect.center(), Align2::CENTER_CENTER, msg, crate::fonts::ui_font(15.0), ui.visuals().weak_text_color());
+            resp.context_menu(|ui| self.background_menu(ui));
+            if let Some(p) = resp.dnd_release_payload::<DragFiles>()
+                && let Some(d) = self.current_dir() {
+                    self.pending.push(Action::Transfer(p.0.clone(), d, ctx.input(|i| i.modifiers.ctrl)));
+                }
+            return cols;
+        }
+        cols = match self.s.view {
+            ViewMode::Icons => self.icon_view(ui, ctx),
+            ViewMode::List => {
+                self.list_view(ui, ctx);
+                1
+            }
+            ViewMode::Compact => self.compact_view(ui, ctx),
+        };
         cols
     }
 
@@ -208,7 +225,7 @@ impl RivetApp {
         let cell_h = z + 16.0 + 16.0 * text_rows as f32;
         let mut cols = 1;
         let scroll_to = self.tab_mut().scroll_to.take();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("iconview", self.active)).show(ui, |ui| {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("iconview", self.active, self.pane_salt)).show(ui, |ui| {
             let width = ui.available_width();
             cols = ((width - 8.0) / cell_w).floor().max(1.0) as usize;
             let gap = ((width - 8.0) - cols as f32 * cell_w) / cols as f32;
@@ -242,7 +259,7 @@ impl RivetApp {
                 }
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
-                let resp = ui.interact(item, Id::unique(("item", &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = ui.interact(item, Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
                 let v = ui.visuals().clone();
                 let icon_rect = Rect::from_center_size(Pos2::new(item.center().x, item.top() + 4.0 + z / 2.0), Vec2::splat(z));
                 let text_pos = Pos2::new(item.center().x, icon_rect.bottom() + 6.0);
@@ -338,7 +355,7 @@ impl RivetApp {
         let mut x = hrect.left() + 4.0;
         for (i, (label, key, w)) in columns.iter().enumerate() {
             let r = Rect::from_min_size(Pos2::new(x, hrect.top()), Vec2::new(*w, header_h));
-            let resp = ui.interact(r, Id::unique(("hdr", i)), Sense::click());
+            let resp = ui.interact(r, Id::unique(("hdr", self.pane_salt, i)), Sense::click());
             if resp.hovered() && key.is_some() {
                 ui.painter().rect_filled(r, 0.0, v.widgets.hovered.weak_bg_fill);
             }
@@ -367,7 +384,7 @@ impl RivetApp {
         }
 
         let scroll_to = self.tab_mut().scroll_to.take();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("listview", self.active)).show(ui, |ui| {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("listview", self.active, self.pane_salt)).show(ui, |ui| {
             let n = self.tab().visible.len();
             let width = ui.available_width();
             let total_h = (n as f32 * row_h + 8.0).max(ui.available_height());
@@ -390,7 +407,7 @@ impl RivetApp {
                 }
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
-                let resp = ui.interact(hit, Id::unique(("item", &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = ui.interact(hit, Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
                 // Rows are inset and rounded like every other item.
                 let pill = row.shrink2(Vec2::new(4.0, 0.0));
                 if selected {
@@ -464,7 +481,7 @@ impl RivetApp {
         let col_w = 230.0;
         let mut rows_per_col = 1;
         let scroll_to = self.tab_mut().scroll_to.take();
-        egui::ScrollArea::horizontal().auto_shrink([false, false]).id_salt(("compact", self.active)).show(ui, |ui| {
+        egui::ScrollArea::horizontal().auto_shrink([false, false]).id_salt(("compact", self.active, self.pane_salt)).show(ui, |ui| {
             let height = ui.available_height();
             rows_per_col = ((height - 8.0) / row_h).floor().max(1.0) as usize;
             let n = self.tab().visible.len();
@@ -492,7 +509,7 @@ impl RivetApp {
                 }
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
-                let resp = ui.interact(item, Id::unique(("item", &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = ui.interact(item, Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
                 let v = ui.visuals().clone();
                 if selected {
                     ui.painter().rect_filled(item, r_sm(), v.selection.bg_fill);
@@ -642,6 +659,15 @@ impl RivetApp {
         }
         if ui.button("Copy").clicked() {
             self.pending.push(Action::Copy);
+        }
+        // Split view: straight to the folder in the other pane.
+        if let Some(other) = self.other_pane_dir().filter(|_| !in_trash) {
+            if ui.button("Copy to Other Pane").clicked() {
+                self.pending.push(Action::Transfer(sel.clone(), other.clone(), true));
+            }
+            if ui.button("Move to Other Pane").clicked() {
+                self.pending.push(Action::Transfer(sel.clone(), other, false));
+            }
         }
         if e.is_dir && (self.clipboard.is_some() || crate::wlclip::others_have_files()) && ui.button("Paste Into Folder").clicked() {
             self.pending.push(Action::Paste(Some(e.path.clone())));

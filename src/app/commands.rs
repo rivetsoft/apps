@@ -37,6 +37,7 @@ enum Cmd {
     Statusbar,
     Menubar,
     Zen,
+    Split,
     TerminalMode,
     Filters,
     ZoomIn,
@@ -113,6 +114,7 @@ impl RivetApp {
         add(Cmd::Peek, "View", "Peek", "F11", Some(s.show_peek), true);
         add(Cmd::Statusbar, "View", "Statusbar", "F8", Some(s.show_statusbar), true);
         add(Cmd::Menubar, "View", "Menubar", "Ctrl+M", Some(s.show_menubar), true);
+        add(Cmd::Split, "View", "Split View", "F3", Some(self.split.is_some()), true);
         add(Cmd::Zen, "View", "Zen Mode", "F12", Some(s.zen), true);
         add(Cmd::TerminalMode, "View", "Terminal Mode", "F7", Some(s.terminal), true);
         add(Cmd::Filters, "View", "Filters", "Ctrl+Shift+F", None, true);
@@ -210,6 +212,10 @@ impl RivetApp {
             Cmd::Peek => self.s.show_peek = !self.s.show_peek,
             Cmd::Statusbar => self.s.show_statusbar = !self.s.show_statusbar,
             Cmd::Menubar => self.s.show_menubar = !self.s.show_menubar,
+            Cmd::Split => {
+                self.toggle_split();
+                dirty = false;
+            }
             Cmd::Zen => {
                 self.toggle_zen();
                 dirty = false;

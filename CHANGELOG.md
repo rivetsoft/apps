@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### New
+- **Split view** (F3, View → Split View, or Quick Actions): two folders side by side, each with
+  its own history and a header naming its folder. Click a pane (or F6) to work in it — the
+  toolbar, path bar, keyboard and Peek follow — drag files between them, or use Copy / Move to
+  Other Pane from the right-click menu.
 - **Copy and paste with other apps**: Copy or Cut in Rivet and paste in Dolphin, GNOME Files,
   Nemo or a terminal; copy files there and paste them into Rivet (a cut there moves them). Rivet
   offers files the standard ways (`text/uri-list`, `x-special/gnome-copied-files`, KDE's cut flag

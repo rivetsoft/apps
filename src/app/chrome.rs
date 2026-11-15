@@ -308,6 +308,10 @@ impl RivetApp {
             if c {
                 self.dirty_settings = true;
             }
+            let mut split = self.split.is_some();
+            if Self::menu_toggle(ui, &mut split, "Split View", "F3") {
+                self.toggle_split();
+            }
             let mut zen = self.s.zen;
             if Self::menu_toggle(ui, &mut zen, "Zen Mode", "F12") {
                 self.toggle_zen();
