@@ -51,7 +51,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 - 🚀 **Open With** — a searchable list of apps; set a new default
 
 **Previews**
-- 🖼️ **Thumbnails** for pictures, alongside your system icon theme
+- 🖼️ **Thumbnails** for pictures, videos, PDFs, fonts, office files and more — made by the thumbnailers already on your system and shared with other file managers through `~/.cache/thumbnails`
 - 👀 **Peek panel** (F11) — large previews, video playback, syntax-highlighted code and file details; left or right
 - 🔎 **Preview** (Space) — full-window view; ← → step through the folder's pictures, videos and text
 
@@ -61,7 +61,8 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 - 🧰 **Layout** — toolbar top or bottom, status bar top, bottom or off, your own toolbar buttons, fonts and text size, optional menu bar
 - 🧘 **Zen mode** (F12) — the files fill the window; the toolbar, sidebar and Peek slide in at the edges
 - 🖥️ **Terminal mode** (F7) — monospace text, Nerd Font icons and boxed panels
-- 🧩 **Modules** — turn off Bulk Rename or Convert & Resize
+- 🧩 **Modules** — turn off Bulk Rename, Convert & Resize or Custom Actions
+- 🛠️ **Custom actions** — your own scripts in the right-click menu; Nemo actions and Dolphin service menus work as they are
 - 🪟 **Title bar** — your desktop's, or Rivet's own
 
 **Under the hood**

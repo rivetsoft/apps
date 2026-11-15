@@ -1629,6 +1629,30 @@ impl RivetApp {
                             if row(ui, "Convert & Resize", about, &mut self.s.media_tools, ffmpeg.is_some()) {
                                 changed = true;
                             }
+                            ui.separator();
+                            let n = crate::actions::all().len();
+                            let about = egui::RichText::new(match n {
+                                0 => "Your own scripts in the right-click menu — also reads Nemo actions and Dolphin service menus".to_string(),
+                                1 => "1 action found — your own scripts, Nemo actions and Dolphin service menus".to_string(),
+                                n => format!("{n} actions found — your own scripts, Nemo actions and Dolphin service menus"),
+                            })
+                            .color(weak);
+                            changed |= row(ui, "Custom Actions", about, &mut self.s.custom_actions, true);
+                            if self.s.custom_actions {
+                                ui.horizontal(|ui| {
+                                    let folder = crate::actions::own_folder();
+                                    if ui.button("Open Actions Folder").on_hover_text(folder.display().to_string()).clicked() {
+                                        let _ = std::fs::create_dir_all(&folder);
+                                        let _ = crate::launch::open_url(&folder.to_string_lossy());
+                                    }
+                                    let example = folder.join("make-executable.nemo_action");
+                                    if !example.exists() && ui.button("Add an Example").on_hover_text("A small action to copy and change: Make Executable").clicked() {
+                                        let _ = std::fs::create_dir_all(&folder);
+                                        let _ = std::fs::write(&example, crate::actions::EXAMPLE);
+                                    }
+                                });
+                                ui.add_space(8.0);
+                            }
                         });
                     }
                     PrefsTab::System => {

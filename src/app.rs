@@ -1066,8 +1066,8 @@ impl RivetApp {
 
     fn entry_texture(&mut self, ctx: &egui::Context, e: &Entry, px: f32) -> Option<egui::TextureHandle> {
         // Terminal mode shows glyphs in the file list; pictures are seen in Peek and Preview.
-        if self.s.show_thumbnails && !self.s.terminal && px >= 32.0 && thumbs::can_thumbnail(&e.mime)
-            && let Some(t) = self.thumbs.get(&e.path, e.size) {
+        if self.s.show_thumbnails && !self.s.terminal && px >= 32.0 && !e.is_dir && thumbs::thumbnailable(&e.mime)
+            && let Some(t) = self.thumbs.get(&e.path, e.size, &e.mime, e.modified) {
                 return Some(t);
             }
         self.entry_icon(ctx, e, px, false)

@@ -699,9 +699,65 @@ impl RivetApp {
                 && ui.button("Open Containing Folder").clicked() {
                     self.pending.push(Action::Navigate(Location::Dir(parent.to_path_buf())));
                 }
+        self.action_items(ui, false);
         ui.separator();
         if ui.button("Properties").clicked() {
             self.pending.push(Action::Properties(Some(e.path.clone())));
+        }
+    }
+
+    /// The person's own actions that fit this right-click (see actions.rs), grouped into their
+    /// submenus. `background`: right-click on empty space.
+    fn action_items(&mut self, ui: &mut egui::Ui, background: bool) {
+        if !self.s.custom_actions {
+            return;
+        }
+        let sel = if background { Vec::new() } else { self.tab().selected_entries().into_iter().cloned().collect::<Vec<_>>() };
+        let items: Vec<crate::actions::Item> = sel.iter().map(|e| crate::actions::Item { path: &e.path, is_dir: e.is_dir, mime: &e.mime }).collect();
+        let fitting: Vec<crate::actions::CustomAction> = crate::actions::all().into_iter().filter(|a| a.applies(&items)).collect();
+        if fitting.is_empty() {
+            return;
+        }
+        ui.separator();
+        let paths: Vec<std::path::PathBuf> = sel.iter().map(|e| e.path.clone()).collect();
+        let folder = self.current_dir();
+        let mut chosen: Option<crate::actions::CustomAction> = None;
+        let mut subs: Vec<String> = Vec::new();
+        for a in &fitting {
+            match &a.submenu {
+                Some(s) => {
+                    if !subs.contains(s) {
+                        subs.push(s.clone());
+                    }
+                }
+                None => {
+                    let ctx = ui.ctx().clone();
+                    let tex = a.icon.as_deref().and_then(|i| self.icon(&ctx, &[i, &format!("{i}-symbolic")], 16.0));
+                    let resp = match &tex {
+                        Some(t) => ui.add(egui::Button::image_and_text(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)), a.name.as_str())),
+                        None => ui.button(&a.name),
+                    };
+                    let resp = if a.comment.is_empty() { resp } else { resp.on_hover_text(&a.comment) };
+                    if resp.clicked() {
+                        chosen = Some(a.clone());
+                    }
+                }
+            }
+        }
+        for s in subs {
+            ui.menu_button(&s, |ui| {
+                Self::comfy_menu(ui);
+                for a in fitting.iter().filter(|a| a.submenu.as_deref() == Some(s.as_str())) {
+                    if ui.button(&a.name).clicked() {
+                        chosen = Some(a.clone());
+                    }
+                }
+            });
+        }
+        if let Some(a) = chosen
+            && let Err(e) = a.run(&paths, folder.as_deref())
+        {
+            self.message(&format!("Could not run “{}”", a.name), &e);
         }
     }
 
@@ -762,6 +818,7 @@ impl RivetApp {
         if ui.button("Add to Bookmarks").clicked() {
             self.pending.push(Action::AddBookmark(dir.clone()));
         }
+        self.action_items(ui, true);
         ui.separator();
         if ui.button("Properties").clicked() {
             self.pending.push(Action::Properties(Some(dir)));

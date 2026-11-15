@@ -286,6 +286,27 @@ fn terminal_command() -> Vec<String> {
     vec!["xterm".into()]
 }
 
+/// Run a shell command line in this folder (custom actions), maybe in a terminal window that
+/// stays open until Enter so its output can be read.
+pub fn run_shell(cmd: &str, dir: Option<&Path>, terminal: bool) -> Result<(), String> {
+    if !terminal {
+        return spawn_detached(&["sh".into(), "-c".into(), cmd.to_string()], dir);
+    }
+    let t = terminal_command();
+    let name = Path::new(&t[0]).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    // How each terminal is told what to run.
+    let flag: &[&str] = match name.as_str() {
+        "gnome-terminal" | "kgx" | "ptyxis" => &["--"],
+        "wezterm" => &["start", "--"],
+        "xfce4-terminal" | "terminator" => &["-x"],
+        _ => &["-e"],
+    };
+    let mut args = t;
+    args.extend(flag.iter().map(|s| s.to_string()));
+    args.extend(["sh".into(), "-c".into(), format!("{cmd}; echo; printf 'Press Enter to close'; read _")]);
+    spawn_detached(&args, dir)
+}
+
 pub fn open_terminal(dir: &Path) -> Result<(), String> {
     let t = terminal_command();
     spawn_detached(&t, Some(dir))

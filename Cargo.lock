@@ -2265,6 +2265,7 @@ dependencies = [
  "eframe",
  "image",
  "libc",
+ "png",
  "raw-window-handle",
  "resvg",
  "skrifa",

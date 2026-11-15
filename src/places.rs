@@ -29,6 +29,12 @@ pub fn config_home() -> PathBuf {
     xdg_base(&home(), env.as_deref(), in_flatpak(), ".config")
 }
 
+/// Where caches go: the shared thumbnail cache lives in `thumbnails/` under it.
+pub fn cache_home() -> PathBuf {
+    let env = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from);
+    xdg_base(&home(), env.as_deref(), in_flatpak(), ".cache")
+}
+
 pub fn state_home() -> PathBuf {
     let env = std::env::var_os("XDG_STATE_HOME").map(PathBuf::from);
     xdg_base(&home(), env.as_deref(), in_flatpak(), ".local/state")

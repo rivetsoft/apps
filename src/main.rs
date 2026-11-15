@@ -4,6 +4,7 @@
 //! Usage: `rivet --help`.
 
 mod app;
+mod actions;
 mod archive;
 mod cli;
 mod crash;
@@ -158,6 +159,7 @@ fn main() -> eframe::Result {
 
     if screenshot.is_some() || measuring() {
         filters::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
+        thumbs::NO_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
     }
     // Checks use the default look so they are comparable from run to run.
     // Test hook for checks: a picker started by the portal service runs in screenshot mode.
