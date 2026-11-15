@@ -13,6 +13,7 @@ mod builtin_icons;
 mod fonts;
 mod filters;
 mod fsops;
+mod headless;
 mod highlight;
 mod icons;
 mod launch;
@@ -328,6 +329,16 @@ fn main() -> eframe::Result {
     if let Err(msg) = cli::ensure_gui_libraries() {
         eprintln!("{msg}");
         std::process::exit(1);
+    }
+
+    // Screenshots are drawn in memory: a window only gets frames while the screen shows it.
+    if screenshot.is_some() && std::env::var_os("RIVET_SHOT_WINDOW").is_none() {
+        let size = [settings.window_w, settings.window_h];
+        headless::run(size, move |cc| Box::new(app::RivetApp::new(cc, settings, start, screenshot, demo)));
+        if picker::active() {
+            std::process::exit(if picker::answer().is_some() { 0 } else { 1 });
+        }
+        return Ok(());
     }
 
     let result = eframe::run_native(
