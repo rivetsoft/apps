@@ -7,11 +7,12 @@
   the system has a thumbnailer for (`/usr/share/thumbnailers`), and the shared
   `~/.cache/thumbnails` cache that other file managers use — Rivet reads it first and adds what it
   makes, following the freedesktop thumbnail rules (failures are remembered too).
-- **Custom actions**: your own scripts in the right-click menu. Rivet reads Nemo actions
-  (`*.nemo_action`) and Dolphin service menus (`.desktop`) as they are, from
-  `~/.local/share/rivet/actions`, `~/.local/share/nemo/actions` and the `kio/servicemenus`
-  folders — by selection count, file type and extension, with icons and submenus. Preferences →
-  Modules shows how many were found, opens the folder and can add an example to start from.
+- **Custom actions**: your own commands in the right-click menu. Each is a small `.action` file
+  in `~/.local/share/rivet/actions`: a name, an icon, the command (`%F` the selected files, `%d`
+  the folder…), when it shows (one item, several, empty space) and for which files (folders,
+  types like `image/*`, endings like `.png`), with optional submenus, a terminal window, and
+  once-per-item runs. Preferences → Modules counts them, opens the folder and can add an example
+  to start from.
 - **Split view** (F3, View → Split View, or Quick Actions): two folders side by side, each with
   its own history and a header naming its folder. Click a pane (or F6) to work in it — the
   toolbar, path bar, keyboard and Peek follow — drag files between them, or use Copy / Move to

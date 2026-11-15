@@ -1632,9 +1632,9 @@ impl RivetApp {
                             ui.separator();
                             let n = crate::actions::all().len();
                             let about = egui::RichText::new(match n {
-                                0 => "Your own scripts in the right-click menu — also reads Nemo actions and Dolphin service menus".to_string(),
-                                1 => "1 action found — your own scripts, Nemo actions and Dolphin service menus".to_string(),
-                                n => format!("{n} actions found — your own scripts, Nemo actions and Dolphin service menus"),
+                                0 => "Your own commands in the right-click menu — one .action file each".to_string(),
+                                1 => "1 action — your own commands in the right-click menu".to_string(),
+                                n => format!("{n} actions — your own commands in the right-click menu"),
                             })
                             .color(weak);
                             changed |= row(ui, "Custom Actions", about, &mut self.s.custom_actions, true);
@@ -1645,7 +1645,7 @@ impl RivetApp {
                                         let _ = std::fs::create_dir_all(&folder);
                                         let _ = crate::launch::open_url(&folder.to_string_lossy());
                                     }
-                                    let example = folder.join("make-executable.nemo_action");
+                                    let example = folder.join("make-executable.action");
                                     if !example.exists() && ui.button("Add an Example").on_hover_text("A small action to copy and change: Make Executable").clicked() {
                                         let _ = std::fs::create_dir_all(&folder);
                                         let _ = std::fs::write(&example, crate::actions::EXAMPLE);

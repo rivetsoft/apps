@@ -1,38 +1,40 @@
 //! Custom right-click actions: people's own scripts in the menu.
 //!
-//! Two formats other file managers use are read as they are, so existing actions just work:
+//! One file per action, ending in `.action`, in `~/.local/share/rivet/actions`:
 //!
-//! * **Nemo actions** (`*.nemo_action`): `[Nemo Action]` with `Name`, `Exec`, `Icon-Name`,
-//!   `Comment`, `Selection` (s, m, any, none, notnone or a number), `Extensions` (dir, none,
-//!   nodirs, any or a list), `Mimetypes`, `Dependencies`, `Terminal`, `Active`. Exec codes:
-//!   `%F` paths, `%U` URIs, `%f`/`%N` the first item's name, `%P` the folder, `%p` its name.
-//! * **Dolphin service menus** (`.desktop`): `MimeType` (`all/all`, `all/allfiles`,
-//!   `inode/directory`, `image/*`…), `Actions` and `[Desktop Action …]` groups with `Name`,
-//!   `Icon`, `Exec` (`%f`/`%u` once per item, `%F`/`%U` all at once), `X-KDE-Submenu`,
-//!   `X-KDE-MinNumberOfUrls` / `X-KDE-MaxNumberOfUrls`.
+//! ```text
+//! [Action]
+//! Name=Make Executable
+//! Comment=Let these files run as programs
+//! Icon=application-x-executable
+//! Exec=chmod +x %F
+//! For=some
+//! Types=files
+//! ```
 //!
-//! Read from Rivet's own folder (`~/.local/share/rivet/actions`, either format), the person's
-//! Nemo actions (`~/.local/share/nemo/actions`) and service menus (`kio/servicemenus` in the
-//! data folders). Commands run through `sh -c`, with every path quoted.
+//! * `Exec`: a shell command line. `%F` the selected paths, `%f` the first one, `%U` / `%u`
+//!   the same as `file://` addresses, `%n` the first one's name, `%d` the folder you're in,
+//!   `%%` a percent sign. Every path is quoted.
+//! * `For`: `one`, `many` (two or more), `some` (one or more), `any`, or `none` (right-click on
+//!   empty space). Default: `some`.
+//! * `Types`: `files`, `folders`, `all`, file types (`image/png`, `image/*`) or endings
+//!   (`.png`); every selected item must match one. Default: `all`.
+//! * `Each=true` runs the command once for each item; `Terminal=true` runs it in a terminal
+//!   window; `Requires=` lists programs that must be installed; `Menu=` groups it in a submenu;
+//!   `Enabled=false` hides it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug, PartialEq)]
-enum Count {
+enum For {
+    One,
+    Many,
+    Some,
     Any,
     /// Right-click on empty space (no items).
     None,
-    NotNone,
-    Exactly(usize),
-    Range(usize, usize),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-enum Style {
-    Nemo,
-    Kde,
 }
 
 #[derive(Clone, Debug)]
@@ -40,15 +42,14 @@ pub struct CustomAction {
     pub name: String,
     pub comment: String,
     pub icon: Option<String>,
-    /// KDE's submenu name.
+    /// The submenu it goes in, if any.
     pub submenu: Option<String>,
     exec: String,
     terminal: bool,
-    count: Count,
-    /// Extensions (lower-case, no dot), or the specials "dir", "none", "nodirs", "any".
-    extensions: Vec<String>,
-    mimes: Vec<String>,
-    style: Style,
+    each: bool,
+    count: For,
+    /// "files", "folders", "all", MIME types (maybe "image/*") and endings (".png").
+    types: Vec<String>,
 }
 
 /// One selected item, as far as matching goes.
@@ -58,15 +59,7 @@ pub struct Item<'a> {
     pub mime: &'a str,
 }
 
-/// The folders actions are read from (Rivet's own first).
-pub fn folders() -> Vec<PathBuf> {
-    let data = crate::places::data_home();
-    let mut v = vec![own_folder(), data.join("nemo/actions"), data.join("kio/servicemenus")];
-    let sys = std::env::var("XDG_DATA_DIRS").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "/usr/local/share:/usr/share".into());
-    v.extend(sys.split(':').map(|d| PathBuf::from(d).join("kio/servicemenus")));
-    v
-}
-
+/// Where actions live.
 pub fn own_folder() -> PathBuf {
     crate::places::data_home().join("rivet/actions")
 }
@@ -86,51 +79,35 @@ pub fn all() -> Vec<CustomAction> {
 }
 
 fn load() -> Vec<CustomAction> {
-    let mut out = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for dir in folders() {
-        let mut files: Vec<PathBuf> = std::fs::read_dir(&dir).into_iter().flatten().flatten().map(|e| e.path()).collect();
-        files.sort();
-        for f in files {
-            // The same file name in a later folder is a system copy of one already read.
-            let Some(name) = f.file_name().map(|n| n.to_string_lossy().to_string()) else { continue };
-            if !seen.insert(name.clone()) {
-                continue;
-            }
-            let Ok(text) = std::fs::read_to_string(&f) else { continue };
-            if name.ends_with(".nemo_action") {
-                out.extend(parse_nemo(&text));
-            } else if name.ends_with(".desktop") {
-                out.extend(parse_kde(&text));
-            }
-        }
-    }
-    out
+    let mut files: Vec<PathBuf> = std::fs::read_dir(own_folder())
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "action"))
+        .collect();
+    files.sort();
+    files.iter().filter_map(|f| std::fs::read_to_string(f).ok()).filter_map(|t| parse(&t)).collect()
 }
 
-/// key=value pairs of one [group].
-fn groups(text: &str) -> Vec<(String, Vec<(String, String)>)> {
-    let mut out: Vec<(String, Vec<(String, String)>)> = Vec::new();
+/// The `key=value` lines of the `[Action]` section.
+fn keys(text: &str) -> Option<Vec<(String, String)>> {
+    let mut in_action = false;
+    let mut seen = false;
+    let mut kv = Vec::new();
     for line in text.lines() {
         let l = line.trim();
         if l.is_empty() || l.starts_with('#') {
             continue;
         }
-        if let Some(g) = l.strip_prefix('[').and_then(|g| g.strip_suffix(']')) {
-            out.push((g.to_string(), Vec::new()));
-        } else if let (Some((_, kv)), Some((k, v))) = (out.last_mut(), l.split_once('=')) {
+        if l.starts_with('[') {
+            in_action = l == "[Action]";
+            seen |= in_action;
+        } else if in_action && let Some((k, v)) = l.split_once('=') {
             kv.push((k.trim().to_string(), v.trim().to_string()));
         }
     }
-    out
-}
-
-fn get<'a>(kv: &'a [(String, String)], key: &str) -> Option<&'a str> {
-    kv.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
-}
-
-fn list(v: Option<&str>) -> Vec<String> {
-    v.unwrap_or("").split(';').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+    seen.then_some(kv)
 }
 
 fn installed(program: &str) -> bool {
@@ -140,89 +117,52 @@ fn installed(program: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(program).is_file()))
 }
 
-fn parse_nemo(text: &str) -> Option<CustomAction> {
-    let g = groups(text);
-    let (_, kv) = g.iter().find(|(n, _)| n == "Nemo Action")?;
-    if get(kv, "Active").is_some_and(|a| a.eq_ignore_ascii_case("false")) {
+fn parse(text: &str) -> Option<CustomAction> {
+    let kv = keys(text)?;
+    let get = |k: &str| kv.iter().find(|(key, _)| key == k).map(|(_, v)| v.as_str());
+    let list = |k: &str| -> Vec<String> { get(k).unwrap_or("").split([';', ',']).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect() };
+    let yes = |k: &str| get(k).is_some_and(|v| v.eq_ignore_ascii_case("true") || v == "1");
+    if get("Enabled").is_some_and(|v| v.eq_ignore_ascii_case("false") || v == "0") {
         return None;
     }
-    // Every dependency must be there ("!name": must not be).
-    for dep in list(get(kv, "Dependencies")) {
-        let (want, prog) = match dep.strip_prefix('!') {
-            Some(p) => (false, p.to_string()),
-            None => (true, dep),
-        };
-        if installed(&prog) != want {
-            return None;
-        }
+    if !list("Requires").iter().all(|p| installed(p)) {
+        return None;
     }
-    let count = match get(kv, "Selection").map(|s| s.to_lowercase()).as_deref() {
-        Some("s") => Count::Exactly(1),
-        Some("m") => Count::Range(2, usize::MAX),
-        Some("none") => Count::None,
-        Some("notnone") => Count::NotNone,
-        Some(n) if n.parse::<usize>().is_ok() => Count::Exactly(n.parse().unwrap_or(1)),
-        _ => Count::Any,
+    let count = match get("For").map(|s| s.to_lowercase()).as_deref() {
+        Some("one") => For::One,
+        Some("many") => For::Many,
+        Some("any") => For::Any,
+        Some("none") => For::None,
+        _ => For::Some,
     };
-    let mut extensions: Vec<String> = list(get(kv, "Extensions")).into_iter().map(|e| e.trim_start_matches('.').to_lowercase()).collect();
-    let mimes = list(get(kv, "Mimetypes"));
-    if extensions.is_empty() && mimes.is_empty() {
-        extensions.push("any".into());
+    let mut types: Vec<String> = list("Types").into_iter().map(|t| t.to_lowercase()).collect();
+    if types.is_empty() {
+        types.push("all".into());
     }
     Some(CustomAction {
-        name: get(kv, "Name").unwrap_or("Action").replace('_', ""),
-        comment: get(kv, "Comment").unwrap_or("").to_string(),
-        icon: get(kv, "Icon-Name").map(str::to_string),
-        submenu: None,
-        exec: get(kv, "Exec")?.trim_start_matches('<').trim_end_matches('>').to_string(),
-        terminal: get(kv, "Terminal").is_some_and(|t| t.eq_ignore_ascii_case("true")),
+        name: get("Name")?.to_string(),
+        comment: get("Comment").unwrap_or("").to_string(),
+        icon: get("Icon").map(str::to_string),
+        submenu: get("Menu").filter(|m| !m.is_empty()).map(str::to_string),
+        exec: get("Exec")?.to_string(),
+        terminal: yes("Terminal"),
+        each: yes("Each"),
         count,
-        extensions,
-        mimes,
-        style: Style::Nemo,
+        types,
     })
 }
 
-fn parse_kde(text: &str) -> Vec<CustomAction> {
-    let g = groups(text);
-    let Some((_, entry)) = g.iter().find(|(n, _)| n == "Desktop Entry") else { return Vec::new() };
-    // Only file manager context-menu entries.
-    let service_types = format!("{} {}", get(entry, "ServiceTypes").unwrap_or(""), get(entry, "X-KDE-ServiceTypes").unwrap_or(""));
-    if !service_types.contains("KonqPopupMenu") && get(entry, "Type") != Some("Service") {
-        return Vec::new();
-    }
-    let mimes = list(get(entry, "MimeType"));
-    let min = get(entry, "X-KDE-MinNumberOfUrls").and_then(|v| v.parse().ok()).unwrap_or(1);
-    let max = get(entry, "X-KDE-MaxNumberOfUrls").and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
-    let submenu = get(entry, "X-KDE-Submenu").map(str::to_string);
-    list(get(entry, "Actions"))
-        .into_iter()
-        .filter_map(|id| {
-            let (_, a) = g.iter().find(|(n, _)| *n == format!("Desktop Action {id}"))?;
-            Some(CustomAction {
-                name: get(a, "Name")?.to_string(),
-                comment: String::new(),
-                icon: get(a, "Icon").map(str::to_string),
-                submenu: submenu.clone(),
-                exec: get(a, "Exec")?.to_string(),
-                terminal: false,
-                count: Count::Range(min, max),
-                extensions: Vec::new(),
-                mimes: mimes.clone(),
-                style: Style::Kde,
-            })
-        })
-        .collect()
-}
-
-fn mime_matches(pattern: &str, item: &Item) -> bool {
-    match pattern {
-        "all/all" | "*" | "*/*" => true,
-        "all/allfiles" | "application/octet-stream" if !item.is_dir => true,
-        "inode/directory" => item.is_dir,
-        p => match p.strip_suffix("/*") {
+fn type_matches(t: &str, item: &Item) -> bool {
+    match t {
+        "all" => true,
+        "files" => !item.is_dir,
+        "folders" => item.is_dir,
+        ending if ending.starts_with('.') => {
+            !item.is_dir && item.path.file_name().is_some_and(|n| n.to_string_lossy().to_lowercase().ends_with(ending))
+        }
+        mime => match mime.strip_suffix("/*") {
             Some(top) => !item.is_dir && item.mime.split('/').next() == Some(top),
-            None => item.mime == p,
+            None => item.mime == mime || (mime == "inode/directory" && item.is_dir),
         },
     }
 }
@@ -232,33 +172,13 @@ impl CustomAction {
     pub fn applies(&self, items: &[Item]) -> bool {
         let n = items.len();
         let count_ok = match self.count {
-            Count::Any => true,
-            Count::None => n == 0,
-            Count::NotNone => n > 0,
-            Count::Exactly(k) => n == k,
-            Count::Range(lo, hi) => n >= lo && n <= hi,
+            For::One => n == 1,
+            For::Many => n >= 2,
+            For::Some => n >= 1,
+            For::Any => true,
+            For::None => n == 0,
         };
-        if !count_ok {
-            return false;
-        }
-        if n == 0 {
-            return true;
-        }
-        items.iter().all(|it| {
-            let ext_ok = self.extensions.iter().any(|e| match e.as_str() {
-                "any" => true,
-                "dir" => it.is_dir,
-                "nodirs" => !it.is_dir,
-                "none" => !it.is_dir && it.path.extension().is_none(),
-                ext => !it.is_dir && it.path.extension().is_some_and(|x| x.to_string_lossy().to_lowercase() == ext),
-            });
-            let mime_ok = self.mimes.iter().any(|m| mime_matches(m, it));
-            match self.style {
-                // Nemo: either list may match.
-                Style::Nemo => ext_ok || mime_ok,
-                Style::Kde => mime_ok,
-            }
-        })
+        count_ok && items.iter().all(|it| self.types.iter().any(|t| type_matches(t, it)))
     }
 
     /// Run it for these items in this folder.
@@ -269,60 +189,65 @@ impl CustomAction {
         Ok(())
     }
 
-    /// The shell command line(s) it runs (one per item for KDE's %f / %u).
+    /// The shell command line(s) it runs (one per item with `Each=true`).
     fn commands(&self, items: &[PathBuf], folder: Option<&Path>) -> Vec<String> {
         let q = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
         let uri = |p: &Path| format!("file://{}", crate::places::percent_encode_path(p));
-        let name = |p: &Path| p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let fill = |exec: &str, items: &[PathBuf]| -> String {
+        let fill = |items: &[PathBuf]| -> String {
+            let first = items.first().map(|p| p.as_path());
             let mut out = String::new();
-            let mut chars = exec.chars().peekable();
+            let mut chars = self.exec.chars();
             while let Some(c) = chars.next() {
                 if c != '%' {
                     out.push(c);
                     continue;
                 }
-                let first = items.first().map(|p| p.as_path());
                 match chars.next() {
                     Some('F') => out.push_str(&items.iter().map(|p| q(&p.to_string_lossy())).collect::<Vec<_>>().join(" ")),
+                    Some('f') => out.push_str(&first.map(|p| q(&p.to_string_lossy())).unwrap_or_default()),
                     Some('U') => out.push_str(&items.iter().map(|p| q(&uri(p))).collect::<Vec<_>>().join(" ")),
-                    Some('f') if self.style == Style::Kde => out.push_str(&first.map(|p| q(&p.to_string_lossy())).unwrap_or_default()),
                     Some('u') => out.push_str(&first.map(|p| q(&uri(p))).unwrap_or_default()),
-                    Some('f') | Some('N') => out.push_str(&first.map(|p| q(&name(p))).unwrap_or_default()),
-                    Some('P') => out.push_str(&folder.map(|d| q(&d.to_string_lossy())).unwrap_or_default()),
-                    Some('p') => out.push_str(&folder.map(|d| q(&name(d))).unwrap_or_default()),
+                    Some('n') => out.push_str(&first.and_then(|p| p.file_name()).map(|n| q(&n.to_string_lossy())).unwrap_or_default()),
+                    Some('d') => out.push_str(&folder.map(|d| q(&d.to_string_lossy())).unwrap_or_default()),
                     Some('%') => out.push('%'),
-                    // Codes other formats use (%i icon, %c caption, %k file): nothing to add.
-                    _ => {}
+                    Some(other) => {
+                        out.push('%');
+                        out.push(other);
+                    }
+                    None => out.push('%'),
                 }
             }
             out
         };
-        // KDE's single-item codes (%f, %u) mean "once for each item".
-        let per_item = self.style == Style::Kde && (self.exec.contains("%f") || self.exec.contains("%u")) && items.len() > 1;
-        if per_item {
-            items.iter().map(|p| fill(&self.exec, std::slice::from_ref(p))).collect()
+        if self.each && items.len() > 1 {
+            items.iter().map(|p| fill(std::slice::from_ref(p))).collect()
         } else {
-            vec![fill(&self.exec, items)]
+            vec![fill(items)]
         }
     }
 }
 
 /// An example action, for people to copy and change.
-pub const EXAMPLE: &str = "[Nemo Action]
-# Shown in the right-click menu. Rivet also reads Nemo actions and Dolphin service menus.
+pub const EXAMPLE: &str = "[Action]
+# The name in the right-click menu, and a line shown when you point at it.
 Name=Make Executable
 Comment=Let these files run as programs
-Icon-Name=application-x-executable
-# %F is the selected files, quoted. Others: %U their URIs, %f the first one's name,
-# %P the folder you're in.
+Icon=application-x-executable
+# The command. %F is the selected files (quoted); %f the first one, %n its name,
+# %U / %u the same as file:// addresses, %d the folder you're in.
 Exec=chmod +x %F
-# s = one item, m = several, any, none (empty space), notnone, or a number.
-Selection=notnone
-# File endings to show it for; dir = folders, nodirs = any file, any = everything.
-Extensions=nodirs;
-# Run in a terminal window (to see what it prints).
+# When it shows: one, many, some (one or more), any, or none (right-click on empty space).
+For=some
+# For which items: files, folders, all, file types (image/*) or endings (.png).
+Types=files
+# Run once for each item instead of once for all of them.
+Each=false
+# Run in a terminal window, to see what it prints.
 Terminal=false
+# Only when these programs are installed (e.g. Requires=convert).
+Requires=
+# Put it in a submenu.
+Menu=
 ";
 
 #[cfg(test)]
@@ -334,45 +259,41 @@ mod tests {
     }
 
     #[test]
-    fn nemo_action_matches_and_fills_codes() {
-        let a = parse_nemo("[Nemo Action]\nName=_Shrink\nExec=<convert %F -resize 50% %P/out.png>\nSelection=s\nExtensions=png;jpg;\n").unwrap();
-        assert_eq!(a.name, "Shrink");
-        let p = Path::new("/tmp/a b.png");
-        assert!(a.applies(&[item(p, "image/png", false)]));
+    fn matches_by_count_and_type() {
+        let a = parse("[Action]\nName=Shrink\nExec=convert %F -resize 50% out.png\nFor=one\nTypes=.png;image/jpeg\n").unwrap();
+        let png = Path::new("/tmp/a b.png");
+        assert!(a.applies(&[item(png, "image/png", false)]));
+        assert!(a.applies(&[item(Path::new("/tmp/c.jpg"), "image/jpeg", false)]));
         assert!(!a.applies(&[item(Path::new("/tmp/x.txt"), "text/plain", false)]));
-        assert!(!a.applies(&[item(p, "image/png", false), item(p, "image/png", false)]));
+        assert!(!a.applies(&[item(png, "image/png", false), item(png, "image/png", false)]));
         assert!(!a.applies(&[]));
-        // Folders: "dir" only.
-        let d = parse_nemo("[Nemo Action]\nName=Here\nExec=foo %P\nSelection=none\nExtensions=dir;\n").unwrap();
-        assert!(d.applies(&[]));
-        assert!(parse_nemo("[Nemo Action]\nName=Off\nExec=x\nActive=false\n").is_none());
-        assert!(parse_nemo("[Nemo Action]\nName=Needs\nExec=x\nDependencies=surely-not-installed-xyz;\n").is_none());
-    }
-
-    #[test]
-    fn kde_service_menu_reads_its_actions() {
-        let text = "[Desktop Entry]\nType=Service\nX-KDE-ServiceTypes=KonqPopupMenu/Plugin\nMimeType=image/*;\nActions=a;b;\nX-KDE-Submenu=Images\n\n[Desktop Action a]\nName=Rotate\nExec=rotate %f\n\n[Desktop Action b]\nName=Stack\nExec=stack %F\n";
-        let v = parse_kde(text);
-        assert_eq!(v.len(), 2);
-        assert_eq!(v[0].submenu.as_deref(), Some("Images"));
-        let p = Path::new("/tmp/a.png");
-        assert!(v[0].applies(&[item(p, "image/png", false)]));
-        assert!(!v[0].applies(&[item(Path::new("/tmp"), "inode/directory", true)]));
+        let here = parse("[Action]\nName=Here\nExec=foo %d\nFor=none\n").unwrap();
+        assert!(here.applies(&[]));
+        let dirs = parse("[Action]\nName=Dirs\nExec=x\nTypes=folders\n").unwrap();
+        assert!(dirs.applies(&[item(Path::new("/tmp"), "inode/directory", true)]));
+        assert!(!dirs.applies(&[item(png, "image/png", false)]));
+        let pics = parse("[Action]\nName=Pics\nExec=x\nTypes=image/*\nMenu=Pictures\n").unwrap();
+        assert_eq!(pics.submenu.as_deref(), Some("Pictures"));
+        assert!(pics.applies(&[item(png, "image/png", false)]));
+        assert!(parse("[Action]\nName=Off\nExec=x\nEnabled=false\n").is_none());
+        assert!(parse("[Action]\nName=Needs\nExec=x\nRequires=surely-not-installed-xyz\n").is_none());
+        assert!(parse("[Other]\nName=x\nExec=x\n").is_none());
     }
 
     #[test]
     fn commands_quote_every_path() {
-        let a = parse_nemo("[Nemo Action]\nName=x\nExec=tool %F --in %P --name %f 100%%\n").unwrap();
+        let a = parse("[Action]\nName=x\nExec=tool %F --in %d --name %n 100%%\n").unwrap();
         let items = vec![PathBuf::from("/tmp/it's here.txt"), PathBuf::from("/tmp/b.txt")];
         let c = a.commands(&items, Some(Path::new("/tmp/My Folder")));
         assert_eq!(c, vec!["tool '/tmp/it'\\''s here.txt' '/tmp/b.txt' --in '/tmp/My Folder' --name 'it'\\''s here.txt' 100%".to_string()]);
-        // KDE: %f runs once per item.
-        let k = &parse_kde("[Desktop Entry]\nType=Service\nMimeType=all/all;\nActions=a;\n[Desktop Action a]\nName=A\nExec=open %f\n")[0];
-        assert_eq!(k.commands(&items, None).len(), 2);
+        let each = parse("[Action]\nName=e\nExec=open %f\nEach=true\n").unwrap();
+        assert_eq!(each.commands(&items, None), vec!["open '/tmp/it'\\''s here.txt'".to_string(), "open '/tmp/b.txt'".to_string()]);
     }
 
     #[test]
     fn example_parses() {
-        assert!(parse_nemo(EXAMPLE).is_some());
+        let a = parse(EXAMPLE).unwrap();
+        assert_eq!(a.name, "Make Executable");
+        assert!(a.applies(&[item(Path::new("/tmp/run.sh"), "application/x-shellscript", false)]));
     }
 }

@@ -62,7 +62,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 - 🧘 **Zen mode** (F12) — the files fill the window; the toolbar, sidebar and Peek slide in at the edges
 - 🖥️ **Terminal mode** (F7) — monospace text, Nerd Font icons and boxed panels
 - 🧩 **Modules** — turn off Bulk Rename, Convert & Resize or Custom Actions
-- 🛠️ **Custom actions** — your own scripts in the right-click menu; Nemo actions and Dolphin service menus work as they are
+- 🛠️ **Custom actions** — your own commands in the right-click menu, one small `.action` file each
 - 🪟 **Title bar** — your desktop's, or Rivet's own
 
 **Under the hood**
@@ -259,6 +259,26 @@ Reproduce with `rivet --bench [FOLDER…]`, `RIVET_FRAME_STATS=1 rivet --screens
 and `utilities/rivet-dev bench`.
 
 </details>
+
+### 🛠️ Custom actions
+
+Put a file ending in `.action` in `~/.local/share/rivet/actions` (Preferences → Modules → Open
+Actions Folder, or Add an Example) and it shows in the right-click menu:
+
+```ini
+[Action]
+Name=Shrink Pictures
+Icon=image-x-generic
+Exec=mogrify -resize 50% %F
+For=some
+Types=image/*
+Requires=mogrify
+```
+
+`Exec` codes: `%F` the selected files, `%f` the first, `%n` its name, `%U` / `%u` as `file://`
+addresses, `%d` the folder you're in (all quoted). `For`: `one`, `many`, `some`, `any` or `none`
+(empty space). `Types`: `files`, `folders`, `all`, file types or endings like `.png`. Also
+`Comment`, `Menu` (a submenu), `Each=true` (once per item), `Terminal=true` and `Enabled=false`.
 
 ## 🗺️ Roadmap
 

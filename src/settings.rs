@@ -74,7 +74,7 @@ pub struct Settings {
     pub media_tools: bool,
     /// The Bulk Rename module (F2 / right-click with several items selected).
     pub bulk_rename: bool,
-    /// Custom right-click actions (Nemo actions, Dolphin service menus, Rivet's own).
+    /// Custom right-click actions (`.action` files, see actions.rs).
     pub custom_actions: bool,
     /// Filters (saved in their own file, see filters.rs).
     pub filters: crate::filters::FilterSet,
