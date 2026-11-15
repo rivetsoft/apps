@@ -168,7 +168,10 @@ fn main() -> eframe::Result {
     if pick && screenshot.is_none() {
         screenshot = std::env::var_os("RIVET_PICK_SCREENSHOT").map(PathBuf::from);
     }
-    let mut settings = if screenshot.is_some() || measuring() { settings::Settings::default() } else { settings::Settings::load() };
+    // Test hook: RIVET_LOAD_SETTINGS=1 makes a check use the saved settings (point
+    // XDG_CONFIG_HOME at a copy; checks never save).
+    let checking = (screenshot.is_some() || measuring()) && std::env::var_os("RIVET_LOAD_SETTINGS").is_none();
+    let mut settings = if checking { settings::Settings::default() } else { settings::Settings::load() };
     // Screenshots for checks show a neutral sample folder, never the person's own files,
     // unless a folder was named on purpose.
     let mut demo: Option<PathBuf> = None;

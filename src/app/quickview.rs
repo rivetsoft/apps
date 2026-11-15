@@ -30,7 +30,8 @@ pub(super) struct QuickView {
     rx: Receiver<(PathBuf, Preview)>,
     player: Option<Player>,
     video_pos: f64,
-    highlighted: Option<(PathBuf, egui::text::LayoutJob)>,
+    /// The coloured text: for this file, in these theme colours.
+    highlighted: Option<(PathBuf, crate::highlight::Colors, egui::text::LayoutJob)>,
 }
 
 impl QuickView {
@@ -122,6 +123,17 @@ impl RivetApp {
             None => "Open".to_string(),
         };
         let accent = super::accent_color(&self.s);
+        // The same theme colours as Peek's code preview; recoloured when the theme or the
+        // desktop palette changes while the light box is open.
+        let code_colors = {
+            let v = ctx.global_style().visuals.clone();
+            let (p, s, t) = self.theme_trio();
+            crate::highlight::colors(v.text_color(), crate::palette::mix(v.panel_fill, v.extreme_bg_color, 0.55), p, s, t)
+        };
+        let code_bg = {
+            let v = ctx.global_style().visuals.clone();
+            crate::palette::mix(v.panel_fill, v.extreme_bg_color, 0.55)
+        };
         let Some(q) = &mut self.quick else { return };
         q.poll(ctx);
         let (idx, n) = (q.idx, q.items.len());
@@ -180,7 +192,7 @@ impl RivetApp {
         let playing = q.player.is_some();
 
         let highlighted = match (&text, &q.highlighted) {
-            (Some(_), Some((p, job))) if *p == e.path => Some(job.clone()),
+            (Some(_), Some((p, c, job))) if *p == e.path && *c == code_colors => Some(job.clone()),
             _ => None,
         };
         let needs_highlight = text.is_some() && highlighted.is_none();
@@ -299,7 +311,9 @@ impl RivetApp {
                 } else if let Some(job) = &highlighted {
                     let w = stage.width().min(900.0);
                     let card = Rect::from_center_size(stage.center(), Vec2::new(w, stage.height()));
+                    // Solid underneath: the theme's panel colour can be see-through.
                     ui.painter().rect_filled(card, r_lg(), v.extreme_bg_color);
+                    ui.painter().rect_filled(card, r_lg(), code_bg);
                     let _ = ui.interact(card, egui::Id::unique("quick-text"), Sense::click());
                     let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card.shrink(18.0)));
                     egui::ScrollArea::both().id_salt("quick-text-scroll").show(&mut cui, |ui| {
@@ -333,12 +347,9 @@ impl RivetApp {
 
         // Syntax-highlight text the first time it is shown.
         if needs_highlight {
-            let v = ctx.global_style().visuals.clone();
-            let (p, s, t) = self.theme_trio();
-            let colors = crate::highlight::colors(v.text_color(), v.extreme_bg_color, p, s, t);
-            let job = crate::highlight::layout(text.as_deref().unwrap_or(""), &e.name, &colors, egui::FontId::monospace(13.0));
+            let job = crate::highlight::layout(text.as_deref().unwrap_or(""), &e.name, &code_colors, egui::FontId::monospace(13.0));
             if let Some(q) = &mut self.quick {
-                q.highlighted = Some((e.path.clone(), job));
+                q.highlighted = Some((e.path.clone(), code_colors, job));
             }
             ctx.request_repaint();
         }
