@@ -312,6 +312,9 @@ impl RivetApp {
             if Self::menu_toggle(ui, &mut split, "Split View", "F3") {
                 self.toggle_split();
             }
+            if self.split.is_some() && ui.add(egui::Button::new("        Other Pane").shortcut_text("F6")).clicked() {
+                self.focus_pane(!self.split_right);
+            }
             let mut zen = self.s.zen;
             if Self::menu_toggle(ui, &mut zen, "Zen Mode", "F12") {
                 self.toggle_zen();

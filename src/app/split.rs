@@ -137,7 +137,10 @@ impl RivetApp {
             return;
         }
         let v = ui.visuals().clone();
-        let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HEADER_H), Sense::hover());
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HEADER_H), Sense::hover());
+        if !active {
+            resp.on_hover_text("Click this side, or press F6, to work in it");
+        }
         let name = self.tab().loc.title();
         let path = self.pane_title();
         let strong = if active { v.strong_text_color() } else { v.weak_text_color() };

@@ -2599,7 +2599,7 @@ impl eframe::App for RivetApp {
                 continue;
             }
             // "left@N" / "right@N" / "up@N" / "down@N" / "enter@N" / "tab@N" press that key at frame N.
-            if matches!(xy.trim(), "left" | "right" | "up" | "down" | "enter" | "tab" | "esc") {
+            if matches!(xy.trim(), "left" | "right" | "up" | "down" | "enter" | "tab" | "esc" | "f3" | "f6") {
                 if let Ok(f) = f.trim().parse::<u32>()
                     && self.frames + 1 == f {
                         let key = match xy.trim() {
@@ -2609,6 +2609,8 @@ impl eframe::App for RivetApp {
                             "up" => egui::Key::ArrowUp,
                             "down" => egui::Key::ArrowDown,
                             "esc" => egui::Key::Escape,
+                            "f3" => egui::Key::F3,
+                            "f6" => egui::Key::F6,
                             _ => egui::Key::Enter,
                         };
                         raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
