@@ -4,6 +4,7 @@
 
 mod dialogs;
 mod draw;
+mod edit;
 mod logic;
 mod menus;
 mod prefs;
@@ -188,6 +189,8 @@ enum Prompt {
     Rename(Side, String, String),
     Delete(Vec<Entry>),
     Replace(Pending),
+    /// An edited file changed on the server since it was opened (index into `edits`).
+    EditConflict(usize),
 }
 
 /// What's being dragged between the panes.
@@ -247,6 +250,12 @@ pub struct FtpApp {
     keys_rx: Option<std::sync::mpsc::Receiver<Vec<rivet_connections::keys::SshKey>>>,
     keys_asked: bool,
     new_key: Option<NewKey>,
+
+    /// Server files open in editors.
+    edits: Vec<edit::EditSession>,
+    apps: Option<Vec<rivet_xdg::launch::DesktopApp>>,
+    /// Test hook RIVET_FTP_EDIT=NAME: edit this server file once the folder is listed.
+    hook_edit: Option<String>,
     shot_wait: u32,
 }
 
@@ -289,11 +298,13 @@ impl eframe::App for FtpApp {
             self.draw_pane(ui, Side::Local, left);
             self.draw_pane(ui, Side::Remote, right);
         });
+        self.watch_edits(&ctx);
         self.windows(&ctx);
         self.dialogs(&ctx);
         if let Some(shot) = self.shot.as_mut() {
             // Checks: wait for logging in and listing to finish first (up to about 10 s).
-            let busy = self.connecting || self.remote.loading || !self.pending.is_empty() || self.hook_send.is_some() || self.queue.iter().any(|j| j.state == JobState::Waiting);
+            let editing = self.hook_edit.is_some() || self.edits.iter().any(|e| e.saved_at.is_none() && !matches!(e.state, edit::EditState::Failed(_)));
+            let busy = self.connecting || self.remote.loading || !self.pending.is_empty() || self.hook_send.is_some() || self.queue.iter().any(|j| j.state == JobState::Waiting) || editing;
             if busy && self.shot_wait < 800 {
                 self.shot_wait += 1;
                 ctx.request_repaint();

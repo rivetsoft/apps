@@ -109,6 +109,10 @@ impl FtpApp {
                 ui.add(egui::Spinner::new().size(12.0));
                 ui.label(format!("{waiting} transfer{} to go", if waiting == 1 { "" } else { "s" }));
             }
+            if !self.edits.is_empty() {
+                let n = self.edits.len();
+                ui.label(egui::RichText::new(format!("Editing {n} file{}", if n == 1 { "" } else { "s" })).color(v.selection.bg_fill));
+            }
             if let Some((msg, bad)) = &self.note {
                 let c = if *bad { status(&ctx).danger } else { v.weak_text_color() };
                 ui.label(egui::RichText::new(first_line(msg)).color(c)).on_hover_text(msg.as_str());
@@ -577,6 +581,26 @@ impl FtpApp {
                 self.prompt = Some(Prompt::Rename(side, sel[0].name.clone(), sel[0].name.clone()));
                 ui.close();
             }
+            if side == Side::Remote && sel.len() == 1 && !sel[0].is_dir && connected {
+                if ui.add(egui::Button::new("Open in Editor").shortcut_text("F4")).on_hover_text("Saves go straight back to the server").clicked() {
+                    self.edit_remote(&sel[0], None);
+                    ui.close();
+                }
+                let apps = self.editors_for(&sel[0].name);
+                ui.menu_button("Open With", |ui| {
+                    menu_style(ui);
+                    if apps.is_empty() {
+                        ui.label(egui::RichText::new("No apps for this kind of file").weak());
+                    }
+                    for a in apps {
+                        if ui.button(&a.name).clicked() {
+                            self.edit_remote(&sel[0], Some(a.clone()));
+                            ui.close();
+                        }
+                    }
+                });
+                ui.separator();
+            }
             if side == Side::Remote && ui.button("Delete…").clicked() {
                 let ctx = ui.ctx().clone();
                 self.run(super::menus::Cmd::Delete, &ctx);
@@ -635,6 +659,7 @@ impl FtpApp {
             });
         });
         ui.add_space(4.0);
+        self.edits_panel(ui);
         let running = self.queue.iter().find(|j| j.state == JobState::Waiting).map(|j| j.id);
         let mut arrows = std::collections::HashMap::new();
         for n in [["go-up-symbolic", "go-up"], ["go-down-symbolic", "go-down"]] {

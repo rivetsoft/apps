@@ -36,6 +36,8 @@ pub struct Settings {
     /// Start the local pane where it was last time (else the home folder).
     pub remember_local: bool,
     pub last_local: String,
+    /// Desktop app id of the editor for server files; empty: the default app for each type.
+    pub editor: String,
 }
 
 impl Default for Settings {
@@ -55,6 +57,7 @@ impl Default for Settings {
             clear_finished: false,
             remember_local: true,
             last_local: String::new(),
+            editor: String::new(),
         }
     }
 }
@@ -90,6 +93,7 @@ impl Settings {
                 "clear_finished" => s.clear_finished = b,
                 "remember_local" => s.remember_local = b,
                 "last_local" => s.last_local = v.to_string(),
+                "editor" => s.editor = v.to_string(),
                 _ => {}
             }
         }
@@ -112,7 +116,7 @@ impl Settings {
         };
         let [r, g, b] = self.accent;
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\nshow_queue={}\nshow_hidden={}\non_exists={on_exists}\ndouble_click_sends={}\nconfirm_delete={}\nclear_finished={}\nremember_local={}\nlast_local={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\nshow_queue={}\nshow_hidden={}\non_exists={on_exists}\ndouble_click_sends={}\nconfirm_delete={}\nclear_finished={}\nremember_local={}\nlast_local={}\neditor={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -124,6 +128,7 @@ impl Settings {
             self.clear_finished,
             self.remember_local,
             self.last_local.replace('\n', ""),
+            self.editor.replace('\n', ""),
         );
         let p = path();
         if let Some(dir) = p.parent() {

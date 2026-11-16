@@ -30,6 +30,14 @@ Addresses look like `sftp://user@server:port/folder`, `ftp://…` or `ftps://…
 never saved in the connections file. The window will keep them in your keyring, and SSH uses
 your keys or ssh agent.
 
+## Editing files on the server
+
+Right-click a file on the server and choose **Open in Editor** (or press F4), or **Open With** to
+pick an app. Rivet FTP downloads it to a private folder that only you can read, opens it, and
+sends every save back to the server. If someone changed the server's copy since you opened it,
+it asks before replacing theirs. The files open for editing are listed above the transfers;
+**Stop** ends it and deletes the copy. Preferences → Transfers chooses the editor.
+
 ## SSH keys
 
 ```sh

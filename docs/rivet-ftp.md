@@ -43,6 +43,7 @@ All of these are also in the menus, and in Help → Keyboard Shortcuts.
 | Alt+Home | Home folder |
 | Up / Down, Shift to extend | Move through the list |
 | Ctrl+A | Select everything |
+| F4 | Open a server file in an editor (saves go back to the server) |
 | Ctrl+U / Ctrl+D | Upload / download the selection |
 | F2 | Rename |
 | Delete | Delete on the server (asks first) |

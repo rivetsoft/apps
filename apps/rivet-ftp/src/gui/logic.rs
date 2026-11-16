@@ -57,6 +57,9 @@ impl FtpApp {
             keys_rx: None,
             keys_asked: false,
             new_key: None,
+            edits: Vec::new(),
+            apps: None,
+            hook_edit: std::env::var("RIVET_FTP_EDIT").ok(),
             shot_wait: 0,
         };
         if screenshot_mode(&app) {
@@ -237,6 +240,13 @@ impl FtpApp {
                         if let Some(spec) = self.hook_send.take() {
                             self.run_send_hook(&spec);
                         }
+                        if let Some(name) = self.hook_edit.take()
+                            && let Some(e) = self.remote.entries.iter().find(|e| e.name == name).cloned()
+                        {
+                            // Test hook: RIVET_FTP_EDITOR_CMD is the "editor" (an Exec line).
+                            let app = std::env::var("RIVET_FTP_EDITOR_CMD").ok().map(|exec| rivet_xdg::launch::DesktopApp { id: "test-editor".into(), name: "Test editor".into(), exec, icon: String::new(), mimes: Vec::new(), terminal: false });
+                            self.edit_remote(&e, app);
+                        }
                     }
                 }
                 Reply::Done(id, err) => {
@@ -260,6 +270,8 @@ impl FtpApp {
                     }
                     self.reload_remote();
                 }
+                // Browsing never asks for one file's details.
+                Reply::Stat(..) => {}
                 Reply::Closed(why) => {
                     let name = self.conn.as_ref().map(|c| c.name.clone()).unwrap_or_default();
                     self.disconnect();
@@ -269,16 +281,20 @@ impl FtpApp {
         }
         // The transfer session.
         let mut done = Vec::new();
+        let mut stats = Vec::new();
         let mut closed = None;
         if let Some(s) = &self.transfer {
             while let Ok(r) = s.rx.try_recv() {
                 match r {
                     Reply::Done(id, err) => done.push((id, err)),
+                    Reply::Stat(id, e) => stats.push((id, e)),
                     Reply::Closed(why) => closed = Some(why),
                     _ => {}
                 }
             }
         }
+        // Answers for files open in editors are theirs.
+        let done = self.edit_replies(done, stats);
         let (mut local, mut remote) = (false, false);
         for (id, err) in done {
             if let Some(j) = self.queue.iter_mut().find(|j| j.id == id) {

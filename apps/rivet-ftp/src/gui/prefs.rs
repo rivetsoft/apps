@@ -247,6 +247,34 @@ impl FtpApp {
                                         ui.add_space(14.0);
                                         ui.checkbox(&mut self.s.clear_finished, "Remove finished transfers from the list");
                                     });
+                                    let editors: Vec<(String, String)> = {
+                                        let apps = self.apps();
+                                        let mut v: Vec<(String, String)> = rivet_xdg::launch::apps_for(apps, "text/plain").into_iter().map(|a| (a.id.clone(), a.name.clone())).collect();
+                                        v.sort_by_key(|a| a.1.to_lowercase());
+                                        v.dedup_by(|a, b| a.0 == b.0);
+                                        v
+                                    };
+                                    section(ui, "Editing server files", &mut |ui| {
+                                        grid(ui, "ftp-edit", &mut |ui| {
+                                            ui.label("Open them with");
+                                            let current = editors.iter().find(|(id, _)| *id == self.s.editor).map(|(_, n)| n.clone()).unwrap_or_else(|| "The default app for each type".into());
+                                            egui::ComboBox::from_id_salt("ftp-editor").width(260.0).selected_text(current).show_ui(ui, |ui| {
+                                                super::menus::menu_style(ui);
+                                                if ui.selectable_label(self.s.editor.is_empty(), "The default app for each type").clicked() {
+                                                    self.s.editor.clear();
+                                                }
+                                                ui.separator();
+                                                for (id, name) in &editors {
+                                                    if ui.selectable_label(self.s.editor == *id, name).clicked() {
+                                                        self.s.editor = id.clone();
+                                                    }
+                                                }
+                                            });
+                                            ui.end_row();
+                                        });
+                                        ui.add_space(8.0);
+                                        hint(ui, "Right-click a file on the server and choose Open in Editor (or press F4). Each time you save, it goes back to the server; if someone changed the server's copy in the meantime, you're asked first.");
+                                    });
                                     section(ui, "Deleting", &mut |ui| {
                                         ui.checkbox(&mut self.s.confirm_delete, "Ask before deleting files on the server");
                                         hint(ui, "Files deleted on a server can't be brought back.");
@@ -589,6 +617,7 @@ fn cmd_label(c: Cmd) -> &'static str {
         Cmd::CopyLocation => "Copy the location",
         Cmd::SortBy(_) => "Sort",
         Cmd::SortReverse => "Reverse the order",
+        Cmd::EditRemote => "Open a server file in an editor",
         Cmd::Up => "Up a folder",
         Cmd::LocalHome => "Home folder",
         Cmd::ServerHome => "Server home",

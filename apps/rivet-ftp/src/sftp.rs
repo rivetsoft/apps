@@ -28,6 +28,8 @@ pub enum Request {
     Get(String, PathBuf, bool),
     /// Local path → server path.
     Put(PathBuf, String, bool),
+    /// One file's size and date (answered with `Reply::Stat`).
+    Stat(String),
 }
 
 #[derive(Debug)]
@@ -37,6 +39,8 @@ pub enum Reply {
     Listing(String, Vec<Entry>),
     /// Request number, and an error if it failed.
     Done(u64, Option<String>),
+    /// A `Stat` answer: the file, or None when it isn't there.
+    Stat(u64, Option<Entry>),
     /// The session ended (could not log in, or the connection dropped).
     Closed(String),
 }
@@ -80,6 +84,13 @@ impl Session {
                     Request::Rename(a, b) => proc.simple(&format!("-rename {} {}", q(&a), q(&b))),
                     Request::Remove(p, dir) => proc.remove(&p, dir),
                     Request::Get(remote, local, dir) => proc.simple(&format!("-get{} -p {} {}", if dir { " -r" } else { "" }, q(&remote), q(&local.to_string_lossy()))),
+                    Request::Stat(path) => match proc.stat(&path) {
+                        Ok(e) => {
+                            send(Reply::Stat(id, e));
+                            continue;
+                        }
+                        Err(e) => Err(e),
+                    },
                     Request::Put(local, remote, dir) => proc.simple(&format!("-put{} -p {} {}", if dir { " -r" } else { "" }, q(&local.to_string_lossy()), q(&remote))),
                 };
                 match result {
@@ -210,6 +221,20 @@ impl Proc {
             return Err(errors.join("\n"));
         }
         Ok(entries)
+    }
+
+    /// One file: listed on its own, so its size and date are fresh.
+    fn stat(&mut self, path: &str) -> Result<Option<Entry>, String> {
+        let out = self.run(&[format!("-ls -la {}", q(path))])?;
+        let dir = parent(path);
+        let name = path.rsplit('/').next().unwrap_or(path);
+        if let Some(e) = out.iter().filter_map(|l| crate::listing::parse_ls_line(l, &dir)).find(|e| e.name == name) {
+            return Ok(Some(e));
+        }
+        if out.iter().any(|l| l.contains("not found")) {
+            return Ok(None);
+        }
+        Err(out.iter().find(|l| !l.trim().is_empty()).cloned().unwrap_or_else(|| "couldn't read the file's details".into()))
     }
 
     /// sftp has no recursive delete: empty a folder first, deepest first.

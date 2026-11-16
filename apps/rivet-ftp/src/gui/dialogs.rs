@@ -438,6 +438,28 @@ impl FtpApp {
                         next = Some(Prompt::Delete(items));
                     }
                 }
+                Prompt::EditConflict(i) => {
+                    let name = self.edits.get(i).map(|e| e.remote.rsplit('/').next().unwrap_or("").to_string()).unwrap_or_default();
+                    ui.heading(format!("\"{name}\" changed on the server"));
+                    ui.add_space(6.0);
+                    ui.add(egui::Label::new("Someone changed it on the server since you opened it. Replace the server's copy with yours?").wrap());
+                    ui.add_space(10.0);
+                    let (mut replace, mut later) = (false, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        replace = primary(ui, "Replace Server's Copy");
+                        later = plain(ui, "Not Now");
+                    });
+                    if replace && i < self.edits.len() {
+                        self.upload_edit(i);
+                    } else if later || esc {
+                        // Keep watching; the next save asks again.
+                        if let Some(ed) = self.edits.get_mut(i) {
+                            ed.state = super::edit::EditState::Watching;
+                        }
+                    } else {
+                        next = Some(Prompt::EditConflict(i));
+                    }
+                }
                 Prompt::Replace(p) => {
                     let n = p.clashes.len();
                     let place = if p.dir == Dir::Up { "on the server" } else { "on this computer" };
