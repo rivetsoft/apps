@@ -30,6 +30,18 @@ Addresses look like `sftp://user@server:port/folder`, `ftp://…` or `ftps://…
 never saved in the connections file. The window will keep them in your keyring, and SSH uses
 your keys or ssh agent.
 
+## SSH keys
+
+```sh
+rivet-ftp keys                           # your keys: type, passphrase, ssh agent, which connections use them
+rivet-ftp add Pi pi@192.168.1.4 --key id_ed25519   # a key's short name, or a file
+```
+
+In the window, Preferences → SSH Keys lists the keys in `~/.ssh`, makes new ones (Ed25519 or
+RSA 4096, with an optional passphrase), copies a public key, and adds one to a server
+(`ssh-copy-id` in a terminal). Each connection's settings pick its key. Private keys never leave
+`~/.ssh`. A key with a passphrase needs to be in your ssh agent (`ssh-add`) before connecting.
+
 ## Using them from a terminal
 
 ```sh

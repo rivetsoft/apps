@@ -21,7 +21,8 @@ Usage:
   rivet-ftp add NAME ADDRESS [options]
                                      Save a connection, for example
                                        rivet-ftp add \"Work site\" sftp://me@example.com/var/www
-      --key FILE                     SSH key to log in with
+      --key KEY                      SSH key to log in with: a name from
+                                     rivet-ftp keys (id_ed25519), or a file
       --local FOLDER                 Folder to open on this computer
       --note TEXT                    A note for yourself
       --replace                      Replace a connection with the same name
@@ -31,6 +32,7 @@ Usage:
   rivet-ftp ssh NAME [COMMAND...]    Log in with ssh, in the saved remote folder
                                      (or run COMMAND there)
   rivet-ftp sftp NAME                Open the sftp command line there
+  rivet-ftp keys                     Your SSH keys, and which connections use them
   rivet-ftp ssh-config               How to reach saved connections from plain ssh,
                                      scp, rsync and git by name
 
@@ -137,6 +139,7 @@ fn run(args: &[String]) -> Result<(), String> {
             let err = std::process::Command::new(cmd).args(&argv).exec();
             return Err(format!("couldn't start {cmd}: {err}"));
         }
+        "keys" => keys(),
         "ssh-config" => {
             let store = Store::load();
             // Make sure the file exists even before the first save.
@@ -179,6 +182,16 @@ fn add(rest: &[String]) -> Result<(), String> {
         return Err("--key is for SFTP (SSH) connections".into());
     }
     // Keep paths under home as ~/…, so the file still works after a move to another account.
+    // A bare key name means the key of that name in ~/.ssh.
+    let key = key.map(|k| {
+        let in_ssh = rivet_connections::keys::ssh_dir().join(&k);
+        if !k.contains('/') && in_ssh.is_file() { in_ssh.to_string_lossy().into_owned() } else { k }
+    });
+    if let Some(k) = &key
+        && !std::path::Path::new(&expand_tilde(k)).is_file()
+    {
+        return Err(format!("there's no key file {k} (see rivet-ftp keys)"));
+    }
     c.key = key.map(|k| tilde(std::path::Path::new(&k)));
     c.local = local.map(|l| tilde(std::path::Path::new(&l)));
     c.note = note;
@@ -190,6 +203,33 @@ fn add(rest: &[String]) -> Result<(), String> {
         println!("Log in with:  rivet-ftp ssh {}", c.alias());
     }
     Ok(())
+}
+
+fn keys() {
+    let keys = rivet_connections::keys::list();
+    if keys.is_empty() {
+        println!("No SSH keys in {}. Make one in Rivet FTP (Preferences, SSH Keys) or with ssh-keygen.", rivet_connections::keys::ssh_dir().display());
+        return;
+    }
+    let store = Store::load();
+    let w = keys.iter().map(|k| k.name.chars().count()).max().unwrap_or(3).max(3);
+    println!("{:<w$}  {:<9}  {:<10}  {:<5}  USED BY", "KEY", "TYPE", "PASSPHRASE", "AGENT");
+    for k in &keys {
+        let used: Vec<&str> = store.items.iter().filter(|c| c.key.as_deref().is_some_and(|p| expand_tilde(p) == k.path.to_string_lossy())).map(|c| c.name.as_str()).collect();
+        let pass = match k.passphrase {
+            Some(true) => "yes",
+            Some(false) => "no",
+            None => "?",
+        };
+        println!("{:<w$}  {:<9}  {:<10}  {:<5}  {}", k.name, k.kind_label(), pass, if k.in_agent { "yes" } else { "no" }, used.join(", "));
+    }
+}
+
+fn expand_tilde(p: &str) -> String {
+    match p.strip_prefix("~/") {
+        Some(rest) => format!("{}/{rest}", std::env::var("HOME").unwrap_or_default()),
+        None => p.to_string(),
+    }
 }
 
 fn list(store: &Store) {

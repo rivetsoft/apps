@@ -20,6 +20,8 @@
 //! connection. With `Include ~/.config/rivet-ftp/ssh_config` in `~/.ssh/config`, plain `ssh`,
 //! `scp`, `rsync` and `git` reach saved connections by name too.
 
+pub mod keys;
+
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 

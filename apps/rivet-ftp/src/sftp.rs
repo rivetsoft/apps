@@ -166,7 +166,7 @@ impl Proc {
         let _ = self.child.wait();
         let text = lines.join("\n");
         if text.contains("Permission denied") {
-            "The server refused the login. Rivet FTP logs in with your SSH keys or ssh agent; check the user name and key.".into()
+            "The server refused the login. Check the user name and key, and that the key was added to the server (Preferences, SSH Keys, Add to Server). A key with a passphrase needs to be in your ssh agent first (ssh-add).".into()
         } else if text.contains("Host key verification failed") || text.contains("REMOTE HOST IDENTIFICATION HAS CHANGED") {
             "The server's identity has changed since you last connected, so Rivet FTP stopped. If you expected this, remove the old entry from ~/.ssh/known_hosts.".into()
         } else if text.contains("Could not resolve hostname") {

@@ -112,11 +112,13 @@ struct Form {
     error: Option<String>,
     /// The name field gets the keyboard once, when the editor opens.
     focused_once: bool,
+    /// The key is a file typed by hand (not one from ~/.ssh).
+    key_other: bool,
 }
 
 impl Form {
     fn blank() -> Form {
-        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None, focused_once: false }
+        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None, focused_once: false, key_other: false }
     }
     fn from(c: &Connection) -> Form {
         Form {
@@ -131,6 +133,7 @@ impl Form {
             local: c.local.clone().unwrap_or_default(),
             error: None,
             focused_once: false,
+            key_other: false,
         }
     }
     fn build(&self) -> Result<Connection, String> {
@@ -156,6 +159,27 @@ impl Form {
             local: opt(&self.local),
             note: None,
         })
+    }
+}
+
+/// The New SSH Key dialog.
+struct NewKey {
+    name: String,
+    kind: rivet_connections::keys::KeyType,
+    comment: String,
+    pass: String,
+    pass2: String,
+    error: Option<String>,
+    /// Opened from the connection editor: use the new key there.
+    for_form: bool,
+    focused_once: bool,
+}
+
+impl NewKey {
+    fn new(for_form: bool) -> NewKey {
+        use rivet_connections::keys;
+        let kind = keys::KeyType::Ed25519;
+        NewKey { name: keys::suggest_name(&keys::ssh_dir(), kind), kind, comment: keys::default_comment(), pass: String::new(), pass2: String::new(), error: None, for_form, focused_once: false }
     }
 }
 
@@ -217,6 +241,12 @@ pub struct FtpApp {
     shot: Option<rivet_kit::Shot>,
     /// Test hook RIVET_FTP_SEND="up:a,b;down:c": transfers to start once the server folder is listed.
     hook_send: Option<String>,
+
+    /// SSH keys in ~/.ssh (read in the background when first needed).
+    keys: Vec<rivet_connections::keys::SshKey>,
+    keys_rx: Option<std::sync::mpsc::Receiver<Vec<rivet_connections::keys::SshKey>>>,
+    keys_asked: bool,
+    new_key: Option<NewKey>,
     shot_wait: u32,
 }
 

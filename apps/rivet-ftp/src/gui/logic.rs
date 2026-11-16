@@ -53,6 +53,10 @@ impl FtpApp {
             prompt: None,
             shot: screenshot.map(rivet_kit::Shot::new),
             hook_send: std::env::var("RIVET_FTP_SEND").ok(),
+            keys: Vec::new(),
+            keys_rx: None,
+            keys_asked: false,
+            new_key: None,
             shot_wait: 0,
         };
         if screenshot_mode(&app) {
@@ -75,11 +79,15 @@ impl FtpApp {
             app.prefs_page = match p.as_str() {
                 "transfers" => super::prefs::Page::Transfers,
                 "connections" => super::prefs::Page::Connections,
+                "keys" => super::prefs::Page::Keys,
                 "about" => super::prefs::Page::About,
                 _ => super::prefs::Page::Appearance,
             };
         }
         app.keys_open = std::env::var_os("RIVET_FTP_KEYS").is_some();
+        if std::env::var_os("RIVET_FTP_NEWKEY").is_some() {
+            app.new_key = Some(NewKey::new(false));
+        }
         if std::env::var_os("RIVET_FTP_NO_MENUBAR").is_some() {
             app.s.show_menubar = false;
         }
@@ -566,6 +574,38 @@ impl FtpApp {
             let items: Vec<Entry> = self.pane_ref(side).entries.iter().filter(|e| wanted.contains(&e.name.as_str())).cloned().collect();
             self.transfer_items(side, items);
         }
+    }
+
+    /// Read the SSH keys in the background, once (until `reload_keys`).
+    pub(super) fn want_keys(&mut self, ctx: &egui::Context) {
+        if let Some(rx) = &self.keys_rx
+            && let Ok(keys) = rx.try_recv()
+        {
+            self.keys = keys;
+            self.keys_rx = None;
+        }
+        if self.keys_asked {
+            return;
+        }
+        self.keys_asked = true;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(rivet_connections::keys::list());
+            ctx.request_repaint();
+        });
+        self.keys_rx = Some(rx);
+    }
+
+    pub(super) fn reload_keys(&mut self, ctx: &egui::Context) {
+        self.keys_asked = false;
+        self.want_keys(ctx);
+    }
+
+    /// The saved connections that log in with this key.
+    pub(super) fn key_users(&self, key: &rivet_connections::keys::SshKey) -> Vec<String> {
+        let p = key.path.to_string_lossy();
+        self.store.items.iter().filter(|c| c.key.as_deref().is_some_and(|k| expand(k).to_string_lossy() == p)).map(|c| c.name.clone()).collect()
     }
 
     pub(super) fn toggle_hidden(&mut self) {

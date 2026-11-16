@@ -13,16 +13,18 @@ pub(super) enum Page {
     Appearance,
     Transfers,
     Connections,
+    Keys,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 4] = [Page::Appearance, Page::Transfers, Page::Connections, Page::About];
+    const ALL: [Page; 5] = [Page::Appearance, Page::Transfers, Page::Connections, Page::Keys, Page::About];
     fn label(self) -> &'static str {
         match self {
             Page::Appearance => "Appearance",
             Page::Transfers => "Transfers",
             Page::Connections => "Connections",
+            Page::Keys => "SSH Keys",
             Page::About => "About",
         }
     }
@@ -31,6 +33,7 @@ impl Page {
             Page::Appearance => &["preferences-desktop-appearance-symbolic", "applications-graphics-symbolic", "preferences-desktop-theme"],
             Page::Transfers => &["network-transmit-receive-symbolic", "emblem-synchronizing-symbolic", "view-refresh-symbolic"],
             Page::Connections => &["network-server-symbolic", "network-workgroup-symbolic", "folder-remote-symbolic"],
+            Page::Keys => &["dialog-password-symbolic", "channel-secure-symbolic", "security-high-symbolic", "changes-prevent-symbolic"],
             Page::About => &["help-about-symbolic", "dialog-information-symbolic"],
         }
     }
@@ -68,6 +71,9 @@ impl FtpApp {
         let about_icon = self.app_icon(ctx);
         let mut win = std::mem::replace(&mut self.prefs_win, windows::WinState::new(0, Vec2::ZERO));
         let page_now = self.prefs_page;
+        if page_now == Page::Keys || page_now == Page::Connections {
+            self.want_keys(ctx);
+        }
         let mut pick: Option<Page> = None;
         let before = self.s.clone();
         let shown = windows::show(ctx, &mut win, &chrome, area, Vec2::new(600.0, 380.0), |ui| {
@@ -281,7 +287,12 @@ impl FtpApp {
                                                     ui.spacing_mut().item_spacing.y = 1.0;
                                                     ui.label(egui::RichText::new(&c.name).strong());
                                                     let kind = c.protocol.scheme().to_uppercase();
-                                                    ui.label(egui::RichText::new(format!("{kind} · {}", c.target())).small().color(weak));
+                                                    let key = match (&c.key, c.protocol) {
+                                                        (Some(k), _) => format!(" · key {}", std::path::Path::new(k).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()),
+                                                        (None, rivet_connections::Protocol::Sftp) => " · usual keys".into(),
+                                                        _ => String::new(),
+                                                    };
+                                                    ui.label(egui::RichText::new(format!("{kind} · {}{key}", c.target())).small().color(weak));
                                                 });
                                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                                     ui.spacing_mut().item_spacing.x = 6.0;
@@ -325,6 +336,116 @@ impl FtpApp {
                                         ui.add_space(2.0);
                                         hint(ui, "Plain text that only you can read. Passwords are never written there: SSH logins use your keys or ssh agent.");
                                     });
+                                }
+                                Page::Keys => {
+                                    let keys = self.keys.clone();
+                                    let loading = self.keys_rx.is_some();
+                                    let sftp: Vec<rivet_connections::Connection> = self.store.items.iter().filter(|c| c.protocol == rivet_connections::Protocol::Sftp).cloned().collect();
+                                    let key_icon = self.named_icon(ui.ctx(), &["dialog-password-symbolic", "channel-secure-symbolic", "security-high-symbolic"]);
+                                    let users: Vec<Vec<String>> = keys.iter().map(|k| self.key_users(k)).collect();
+                                    let mut copy_id: Option<String> = None;
+                                    section(ui, "Your keys", &mut |ui| {
+                                        if loading && keys.is_empty() {
+                                            ui.horizontal(|ui| {
+                                                ui.add(egui::Spinner::new().size(14.0));
+                                                ui.label(egui::RichText::new("Looking in ~/.ssh…").color(weak));
+                                            });
+                                        } else if keys.is_empty() {
+                                            ui.label("You don't have any SSH keys yet.");
+                                            hint(ui, "A key lets you log in to servers without a password. Make one below, then add it to your servers.");
+                                        }
+                                        for (i, k) in keys.iter().enumerate() {
+                                            if i > 0 {
+                                                ui.add_space(6.0);
+                                                ui.separator();
+                                                ui.add_space(6.0);
+                                            }
+                                            ui.horizontal(|ui| {
+                                                if let Some(t) = &key_icon {
+                                                    let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                                                    paint_tex(ui.painter(), t, r, v.text_color());
+                                                }
+                                                ui.add_space(4.0);
+                                                // The buttons sit on the right; the text gets the rest.
+                                                let text_w = (ui.available_width() - 270.0).max(160.0);
+                                                ui.vertical(|ui| {
+                                                    ui.set_width(text_w);
+                                                    ui.spacing_mut().item_spacing.y = 3.0;
+                                                    ui.horizontal(|ui| {
+                                                        ui.spacing_mut().item_spacing.x = 6.0;
+                                                        ui.label(egui::RichText::new(&k.name).strong());
+                                                        badge(ui, &k.kind_label(), false);
+                                                        match k.passphrase {
+                                                            Some(true) => badge(ui, "Passphrase", false),
+                                                            Some(false) => badge(ui, "No passphrase", false),
+                                                            None => {}
+                                                        }
+                                                        if k.in_agent {
+                                                            badge(ui, "In ssh agent", true);
+                                                        }
+                                                    });
+                                                    let mut line = String::new();
+                                                    if !k.comment.is_empty() {
+                                                        line.push_str(&k.comment);
+                                                    }
+                                                    if !k.fingerprint.is_empty() {
+                                                        if !line.is_empty() {
+                                                            line.push_str("  ·  ");
+                                                        }
+                                                        line.push_str(&k.fingerprint);
+                                                    }
+                                                    ui.add(egui::Label::new(egui::RichText::new(line).small().color(weak)).truncate());
+                                                    let used = &users[i];
+                                                    let used_text = if used.is_empty() { "Not used by a saved connection".to_string() } else { format!("Used by {}", used.join(", ")) };
+                                                    ui.label(egui::RichText::new(used_text).small().color(weak));
+                                                });
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                                if ui.add_enabled(k.public.is_some(), egui::Button::new("Copy Public Key")).on_hover_text("The public half is safe to share: paste it into a server's or a code host's list of keys").clicked()
+                                                    && let Some(pk) = &k.public
+                                                {
+                                                    ui.ctx().copy_text(pk.clone());
+                                                    self.note = Some((format!("Copied the public key of {}", k.name), false));
+                                                }
+                                                ui.add_enabled_ui(k.public.is_some() && !sftp.is_empty(), |ui| {
+                                                    ui.menu_button("Add to Server", |ui| {
+                                                        super::menus::menu_style(ui);
+                                                        ui.label(egui::RichText::new("Opens a terminal: log in once with your password").small().color(weak));
+                                                        ui.separator();
+                                                        for c in &sftp {
+                                                            if ui.button(&c.name).on_hover_text(c.target()).clicked() {
+                                                                copy_id = Some(rivet_connections::keys::copy_id_command(k, c));
+                                                                ui.close();
+                                                            }
+                                                        }
+                                                    })
+                                                    .response
+                                                    .on_disabled_hover_text("Save an SFTP connection first");
+                                                });
+                                                });
+                                            });
+                                        }
+                                        ui.add_space(14.0);
+                                        ui.horizontal(|ui| {
+                                            if ui.button("New Key…").clicked() {
+                                                self.new_key = Some(NewKey::new(false));
+                                            }
+                                            if ui.button("Look Again").on_hover_text("Read ~/.ssh again").clicked() {
+                                                let ctx = ui.ctx().clone();
+                                                self.reload_keys(&ctx);
+                                            }
+                                        });
+                                    });
+                                    section(ui, "How keys are used", &mut |ui| {
+                                        hint(ui, "Choose a key for each connection in its settings (Edit…). Without one, ssh tries your ssh agent and its usual keys.");
+                                        ui.add_space(4.0);
+                                        hint(ui, "Keys stay in ~/.ssh. Rivet FTP never sends a private key anywhere; Add to Server sends only the public half.");
+                                    });
+                                    if let Some(cmd) = copy_id
+                                        && let Err(e) = rivet_xdg::launch::run_shell(&cmd, None, true)
+                                    {
+                                        self.note = Some((format!("Couldn't open a terminal: {e}"), true));
+                                    }
                                 }
                                 Page::About => {
                                     ui.vertical_centered(|ui| {
@@ -422,6 +543,15 @@ impl FtpApp {
         let accent = pal.and_then(|p| p.accent).unwrap_or(Color32::from_rgb(a[0], a[1], a[2]));
         (self.s.theme, accent, pal)
     }
+}
+
+/// A small rounded tag ("ED25519", "In ssh agent"); `accent` colors it.
+fn badge(ui: &mut egui::Ui, text: &str, accent: bool) {
+    let v = ui.visuals().clone();
+    let (fill, fg) = if accent { (palette::mix(v.faint_bg_color, v.selection.bg_fill, 0.35), v.text_color()) } else { (palette::mix(v.faint_bg_color, v.text_color(), 0.08), v.weak_text_color()) };
+    egui::Frame::NONE.fill(fill).corner_radius(r_xs()).inner_margin(egui::Margin::symmetric(6, 1)).show(ui, |ui| {
+        ui.label(egui::RichText::new(text).size(11.0).color(fg));
+    });
 }
 
 /// A command in a quiet box, with a Copy button beside it.
