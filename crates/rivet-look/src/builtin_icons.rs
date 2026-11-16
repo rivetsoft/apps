@@ -126,6 +126,8 @@ pub fn lookup(name: &str) -> Option<(&'static str, bool)> {
             "insert-link" | "link" => "s:link",
             "sidebar-show-right" | "view-right-pane" => "s:sidebar-right",
             "vault" => "s:vault",
+            "rivet-live" | "live-mode" => "s:bolt",
+            "rivet-source" | "text-x-script" | "code-context" => "s:code",
             _ => return None,
         };
         return Some((k, true));
@@ -332,6 +334,8 @@ fn symbolic(key: &str) -> String {
         "s:recent" => r##"<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2.5"/>"##,
         "s:tag" => r##"<path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.7 6.7a1.4 1.4 0 0 1-2 0z"/><circle cx="8" cy="8" r="1.2" fill="#fff"/>"##,
         "s:settings" => r##"<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.7M12 18.5v2.7M2.8 12h2.7M18.5 12h2.7M5.5 5.5l1.9 1.9M16.6 16.6l1.9 1.9M5.5 18.5l1.9-1.9M16.6 7.4l1.9-1.9"/><circle cx="12" cy="12" r="6.5"/>"##,
+        "s:bolt" => r##"<path d="M13.5 2.8L5 13.6h6.2L10.2 21.2l8.6-10.9h-6.3z"/>"##,
+        "s:code" => r##"<path d="M8.5 6.5L3 12l5.5 5.5M15.5 6.5L21 12l-5.5 5.5"/>"##,
         "s:vault" => r##"<rect x="3" y="4" width="18" height="15" rx="2.5"/><circle cx="12" cy="11.5" r="3.6"/><path d="M12 7.9v1.4M12 13.7v1.4M8.4 11.5h1.4M14.2 11.5h1.4M6.5 19v1.5M17.5 19v1.5"/>"##,
         "s:sidebar-right" => r##"<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M14.5 4v16"/>"##,
         "s:link" => r##"<path d="M10 14a4 4 0 0 0 5.7 0l3.6-3.6a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3.6 3.6a4 4 0 0 0 5.7 5.7l1.2-1.2"/>"##,
@@ -366,7 +370,7 @@ mod tests {
             "sidebar-show-symbolic", "view-list-tree-symbolic", "media-eject-symbolic", "window-minimize-symbolic",
             "window-maximize-symbolic", "window-restore-symbolic", "window-close-symbolic", "open-menu-symbolic",
             "tag-symbolic", "preferences-system-symbolic", "document-new-symbolic", "insert-link-symbolic",
-            "sidebar-show-right-symbolic", "vault-symbolic",
+            "sidebar-show-right-symbolic", "vault-symbolic", "rivet-live-symbolic", "rivet-source-symbolic",
         ];
         for n in names {
             let (k, _) = lookup(n).unwrap_or_else(|| panic!("no built-in icon for {n}"));

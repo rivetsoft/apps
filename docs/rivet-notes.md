@@ -69,8 +69,9 @@ Optional features, turned on in Preferences → Modules.
 
 ## Live mode
 
-Two ways to edit (Preferences → Editor → Editing mode, Peek's Display card, View → Live Mode,
-or Quick Actions):
+Two ways to edit, switched with the button left of the reading view's eye at the top right (a
+bolt in live mode, brackets in source mode), or Preferences → Editor, View → Live Mode or Quick
+Actions. The reading view (the eye, Ctrl+Space) works in either:
 
 - **Source**: the Markdown as written, colored.
 - **Live**: you still write Markdown, but every line except the one you're on shows rendered (the line you're on stays

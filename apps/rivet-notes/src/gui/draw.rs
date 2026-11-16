@@ -288,6 +288,21 @@ impl NotesApp {
                     if ui.add_enabled(self.doc.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Reading view (Ctrl+Space)").clicked() {
                         self.toggle_reading(&ctx);
                     }
+                    // The editing mode, beside it: a bolt in live mode, brackets in source mode.
+                    let (names, fallback, tip): (&[&str], &str, &str) = if self.s.live_mode {
+                        (&["rivet-live-symbolic", "weather-storm-symbolic"], "Live", "Live mode: rendered except the line you're on. Click for source mode")
+                    } else {
+                        (&["rivet-source-symbolic", "text-x-script-symbolic", "code-context-symbolic"], "</>", "Source mode: Markdown as written. Click for live mode")
+                    };
+                    let mode_icon = self.icon(&ctx, names, 16.0);
+                    let b = match &mode_icon {
+                        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
+                        None => egui::Button::new(fallback),
+                    };
+                    if ui.add(b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text(tip).clicked() {
+                        self.s.live_mode = !self.s.live_mode;
+                        self.s.save();
+                    }
                     right_start = ui.min_rect().left();
                 });
             })

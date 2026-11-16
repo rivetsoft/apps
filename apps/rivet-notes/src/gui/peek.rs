@@ -48,12 +48,6 @@ impl NotesApp {
                     });
                     ui.add_space(4.0);
                 }
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    segment(ui, &mut self.s.live_mode, false, "Source").on_hover_text("Markdown as written, with colors");
-                    segment(ui, &mut self.s.live_mode, true, "Live").on_hover_text("Rendered, except the line you're editing");
-                });
                 ui.add_space(2.0);
                 ui.checkbox(&mut self.s.show_properties, "Show properties");
                 if self.s != before {
