@@ -10,6 +10,8 @@ repository = "https://github.com/ulinaaron/rivet-files"
 
 [dependencies]
 rivet-xdg = { path = "crates/rivet-xdg" }
+rivet-look = { path = "crates/rivet-look" }
+rivet-kit = { path = "crates/rivet-kit" }
 chrono = "0.4.45"
 eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }

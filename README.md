@@ -284,8 +284,8 @@ addresses, `%d` the folder you're in (all quoted). `For`: `one`, `many`, `some`,
 
 A dual-pane file-transfer app for SFTP, FTP and FTPS, built on Rivet's core: your computer on
 one side, the server on the other, and a transfer queue. It lives in this repository under
-[`apps/rivet-ftp`](apps/rivet-ftp). Saved connections already work from the command line, and
-plain `ssh` can use them too. See [Rivet FTP](docs/rivet-ftp.md) for the plan.
+[`apps/rivet-ftp`](apps/rivet-ftp). The first window works over SFTP, and saved connections work
+from the command line and from plain `ssh` too. See [Rivet FTP](docs/rivet-ftp.md) for the plan.
 
 ## 🗺️ Roadmap
 
@@ -337,6 +337,8 @@ before. Code the apps share lives in `crates/`, and the other apps live in `apps
 | --- | --- |
 | `src/`, `data/`, `packaging/` | Rivet Files |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
+| `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors |
+| `crates/rivet-kit` | Shared: in-memory screenshots for checks |
 | `crates/rivet-connections` | Shared: saved server connections (Rivet FTP's window, its command line, and `ssh`) |
 | `apps/rivet-ftp` | Rivet FTP |
 | `docs/` | Documentation, written as wiki pages ([index](docs/README.md)) |

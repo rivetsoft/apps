@@ -62,7 +62,7 @@ fn from_hsv(h: f32, s: f32, v: f32) -> Color32 {
 }
 
 /// A sibling colour: the accent's hue turned by `deg`, kept vivid enough to read.
-pub(crate) fn hue(accent: Color32, deg: f32) -> Color32 {
+pub fn hue(accent: Color32, deg: f32) -> Color32 {
     let (h, s, v) = to_hsv(accent);
     from_hsv(h + deg, s.clamp(0.42, 0.8), v.clamp(0.62, 0.86))
 }

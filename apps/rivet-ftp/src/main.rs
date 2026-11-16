@@ -1,6 +1,12 @@
-//! Rivet FTP. The window (local and remote panes, a transfer queue) is still to come; this is
-//! its command line, which shares the saved connections with the window and with plain ssh.
+//! Rivet FTP: a two-pane file-transfer window (this computer | the server, with a transfer
+//! queue), and a command line that shares its saved connections with the window and with
+//! plain ssh.
 
+mod gui;
+mod listing;
+mod sftp;
+
+use std::path::PathBuf;
 use std::process::ExitCode;
 
 use rivet_connections::{Connection, Store};
@@ -8,6 +14,8 @@ use rivet_connections::{Connection, Store};
 const HELP: &str = "Rivet FTP: saved connections for SFTP, FTP and FTPS
 
 Usage:
+  rivet-ftp                          Open the window
+  rivet-ftp open NAME                Open the window and connect
   rivet-ftp list                     Show saved connections
   rivet-ftp add NAME ADDRESS [options]
                                      Save a connection, for example
@@ -33,7 +41,20 @@ alone means SFTP. Passwords are never saved in the connections file
 (~/.config/rivet-ftp/connections.conf); SSH logins use your keys or ssh agent.";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // --screenshot FILE.png: draw the window in memory, save a picture of it and exit (checks).
+    let mut screenshot = None;
+    if let Some(i) = args.iter().position(|a| a == "--screenshot") {
+        args.remove(i);
+        if i < args.len() {
+            screenshot = Some(PathBuf::from(args.remove(i)));
+        }
+    }
+    match args.first().map(String::as_str) {
+        None => return window(None, screenshot),
+        Some("open") => return window(args.get(1).cloned(), screenshot),
+        _ => {}
+    }
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -43,12 +64,24 @@ fn main() -> ExitCode {
     }
 }
 
+fn window(open: Option<String>, screenshot: Option<PathBuf>) -> ExitCode {
+    if screenshot.is_some() {
+        rivet_kit::headless::run([1100.0, 700.0], move |cc| Box::new(gui::FtpApp::new(cc, open, screenshot)));
+        return ExitCode::SUCCESS;
+    }
+    let viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet FTP").with_app_id("rivet-ftp").with_inner_size([1100.0, 720.0]).with_min_inner_size([640.0, 420.0]);
+    let options = eframe::NativeOptions { viewport, persist_window: false, ..Default::default() };
+    match eframe::run_native("Rivet FTP", options, Box::new(move |cc| Ok(Box::new(gui::FtpApp::new(cc, open, None))))) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("rivet-ftp: couldn't open the window: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 fn run(args: &[String]) -> Result<(), String> {
-    let Some(cmd) = args.first() else {
-        println!("The Rivet FTP window isn't ready yet. Saved connections work already:\n");
-        println!("{HELP}");
-        return Ok(());
-    };
+    let Some(cmd) = args.first() else { return Ok(()) };
     let rest = &args[1..];
     match cmd.as_str() {
         "help" | "-h" | "--help" => println!("{HELP}"),

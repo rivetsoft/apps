@@ -2268,6 +2268,8 @@ dependencies = [
  "png",
  "raw-window-handle",
  "resvg",
+ "rivet-kit",
+ "rivet-look",
  "rivet-xdg",
  "skrifa",
  "wayland-backend",
@@ -2286,7 +2288,31 @@ dependencies = [
 name = "rivet-ftp"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "eframe",
  "rivet-connections",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-xdg",
+]
+
+[[package]]
+name = "rivet-kit"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+]
+
+[[package]]
+name = "rivet-look"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+ "resvg",
+ "rivet-xdg",
+ "skrifa",
 ]
 
 [[package]]

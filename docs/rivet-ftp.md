@@ -4,7 +4,11 @@ A dual-pane file-transfer app for Linux (SFTP, FTP and FTPS), built on Rivet's c
 written in Rust and egui, with no GTK or Qt. It's in the same family as Transmit and FileZilla
 and works the way people expect from those, but it has its own name, icon and look.
 
-**Status:** saved connections and the command line work. The window doesn't exist yet.
+**Status:** the first window works over SFTP. It has the connection list, both panes, transfers
+both ways (files and whole folders) with a queue, new folder, rename and delete on the
+server, and a quick-connect field. The command line works too. FTP and FTPS can be saved but
+not opened yet. Open the window with `rivet-ftp`, or `rivet-ftp open NAME` to connect straight
+away.
 
 ## How it should work
 
@@ -25,7 +29,22 @@ These come from the owner's guidance and set the direction.
   pause, retry, and a choice when a file already exists (overwrite, skip, rename, or overwrite if
   newer).
 - **Everything else from Rivet:** the path bar with fuzzy suggestions, the three views, Peek,
-  Quick Open and Quick Actions, theme colours, terminal mode and Vim keys.
+  Quick Open and Quick Actions, theme colors, terminal mode and Vim keys.
+
+## Keys
+
+| Key | |
+| --- | --- |
+| Tab | Switch between the panes |
+| Enter / double-click | Open a folder, or send a file to the other side |
+| Backspace | Up a folder |
+| Up / Down, Shift to extend | Move through the list |
+| Ctrl+A | Select everything |
+| F2 | Rename |
+| Delete | Delete on the server (asks first) |
+| Ctrl+Shift+N | New folder |
+| Ctrl+H | Show hidden files |
+| F5 | Refresh |
 
 ## Where things are kept
 
@@ -37,13 +56,17 @@ These come from the owner's guidance and set the direction.
 
 ## Plan
 
-1. ✅ Shared crates in this repository: `rivet-xdg` and `rivet-connections`.
+1. ✅ Shared crates in this repository: `rivet-xdg`, `rivet-connections`, `rivet-look` (theme,
+   colors, icons, fonts) and `rivet-kit` (screenshots for checks).
 2. ✅ The `rivet-ftp` command line for saved connections, `ssh` and `sftp`.
-3. Move the look into a shared crate (theme, icons, fonts, the path bar), so the window looks
-   like a Rivet app from its first build. See [shared crates](shared-crates.md).
-4. A window with the connection list and two local panes, reusing Rivet's split view.
-5. Remote browsing over SFTP first (the most common protocol), then FTP and FTPS.
-6. The transfer queue.
-7. Passwords in the keyring, host-key checks (known_hosts), and reconnecting after a drop.
-8. Packaging (Flatpak, AUR, AppImage) and releases, tagged `rivet-ftp-vX.Y.Z` so they stay
-   separate from Rivet's.
+3. ✅ The window: the connection list (add, edit, remove, quick connect), two panes, a path bar,
+   keyboard control, drag and drop between the panes, and the transfer queue.
+4. ✅ SFTP through the system's own `sftp` program. Your keys, agent, `~/.ssh/config` and
+   known_hosts all apply. A new server is trusted on first use, and a changed server key is
+   refused.
+5. Next: Rivet's own file views and path bar in the panes (after the widget refactor in
+   [shared crates](shared-crates.md)), sorting by column, and upload progress.
+6. FTP and FTPS, with passwords kept in the keyring.
+7. Resuming, retrying and pausing transfers; reconnecting after a drop; folder compare and sync.
+8. A launcher entry, packaging (Flatpak, AUR, AppImage) and releases, tagged
+   `rivet-ftp-vX.Y.Z` so they stay separate from Rivet's.

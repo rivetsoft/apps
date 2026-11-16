@@ -578,7 +578,7 @@ pub fn load_image_file(path: &Path, px: u32) -> Option<egui::ColorImage> {
     }
 }
 
-pub(crate) fn render_svg(data: &[u8], px: u32) -> Option<egui::ColorImage> {
+pub fn render_svg(data: &[u8], px: u32) -> Option<egui::ColorImage> {
     let opt = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(data, &opt).ok()?;
     let size = tree.size();

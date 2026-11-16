@@ -16,7 +16,7 @@ currently written as part of the Rivet window, so it needs a small refactor firs
 |---|---|---|---|
 | **rivet-xdg** | `places` (XDG folders, bookmarks, drives), `mime` (shared-mime-info), `launch` (default apps, Open With, terminal), `desktop` (.desktop files), `crash` (local crash reports) | no | small: these only use each other |
 | **rivet-fs** | `fsops` (copy/move/trash with progress), `undo`, `archive`, `rename` (bulk-rename rules), `natural_cmp`, `fuzzy_score` and `folder_matches` | no | small |
-| **rivet-look** | `palette` (live desktop colours), `fonts`, `icons` + `builtin_icons` + `nerd`, `highlight` (theme-coloured code), plus the theme setup now in app.rs: visuals, corner radii (`r_xs`…`r_lg`, square mode), status colours, terminal-mode helpers, `paint_tex` | yes | medium: it reads `Settings` directly in a few places |
+| **rivet-look** | `palette` (live desktop colors), `fonts`, `icons` + `builtin_icons` + `nerd`, `highlight` (theme-colored code), plus the theme setup now in app.rs: visuals, corner radii (`r_xs`…`r_lg`, square mode), status colors, terminal-mode helpers, `paint_tex` | yes | medium: it reads `Settings` directly in a few places |
 | **rivet-media** | `thumbs` (freedesktop thumbnail cache + thumbnailers), `preview`, `media` (ffmpeg check, video frames) | yes (textures) | small |
 | **rivet-clip** | `wlclip` (Wayland clipboard and drag-out with uri-lists, cut/copy markers) | window handle only | small |
 | **rivet-kit** | `headless` (in-memory screenshots for checks), the crash-report dialog, the key=value settings store (load/save, never write during checks), the background `watch` waker, the shortcut-window layout | yes | small–medium |
@@ -60,7 +60,7 @@ reads (show hidden, picker filter) removes both dependencies.
 
 ## Suggested order
 
-1. ✅ **Workspace, no behaviour change.** Rivet stays at the top of the repository, which is
+1. ✅ **Workspace, no behavior change.** Rivet stays at the top of the repository, which is
    also the workspace root, so Flatpak, AUR, AppImage, CI and the release scripts work
    unchanged. Shared code goes in `crates/` and the other apps in `apps/`. CI builds, tests and
    lints the whole workspace.
@@ -69,14 +69,19 @@ reads (show hidden, picker filter) removes both dependencies.
      other code changed.
    - ✅ **rivet-connections**, new: saved servers for Rivet FTP's window, its command line and
      `ssh`.
+   - ✅ **rivet-kit**: the in-memory screenshot renderer, and a `Shot` helper that gives any
+     app `--screenshot FILE.png`.
    - Next: rivet-fs, rivet-media, rivet-clip, and `crash` into rivet-xdg.
-3. **rivet-look:** replace the direct `Settings` reads with a small `Look` value (accent, the
-   three palette colours, square corners, terminal mode, fonts) that each app fills in.
+3. ✅ **rivet-look:** `palette`, `fonts`, `icons`, `builtin_icons`, `nerd` and `highlight`
+   moved over unchanged. The theme moved too: `theme::apply` takes a small `Look` value (light,
+   dark or system; accent; desktop palette; terminal mode) and also provides the corner radii and
+   status colors. Rivet's screenshots are pixel-identical before and after the move.
 4. **`Loc` + `FileSource` + jobs** in rivet-fs, with Rivet switched over to them.
 5. **rivet-widgets:** lift the path bar, the file views and Peek out of `impl RivetApp`. Each
    widget takes the state it draws plus a `FileSource`, and returns actions.
-6. **Rivet FTP's window:** two panes (local | remote, based on Rivet's split view), the
-   connection list, and the queue. See [Rivet FTP](rivet-ftp.md).
+6. ✅ (first version) **Rivet FTP's window:** the connection list, two panes (this computer |
+   the server) and the transfer queue, built on rivet-look. Its panes are its own simple lists
+   for now; once step 5 is done, they become Rivet's file views. See [Rivet FTP](rivet-ftp.md).
 
 Steps 1–3 are low-risk and pay off even if the second app changes plans. Step 5 is the big
 one, but it also makes Rivet's interface code easier to test.

@@ -14,3 +14,8 @@ path = "src/main.rs"
 
 [dependencies]
 rivet-connections = { path = "../../crates/rivet-connections" }
+rivet-kit = { path = "../../crates/rivet-kit" }
+rivet-look = { path = "../../crates/rivet-look" }
+rivet-xdg = { path = "../../crates/rivet-xdg" }
+chrono = "0.4.45"
+eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }

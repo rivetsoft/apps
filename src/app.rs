@@ -1,7 +1,7 @@
 //! The file manager window: state, navigation, actions and keyboard handling.
 //! Drawing lives in the child modules (chrome, views, dialogs).
 
-use eframe::egui::{self, Color32, CornerRadius, Key, Pos2, Rect, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Color32, Key, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,7 +14,7 @@ use crate::mime::MimeDb;
 use crate::model::{Entry, Location, Tab};
 use crate::places::{self, Bookmark, Mount, UserDirs};
 use crate::settings::{Settings, ThemeChoice, ViewMode};
-use crate::palette::{self, mix, Palette};
+use crate::palette::{self, Palette};
 use crate::thumbs::{self, Thumbnailer};
 
 mod chrome;
@@ -339,24 +339,9 @@ pub struct RivetApp {
     tree_children: std::collections::HashMap<PathBuf, Vec<PathBuf>>,
 }
 
-/// One radius scale for the whole app. Nested shapes use the next step down by the
-/// padding between them, so corners stay concentric (e.g. a MD bar with 4 px
-/// padding holds SM pills).
-/// Corner radii. Terminal mode squares everything off (see `set_square`).
-static SQUARE: AtomicBool = AtomicBool::new(false);
-pub(crate) fn set_square(on: bool) {
-    SQUARE.store(on, Ordering::Relaxed);
-}
-pub(crate) fn square() -> bool {
-    SQUARE.load(Ordering::Relaxed)
-}
-fn radius(r: u8) -> u8 {
-    if square() { 0 } else { r }
-}
-pub(crate) fn r_xs() -> u8 { radius(4) } // tiny things: swatches, selection band
-pub(crate) fn r_sm() -> u8 { radius(6) } // controls: buttons, pills, tabs, items, list rows
-pub(crate) fn r_md() -> u8 { radius(10) } // bars and cards: location bar, sidebar rows, menus, settings cards
-pub(crate) fn r_lg() -> u8 { radius(14) } // big surfaces: the file area, in-app windows
+// The look shared with the other Rivet apps: corner radii (square in terminal mode) and the
+// status colours.
+pub(crate) use rivet_look::theme::{StatusColors, r_lg, r_md, r_sm, r_xs, set_square, status};
 
 const ACCENTS: [([u8; 3], &str); 7] = [
     ([0x35, 0x84, 0xe4], "Blue"),
@@ -367,39 +352,6 @@ const ACCENTS: [([u8; 3], &str); 7] = [
     ([0xc0, 0x1c, 0x28], "Red"),
     ([0x77, 0x76, 0x7b], "Grey"),
 ];
-
-/// Info / danger / warning / success: a fixed base hue (70%) tinted by the theme accent (30%),
-/// so action colors belong to the current palette.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct StatusColors {
-    pub info: Color32,
-    pub danger: Color32,
-    pub warning: Color32,
-    pub success: Color32,
-}
-
-impl StatusColors {
-    pub fn from_theme(theme: Color32) -> Self {
-        let m = |b: Color32| mix(b, theme, 0.3);
-        StatusColors {
-            info: m(Color32::from_rgb(0x35, 0x84, 0xe4)),
-            danger: m(Color32::from_rgb(0xe0, 0x1b, 0x24)),
-            warning: m(Color32::from_rgb(0xe5, 0xa5, 0x0a)),
-            success: m(Color32::from_rgb(0x26, 0xa2, 0x69)),
-        }
-    }
-
-    /// Readable text on a filled button of this color.
-    pub fn on(c: Color32) -> Color32 {
-        if palette::luminance(c) > 0.62 { Color32::from_gray(20) } else { Color32::WHITE }
-    }
-}
-
-/// The current status colors (set whenever the visuals change).
-pub(crate) fn status(ctx: &egui::Context) -> StatusColors {
-    ctx.data(|d| d.get_temp::<StatusColors>(egui::Id::unique("rivet-status-colors")))
-        .unwrap_or_else(|| StatusColors::from_theme(Color32::from_rgb(0x35, 0x84, 0xe4)))
-}
 
 fn accent_color(s: &Settings) -> Color32 {
     let a = s.live_accent.unwrap_or(s.accent);
@@ -942,119 +894,13 @@ impl RivetApp {
         self.applied_visuals = Some(key);
         self.s.live_accent = pal.as_ref().and_then(|p| p.accent).map(|c| [c.r(), c.g(), c.b()]);
         self.sidebar_fill = pal.as_ref().and_then(|p| p.sidebar_bg);
-        ctx.set_theme(match (&pal, self.s.theme) {
-            // A generated palette is made for one mode; follow it.
-            (Some(p), _) => {
-                if p.is_dark() { egui::ThemePreference::Dark } else { egui::ThemePreference::Light }
-            }
-            (None, ThemeChoice::System) => egui::ThemePreference::System,
-            (None, ThemeChoice::Light) => egui::ThemePreference::Light,
-            (None, ThemeChoice::Dark) => egui::ThemePreference::Dark,
-        });
         let accent = accent_color(&self.s);
-        let status = StatusColors::from_theme(accent);
-        ctx.data_mut(|d| d.insert_temp(egui::Id::unique("rivet-status-colors"), status));
-        for theme in [egui::Theme::Light, egui::Theme::Dark] {
-            let dark = theme == egui::Theme::Dark;
-            // Start from a clean style each time so colours from an old palette never linger.
-            let mut style = egui::Style { visuals: if dark { egui::Visuals::dark() } else { egui::Visuals::light() }, ..Default::default() };
-            style.visuals.dark_mode = dark;
-            ctx.set_style_of(theme, style);
-            ctx.style_mut_of(theme, |st| {
-                let v = &mut st.visuals;
-                v.selection.bg_fill = accent;
-                v.selection.stroke = Stroke::new(1.0, Color32::WHITE);
-                v.hyperlink_color = accent;
-                v.error_fg_color = status.danger;
-                v.warn_fg_color = status.warning;
-                if dark {
-                    // Elevation by surface: content (lowest) < chrome < pop-ups.
-                    v.extreme_bg_color = Color32::from_rgb(0x24, 0x24, 0x24);
-                    v.panel_fill = Color32::from_rgb(0x30, 0x30, 0x30);
-                    v.window_fill = Color32::from_rgb(0x3a, 0x3a, 0x3a);
-                    v.faint_bg_color = Color32::from_rgb(0x2b, 0x2b, 0x2b);
-                } else {
-                    // Light: a slightly deeper chrome and darker secondary text, so
-                    // edges, labels and pale icons keep enough contrast on white.
-                    v.extreme_bg_color = Color32::WHITE;
-                    v.panel_fill = Color32::from_rgb(0xea, 0xea, 0xec);
-                    v.window_fill = Color32::from_rgb(0xfb, 0xfb, 0xfc);
-                    v.faint_bg_color = Color32::from_rgb(0xf3, 0xf3, 0xf5);
-                    v.weak_text_color = Some(Color32::from_gray(104));
-                    v.widgets.inactive.weak_bg_fill = Color32::from_rgb(0xe2, 0xe2, 0xe5);
-                    // Checkboxes, slider rails and other controls need a visible well on white.
-                    v.widgets.inactive.bg_fill = Color32::from_rgb(0xd3, 0xd3, 0xd8);
-                    v.widgets.hovered.weak_bg_fill = Color32::from_rgb(0xdc, 0xdc, 0xe0);
-                }
-                for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
-                    w.corner_radius = CornerRadius::same(r_sm());
-                }
-                v.window_corner_radius = CornerRadius::same(r_lg());
-                v.menu_corner_radius = CornerRadius::same(r_md());
-                // No outlines: pop-ups stand out by their raised surface and shadow.
-                v.window_stroke = Stroke::NONE;
-                if let Some(p) = pal.as_ref().filter(|p| p.is_dark() == dark) {
-                    let bg = p.window_bg.or(p.view_bg).unwrap_or(v.panel_fill);
-                    let fg = p.window_fg.or(p.view_fg).unwrap_or(if dark { Color32::from_gray(225) } else { Color32::from_gray(30) });
-                    let view = p.view_bg.unwrap_or(bg);
-                    // Toolbar, sidebar, menu bar and status bar share one raised surface.
-                    v.panel_fill = p.headerbar_bg.or(p.sidebar_bg).unwrap_or_else(|| mix(bg, fg, 0.05));
-                    v.extreme_bg_color = view;
-                    v.faint_bg_color = mix(view, fg, 0.035);
-                    if v.panel_fill == view {
-                        v.panel_fill = mix(view, fg, 0.05); // keep the two levels distinguishable
-                    }
-                    let chrome = v.panel_fill;
-                    v.window_fill = p.popover_bg.filter(|c| *c != chrome && *c != view).unwrap_or_else(|| mix(chrome, fg, 0.07));
-                    v.text_edit_bg_color = Some(mix(view, fg, 0.05));
-                    // Secondary text: lighter than the main text, but readable on light schemes too.
-                    v.weak_text_color = Some(mix(fg, view, if dark { 0.4 } else { 0.32 }));
-                    v.selection.stroke = Stroke::new(1.0, p.accent_fg.unwrap_or(if palette::luminance(accent) > 0.6 { Color32::BLACK } else { Color32::WHITE }));
-                    v.widgets.noninteractive.bg_fill = bg;
-                    v.widgets.noninteractive.weak_bg_fill = bg;
-                    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, mix(bg, fg, 0.12));
-                    for (w, t) in [(&mut v.widgets.inactive, 0.08), (&mut v.widgets.hovered, 0.15), (&mut v.widgets.active, 0.22), (&mut v.widgets.open, 0.12)] {
-                        w.bg_fill = mix(bg, fg, t);
-                        w.weak_bg_fill = mix(bg, fg, t);
-                    }
-                    for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
-                        w.fg_stroke.color = fg;
-                    }
-                    v.widgets.hovered.bg_stroke = Stroke::new(1.0, mix(bg, fg, 0.25));
-                    if let Some(d) = p.destructive {
-                        v.error_fg_color = d;
-                    }
-                }
-                if self.s.terminal {
-                    // Terminal mode: one flat background, thin box lines, nothing floating.
-                    let fg = v.text_color();
-                    v.panel_fill = v.extreme_bg_color;
-                    v.faint_bg_color = v.extreme_bg_color;
-                    let line = mix(v.extreme_bg_color, fg, 0.28);
-                    v.window_stroke = Stroke::new(1.0, line);
-                    v.window_shadow = egui::Shadow::NONE;
-                    v.popup_shadow = egui::Shadow::NONE;
-                    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, line);
-                    v.widgets.inactive.bg_stroke = Stroke::new(1.0, line);
-                    v.window_fill = mix(v.extreme_bg_color, fg, 0.04);
-                }
-                st.spacing.item_spacing = Vec2::new(6.0, 4.0);
-                st.spacing.button_padding = Vec2::new(6.0, 3.0);
-                st.spacing.interact_size.y = 24.0;
-                // A little more room inside every pop-up menu.
-                st.spacing.menu_margin = egui::Margin::same(8);
-                for (ts, size) in [
-                    (egui::TextStyle::Body, 13.5),
-                    (egui::TextStyle::Button, 13.5),
-                    (egui::TextStyle::Small, 11.0),
-                    (egui::TextStyle::Heading, 18.0),
-                ] {
-                    if let Some(f) = st.text_styles.get_mut(&ts) {
-                        f.size = size * crate::fonts::scale();
-                    }
-                }
-            });
-        }
+        let mode = match self.s.theme {
+            ThemeChoice::System => rivet_look::theme::Mode::System,
+            ThemeChoice::Light => rivet_look::theme::Mode::Light,
+            ThemeChoice::Dark => rivet_look::theme::Mode::Dark,
+        };
+        rivet_look::theme::apply(ctx, &rivet_look::theme::Look { mode, accent, palette: pal.as_ref(), terminal: self.s.terminal });
     }
 
     // ---------------------------------------------------------------- icons

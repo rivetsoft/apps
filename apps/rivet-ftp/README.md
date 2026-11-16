@@ -1,13 +1,19 @@
 # Rivet FTP
 
-A dual-pane file-transfer app for SFTP, FTP and FTPS, built on Rivet's core. The window is still
-in development ([plan](../../docs/rivet-ftp.md)). Saved connections already work from the command
-line, and plain `ssh` can use them too.
+A dual-pane file-transfer app for SFTP, FTP and FTPS, built on Rivet's core: this computer on
+one side, the server on the other, and a transfer queue underneath. It's in development
+([plan and keys](../../docs/rivet-ftp.md)). SFTP works; FTP and FTPS come next.
 
 ```sh
 cargo build -p rivet-ftp
-./target/debug/rivet-ftp --help
+./target/debug/rivet-ftp                 # the window
+./target/debug/rivet-ftp open work-site  # the window, connected
+./target/debug/rivet-ftp --help          # the command line
 ```
+
+SFTP goes through your system's own `sftp` program (OpenSSH), so your keys, ssh agent,
+`~/.ssh/config` and known_hosts all apply. Drag files between the panes, double-click a file to
+send it across, or use Upload and Download.
 
 ## Saved connections
 
