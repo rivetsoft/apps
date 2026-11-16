@@ -4,6 +4,8 @@
 //! Usage: `rivet --help`.
 
 mod app;
+// Shared with the other Rivet apps (crates/).
+use rivet_xdg::{launch, mime, places};
 mod actions;
 mod archive;
 mod cli;
@@ -16,10 +18,8 @@ mod fsops;
 mod headless;
 mod highlight;
 mod icons;
-mod launch;
 mod desktop;
 mod media;
-mod mime;
 mod nerd;
 mod picker;
 mod portal;
@@ -27,7 +27,6 @@ mod portal_setup;
 mod network;
 mod model;
 mod palette;
-mod places;
 mod rename;
 mod preview;
 mod settings;

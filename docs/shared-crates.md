@@ -1,7 +1,7 @@
 # Sharing Rivet's core with a second app
 
-A plan for building a dual-pane file-transfer client (FTP, FTPS, SFTP) on the same core as
-Rivet. It is based on how Rivet's ~23,000 lines depend on each other today (November 2026).
+A plan for building Rivet FTP, a dual-pane file-transfer app (FTP, FTPS, SFTP), on the same
+core as Rivet. It is based on how Rivet's ~23,000 lines depend on each other (November 2026).
 
 Make it an original app with its own name, icon and look. Being in the same genre as
 existing transfer clients is fine, but don't copy one of them.
@@ -60,27 +60,37 @@ reads (show hidden, picker filter) removes both dependencies.
 
 ## Suggested order
 
-1. **Workspace, no behaviour change.** Turn `app/` into a Cargo workspace (`crates/…` and
-   `apps/rivet`), keeping one repository, one Cargo.lock and one CI. Rivet must look and work
-   the same: `rivet-dev qa` (0 crashes, 8/8 workflows) and the screenshot checks prove it.
-2. **Move the leaf crates:** rivet-xdg, rivet-fs, rivet-media and rivet-clip. These are mostly
-   file moves.
+1. ✅ **Workspace, no behaviour change.** Rivet stays at the top of the repository, which is
+   also the workspace root, so Flatpak, AUR, AppImage, CI and the release scripts work
+   unchanged. Shared code goes in `crates/` and the other apps in `apps/`. CI builds, tests and
+   lints the whole workspace.
+2. Move the leaf crates:
+   - ✅ **rivet-xdg** (`places`, `mime`, `launch`). Rivet uses it under the same names, so no
+     other code changed.
+   - ✅ **rivet-connections**, new: saved servers for Rivet FTP's window, its command line and
+     `ssh`.
+   - Next: rivet-fs, rivet-media, rivet-clip, and `crash` into rivet-xdg.
 3. **rivet-look:** replace the direct `Settings` reads with a small `Look` value (accent, the
    three palette colours, square corners, terminal mode, fonts) that each app fills in.
 4. **`Loc` + `FileSource` + jobs** in rivet-fs, with Rivet switched over to them.
 5. **rivet-widgets:** lift the path bar, the file views and Peek out of `impl RivetApp`. Each
    widget takes the state it draws plus a `FileSource`, and returns actions.
-6. **Start the transfer app:** two panes (local | remote, based on Rivet's split view), a site
-   manager, and the queue.
+6. **Rivet FTP's window:** two panes (local | remote, based on Rivet's split view), the
+   connection list, and the queue. See [Rivet FTP](rivet-ftp.md).
 
 Steps 1–3 are low-risk and pay off even if the second app changes plans. Step 5 is the big
 one, but it also makes Rivet's interface code easier to test.
 
-## Keep one repository for now
+## One repository, for now
 
-Keep both apps in one workspace until the shared APIs stop changing. A change to a shared crate
-then updates both apps in a single commit and one CI run. Separate repositories, or publishing
-the crates on crates.io, can come later.
+Decided November 2026: both apps share this repository for now. Rivet's README stays its
+front page, with a short section for Rivet FTP. Rivet FTP gets its own README in
+`apps/rivet-ftp`, and the longer pages live in `docs/` as wiki pages. Releases are told apart by
+tag (`v0.7.0` for Rivet as today, `rivet-ftp-v0.1.0` for Rivet FTP).
+
+If Rivet FTP later needs its own GitHub page for marketing, the shared crates can move to a
+third repository. Each app would then point at a tagged version of it, with nothing else
+changing, because the crates already have their own manifests and no ties to either app.
 
 The release tooling (`utilities/rivet-dev`: bump, AppImage, Flatpak, AUR, glibc check) and the
 CI workflow can be reused with only the app name changed.

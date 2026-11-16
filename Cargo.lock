@@ -2268,10 +2268,32 @@ dependencies = [
  "png",
  "raw-window-handle",
  "resvg",
+ "rivet-xdg",
  "skrifa",
  "wayland-backend",
  "wayland-client",
  "zbus",
+]
+
+[[package]]
+name = "rivet-connections"
+version = "0.1.0"
+dependencies = [
+ "rivet-xdg",
+]
+
+[[package]]
+name = "rivet-ftp"
+version = "0.1.0"
+dependencies = [
+ "rivet-connections",
+]
+
+[[package]]
+name = "rivet-xdg"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

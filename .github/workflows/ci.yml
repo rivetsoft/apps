@@ -30,14 +30,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --locked
+        run: cargo build --locked --workspace
 
       - name: Test
-        run: cargo test --locked
+        run: cargo test --locked --workspace
 
       # Common mistakes Rust's linter knows about; any warning fails the check.
       - name: Lint (clippy)
-        run: cargo clippy --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Release build
         run: cargo build --release --locked

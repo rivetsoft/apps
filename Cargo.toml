@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/ulinaaron/rivet-files"
 
 [dependencies]
+rivet-xdg = { path = "crates/rivet-xdg" }
 chrono = "0.4.45"
 eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
@@ -21,6 +22,11 @@ png = "0.18"
 resvg = { version = "0.50.0", default-features = false }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 async-io = "2"
+
+# One repository, several apps: Rivet stays at the top (so packaging and release tooling are
+# unchanged), shared code lives in crates/ and the other apps in apps/.
+[workspace]
+members = ["crates/*", "apps/*"]
 
 [profile.dev.package."*"]
 opt-level = 2

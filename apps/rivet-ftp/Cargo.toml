@@ -1,0 +1,16 @@
+[package]
+name = "rivet-ftp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A dual-pane file-transfer client (SFTP, FTP, FTPS) for Linux, built on Rivet's core"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ulinaaron/rivet-files"
+publish = false
+
+[[bin]]
+name = "rivet-ftp"
+path = "src/main.rs"
+
+[dependencies]
+rivet-connections = { path = "../../crates/rivet-connections" }

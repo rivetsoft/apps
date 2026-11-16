@@ -280,6 +280,13 @@ addresses, `%d` the folder you're in (all quoted). `For`: `one`, `many`, `some`,
 (empty space). `Types`: `files`, `folders`, `all`, file types or endings like `.png`. Also
 `Comment`, `Menu` (a submenu), `Each=true` (once per item), `Terminal=true` and `Enabled=false`.
 
+## 🔌 Rivet FTP (in development)
+
+A dual-pane file-transfer app for SFTP, FTP and FTPS, built on Rivet's core: your computer on
+one side, the server on the other, and a transfer queue. It lives in this repository under
+[`apps/rivet-ftp`](apps/rivet-ftp). Saved connections already work from the command line, and
+plain `ssh` can use them too. See [Rivet FTP](docs/rivet-ftp.md) for the plan.
+
 ## 🗺️ Roadmap
 
 - Tagging and pinning files
@@ -317,6 +324,24 @@ cargo build --release
 
 A global `rivet` command that always runs your latest build: `utilities/rivet-dev link` (system-wide, asks for
 your password) or `utilities/rivet-dev link --user` (`~/.local/bin`). Preferences → System has the same buttons.
+
+</details>
+
+<details>
+<summary><b>Repository layout</b></summary>
+
+One repository, several apps. Rivet stays at the top, so its packaging and release tools work as
+before. Code the apps share lives in `crates/`, and the other apps live in `apps/`.
+
+| Folder | What it is |
+| --- | --- |
+| `src/`, `data/`, `packaging/` | Rivet Files |
+| `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
+| `crates/rivet-connections` | Shared: saved server connections (Rivet FTP's window, its command line, and `ssh`) |
+| `apps/rivet-ftp` | Rivet FTP |
+| `docs/` | Documentation, written as wiki pages ([index](docs/README.md)) |
+
+`cargo build` builds Rivet. `cargo build --workspace` builds everything, and so does CI.
 
 </details>
 

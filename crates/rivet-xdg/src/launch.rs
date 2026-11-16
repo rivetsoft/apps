@@ -90,7 +90,7 @@ pub fn all_apps() -> Vec<DesktopApp> {
     v
 }
 
-pub(crate) fn mimeapps_default(mime: &str) -> Option<String> {
+pub fn mimeapps_default(mime: &str) -> Option<String> {
     let mut files = vec![places::config_home().join("mimeapps.list")];
     if let Ok(d) = std::env::var("XDG_CURRENT_DESKTOP") {
         for de in d.split(':') {
