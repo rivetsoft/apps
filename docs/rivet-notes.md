@@ -31,6 +31,13 @@ the list and leaves the folder alone).
   is reloaded, or you're asked if you had unsaved changes.
 - New notes get `title`, `created` and `tags`. Delete moves notes to the desktop's Trash.
 
+## Fonts
+
+Preferences → Fonts sets three fonts and the editor's size: **Interface** (menus, sidebar;
+like the desktop by default), **Editor** (the note's text; the interface font by default) and
+**Monospace** (code blocks, `inline code` and other embedded text; the system's by default). A
+sample shows the editor's fonts as you choose.
+
 ## Keys
 
 | Key | |

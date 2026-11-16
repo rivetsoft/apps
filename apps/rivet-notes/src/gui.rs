@@ -79,6 +79,8 @@ pub struct NotesApp {
     edit_cmd: Option<EditCmd>,
     /// The window title shown (it names the vault).
     title: String,
+    /// Installed font families, for Preferences (listed once, when first needed).
+    families: Option<(Vec<String>, Vec<String>)>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -97,6 +99,13 @@ impl NotesApp {
                 "below" => crate::layout::Layout::stacked(),
                 _ => crate::layout::Layout::tabs(Browse::Folders),
             };
+        }
+        // Test hook: RIVET_NOTES_FONTS=ui|editor|mono (family names, empty for the default).
+        if let Ok(f) = std::env::var("RIVET_NOTES_FONTS") {
+            let mut it = f.split('|').map(str::to_string);
+            s.ui_font = it.next().unwrap_or_default();
+            s.editor_font = it.next().unwrap_or_default();
+            s.mono_font = it.next().unwrap_or_default();
         }
         match std::env::var("RIVET_NOTES_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
@@ -123,6 +132,7 @@ impl NotesApp {
             shot: screenshot.map(rivet_kit::Shot::new),
             edit_cmd: None,
             title: String::new(),
+            families: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -621,6 +631,8 @@ impl eframe::App for NotesApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let c = self.choice();
+        // Fonts first, so the look doesn't load the default interface font as well.
+        self.look.set_fonts(&ctx, &self.s.ui_font, &self.s.editor_font, &self.s.mono_font);
         self.look.frame(&ctx, &c, self.shot.is_none());
         self.shortcuts(&ctx);
         let now = ctx.input(|i| i.time);

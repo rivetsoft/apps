@@ -17,6 +17,8 @@ pub struct LiveLook {
     checked: f64,
     key: Option<String>,
     fonts_set: bool,
+    /// The fonts last loaded by `set_fonts` (interface, editor, monospace).
+    font_key: Option<(String, String, String)>,
 }
 
 fn mtime(p: &std::path::Path) -> Option<SystemTime> {
@@ -33,7 +35,55 @@ pub struct Choice {
     pub text_size: f32,
 }
 
+/// The font family for an app's editor text (set up by `LiveLook::set_fonts`).
+pub fn editor_family() -> egui::FontFamily {
+    egui::FontFamily::Name("editor".into())
+}
+
 impl LiveLook {
+    /// Use these fonts (family names; empty: the interface follows the desktop, the editor
+    /// follows the interface, monospace follows the system's). Loaded only when they change.
+    /// Families: Proportional (interface), `editor_family()`, Monospace.
+    pub fn set_fonts(&mut self, ctx: &egui::Context, ui_font: &str, editor_font: &str, mono_font: &str) {
+        let key = (ui_font.to_string(), editor_font.to_string(), mono_font.to_string());
+        if self.font_key.as_ref() == Some(&key) {
+            return;
+        }
+        self.font_key = Some(key);
+        self.fonts_set = true;
+        let mut defs = egui::FontDefinitions::default();
+        let mut load = |name: &str, path: Option<std::path::PathBuf>| -> bool {
+            match path.and_then(|p| std::fs::read(p).ok()) {
+                Some(bytes) => {
+                    defs.font_data.insert(name.into(), Arc::new(egui::FontData::from_owned(bytes)));
+                    true
+                }
+                None => false,
+            }
+        };
+        let ui_ok = load("ui-font", fonts::resolve(ui_font).map(|(_, p)| p));
+        let ed_ok = !editor_font.is_empty() && load("editor-font", fonts::file_for(editor_font));
+        let mono_ok = load("mono-font", fonts::resolve_mono(mono_font).map(|(_, p)| p));
+        let base: Vec<String> = defs.families.get(&egui::FontFamily::Proportional).cloned().unwrap_or_default();
+        if ui_ok {
+            defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "ui-font".into());
+        }
+        if mono_ok {
+            defs.families.entry(egui::FontFamily::Monospace).or_default().insert(0, "mono-font".into());
+        }
+        // The editor: its own font, else the interface's; the usual fallbacks after it.
+        let mut ed: Vec<String> = Vec::new();
+        if ed_ok {
+            ed.push("editor-font".into());
+        }
+        if ui_ok {
+            ed.push("ui-font".into());
+        }
+        ed.extend(base);
+        defs.families.insert(editor_family(), ed);
+        ctx.set_fonts(defs);
+    }
+
     pub fn new() -> LiveLook {
         let (pal, watched) = palette::load();
         LiveLook { palette: pal, watched: watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect(), ..Default::default() }
@@ -67,7 +117,7 @@ impl LiveLook {
         if live && (now - self.checked >= 2.0 || self.checked == 0.0) {
             self.checked = now;
             if self.watched.iter().any(|(p, t)| mtime(p) != *t) {
-                *self = LiveLook { fonts_set: true, key: self.key.take(), checked: now, ..LiveLook::new() };
+                *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), checked: now, ..LiveLook::new() };
             }
             if c.follow_desktop_colors {
                 ctx.request_repaint_after(std::time::Duration::from_secs(2));

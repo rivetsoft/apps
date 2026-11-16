@@ -27,6 +27,13 @@ pub struct Settings {
     pub layout: crate::layout::Layout,
     /// Show the frontmatter as editable properties above the text.
     pub show_properties: bool,
+    /// Font families (empty: the interface follows the desktop, the editor the interface,
+    /// monospace the system's).
+    pub ui_font: String,
+    pub editor_font: String,
+    pub mono_font: String,
+    /// The editor's text size in points.
+    pub editor_size: f32,
     /// The vaults, most recently used first.
     pub vaults: Vec<PathBuf>,
     /// Folders (vault-relative) and tags folded up in the sidebar.
@@ -44,6 +51,10 @@ impl Default for Settings {
             show_sidebar: true,
             layout: Default::default(),
             show_properties: true,
+            ui_font: String::new(),
+            editor_font: String::new(),
+            mono_font: String::new(),
+            editor_size: 15.0,
             vaults: Vec::new(),
             collapsed: Vec::new(),
         }
@@ -81,6 +92,10 @@ impl Settings {
                 "browse" if v == "tags" => s.layout.show(Browse::Tags),
                 "browse" => {}
                 "show_properties" => s.show_properties = b,
+                "ui_font" => s.ui_font = v.to_string(),
+                "editor_font" => s.editor_font = v.to_string(),
+                "mono_font" => s.mono_font = v.to_string(),
+                "editor_size" => s.editor_size = v.parse::<f32>().unwrap_or(15.0).clamp(10.0, 28.0),
                 "tags_below" if b => s.layout = crate::layout::Layout::stacked(),
                 "tags_below" => {}
                 "panels" => {
@@ -108,7 +123,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -116,6 +131,10 @@ impl Settings {
             self.layout.to_text(),
             self.layout.split,
             self.show_properties,
+            self.ui_font.replace('\n', ""),
+            self.editor_font.replace('\n', ""),
+            self.mono_font.replace('\n', ""),
+            self.editor_size,
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),
         );

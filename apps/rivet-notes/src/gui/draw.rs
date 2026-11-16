@@ -499,6 +499,7 @@ impl NotesApp {
         };
         let colors = highlight::colors(v.text_color(), v.extreme_bg_color, accent_p, accent_s, accent_t);
         let show_props = self.s.show_properties;
+        let editor_size = self.s.editor_size;
         let now = ctx.input(|i| i.time);
         let mut edit: Option<EditCmd> = None;
         let Some(d) = self.doc.as_mut() else { return };
@@ -618,9 +619,12 @@ impl NotesApp {
             }
         }
         // ---- the text, colored like Markdown
-        let font = fonts::ui_font(15.0);
+        // The editor's own font; code (fenced blocks and `inline`) in the monospace one.
+        let font = egui::FontId::new(editor_size * fonts::scale(), rivet_look::live::editor_family());
+        let mono = egui::FontId::monospace(editor_size * 0.92 * fonts::scale());
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
             let mut job = highlight::layout(buf.as_str(), "note.md", &colors, font.clone());
+            mono_code(&mut job, buf.as_str(), &mono);
             job.wrap.max_width = wrap;
             ui.fonts_mut(|f| f.layout_job(job))
         };
@@ -950,6 +954,41 @@ impl NotesApp {
                     });
                     let vaults = self.s.vaults.clone();
                     let current = self.vault.clone();
+                    let (fams, monos) = self.families.get_or_insert_with(|| (fonts::families(), fonts::mono_families())).clone();
+                    let desktop = fonts::desktop_font_cached().map(|(f, _)| f).unwrap_or_else(|| "Sans".into());
+                    let system_mono = fonts::system_mono_name();
+                    section(ui, "Fonts", &mut |ui| {
+                        egui::Grid::new("notes-fonts").num_columns(2).spacing([24.0, 14.0]).min_col_width(110.0).show(ui, |ui| {
+                            ui.label("Interface");
+                            font_pick(ui, "f-ui", &mut self.s.ui_font, &format!("Like the desktop ({desktop})"), &fams);
+                            ui.end_row();
+                            ui.label("Editor");
+                            font_pick(ui, "f-ed", &mut self.s.editor_font, "Same as the interface", &fams);
+                            ui.end_row();
+                            ui.label("Monospace");
+                            font_pick(ui, "f-mono", &mut self.s.mono_font, &format!("System ({system_mono})"), &monos);
+                            ui.end_row();
+                            ui.label("Editor size");
+                            ui.horizontal(|ui| {
+                                for (pt, label) in [(13.0, "Small"), (15.0, "Medium"), (17.0, "Large"), (20.0, "Larger")] {
+                                    if ui.selectable_label(self.s.editor_size == pt, label).clicked() {
+                                        self.s.editor_size = pt;
+                                    }
+                                }
+                            });
+                            ui.end_row();
+                        });
+                        ui.add_space(10.0);
+                        // A sample in the editor's fonts.
+                        egui::Frame::NONE.fill(v.extreme_bg_color).corner_radius(r_sm()).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            let size = self.s.editor_size * fonts::scale();
+                            ui.label(egui::RichText::new("Notes are written in this font.").font(egui::FontId::new(size, rivet_look::live::editor_family())));
+                            ui.label(egui::RichText::new("let code = \"in this one\";").font(egui::FontId::monospace(size * 0.92)).color(weak));
+                        });
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new("Monospace is for code blocks, `inline code` and other embedded text.").small().color(weak));
+                    });
                     section(ui, "Sidebar", &mut |ui| {
                         use crate::layout::Layout;
                         let stacked = self.s.layout.is_stacked();
@@ -1006,6 +1045,97 @@ impl NotesApp {
             self.s.save();
         }
     }
+}
+
+/// A font family picker: the default entry, then the installed families.
+fn font_pick(ui: &mut egui::Ui, id: &str, value: &mut String, default_label: &str, families: &[String]) {
+    let shown = if value.is_empty() { default_label.to_string() } else { value.clone() };
+    egui::ComboBox::from_id_salt(id).width(280.0).height(360.0).selected_text(shown).show_ui(ui, |ui| {
+        menu_style(ui);
+        if ui.selectable_label(value.is_empty(), default_label).clicked() {
+            value.clear();
+        }
+        ui.separator();
+        for f in families {
+            if ui.selectable_label(value == f, f).clicked() {
+                *value = f.clone();
+            }
+        }
+    });
+}
+
+/// The byte ranges of code in Markdown: fenced blocks (with their fence lines) and `inline`
+/// spans outside them.
+fn code_ranges(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    let mut fence: Option<usize> = None;
+    for line in text.split_inclusive('\n') {
+        let t = line.trim_start();
+        let is_fence = t.starts_with("```") || t.starts_with("~~~");
+        match (fence, is_fence) {
+            (None, true) => fence = Some(pos),
+            (Some(start), true) => {
+                out.push(start..pos + line.len());
+                fence = None;
+            }
+            (Some(_), false) => {}
+            (None, false) => {
+                let b = line.as_bytes();
+                let mut i = 0;
+                while i < b.len() {
+                    if b[i] == b'`'
+                        && let Some(j) = line[i + 1..].find('`')
+                    {
+                        out.push(pos + i..pos + i + 1 + j + 1);
+                        i += j + 2;
+                        continue;
+                    }
+                    i += 1;
+                }
+            }
+        }
+        pos += line.len();
+    }
+    if let Some(start) = fence {
+        out.push(start..text.len());
+    }
+    out
+}
+
+/// Put the code parts of a laid-out note in the monospace font (colors kept).
+fn mono_code(job: &mut egui::text::LayoutJob, text: &str, mono: &egui::FontId) {
+    let ranges = code_ranges(text);
+    if ranges.is_empty() {
+        return;
+    }
+    let mut out = Vec::with_capacity(job.sections.len() + ranges.len() * 2);
+    for sec in std::mem::take(&mut job.sections) {
+        // Cut the section where code starts or ends inside it.
+        let (start, end): (usize, usize) = (sec.byte_range.start.into(), sec.byte_range.end.into());
+        let mut cuts = vec![start, end];
+        for r in &ranges {
+            for c in [r.start, r.end] {
+                if c > start && c < end && text.is_char_boundary(c) {
+                    cuts.push(c);
+                }
+            }
+        }
+        cuts.sort_unstable();
+        cuts.dedup();
+        for (k, w) in cuts.windows(2).enumerate() {
+            let mut part = sec.clone();
+            part.byte_range = egui::text::ByteIndex::from(w[0])..egui::text::ByteIndex::from(w[1]);
+            if k > 0 {
+                part.leading_space = 0.0;
+            }
+            if ranges.iter().any(|r| r.start <= w[0] && w[1] <= r.end) {
+                part.format.font_id = mono.clone();
+            }
+            out.push(part);
+        }
+    }
+    job.sections = out;
 }
 
 /// `~/x` → the home folder's x.
@@ -1324,4 +1454,19 @@ fn group_header(ui: &mut egui::Ui, name: &str, count: usize, open: bool, icon: &
     let tr = Rect::from_min_max(Pos2::new(x, rect.top()), Pos2::new(n.left() - 6.0, rect.bottom()));
     ui.painter().with_clip_rect(tr).text(Pos2::new(tr.left(), rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.5), col);
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::code_ranges;
+
+    #[test]
+    fn finds_code() {
+        let t = "Text with `a` and `b c`.\n```rust\nfn x() {}\n```\nAfter ` lone\n";
+        let r = code_ranges(t);
+        let parts: Vec<&str> = r.iter().map(|r| &t[r.clone()]).collect();
+        assert_eq!(parts, ["`a`", "`b c`", "```rust\nfn x() {}\n```\n"]);
+        // An unclosed fence runs to the end.
+        assert_eq!(code_ranges("a\n```\nb").first(), Some(&(2..7)));
+    }
 }
