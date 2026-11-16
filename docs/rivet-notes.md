@@ -31,6 +31,15 @@ the list and leaves the folder alone).
   is reloaded, or you're asked if you had unsaved changes.
 - New notes get `title`, `created` and `tags`. Delete moves notes to the desktop's Trash.
 
+## Formatting
+
+Keys that turn the selection (or the word under the cursor) into Markdown, and back again when
+pressed a second time: Ctrl+B bold, Ctrl+I italic, Shift+Ctrl+X strikethrough, Ctrl+E inline
+code, Ctrl+K link (a web address becomes the link's target), Ctrl+1/2/3 headings and Ctrl+0
+plain text, Shift+Ctrl+8/7/9 bulleted, numbered and task lists, Ctrl+Enter ticks a task,
+Shift+Ctrl+Q quote, Shift+Ctrl+E code block. They're also in the Format menu, the text's
+right-click menu and Preferences → Keyboard.
+
 ## Reading view
 
 Ctrl+Space (or View → Reading View, or the eye on the toolbar) shows the open note as a
@@ -41,7 +50,7 @@ keys, Page Up/Down, Space, Home and End scroll. Esc or Ctrl+Space closes it.
 
 ## Fonts
 
-Preferences → Fonts sets three fonts and the editor's size: **Interface** (menus, sidebar;
+Preferences → Editor sets three fonts, the editor's size and its line spacing: **Interface** (menus, sidebar;
 like the desktop by default), **Editor** (the note's text; the interface font by default) and
 **Monospace** (code blocks, `inline code` and other embedded text; the system's by default). A
 sample shows the editor's fonts as you choose.

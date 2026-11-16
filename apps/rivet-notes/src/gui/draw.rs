@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
-use rivet_look::theme::{ACCENTS, Mode, paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile, status};
-use rivet_look::{builtin_icons, fonts, highlight, palette, windows};
+use rivet_look::theme::{paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile, status};
+use rivet_look::{builtin_icons, fonts, highlight, palette};
 
 use super::*;
 
@@ -510,8 +510,10 @@ impl NotesApp {
         let colors = highlight::colors(v.text_color(), v.extreme_bg_color, accent_p, accent_s, accent_t);
         let show_props = self.s.show_properties;
         let editor_size = self.s.editor_size;
+        let line_spacing = self.s.line_spacing;
         let now = ctx.input(|i| i.time);
         let mut edit: Option<EditCmd> = None;
+        let mut fmt_pick: Option<crate::format::Fmt> = None;
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
@@ -635,9 +637,58 @@ impl NotesApp {
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
             let mut job = highlight::layout(buf.as_str(), "note.md", &colors, font.clone());
             mono_code(&mut job, buf.as_str(), &mono);
+            // Roomier lines than the interface's (Preferences → Editor → Line spacing).
+            for sec in &mut job.sections {
+                sec.format.line_height = Some(sec.format.font_id.size * line_spacing);
+            }
             job.wrap.max_width = wrap;
             ui.fonts_mut(|f| f.layout_job(job))
         };
+        // Formatting: keys while the text has the keyboard, or a menu's choice.
+        let body_id = egui::Id::unique("note-body");
+        let fmt = {
+            use crate::format::Fmt;
+            let cmd = egui::Modifiers::COMMAND;
+            let shift = egui::Modifiers { shift: true, ..egui::Modifiers::COMMAND };
+            let focused = ctx.memory(|m| m.has_focus(body_id));
+            // Shifted keys first (a plain Ctrl pattern also matches with Shift held).
+            let keys: [(egui::Modifiers, Key, Fmt); 15] = [
+                (shift, Key::X, Fmt::Strike),
+                (shift, Key::E, Fmt::CodeBlock),
+                (shift, Key::Num8, Fmt::Bullet),
+                (shift, Key::Num7, Fmt::Numbered),
+                (shift, Key::Num9, Fmt::Task),
+                (shift, Key::Q, Fmt::Quote),
+                (cmd, Key::B, Fmt::Bold),
+                (cmd, Key::I, Fmt::Italic),
+                (cmd, Key::E, Fmt::Code),
+                (cmd, Key::K, Fmt::Link),
+                (cmd, Key::Num1, Fmt::Heading(1)),
+                (cmd, Key::Num2, Fmt::Heading(2)),
+                (cmd, Key::Num3, Fmt::Heading(3)),
+                (cmd, Key::Num0, Fmt::Heading(0)),
+                (cmd, Key::Enter, Fmt::ToggleDone),
+            ];
+            let pressed = if focused {
+                ctx.input_mut(|i| keys.iter().find(|(m, k, _)| i.consume_shortcut(&egui::KeyboardShortcut::new(*m, *k))).map(|(_, _, f)| *f))
+            } else {
+                None
+            };
+            pressed.or(self.pending_fmt.take())
+        };
+        if let Some(f) = fmt {
+            let mut state = egui::TextEdit::load_state(&ctx, body_id).unwrap_or_default();
+            let len = d.body.chars().count();
+            let (a, b) = state.cursor.char_range().map(|r| (r.primary.index.0, r.secondary.index.0)).unwrap_or((len, len));
+            let (text, (na, nb)) = crate::format::apply(&d.body, (a, b), f);
+            if text != d.body {
+                d.body = text;
+                changed = true;
+            }
+            state.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(na), egui::text::CCursor::new(nb))));
+            state.store(&ctx, body_id);
+            ctx.memory_mut(|m| m.request_focus(body_id));
+        }
         egui::ScrollArea::vertical().id_salt("note-text").auto_shrink([false, false]).show(ui, |ui| {
             let r = ui.add(
                 egui::TextEdit::multiline(&mut d.body)
@@ -683,11 +734,28 @@ impl NotesApp {
                     edit = Some(EditCmd::SelectAll);
                     ui.close();
                 }
+                ui.separator();
+                ui.menu_button("Format", |ui| {
+                    menu_style(ui);
+                    for (k, (f, label, sc)) in crate::format::Fmt::ALL.iter().enumerate() {
+                        if [4, 5, 9, 14].contains(&k) {
+                            ui.separator();
+                        }
+                        if ui.add(egui::Button::new(*label).shortcut_text(*sc)).clicked() {
+                            fmt_pick = Some(*f);
+                            ui.close();
+                        }
+                    }
+                });
             });
         });
         if changed {
             d.dirty = true;
             d.edited_at = now;
+        }
+        if fmt_pick.is_some() {
+            self.pending_fmt = fmt_pick;
+            ctx.request_repaint();
         }
         if let Some(c) = edit {
             self.edit_cmd = Some(c);
@@ -875,196 +943,10 @@ impl NotesApp {
         }
     }
 
-    // ---------------------------------------------------------------- Preferences
-
-    fn prefs_window(&mut self, ctx: &egui::Context) {
-        let chrome = windows::Chrome { title: "Preferences".into(), icon: self.icon(ctx, &["preferences-system-symbolic", "emblem-system-symbolic"], 16.0), close: self.icon(ctx, &["window-close-symbolic"], 14.0), flush: false };
-        let area = ctx.content_rect().shrink(6.0);
-        let about_icon = self.app_icon(ctx);
-        let mut win = std::mem::replace(&mut self.prefs_win, windows::WinState::new(0, Vec2::ZERO));
-        let before = self.s.clone();
-        let pal = self.look.palette().cloned();
-        let mut open_vault: Option<PathBuf> = None;
-        let mut forget: Option<PathBuf> = None;
-        let about = self.about_open;
-        let shown = windows::show(ctx, &mut win, &chrome, area, Vec2::new(560.0, 380.0), |ui| {
-            let v = ui.visuals().clone();
-            let weak = v.weak_text_color();
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-                egui::Frame::NONE.inner_margin(egui::Margin { left: 18, right: 18, top: 10, bottom: 18 }).show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
-                    let card = v.faint_bg_color;
-                    let section = |ui: &mut egui::Ui, title: &str, body: &mut dyn FnMut(&mut egui::Ui)| {
-                        ui.label(egui::RichText::new(title).strong().size(14.5));
-                        ui.add_space(4.0);
-                        egui::Frame::NONE.fill(card).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 16)).show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            body(ui);
-                        });
-                        ui.add_space(20.0);
-                    };
-                    if about {
-                        ui.vertical_centered(|ui| {
-                            if let Some(t) = &about_icon {
-                                ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(88.0)));
-                            }
-                            ui.label(egui::RichText::new("Rivet Notes").size(22.0).strong());
-                            ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(weak));
-                            ui.add_space(6.0);
-                            ui.label("Markdown notes in plain folders, with frontmatter and tags.");
-                            ui.label(egui::RichText::new("Built on Rivet Files. No GTK or Qt.").color(weak));
-                        });
-                        ui.add_space(16.0);
-                    }
-                    section(ui, "Appearance", &mut |ui| {
-                        ui.checkbox(&mut self.s.follow_desktop_colors, "Follow desktop colors");
-                        let manual = !self.s.follow_desktop_colors || pal.is_none();
-                        ui.add_space(6.0);
-                        egui::Grid::new("notes-look").num_columns(2).spacing([24.0, 16.0]).min_col_width(110.0).show(ui, |ui| {
-                            ui.label("Style");
-                            ui.add_enabled_ui(manual, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.selectable_value(&mut self.s.theme, Mode::System, "Follow system");
-                                    ui.selectable_value(&mut self.s.theme, Mode::Light, "Light");
-                                    ui.selectable_value(&mut self.s.theme, Mode::Dark, "Dark");
-                                });
-                            });
-                            ui.end_row();
-                            ui.label("Accent");
-                            ui.add_enabled_ui(manual, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 8.0;
-                                    for (c, name) in ACCENTS {
-                                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
-                                        let col = Color32::from_rgb(c[0], c[1], c[2]);
-                                        ui.painter().circle_filled(r.center(), 9.0, if manual { col } else { col.gamma_multiply(0.4) });
-                                        if self.s.accent == c {
-                                            ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, ui.visuals().strong_text_color()));
-                                        }
-                                        if resp.on_hover_text(name).clicked() && manual {
-                                            self.s.accent = c;
-                                        }
-                                    }
-                                });
-                            });
-                            ui.end_row();
-                            ui.label("Icons");
-                            ui.horizontal(|ui| {
-                                ui.selectable_value(&mut self.s.builtin_icons, true, "Rivet's own").on_hover_text("Rivet's icon kit, colored from your theme");
-                                ui.selectable_value(&mut self.s.builtin_icons, false, "Desktop icon theme");
-                            });
-                            ui.end_row();
-                            ui.label("Text size");
-                            ui.horizontal(|ui| {
-                                if ui.selectable_label(self.s.text_size == 0.0, "Like the desktop").clicked() {
-                                    self.s.text_size = 0.0;
-                                }
-                                for (pt, label) in [(12.5, "Small"), (13.5, "Medium"), (15.0, "Large")] {
-                                    if ui.selectable_label(self.s.text_size == pt, label).clicked() {
-                                        self.s.text_size = pt;
-                                    }
-                                }
-                            });
-                            ui.end_row();
-                        });
-                    });
-                    let vaults = self.s.vaults.clone();
-                    let current = self.vault.clone();
-                    let (fams, monos) = self.families.get_or_insert_with(|| (fonts::families(), fonts::mono_families())).clone();
-                    let desktop = fonts::desktop_font_cached().map(|(f, _)| f).unwrap_or_else(|| "Sans".into());
-                    let system_mono = fonts::system_mono_name();
-                    section(ui, "Fonts", &mut |ui| {
-                        egui::Grid::new("notes-fonts").num_columns(2).spacing([24.0, 14.0]).min_col_width(110.0).show(ui, |ui| {
-                            ui.label("Interface");
-                            font_pick(ui, "f-ui", &mut self.s.ui_font, &format!("Like the desktop ({desktop})"), &fams);
-                            ui.end_row();
-                            ui.label("Editor");
-                            font_pick(ui, "f-ed", &mut self.s.editor_font, "Same as the interface", &fams);
-                            ui.end_row();
-                            ui.label("Monospace");
-                            font_pick(ui, "f-mono", &mut self.s.mono_font, &format!("System ({system_mono})"), &monos);
-                            ui.end_row();
-                            ui.label("Editor size");
-                            ui.horizontal(|ui| {
-                                for (pt, label) in [(13.0, "Small"), (15.0, "Medium"), (17.0, "Large"), (20.0, "Larger")] {
-                                    if ui.selectable_label(self.s.editor_size == pt, label).clicked() {
-                                        self.s.editor_size = pt;
-                                    }
-                                }
-                            });
-                            ui.end_row();
-                        });
-                        ui.add_space(10.0);
-                        // A sample in the editor's fonts.
-                        egui::Frame::NONE.fill(v.extreme_bg_color).corner_radius(r_sm()).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            let size = self.s.editor_size * fonts::scale();
-                            ui.label(egui::RichText::new("Notes are written in this font.").font(egui::FontId::new(size, rivet_look::live::editor_family())));
-                            ui.label(egui::RichText::new("let code = \"in this one\";").font(egui::FontId::monospace(size * 0.92)).color(weak));
-                        });
-                        ui.add_space(6.0);
-                        ui.label(egui::RichText::new("Monospace is for code blocks, `inline code` and other embedded text.").small().color(weak));
-                    });
-                    section(ui, "Sidebar", &mut |ui| {
-                        use crate::layout::Layout;
-                        let stacked = self.s.layout.is_stacked();
-                        let shown = self.s.layout.slots[0].shown();
-                        if ui.radio(!stacked, "Folders and tags as tabs (switch with Ctrl+T)").clicked() {
-                            self.s.layout = Layout { split: self.s.layout.split, ..Layout::tabs(shown) };
-                        }
-                        if ui.radio(stacked, "Stacked: each in its own pane").clicked() && !stacked {
-                            self.s.layout = Layout { split: self.s.layout.split, ..Layout::stacked() };
-                        }
-                        ui.label(egui::RichText::new("You can also drag a panel's title in the sidebar: onto another panel to make tabs, or to its top or bottom edge to stack them.").small().color(weak));
-                    });
-                    section(ui, "Vaults", &mut |ui| {
-                        if vaults.is_empty() {
-                            ui.label(egui::RichText::new("None yet.").color(weak));
-                        }
-                        for p in &vaults {
-                            ui.horizontal(|ui| {
-                                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 1.0;
-                                    ui.label(egui::RichText::new(name).strong());
-                                    ui.label(egui::RichText::new(p.display().to_string()).small().color(weak));
-                                });
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.button("Forget").on_hover_text("Take it off this list (the folder stays as it is)").clicked() {
-                                        forget = Some(p.clone());
-                                    }
-                                    let here = current.as_ref() == Some(p);
-                                    if ui.add_enabled(!here && p.is_dir(), egui::Button::new(if here { "Open" } else { "Switch" })).clicked() {
-                                        open_vault = Some(p.clone());
-                                    }
-                                });
-                            });
-                        }
-                        ui.add_space(8.0);
-                        ui.label(egui::RichText::new("Notes are plain Markdown files; properties are the frontmatter at the top of each one. Folders and notes starting with a dot (like .git) are left out.").small().color(weak));
-                    });
-                });
-            });
-        });
-        self.prefs_win = win;
-        if !shown.open {
-            self.prefs_open = false;
-            self.about_open = false;
-        }
-        if let Some(p) = forget {
-            self.s.vaults.retain(|x| *x != p);
-        }
-        if let Some(p) = open_vault {
-            self.open_vault(p);
-        }
-        if self.s != before {
-            self.s.save();
-        }
-    }
 }
 
 /// A font family picker: the default entry, then the installed families.
-fn font_pick(ui: &mut egui::Ui, id: &str, value: &mut String, default_label: &str, families: &[String]) {
+pub(super) fn font_pick(ui: &mut egui::Ui, id: &str, value: &mut String, default_label: &str, families: &[String]) {
     let shown = if value.is_empty() { default_label.to_string() } else { value.clone() };
     egui::ComboBox::from_id_salt(id).width(280.0).height(360.0).selected_text(shown).show_ui(ui, |ui| {
         menu_style(ui);

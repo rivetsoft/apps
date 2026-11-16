@@ -34,6 +34,8 @@ enum Act {
 /// How the page is drawn.
 struct Pen<'a> {
     size: f32,
+    /// Extra room between wrapped lines.
+    gap: f32,
     fg: Color32,
     strong: Color32,
     weak: Color32,
@@ -108,8 +110,9 @@ impl Pen<'_> {
     /// `wrap: false` keeps it on one line (table cells).
     fn line_in(&mut self, ui: &mut egui::Ui, text: &str, scale: f32, wrap: bool) {
         let parts = render::inlines(text);
+        let gap = self.gap;
         let body = |ui: &mut egui::Ui, pen: &mut Self| {
-            ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
+            ui.spacing_mut().item_spacing = Vec2::new(0.0, gap);
             for p in &parts {
                 match p {
                     Inline::Text(t, st) => pen.words(ui, t, st, scale, None),
@@ -399,6 +402,7 @@ impl NotesApp {
         let code_bg = palette::mix(v.extreme_bg_color, v.text_color(), 0.06);
         let mut pen = Pen {
             size: self.s.editor_size * fonts::scale(),
+            gap: (self.s.editor_size * fonts::scale() * (self.s.line_spacing - 1.2)).max(2.0),
             fg: v.text_color(),
             strong: v.strong_text_color(),
             weak: v.weak_text_color(),

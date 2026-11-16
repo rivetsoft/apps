@@ -36,6 +36,8 @@ pub struct Settings {
     pub mono_font: String,
     /// The editor's text size in points.
     pub editor_size: f32,
+    /// Line height as a multiple of the text size.
+    pub line_spacing: f32,
     /// The vaults, most recently used first.
     pub vaults: Vec<PathBuf>,
     /// Folders (vault-relative) and tags folded up in the sidebar.
@@ -58,6 +60,7 @@ impl Default for Settings {
             editor_font: String::new(),
             mono_font: String::new(),
             editor_size: 15.0,
+            line_spacing: 1.6,
             vaults: Vec::new(),
             collapsed: Vec::new(),
         }
@@ -99,6 +102,7 @@ impl Settings {
                 "ui_font" => s.ui_font = v.to_string(),
                 "editor_font" => s.editor_font = v.to_string(),
                 "mono_font" => s.mono_font = v.to_string(),
+                "line_spacing" => s.line_spacing = v.parse::<f32>().unwrap_or(1.6).clamp(1.1, 2.4),
                 "editor_size" => s.editor_size = v.parse::<f32>().unwrap_or(15.0).clamp(10.0, 28.0),
                 "tags_below" if b => s.layout = crate::layout::Layout::stacked(),
                 "tags_below" => {}
@@ -127,7 +131,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -140,6 +144,7 @@ impl Settings {
             self.editor_font.replace('\n', ""),
             self.mono_font.replace('\n', ""),
             self.editor_size,
+            self.line_spacing,
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),
         );

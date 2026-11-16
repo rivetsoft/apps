@@ -3,6 +3,7 @@
 //! apps' shared look: theme and desktop colors, icons, fonts, in-app windows.
 
 mod draw;
+mod prefs;
 mod read;
 
 use std::collections::BTreeMap;
@@ -75,6 +76,7 @@ pub struct NotesApp {
     note_msg: Option<(String, bool)>,
     prefs_open: bool,
     prefs_win: windows::WinState,
+    prefs_page: prefs::Page,
     about_open: bool,
     shot: Option<rivet_kit::Shot>,
     edit_cmd: Option<EditCmd>,
@@ -84,6 +86,8 @@ pub struct NotesApp {
     families: Option<(Vec<String>, Vec<String>)>,
     /// The reading view, when open.
     reading: Option<read::Reading>,
+    /// A format chosen from a menu, applied to the editor's selection next frame.
+    pending_fmt: Option<crate::format::Fmt>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -134,13 +138,16 @@ impl NotesApp {
             prompt: None,
             note_msg: None,
             prefs_open: std::env::var_os("RIVET_NOTES_PREFS").is_some(),
-            prefs_win: windows::WinState::new(20, Vec2::new(720.0, 540.0)),
+            prefs_win: windows::WinState::new(20, Vec2::new(800.0, 620.0)),
+            // Test hook: RIVET_NOTES_PREFS=editor opens that page.
+            prefs_page: prefs::Page::from_name(&std::env::var("RIVET_NOTES_PREFS").unwrap_or_default()),
             about_open: false,
             shot: screenshot.map(rivet_kit::Shot::new),
             edit_cmd: None,
             title: String::new(),
             families: None,
             reading: None,
+            pending_fmt: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -164,6 +171,27 @@ impl NotesApp {
         };
         if app.edit_cmd.is_some() {
             _cc.egui_ctx.memory_mut(|m| m.request_focus(egui::Id::unique("note-body")));
+        }
+        // Test hook for checks: RIVET_NOTES_FMT=bold,6,6 formats the open note's text there.
+        if let Ok(spec) = std::env::var("RIVET_NOTES_FMT")
+            && let Some(d) = app.doc.as_mut()
+        {
+            let mut it = spec.split(',');
+            let f = match it.next().unwrap_or("") {
+                "bold" => Some(crate::format::Fmt::Bold),
+                "italic" => Some(crate::format::Fmt::Italic),
+                "link" => Some(crate::format::Fmt::Link),
+                "h2" => Some(crate::format::Fmt::Heading(2)),
+                "task" => Some(crate::format::Fmt::Task),
+                _ => None,
+            };
+            let a: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or(0);
+            let b: usize = it.next().and_then(|x| x.parse().ok()).unwrap_or(a);
+            if let Some(f) = f {
+                let (t, _) = crate::format::apply(&d.body, (a, b), f);
+                d.body = t;
+                d.dirty = true;
+            }
         }
         // Test hook for checks: RIVET_NOTES_APPEND adds text to the open note and, with
         // RIVET_NOTES_WRITE, saves it (only on a throwaway vault).
@@ -388,10 +416,11 @@ impl NotesApp {
         }
         let cmd = Modifiers::COMMAND;
         let shift = Modifiers { shift: true, ..Modifiers::COMMAND };
-        let (n, f, s, comma, m, b, t, p, find) = ctx.input_mut(|i| {
+        let (f, n, s, comma, m, b, t, p, find) = ctx.input_mut(|i| {
             (
-                i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::N)),
+                // Shift first: a plain Ctrl+N pattern also matches with Shift held.
                 i.consume_shortcut(&KeyboardShortcut::new(shift, Key::N)),
+                i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::N)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::S)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::Comma)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::M)),
@@ -529,6 +558,10 @@ impl NotesApp {
                 ui.close();
             }
         });
+        ui.menu_button("Format", |ui| {
+            style(ui);
+            self.format_items(ui);
+        });
         ui.menu_button("View", |ui| {
             style(ui);
             use crate::layout::Layout;
@@ -578,6 +611,22 @@ impl NotesApp {
                 ui.close();
             }
         });
+    }
+
+    /// The Format menu's items (also in the text's right-click menu).
+    pub(super) fn format_items(&mut self, ui: &mut egui::Ui) {
+        use crate::format::Fmt;
+        let on = self.doc.is_some();
+        for (k, (f, label, sc)) in Fmt::ALL.iter().enumerate() {
+            // Groups: emphasis, link, headings, lists, code block.
+            if [4, 5, 9, 14].contains(&k) {
+                ui.separator();
+            }
+            if ui.add_enabled(on, egui::Button::new(*label).shortcut_text(*sc)).clicked() {
+                self.pending_fmt = Some(*f);
+                ui.close();
+            }
+        }
     }
 
     /// The vaults as menu items (switch to one), and Open Folder as Vault.
