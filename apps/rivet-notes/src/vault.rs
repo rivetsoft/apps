@@ -210,6 +210,45 @@ impl Note {
     }
 }
 
+/// Where a note's title comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TitleFrom {
+    /// The `title` property.
+    Property,
+    /// The text's first `# heading`.
+    Heading,
+    /// The file's name.
+    File,
+}
+
+/// A note's title, the same everywhere (sidebar, editor, search): the `title` property, else
+/// the first `# heading`, else the file name.
+pub fn note_title(fm: Option<&Frontmatter>, body: &str, path: &Path) -> (String, TitleFrom) {
+    if let Some(t) = fm.and_then(|f| f.get("title")).map(|v| v.as_text()).filter(|t| !t.trim().is_empty()) {
+        return (t, TitleFrom::Property);
+    }
+    if let Some(h) = body.lines().find_map(|l| l.strip_prefix("# ").map(|h| h.trim().to_string())).filter(|h| !h.is_empty()) {
+        return (h, TitleFrom::Heading);
+    }
+    (path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), TitleFrom::File)
+}
+
+/// The text with its first `# heading` changed to `title`.
+pub fn set_first_heading(body: &str, title: &str) -> String {
+    let mut done = false;
+    let mut out = String::with_capacity(body.len() + title.len());
+    for line in body.split_inclusive('\n') {
+        if !done && line.starts_with("# ") {
+            let end = &line[line.trim_end_matches(['\n', '\r']).len()..];
+            out.push_str(&format!("# {title}{end}"));
+            done = true;
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
+
 pub fn read_note(root: &Path, path: &Path) -> Option<Note> {
     let text = std::fs::read_to_string(path).ok()?;
     let rel = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
@@ -220,9 +259,7 @@ pub fn read_note(root: &Path, path: &Path) -> Option<Note> {
             tags.push(t);
         }
     }
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let heading = body.lines().find_map(|l| l.strip_prefix("# ").map(|h| h.trim().to_string()));
-    let title = fm.as_ref().and_then(|f| f.get("title")).map(|v| v.as_text()).filter(|t| !t.is_empty()).or(heading).unwrap_or(stem);
+    let (title, _) = note_title(fm.as_ref(), body, path);
     let snippet = body.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("```")).unwrap_or("").chars().take(120).collect();
     Some(Note { path: path.to_path_buf(), rel, title, tags, modified: std::fs::metadata(path).and_then(|m| m.modified()).ok(), snippet })
 }
@@ -303,6 +340,17 @@ pub fn note_file(dir: &Path, title: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_title_rule_and_heading_rename() {
+        let p = Path::new("/v/2026-11-16.md");
+        let (fm, body) = split("---\ntags: [a]\n---\n# Sunday\n\ntext\n");
+        assert_eq!(note_title(fm.as_ref(), body, p), ("Sunday".to_string(), TitleFrom::Heading));
+        assert_eq!(set_first_heading(body, "Monday"), "# Monday\n\ntext\n");
+        let (fm, body) = split("---\ntitle: Hello\n---\n# Other\n");
+        assert_eq!(note_title(fm.as_ref(), body, p).1, TitleFrom::Property);
+        assert_eq!(note_title(None, "no heading", p), ("2026-11-16".to_string(), TitleFrom::File));
+    }
 
     #[test]
     fn frontmatter_round_trip() {

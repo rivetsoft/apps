@@ -255,6 +255,16 @@ impl NotesApp {
                 crate::settings::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
             }
         }
+        // Test hook for checks: RIVET_NOTES_RETITLE with RIVET_NOTES_WRITE renames the open note
+        // as if its title had been typed in the heading (only on a throwaway vault).
+        if let Ok(t) = std::env::var("RIVET_NOTES_RETITLE")
+            && std::env::var_os("RIVET_NOTES_WRITE").is_some()
+            && app.doc.is_some()
+        {
+            crate::settings::NO_SAVE.store(false, std::sync::atomic::Ordering::Relaxed);
+            app.retitle(&t);
+            crate::settings::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         app
     }
 
@@ -362,25 +372,30 @@ impl NotesApp {
         let new = new.trim();
         let Some(d) = self.doc.as_mut() else { return };
         let stem = d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let prop = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty());
-        let old = prop.clone().unwrap_or_else(|| stem.clone());
-        if new.is_empty() || new == old {
+        let (old, from) = vault::note_title(d.fm.as_ref(), &d.body, &d.path);
+        // A file name can't hold a slash; the rest is kept as typed.
+        let file = new.replace(['/', '\\'], "-");
+        if new.is_empty() || (new == old && file == stem) {
             return;
         }
-        let has_prop = d.fm.as_ref().is_some_and(|f| f.get("title").is_some());
-        if let Some(fm) = d.fm.as_mut()
-            && has_prop
-        {
-            fm.set("title", Value::Text(new.to_string()));
-            d.dirty = true;
-        }
-        if !has_prop || stem == old {
-            // A file name can't hold a slash; the rest is kept as typed.
-            let file = new.replace(['/', '\\'], "-");
-            let path = d.path.clone();
-            if file != stem {
-                self.rename(&path, &file);
+        // The title changes where it comes from…
+        match from {
+            vault::TitleFrom::Property => {
+                if let Some(fm) = d.fm.as_mut() {
+                    fm.set("title", Value::Text(new.to_string()));
+                }
+                d.dirty = true;
             }
+            vault::TitleFrom::Heading => {
+                d.body = vault::set_first_heading(&d.body, new);
+                d.dirty = true;
+            }
+            vault::TitleFrom::File => {}
+        }
+        // …and the file is renamed to match (saving first), so the sidebar shows it.
+        let path = d.path.clone();
+        if file != stem {
+            self.rename(&path, &file);
         }
         self.save_now();
     }

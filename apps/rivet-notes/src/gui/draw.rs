@@ -552,7 +552,7 @@ impl NotesApp {
         };
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
-        let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
+        let (title, _) = vault::note_title(d.fm.as_ref(), &d.body, &d.path);
         // ---- breadcrumbs: where the note is (vault › folders › file), just to read
         if show_crumbs {
             let rel = d.path.strip_prefix(&vault).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();

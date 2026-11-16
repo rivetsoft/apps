@@ -42,8 +42,9 @@ the list and leaves the folder alone).
 - New notes get `title`, `created` and `tags`. Delete moves notes to the desktop's Trash.
 
 - **The title** at the top of a note can be edited in place: Enter or clicking away keeps it,
-  Esc puts it back. It changes the `title` property when the note has one, and renames the file
-  when its name was the title (or there's no `title` property).
+  Esc puts it back. A note's title is its `title` property, else its first `# heading`, else
+  its file name (the same in the sidebar and the editor). Changing it updates where it came
+  from and renames the file to match.
 - **Breadcrumbs** above the title show the vault, folders and file. View → Breadcrumbs (or Preferences → Appearance → Window)
   hides the bar.
 
