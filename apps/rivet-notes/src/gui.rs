@@ -367,6 +367,42 @@ impl NotesApp {
         }
     }
 
+    /// Move a note or folder into a folder of the vault ("" for the top), keeping the open note
+    /// open where it went.
+    pub(super) fn move_into(&mut self, src: &Path, folder: &str) {
+        let Some(v) = self.vault.clone() else { return };
+        let dest = v.join(folder);
+        let Some(name) = src.file_name() else { return };
+        let to = dest.join(name);
+        if src.parent() == Some(dest.as_path()) || dest.starts_with(src) {
+            return;
+        }
+        if to.exists() {
+            self.note_msg = Some((format!("There's already a \"{}\" in {}.", name.to_string_lossy(), if folder.is_empty() { "the top of the vault" } else { folder }), true));
+            return;
+        }
+        self.save_now();
+        match std::fs::rename(src, &to) {
+            Ok(()) => {
+                if let Some(d) = self.doc.as_mut() {
+                    if d.path == src {
+                        d.path = to.clone();
+                    } else if let Ok(rest) = d.path.strip_prefix(src) {
+                        d.path = to.join(rest);
+                    }
+                    d.disk = mtime(&d.path);
+                }
+                self.current_folder = folder.to_string();
+                // Show where it went.
+                self.s.collapsed.retain(|k| k != folder);
+                let shown = if folder.is_empty() { "the top of the vault".to_string() } else { format!("\"{folder}\"") };
+                self.note_msg = Some((format!("Moved \"{}\" to {shown}.", name.to_string_lossy()), false));
+                self.rescan();
+            }
+            Err(e) => self.note_msg = Some((format!("Couldn't move it: {e}"), true)),
+        }
+    }
+
     /// A copy of a note beside it ("Plans copy.md"), opened.
     fn duplicate(&mut self, path: &Path) {
         self.save_now();

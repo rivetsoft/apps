@@ -29,6 +29,8 @@ the list and leaves the folder alone).
   Search finds titles, paths, the first line and tags; `#name` searches tags only.
 - Notes save a second after you stop typing, and with Ctrl+S. A note changed by another program
   is reloaded, or you're asked if you had unsaved changes.
+- Drag a note (or a folder) onto a folder to move it there, or onto the empty space below the
+  folders to move it to the top of the vault.
 - New notes get `title`, `created` and `tags`. Delete moves notes to the desktop's Trash.
 
 ## Formatting

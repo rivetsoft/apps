@@ -29,6 +29,8 @@ enum Pick {
     /// Fold (true) or open everything in a panel.
     FoldAll(bool, Browse),
     Reload,
+    /// Move a note or folder into a folder (vault-relative; empty: the top of the vault).
+    MoveTo(PathBuf, String),
     /// A whole layout (from a menu).
     Preset(crate::layout::Layout),
     /// Show this tab.
@@ -428,6 +430,7 @@ impl NotesApp {
                 }
             }
         }
+        drag_label(&ctx);
         match pick {
             Some(Pick::Note(p)) => self.open_note(&p),
             Some(Pick::Fold(k)) => {
@@ -492,6 +495,7 @@ impl NotesApp {
                 self.s.save();
             }
             Some(Pick::Reload) => self.rescan(),
+            Some(Pick::MoveTo(src, folder)) => self.move_into(&src, &folder),
             None => {}
         }
     }
@@ -1174,6 +1178,48 @@ fn expand(p: &str) -> PathBuf {
     }
 }
 
+/// A note or folder being dragged in the sidebar.
+#[derive(Clone)]
+struct ItemDrag {
+    path: PathBuf,
+    name: String,
+}
+
+/// Start dragging a row; while something is dragged over it, `target`'s drop is shown on `rect`.
+/// Returns true when it was dropped here.
+fn drag_and_drop(ui: &egui::Ui, resp: &egui::Response, rect: Rect, me: &Path, name: &str, target: &Path) -> bool {
+    if resp.drag_started() {
+        egui::DragAndDrop::set_payload(ui.ctx(), ItemDrag { path: me.to_path_buf(), name: name.to_string() });
+    }
+    let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ui.ctx()) else { return false };
+    // A folder can't go into itself; a note dropped where it already is does nothing.
+    let pointer = ui.ctx().pointer_hover_pos();
+    let over = pointer.is_some_and(|p| rect.contains(p));
+    let fits = !target.starts_with(&drag.path) && drag.path.parent() != Some(target);
+    if over && fits {
+        let v = ui.visuals();
+        ui.painter().rect_filled(rect, r_sm(), v.selection.bg_fill.gamma_multiply(0.25));
+        ui.painter().rect_stroke(rect, r_sm(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Inside);
+        if ui.input(|i| i.pointer.any_released()) {
+            return true;
+        }
+    }
+    false
+}
+
+/// What's being dragged, under the pointer.
+fn drag_label(ctx: &egui::Context) {
+    let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ctx) else { return };
+    let Some(pos) = ctx.pointer_hover_pos() else { return };
+    let v = ctx.global_style().visuals.clone();
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("note-drag")));
+    let g = painter.layout_no_wrap(drag.name.clone(), fonts::ui_font(12.5), v.selection.stroke.color);
+    let r = Rect::from_min_size(pos + Vec2::new(14.0, 10.0), g.size() + Vec2::new(16.0, 8.0));
+    painter.rect_filled(r, r_sm(), v.selection.bg_fill);
+    painter.galley(r.min + Vec2::new(8.0, 4.0), g, v.selection.stroke.color);
+    ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+}
+
 /// What the sidebar's panels draw from.
 struct SideData {
     notes: Vec<Note>,
@@ -1220,6 +1266,23 @@ fn panel(ui: &mut egui::Ui, kind: Browse, data: &SideData, pick: &mut Option<Pic
     match kind {
         Browse::Folders => {
             folder_tree(ui, "", 0, &data.folders, &data.notes, &data.collapsed, open, &data.folder_icon, &data.note_icon, pick, &data.current, root);
+            // Space below the tree: drop here to move out to the top of the vault.
+            let rest = ui.available_rect_before_wrap();
+            let rest = Rect::from_min_max(rest.min, Pos2::new(rest.max.x, rest.max.y.max(rest.min.y + 40.0)));
+            if let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ui.ctx())
+                && pick.is_none()
+                && drag.path.parent() != Some(root.as_path())
+                && ui.ctx().pointer_hover_pos().is_some_and(|p| rest.contains(p))
+            {
+                let v = ui.visuals();
+                let r = rest.shrink2(Vec2::new(0.0, 2.0));
+                ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Inside);
+                ui.painter().text(r.center_top() + Vec2::new(0.0, 20.0), Align2::CENTER_CENTER, "Move to the top of the vault", fonts::ui_font(12.5), v.selection.bg_fill);
+                if ui.input(|i| i.pointer.any_released()) {
+                    *pick = Some(Pick::MoveTo(drag.path.clone(), String::new()));
+                }
+            }
+            ui.allocate_space(Vec2::new(ui.available_width(), 40.0));
         }
         Browse::Tags => {
             if data.tags.is_empty() {
@@ -1380,7 +1443,13 @@ fn folder_tree(
         let name = sub.rsplit('/').next().unwrap_or(sub);
         let count = notes.iter().filter(|n| n.folder() == sub || n.folder().starts_with(&format!("{sub}/"))).count();
         let open_f = !collapsed.contains(sub);
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click_and_drag());
+        let here = root.join(sub);
+        if drag_and_drop(ui, &resp, rect, &here, name, &here)
+            && let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ui.ctx())
+        {
+            *pick = Some(Pick::MoveTo(drag.path.clone(), sub.clone()));
+        }
         let v = ui.visuals();
         if *current == **sub {
             let (fill, stroke) = selected_tile(v, v.panel_fill);
@@ -1419,7 +1488,13 @@ fn folder_tree(
 #[allow(clippy::too_many_arguments)]
 fn note_row(ui: &mut egui::Ui, n: &Note, depth: usize, open: bool, icon: &Option<egui::TextureHandle>, show_folder: bool, pick: &mut Option<Pick>, root: &Path) {
     let h = if show_folder { 40.0 } else { ROW_H };
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
+    let dir = n.path.parent().unwrap_or(root).to_path_buf();
+    if drag_and_drop(ui, &resp, rect, &n.path, &n.title, &dir)
+        && let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ui.ctx())
+    {
+        *pick = Some(Pick::MoveTo(drag.path.clone(), n.folder().to_string()));
+    }
     let v = ui.visuals();
     if open {
         ui.painter().rect_filled(rect, r_sm(), v.selection.bg_fill);
