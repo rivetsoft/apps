@@ -82,7 +82,12 @@ pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)
     let mut st = vec![St::default(); text.len()];
     let mut decos = Vec::new();
     let mut blocks = Vec::new();
-    let touches = |r: &Range<usize>| raw.is_some_and(|(a, b)| r.start <= b && a <= r.end.saturating_sub(1).max(r.start));
+    // A line is being edited when the cursor is anywhere on it, its end included (the last
+    // line may have no newline, so the very end of the text counts too).
+    let touches = |r: &Range<usize>| {
+        let end = if text[r.clone()].ends_with('\n') { r.end - 1 } else { r.end };
+        raw.is_some_and(|(a, b)| r.start <= b && a <= end)
+    };
     // Lines with their byte ranges (the newline included).
     let mut lines: Vec<Range<usize>> = Vec::new();
     let mut pos = 0;
@@ -409,6 +414,16 @@ mod tests {
         assert!(l.decos.iter().any(|d| matches!(d, Deco::Check { done: true, .. })));
         assert!(l.decos.iter().any(|d| matches!(d, Deco::Rule(_))));
         assert!(l.decos.iter().any(|d| matches!(d, Deco::Quote(_))));
+    }
+
+    #[test]
+    fn last_line_counts_as_edited_at_its_end() {
+        // Typing at the very end of a note with no final newline keeps that line plain.
+        let t = "a\nsome **bold**";
+        assert!(analyze(t, Some((t.len(), t.len())), None).st[t.len() - 3].marker || !analyze(t, Some((t.len(), t.len())), None).st[t.len() - 3].bold);
+        assert_eq!(shown(t, Some((t.len(), t.len()))), t);
+        // The start of the next line doesn't make the line above edited.
+        assert_eq!(shown("**a**\nb", Some((6, 6))), "a\nb");
     }
 
     #[test]

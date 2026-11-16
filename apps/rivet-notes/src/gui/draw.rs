@@ -666,6 +666,8 @@ impl NotesApp {
             None => d.live_held = None,
         }
         let live_held = d.live_held;
+        // The text as it was before this frame's typing (to keep the edited line steady).
+        let live_before = if live_on { d.body.clone() } else { String::new() };
         let live_look = super::live_edit::LiveLook {
             size: editor_size * fonts::scale(),
             line_spacing,
@@ -680,7 +682,8 @@ impl NotesApp {
         };
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
             if live_on {
-                let mut job = super::live_edit::job(buf.as_str(), live_raw, live_held, &live_look, &colors);
+                let raw = super::live_edit::shift_raw(&live_before, buf.as_str(), live_raw);
+                let mut job = super::live_edit::job(buf.as_str(), raw, live_held, &live_look, &colors);
                 job.wrap.max_width = wrap;
                 return ui.fonts_mut(|f| f.layout_job(job));
             }
@@ -763,7 +766,7 @@ impl NotesApp {
                 .show(ui);
             // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
             if live_on
-                && let Some(b) = super::live_edit::decorate(ui, &d.body, live_raw, live_held, &out, &live_look)
+                && let Some(b) = super::live_edit::decorate(ui, &d.body, super::live_edit::shift_raw(&live_before, &d.body, live_raw), live_held, &out, &live_look)
                 && let Some(c) = d.body.as_bytes().get(b).copied()
             {
                 d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });

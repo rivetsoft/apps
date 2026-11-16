@@ -44,6 +44,45 @@ pub(super) fn raw_range(ctx: &egui::Context, id: egui::Id, text: &str) -> Option
     Some((to_byte(a), to_byte(b)))
 }
 
+/// The edited range moved to fit text that changed since it was read: the cursor was read
+/// before this frame's typing, so text typed (or deleted) at it shifts it along.
+pub(super) fn shift_raw(old: &str, new: &str, raw: Option<(usize, usize)>) -> Option<(usize, usize)> {
+    let (a, b) = raw?;
+    if old.len() == new.len() && old == new {
+        return Some((a, b));
+    }
+    // Most edits happen at the cursor: typing or pasting there, or Backspace / Delete.
+    if a == b && a <= old.len() && old.is_char_boundary(a) {
+        let d = new.len() as isize - old.len() as isize;
+        if d > 0 {
+            let k = d as usize;
+            if new.get(..a) == old.get(..a) && new.get(a + k..) == old.get(a..) {
+                return Some((a + k, a + k));
+            }
+        } else if d < 0 {
+            let k = (-d) as usize;
+            if a >= k && new.get(..a - k) == old.get(..a - k) && new.get(a - k..) == old.get(a..) {
+                return Some((a - k, a - k));
+            }
+            if new.get(..a) == old.get(..a) && new.get(a..) == old.get(a + k..) {
+                return Some((a, a));
+            }
+        }
+    }
+    // Otherwise: where the two texts first differ.
+    let p = old.char_indices().zip(new.chars()).find(|((_, x), y)| x != y).map(|((i, _), _)| i).unwrap_or(old.len().min(new.len()));
+    let delta = new.len() as isize - old.len() as isize;
+    let fix = |x: usize| {
+        let mut y = if x >= p { ((x as isize + delta).max(p as isize)) as usize } else { x };
+        y = y.min(new.len());
+        while !new.is_char_boundary(y) {
+            y += 1;
+        }
+        y
+    };
+    Some((fix(a), fix(b)))
+}
+
 /// The note laid out live.
 pub(super) fn job(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, look: &LiveLook, colors: &highlight::Colors) -> LayoutJob {
     let l = live::analyze(text, raw, held);
@@ -177,4 +216,21 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
         }
     }
     toggle
+}
+
+#[cfg(test)]
+mod tests {
+    use super::shift_raw;
+
+    #[test]
+    fn edited_range_follows_typing() {
+        // Typing a letter at the cursor moves it along.
+        assert_eq!(shift_raw("ab\ncd", "ab\ncdx", Some((5, 5))), Some((6, 6)));
+        // Enter at the end of the first line: the cursor is on the new line.
+        assert_eq!(shift_raw("# ab\ncd", "# ab\n\ncd", Some((4, 4))), Some((5, 5)));
+        // Backspace.
+        assert_eq!(shift_raw("abc", "ab", Some((3, 3))), Some((2, 2)));
+        // Text changed after the cursor leaves it where it was.
+        assert_eq!(shift_raw("ab\ncd", "ab\ncdx", Some((1, 1))), Some((1, 1)));
+    }
 }
