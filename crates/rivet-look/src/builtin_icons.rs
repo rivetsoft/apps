@@ -123,6 +123,7 @@ pub fn lookup(name: &str) -> Option<(&'static str, bool)> {
             "tag" | "tag-new" => "s:tag",
             "preferences-system" | "emblem-system" | "settings" => "s:settings",
             "document-new" | "note-new" => "s:note-new",
+            "insert-link" | "link" => "s:link",
             _ => return None,
         };
         return Some((k, true));
@@ -329,6 +330,7 @@ fn symbolic(key: &str) -> String {
         "s:recent" => r##"<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2.5"/>"##,
         "s:tag" => r##"<path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1.4 1.4 0 0 1 0 2l-6.7 6.7a1.4 1.4 0 0 1-2 0z"/><circle cx="8" cy="8" r="1.2" fill="#fff"/>"##,
         "s:settings" => r##"<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.7M12 18.5v2.7M2.8 12h2.7M18.5 12h2.7M5.5 5.5l1.9 1.9M16.6 16.6l1.9 1.9M5.5 18.5l1.9-1.9M16.6 7.4l1.9-1.9"/><circle cx="12" cy="12" r="6.5"/>"##,
+        "s:link" => r##"<path d="M10 14a4 4 0 0 0 5.7 0l3.6-3.6a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3.6 3.6a4 4 0 0 0 5.7 5.7l1.2-1.2"/>"##,
         "s:note-new" => r##"<path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5z M14 3.5v5h5 M12 11.5v6M9 14.5h6"/>"##,
         _ => "",
     };
@@ -359,7 +361,7 @@ mod tests {
             "view-reveal-symbolic", "user-trash-symbolic", "document-properties-symbolic", "bookmark-new-symbolic",
             "sidebar-show-symbolic", "view-list-tree-symbolic", "media-eject-symbolic", "window-minimize-symbolic",
             "window-maximize-symbolic", "window-restore-symbolic", "window-close-symbolic", "open-menu-symbolic",
-            "tag-symbolic", "preferences-system-symbolic", "document-new-symbolic",
+            "tag-symbolic", "preferences-system-symbolic", "document-new-symbolic", "insert-link-symbolic",
         ];
         for n in names {
             let (k, _) = lookup(n).unwrap_or_else(|| panic!("no built-in icon for {n}"));

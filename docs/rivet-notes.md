@@ -38,7 +38,8 @@ pressed a second time: Ctrl+B bold, Ctrl+I italic, Shift+Ctrl+X strikethrough, C
 code, Ctrl+K link (a web address becomes the link's target), Ctrl+1/2/3 headings and Ctrl+0
 plain text, Shift+Ctrl+8/7/9 bulleted, numbered and task lists, Ctrl+Enter ticks a task,
 Shift+Ctrl+Q quote, Shift+Ctrl+E code block. They're also in the Format menu, the text's
-right-click menu and Preferences → Keyboard.
+right-click menu and Preferences → Keyboard. Selecting text brings up a small bar above it with
+the common ones (bold, italic, strikethrough, code, link, headings, lists, quote).
 
 ## Reading view
 

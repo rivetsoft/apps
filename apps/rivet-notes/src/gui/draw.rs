@@ -514,6 +514,7 @@ impl NotesApp {
         let now = ctx.input(|i| i.time);
         let mut edit: Option<EditCmd> = None;
         let mut fmt_pick: Option<crate::format::Fmt> = None;
+        let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
@@ -646,6 +647,10 @@ impl NotesApp {
         };
         // Formatting: keys while the text has the keyboard, or a menu's choice.
         let body_id = egui::Id::unique("note-body");
+        // Checks: a selection made by RIVET_NOTES_SELECT keeps the keyboard in the text.
+        if self.shot.is_some() && std::env::var_os("RIVET_NOTES_SELECT").is_some() && self.reading.is_none() {
+            ctx.memory_mut(|m| m.request_focus(body_id));
+        }
         let fmt = {
             use crate::format::Fmt;
             let cmd = egui::Modifiers::COMMAND;
@@ -690,16 +695,26 @@ impl NotesApp {
             ctx.memory_mut(|m| m.request_focus(body_id));
         }
         egui::ScrollArea::vertical().id_salt("note-text").auto_shrink([false, false]).show(ui, |ui| {
-            let r = ui.add(
-                egui::TextEdit::multiline(&mut d.body)
-                    .id(egui::Id::unique("note-body"))
-                    .frame(egui::Frame::NONE)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows(24)
-                    .lock_focus(true)
-                    .hint_text("Write in Markdown…")
-                    .layouter(&mut layouter),
-            );
+            let out = egui::TextEdit::multiline(&mut d.body)
+                .id(egui::Id::unique("note-body"))
+                .frame(egui::Frame::NONE)
+                .desired_width(f32::INFINITY)
+                .desired_rows(24)
+                .lock_focus(true)
+                .hint_text("Write in Markdown…")
+                .layouter(&mut layouter)
+                .show(ui);
+            // Where a selection sits on screen, for the format bar.
+            if let Some(range) = out.cursor_range
+                && !range.is_empty()
+                && ui.ctx().memory(|m| m.has_focus(egui::Id::unique("note-body")))
+            {
+                let (lo, hi) = if range.primary.index.0 <= range.secondary.index.0 { (range.primary, range.secondary) } else { (range.secondary, range.primary) };
+                let top = out.galley.pos_from_cursor(lo).translate(out.galley_pos.to_vec2());
+                let bottom = out.galley.pos_from_cursor(hi).translate(out.galley_pos.to_vec2());
+                sel_rect = Some((top, bottom, out.text_clip_rect));
+            }
+            let r = out.response.response;
             if r.changed() {
                 changed = true;
             }
@@ -753,6 +768,25 @@ impl NotesApp {
             d.dirty = true;
             d.edited_at = now;
         }
+        // The format bar: over a selection while the text has the keyboard, and kept up while
+        // the pointer is on it (a click there takes the keyboard from the text first).
+        let keep = self.fmt_bar.is_some_and(|r| ctx.pointer_hover_pos().is_some_and(|p| r.expand(6.0).contains(p)));
+        match (sel_rect, keep) {
+            (Some((top, bottom, clip)), _) => {
+                if let Some(f) = self.format_bar(&ctx, top, bottom, clip) {
+                    fmt_pick = Some(f);
+                }
+            }
+            (None, true) => {
+                if let Some(r) = self.fmt_bar {
+                    let (top, bottom) = (Rect::from_min_size(r.left_bottom() + Vec2::new(0.0, 8.0), Vec2::ZERO), Rect::from_min_size(r.left_bottom(), Vec2::ZERO));
+                    if let Some(f) = self.format_bar(&ctx, top, bottom, ctx.content_rect()) {
+                        fmt_pick = Some(f);
+                    }
+                }
+            }
+            (None, false) => self.fmt_bar = None,
+        }
         if fmt_pick.is_some() {
             self.pending_fmt = fmt_pick;
             ctx.request_repaint();
@@ -762,6 +796,68 @@ impl NotesApp {
             ctx.memory_mut(|m| m.request_focus(egui::Id::unique("note-body")));
             ctx.request_repaint();
         }
+    }
+
+    /// A small bar over the selected text: bold, italic, strikethrough, code, link, headings,
+    /// list and quote. Returns the format clicked.
+    fn format_bar(&mut self, ctx: &egui::Context, top: Rect, bottom: Rect, clip: Rect) -> Option<crate::format::Fmt> {
+        use crate::format::Fmt;
+        let v = ctx.global_style().visuals.clone();
+        let list_icon = self.icon(ctx, &["view-list-symbolic"], 14.0);
+        let quote_icon = self.icon(ctx, &["format-text-blockquote-symbolic", "mail-reply-sender-symbolic"], 14.0);
+        let link_icon = self.icon(ctx, &["insert-link-symbolic"], 14.0);
+        let size = Vec2::new(372.0, 34.0);
+        // Above the selection's first line, or below its last when there's no room above.
+        let mut pos = Pos2::new(top.left().clamp(clip.left(), (clip.right() - size.x).max(clip.left())), top.top() - size.y - 6.0);
+        if pos.y < clip.top() {
+            pos.y = bottom.bottom() + 6.0;
+        }
+        let pick = std::cell::Cell::new(None);
+        let resp = egui::Area::new(egui::Id::unique("fmt-bar")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(4, 3)).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 1.0;
+                    ui.spacing_mut().button_padding = Vec2::new(7.0, 4.0);
+                    let fg = v.text_color();
+                    let b = |ui: &mut egui::Ui, text: egui::RichText, tip: &str, f: Fmt| {
+                        if ui.add(egui::Button::new(text).frame_when_inactive(false).min_size(Vec2::new(28.0, 26.0)).corner_radius(r_sm())).on_hover_text(tip).clicked() {
+                            pick.set(Some(f));
+                        }
+                    };
+                    let font = fonts::ui_font(14.0);
+                    b(ui, egui::RichText::new("B").font(egui::FontId::new(font.size, rivet_look::live::editor_bold_family())).color(fg), "Bold (Ctrl+B)", Fmt::Bold);
+                    b(ui, egui::RichText::new("I").font(font.clone()).italics().color(fg), "Italic (Ctrl+I)", Fmt::Italic);
+                    b(ui, egui::RichText::new("S").font(font.clone()).strikethrough().color(fg), "Strikethrough (Shift+Ctrl+X)", Fmt::Strike);
+                    b(ui, egui::RichText::new("</>").font(egui::FontId::monospace(12.5)).color(fg), "Code (Ctrl+E)", Fmt::Code);
+                    let ib = |ui: &mut egui::Ui, icon: &Option<egui::TextureHandle>, fallback: &str, tip: &str, f: Fmt| {
+                        let btn = match icon {
+                            Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(fg)),
+                            None => egui::Button::new(egui::RichText::new(fallback).font(fonts::ui_font(12.5)).color(fg)),
+                        };
+                        if ui.add(btn.frame_when_inactive(false).min_size(Vec2::new(28.0, 26.0)).corner_radius(r_sm())).on_hover_text(tip).clicked() {
+                            pick.set(Some(f));
+                        }
+                    };
+                    ib(ui, &link_icon, "Link", "Link (Ctrl+K)", Fmt::Link);
+                    ui.add_space(3.0);
+                    let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
+                    ui.painter().line_segment([sep.center_top(), sep.center_bottom()], Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.5)));
+                    ui.add_space(3.0);
+                    for (n, f) in [("H1", Fmt::Heading(1)), ("H2", Fmt::Heading(2)), ("H3", Fmt::Heading(3))] {
+                        b(ui, egui::RichText::new(n).font(fonts::ui_font(12.5)).strong().color(fg), &format!("Heading {} (Ctrl+{})", &n[1..], &n[1..]), f);
+                    }
+                    ui.add_space(3.0);
+                    let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
+                    ui.painter().line_segment([sep.center_top(), sep.center_bottom()], Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.5)));
+                    ui.add_space(3.0);
+                    ib(ui, &list_icon, "List", "Bulleted list (Shift+Ctrl+8)", Fmt::Bullet);
+                    ib(ui, &None, "1.", "Numbered list (Shift+Ctrl+7)", Fmt::Numbered);
+                    ib(ui, &quote_icon, "Quote", "Quote (Shift+Ctrl+Q)", Fmt::Quote);
+                });
+            });
+        });
+        self.fmt_bar = Some(resp.response.rect);
+        pick.get()
     }
 
     // ---------------------------------------------------------------- welcome
@@ -801,13 +897,48 @@ impl NotesApp {
     fn prompts(&mut self, ctx: &egui::Context) {
         let Some(prompt) = self.prompt.take() else { return };
         let mut next = None;
-        let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(r_lg());
+        // Icons for the New Note / New Folder headers (Rivet's kit, like its New Folder dialog).
+        let px = 40.0;
+        let note_icon = self.icon(ctx, &["text-markdown", "text-x-generic"], px);
+        let folder_icon = self.icon(ctx, &["folder", "inode-directory"], px);
+        let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(26)).corner_radius(r_lg());
         egui::Modal::new(egui::Id::unique("notes-prompt")).frame(frame).show(ctx, |ui| {
-            ui.set_width(400.0);
+            ui.set_width(440.0);
             let v = ui.visuals().clone();
             let esc = ui.input(|i| i.key_pressed(Key::Escape));
+            // A title with an icon and a line under it (where it goes).
+            let header = |ui: &mut egui::Ui, icon: &Option<egui::TextureHandle>, title: &str, sub: &str| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 14.0;
+                    if let Some(t) = icon {
+                        let (r, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
+                        paint_tex(ui.painter(), t, r, Color32::WHITE);
+                    }
+                    ui.vertical(|ui| {
+                        ui.spacing_mut().item_spacing.y = 3.0;
+                        ui.label(egui::RichText::new(title).heading().color(v.strong_text_color()));
+                        ui.label(egui::RichText::new(sub).color(v.weak_text_color()));
+                    });
+                });
+                ui.add_space(18.0);
+            };
+            // A raised field, outlined in the accent while typing (like Rivet's dialogs).
             let field = |ui: &mut egui::Ui, text: &mut String, hint: &str| -> bool {
-                let r = ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY));
+                let id = egui::Id::unique(("prompt-field", hint));
+                let focused = ui.memory(|m| m.has_focus(id));
+                let fill = palette::mix(v.window_fill, v.text_color(), 0.06);
+                let shadow = egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
+                let stroke = Stroke::new(1.5, if focused { v.selection.bg_fill } else { Color32::TRANSPARENT });
+                let r = egui::Frame::NONE
+                    .fill(fill)
+                    .shadow(shadow)
+                    .stroke(stroke)
+                    .corner_radius(r_md())
+                    .inner_margin(egui::Margin::symmetric(12, 8))
+                    .show(ui, |ui| {
+                        ui.add(egui::TextEdit::singleline(text).id(id).frame(egui::Frame::NONE).font(fonts::ui_font(15.0)).min_size(Vec2::new(0.0, 24.0)).align(Align2::LEFT_CENTER).hint_text(hint).desired_width(f32::INFINITY))
+                    })
+                    .inner;
                 if !r.has_focus() && !r.lost_focus() {
                     r.request_focus();
                 }
@@ -815,10 +946,11 @@ impl NotesApp {
             };
             let buttons = |ui: &mut egui::Ui, ok: &str| -> (bool, bool) {
                 let (mut a, mut b) = (false, false);
-                ui.add_space(12.0);
+                ui.add_space(22.0);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().button_padding = Vec2::new(14.0, 6.0);
-                    a = ui.add(egui::Button::new(egui::RichText::new(ok).color(v.selection.stroke.color)).fill(v.selection.bg_fill).corner_radius(r_sm())).clicked();
+                    ui.spacing_mut().button_padding = Vec2::new(16.0, 7.0);
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    a = ui.add(egui::Button::new(egui::RichText::new(ok).color(v.selection.stroke.color).strong()).fill(v.selection.bg_fill).corner_radius(r_sm())).clicked();
                     b = ui.add(egui::Button::new("Cancel").corner_radius(r_sm())).clicked();
                 });
                 (a, b)
@@ -826,9 +958,7 @@ impl NotesApp {
             let place = |f: &str| if f.is_empty() { "the top of the vault".to_string() } else { format!("\"{f}\"") };
             match prompt {
                 Prompt::NewNote { folder, mut title } => {
-                    ui.heading("New Note");
-                    ui.label(egui::RichText::new(format!("In {}", place(&folder))).color(v.weak_text_color()));
-                    ui.add_space(10.0);
+                    header(ui, &note_icon, "New Note", &format!("In {}", place(&folder)));
                     let enter = field(ui, &mut title, "Title");
                     let (ok, cancel) = buttons(ui, "Create");
                     if (ok || enter) && !title.trim().is_empty() {
@@ -838,9 +968,7 @@ impl NotesApp {
                     }
                 }
                 Prompt::NewFolder { parent, mut name } => {
-                    ui.heading("New Folder");
-                    ui.label(egui::RichText::new(format!("In {}", place(&parent))).color(v.weak_text_color()));
-                    ui.add_space(10.0);
+                    header(ui, &folder_icon, "New Folder", &format!("In {}", place(&parent)));
                     let enter = field(ui, &mut name, "Folder name");
                     let (ok, cancel) = buttons(ui, "Create");
                     if (ok || enter) && !name.trim().is_empty() && !name.contains('/') {

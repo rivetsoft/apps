@@ -88,6 +88,8 @@ pub struct NotesApp {
     reading: Option<read::Reading>,
     /// A format chosen from a menu, applied to the editor's selection next frame.
     pending_fmt: Option<crate::format::Fmt>,
+    /// Where the selection's format bar was last drawn (kept up while the pointer is on it).
+    fmt_bar: Option<egui::Rect>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -148,6 +150,7 @@ impl NotesApp {
             families: None,
             reading: None,
             pending_fmt: None,
+            fmt_bar: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -158,6 +161,23 @@ impl NotesApp {
         {
             let p = v.join(rel);
             app.open_note(&p);
+        }
+        // Test hook for checks: RIVET_NOTES_SELECT=A,B selects those characters in the note's text.
+        if let Some((a, b)) = std::env::var("RIVET_NOTES_SELECT").ok().and_then(|v| {
+            let (a, b) = v.split_once(',')?;
+            Some((a.trim().parse::<usize>().ok()?, b.trim().parse::<usize>().ok()?))
+        }) {
+            let id = egui::Id::unique("note-body");
+            let mut st = egui::TextEdit::load_state(&_cc.egui_ctx, id).unwrap_or_default();
+            st.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(a), egui::text::CCursor::new(b))));
+            st.store(&_cc.egui_ctx, id);
+            _cc.egui_ctx.memory_mut(|m| m.request_focus(id));
+        }
+        // Test hook for checks: RIVET_NOTES_NEW opens the New Note (or =folder, New Folder) question.
+        match std::env::var("RIVET_NOTES_NEW").as_deref() {
+            Ok("folder") => app.prompt = Some(Prompt::NewFolder { parent: app.current_folder.clone(), name: String::new() }),
+            Ok(_) => app.prompt = Some(Prompt::NewNote { folder: app.current_folder.clone(), title: String::new() }),
+            Err(_) => {}
         }
         // Test hook for checks: RIVET_NOTES_READ opens the reading view.
         if std::env::var_os("RIVET_NOTES_READ").is_some() {
