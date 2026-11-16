@@ -201,6 +201,8 @@ pub struct Note {
     pub modified: Option<SystemTime>,
     /// The first line of text (for the list).
     pub snippet: String,
+    /// Its links to other notes.
+    pub links: Vec<crate::links::Link>,
 }
 
 impl Note {
@@ -228,6 +230,44 @@ pub fn note_title(fm: Option<&Frontmatter>, path: &Path) -> (String, TitleFrom) 
     (path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), TitleFrom::File)
 }
 
+/// The note a link names, seen from the note at `from`: a path next to it, a path in the vault,
+/// a file name, or a title (any case).
+pub fn resolve<'a>(notes: &'a [Note], from: &Path, target: &str) -> Option<&'a Note> {
+    let t = target.trim().replace("%20", " ");
+    let t = t.trim_end_matches(".md").trim_end_matches(".markdown");
+    if t.is_empty() {
+        return None;
+    }
+    let low = t.to_lowercase();
+    if let Some(dir) = from.parent() {
+        let near = dir.join(format!("{t}.md"));
+        if let Some(n) = notes.iter().find(|n| n.path == near) {
+            return Some(n);
+        }
+    }
+    let stem = |n: &Note| n.path.file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    notes
+        .iter()
+        .find(|n| n.rel.trim_end_matches(".md").to_lowercase() == low)
+        .or_else(|| notes.iter().find(|n| stem(n) == low))
+        .or_else(|| notes.iter().find(|n| n.title.to_lowercase() == low))
+}
+
+/// The notes linking to `to` (not itself), with the lines the links are on.
+pub fn backlinks<'a>(notes: &'a [Note], to: &Path) -> Vec<(&'a Note, Vec<String>)> {
+    let mut out = Vec::new();
+    for n in notes.iter().filter(|n| n.path != to) {
+        let lines: Vec<String> = n.links.iter().filter(|l| resolve(notes, &n.path, &l.target).is_some_and(|t| t.path == to)).map(|l| l.context.clone()).collect();
+        if !lines.is_empty() {
+            let mut lines = lines;
+            lines.dedup();
+            out.push((n, lines));
+        }
+    }
+    out.sort_by_key(|(n, _)| n.title.to_lowercase());
+    out
+}
+
 pub fn read_note(root: &Path, path: &Path) -> Option<Note> {
     let text = std::fs::read_to_string(path).ok()?;
     let rel = path.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
@@ -240,7 +280,8 @@ pub fn read_note(root: &Path, path: &Path) -> Option<Note> {
     }
     let (title, _) = note_title(fm.as_ref(), path);
     let snippet = body.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("```")).unwrap_or("").chars().take(120).collect();
-    Some(Note { path: path.to_path_buf(), rel, title, tags, modified: std::fs::metadata(path).and_then(|m| m.modified()).ok(), snippet })
+    let links = crate::links::outgoing(body);
+    Some(Note { path: path.to_path_buf(), rel, title, tags, modified: std::fs::metadata(path).and_then(|m| m.modified()).ok(), snippet, links })
 }
 
 /// Every note in a vault (`.md` and `.markdown`), skipping hidden folders such as `.git`,

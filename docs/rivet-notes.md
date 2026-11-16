@@ -48,6 +48,20 @@ the list and leaves the folder alone).
 - **Breadcrumbs** above the title show the vault, folders and file. View → Breadcrumbs (or Preferences → Appearance → Window)
   hides the bar.
 
+## Links between notes
+
+Link a note with `[[Note name]]` (also `[[Note|shown text]]` and `[[Note#Heading]]`); Markdown
+links to `.md` files count too. A link finds its note by path, file name or title.
+
+- **Typing `[[`** lists matching notes; Up/Down choose, Enter or Tab puts the link in (with
+  its `]]`), Esc hides the list.
+- **Following a link**: Ctrl+click it in either mode, or just click it in live mode (where it
+  shows rendered). A link to a note that isn't there yet makes it, beside the current note.
+- **Backlinks**: Peek lists the notes linking to the open one, with the line each link is on,
+  and the open note's own links (ones with no note yet are marked *new*; clicking makes it).
+- **Renaming** a note (its title, or Rename) changes the `[[links]]` to it in every note, keeping
+  their `|shown text` and `#heading`.
+
 ## Quick Open and Quick Actions
 
 Ctrl+P opens Quick Open: type part of a note's title or folder (letters in order are enough,

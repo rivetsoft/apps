@@ -326,6 +326,10 @@ impl NotesApp {
         let shadow = egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) };
         let find = self.icon(&ctx, &["edit-find-symbolic", "system-search-symbolic"], 14.0);
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        // A focus ring while it's being typed in.
+        if ui.ctx().memory(|m| m.has_focus(egui::Id::unique("notes-search"))) {
+            ui.painter().rect_stroke(rect.expand(1.0), r_md(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Outside);
+        }
         egui::Frame::NONE.fill(fill).shadow(shadow).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 0)).show(&mut child, |ui| {
             ui.set_min_size(Vec2::new(w - 20.0, 32.0));
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -601,6 +605,7 @@ impl NotesApp {
         let page = self.page_rect;
         let live_on = self.s.live_mode;
         let mut title_commit: Option<String> = None;
+        let mut follow: Option<String> = None;
         let show_crumbs = self.s.show_breadcrumbs;
         let vault_name = self.vault_name();
         let vault_icon = self.icon(&ctx, &["vault-symbolic", "folder-symbolic"], 13.0);
@@ -783,11 +788,67 @@ impl NotesApp {
             let body_id = egui::Id::unique("note-body");
             let tick = if live_on {
                 ctx.input(|i| if i.pointer.primary_pressed() { i.pointer.interact_pos() } else { None })
-                    .and_then(|p| d.live_boxes.iter().find(|(r, _)| r.contains(p)).map(|(_, b)| *b))
+                    .and_then(|p| d.live_boxes.iter().find(|(r, _)| r.contains(p)).map(|(_, b)| b.clone()))
             } else {
                 None
             };
-            let keep = tick.map(|_| (egui::TextEdit::load_state(&ctx, body_id), ctx.memory(|m| m.has_focus(body_id))));
+            // Note suggestions after `[[`: keys first (before the text sees them), and a clicked
+            // suggestion from last frame goes in now.
+            let focused_now = ctx.memory(|m| m.has_focus(body_id));
+            let caret = if focused_now {
+                egui::TextEdit::load_state(&ctx, body_id).and_then(|s| s.cursor.char_range()).map(|r| d.body.char_indices().nth(r.primary.index.0).map(|(b, _)| b).unwrap_or(d.body.len()))
+            } else {
+                None
+            };
+            let mut accept: Option<(usize, usize, String)> = self.link_pending.take();
+            if accept.is_none()
+                && let Some(c) = caret
+                && let Some((start, typed)) = crate::links::typing_link(&d.body, c)
+                && self.link_hide != Some(start)
+            {
+                let sugg = link_suggestions(&self.notes, &d.path, &typed);
+                if !sugg.is_empty() {
+                    let n = sugg.len();
+                    let (up, down, enter, esc) = ctx.input_mut(|i| {
+                        (
+                            i.consume_key(egui::Modifiers::NONE, Key::ArrowUp),
+                            i.consume_key(egui::Modifiers::NONE, Key::ArrowDown),
+                            i.consume_key(egui::Modifiers::NONE, Key::Enter) || i.consume_key(egui::Modifiers::NONE, Key::Tab),
+                            i.consume_key(egui::Modifiers::NONE, Key::Escape),
+                        )
+                    });
+                    if down {
+                        self.link_sel = (self.link_sel + 1) % n;
+                    }
+                    if up {
+                        self.link_sel = (self.link_sel + n - 1) % n;
+                    }
+                    if esc {
+                        self.link_hide = Some(start);
+                    }
+                    if enter {
+                        accept = Some((start, c, sugg[self.link_sel.min(n - 1)].clone()));
+                    }
+                }
+            }
+            if let Some((start, end, name)) = accept
+                && start <= end
+                && end <= d.body.len()
+                && d.body.is_char_boundary(start)
+                && d.body.is_char_boundary(end)
+            {
+                // The name, then `]]` (unless it's already there).
+                let closed = d.body[end..].starts_with("]]");
+                d.body.replace_range(start..end, &if closed { name.clone() } else { format!("{name}]]") });
+                let after = d.body[..start].chars().count() + name.chars().count() + 2;
+                let mut st = egui::TextEdit::load_state(&ctx, body_id).unwrap_or_default();
+                st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(after))));
+                st.store(&ctx, body_id);
+                ctx.memory_mut(|m| m.request_focus(body_id));
+                self.link_sel = 0;
+                changed = true;
+            }
+            let keep = tick.as_ref().map(|_| (egui::TextEdit::load_state(&ctx, body_id), ctx.memory(|m| m.has_focus(body_id))));
             let out = egui::TextEdit::multiline(&mut d.body)
                 .id(egui::Id::unique("note-body"))
                 .frame(egui::Frame::NONE)
@@ -798,7 +859,7 @@ impl NotesApp {
                 .layouter(&mut layouter)
                 .show(ui);
             // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
-            if let (Some(b), Some((state, focused))) = (tick, keep) {
+            if let (Some(hit), Some((state, focused))) = (tick.clone(), keep) {
                 match state {
                     Some(s) => s.store(&ctx, body_id),
                     None => egui::TextEdit::store_state(&ctx, body_id, egui::text_edit::TextEditState::default()),
@@ -806,11 +867,53 @@ impl NotesApp {
                 if !focused {
                     ctx.memory_mut(|m| m.surrender_focus(body_id));
                 }
-                if let Some(c) = d.body.as_bytes().get(b).copied()
-                    && matches!(c, b' ' | b'x' | b'X')
-                {
-                    d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });
-                    changed = true;
+                match hit {
+                    super::live_edit::Hit::Check(b) => {
+                        if let Some(c) = d.body.as_bytes().get(b).copied()
+                            && matches!(c, b' ' | b'x' | b'X')
+                        {
+                            d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });
+                            changed = true;
+                        }
+                    }
+                    super::live_edit::Hit::Link(t) => follow = Some(t),
+                }
+            }
+            // Ctrl+click on a link (in either mode) follows it; Ctrl over one shows a hand.
+            let ctrl = ctx.input(|i| i.modifiers.command);
+            if ctrl
+                && let Some(p) = ctx.pointer_hover_pos()
+                && out.response.response.rect.contains(p)
+            {
+                let cc = out.galley.cursor_from_pos(p - out.galley_pos);
+                let byte = d.body.char_indices().nth(cc.index.0).map(|(b, _)| b).unwrap_or(d.body.len());
+                if let Some(l) = crate::links::link_at(&d.body, byte) {
+                    ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+                    if out.response.response.clicked() {
+                        follow = Some(l.target);
+                    }
+                }
+            }
+            // The suggestion list, under the cursor.
+            let caret_after = out.cursor_range.filter(|_| ctx.memory(|m| m.has_focus(body_id))).map(|r| r.primary);
+            if let Some(cc) = caret_after {
+                let c = d.body.char_indices().nth(cc.index.0).map(|(b, _)| b).unwrap_or(d.body.len());
+                match crate::links::typing_link(&d.body, c) {
+                    Some((start, typed)) if self.link_hide != Some(start) => {
+                        let sugg = link_suggestions(&self.notes, &d.path, &typed);
+                        if !sugg.is_empty() {
+                            let at = out.galley.pos_from_cursor(cc).translate(out.galley_pos.to_vec2());
+                            if let Some(name) = link_popup(&ctx, at.left_bottom() + Vec2::new(0.0, 4.0), &sugg, &mut self.link_sel) {
+                                self.link_pending = Some((start, c, name));
+                                ctx.request_repaint();
+                            }
+                        }
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.link_hide = None;
+                        self.link_sel = 0;
+                    }
                 }
             }
             if live_on {
@@ -908,6 +1011,9 @@ impl NotesApp {
         }
         if let Some(t) = title_commit {
             self.retitle(&t);
+        }
+        if let Some(t) = follow {
+            self.follow_link(&t);
         }
         if let Some(c) = edit {
             self.edit_cmd = Some(c);
@@ -1319,6 +1425,52 @@ fn drag_and_drop(ui: &egui::Ui, resp: &egui::Response, rect: Rect, me: &Path, na
         }
     }
     false
+}
+
+/// Notes to offer after `[[`, best first (the open note left out): their names as links use them.
+fn link_suggestions(notes: &[Note], open: &Path, typed: &str) -> Vec<String> {
+    let typed = typed.trim();
+    let mut scored: Vec<(i32, &Note)> = notes
+        .iter()
+        .filter(|n| n.path != open)
+        .filter_map(|n| rivet_look::quick::fuzzy_score(&n.title, typed).max(rivet_look::quick::fuzzy_score(&n.rel, typed).map(|s| s - 200)).map(|s| (s, n)))
+        .collect();
+    if typed.is_empty() {
+        scored.sort_by_key(|s| std::cmp::Reverse(s.1.modified));
+    } else {
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.title.to_lowercase().cmp(&b.1.title.to_lowercase())));
+    }
+    scored.into_iter().take(8).map(|(_, n)| n.title.clone()).collect()
+}
+
+/// The list of note suggestions at `pos`. Returns the one clicked.
+fn link_popup(ctx: &egui::Context, pos: Pos2, sugg: &[String], sel: &mut usize) -> Option<String> {
+    *sel = (*sel).min(sugg.len().saturating_sub(1));
+    let mut picked = None;
+    egui::Area::new(egui::Id::unique("link-suggestions")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+        egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::same(4)).show(ui, |ui| {
+            ui.set_width(260.0);
+            let v = ui.visuals().clone();
+            for (i, name) in sugg.iter().enumerate() {
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(260.0, 26.0), Sense::click());
+                if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
+                    *sel = i;
+                }
+                if i == *sel {
+                    let (fill, stroke) = selected_tile(&v, v.window_fill);
+                    ui.painter().rect_filled(r, r_sm(), fill);
+                    ui.painter().rect_stroke(r, r_sm(), stroke, egui::StrokeKind::Inside);
+                }
+                ui.painter().with_clip_rect(r.shrink(4.0)).text(r.left_center() + Vec2::new(10.0, 0.0), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), v.text_color());
+                if resp.clicked() {
+                    picked = Some(name.clone());
+                }
+            }
+            ui.add_space(2.0);
+            ui.label(egui::RichText::new("Enter or Tab to link  ·  Esc to hide").size(11.0).color(v.weak_text_color()));
+        });
+    });
+    picked
 }
 
 /// A flat toolbar button for showing or hiding a sidebar. It looks the same open or closed;

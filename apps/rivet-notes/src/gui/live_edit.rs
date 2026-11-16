@@ -8,6 +8,15 @@ use rivet_look::highlight;
 
 use crate::live::{self, Deco, Hide};
 
+/// Something in the rendered text that a press acts on.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum Hit {
+    /// A check box: the byte of its space or x.
+    Check(usize),
+    /// A link to a note, by name.
+    Link(String),
+}
+
 /// The colors and sizes live mode draws with.
 pub(super) struct LiveLook {
     pub size: f32,
@@ -170,7 +179,7 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
 
 /// Draw bullets, check boxes, quote bars and rules over the laid-out text. Returns the byte of
 /// a check box's mark when one was clicked (to tick or untick it).
-pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Vec<(Rect, usize)> {
+pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Vec<(Rect, Hit)> {
     let l = live::analyze(text, raw, held);
     let p = ui.painter().with_clip_rect(out.text_clip_rect);
     let at = |c: usize| out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
@@ -202,7 +211,7 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 if pointer.is_some_and(|q| hit.contains(q)) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
-                boxes.push((hit, byte));
+                boxes.push((hit, Hit::Check(byte)));
             }
             Deco::Quote(c) => {
                 let a = at(c);
@@ -216,6 +225,21 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 p.line_segment([Pos2::new(x0, y), Pos2::new(x1, y)], Stroke::new(1.0, look.weak.gamma_multiply(0.6)));
             }
         }
+    }
+    // Rendered links to notes open with a click.
+    for link in crate::links::outgoing(text) {
+        if l.st.get(link.range.start).is_none_or(|s| s.hide == Hide::No) {
+            continue;
+        }
+        let cs = text[..link.range.start].chars().count();
+        let ce = cs + text[link.range.clone()].chars().count();
+        let (a, b) = (at(cs), at(ce));
+        let r = if (a.center().y - b.center().y).abs() < 1.0 { Rect::from_min_max(a.left_top(), b.left_bottom()) } else { Rect::from_min_max(a.left_top(), Pos2::new(out.text_clip_rect.right(), a.bottom())) };
+        let r = r.intersect(out.text_clip_rect);
+        if pointer.is_some_and(|q| r.contains(q)) {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        }
+        boxes.push((r, Hit::Link(link.target)));
     }
     boxes
 }

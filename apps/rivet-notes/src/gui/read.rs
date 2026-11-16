@@ -346,19 +346,12 @@ impl NotesApp {
         if t.is_empty() {
             return None;
         }
+        // Other files beside the note (pictures, PDFs) open too.
         let p = dir.join(&t);
         if p.is_file() {
             return Some(p);
         }
-        let with_md = dir.join(format!("{t}.md"));
-        if with_md.is_file() {
-            return Some(with_md);
-        }
-        let low = t.trim_end_matches(".md").to_lowercase();
-        self.notes
-            .iter()
-            .find(|n| n.path.file_stem().is_some_and(|s| s.to_string_lossy().to_lowercase() == low) || n.title.to_lowercase() == low || n.rel.trim_end_matches(".md").to_lowercase() == low)
-            .map(|n| n.path.clone())
+        vault::resolve(&self.notes, &dir.join("_"), &t).map(|n| n.path.clone())
     }
 
     /// Draw the page (if open) and handle its keys.

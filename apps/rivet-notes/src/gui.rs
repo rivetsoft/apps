@@ -24,6 +24,9 @@ use crate::vault::{self, Frontmatter, Note, Value};
 pub const ICON_SVG: &str = include_str!("../data/rivet-notes.svg");
 
 /// The open note, as it's being edited.
+/// A note linking to the open one: its file, its title, and the lines the links are on.
+pub(super) type Backlink = (PathBuf, String, Vec<String>);
+
 struct Doc {
     path: PathBuf,
     fm: Option<Frontmatter>,
@@ -50,7 +53,7 @@ struct Doc {
     /// it (kept until the cursor leaves, so the line doesn't change under the typing).
     live_held: Option<(usize, u8)>,
     /// Live mode: where the check boxes were drawn last frame, and the byte each ticks.
-    live_boxes: Vec<(egui::Rect, usize)>,
+    live_boxes: Vec<(egui::Rect, live_edit::Hit)>,
     /// The title while it's being edited in the heading.
     title_buf: Option<String>,
 }
@@ -114,6 +117,15 @@ pub struct NotesApp {
     page_rect: egui::Rect,
     /// Quick Open or Quick Actions, while one is up.
     quick: Option<(quick::QuickKind, rivet_look::quick::QuickPanel)>,
+    /// Bumped whenever the list of notes changes (to know when backlinks need working out).
+    notes_gen: u64,
+    /// Note suggestions after `[[`: the highlighted one, where a dismissed list started, and a
+    /// clicked suggestion waiting to go in (where its name starts and ends, and the name).
+    link_sel: usize,
+    link_hide: Option<usize>,
+    link_pending: Option<(usize, usize, String)>,
+    /// The open note's backlinks: for which note and list, and the notes with their lines.
+    backlinks: Option<(PathBuf, u64, Vec<Backlink>)>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -203,6 +215,11 @@ impl NotesApp {
             fmt_bar: None,
             page_rect: egui::Rect::NOTHING,
             quick: None,
+            notes_gen: 0,
+            link_sel: 0,
+            link_hide: None,
+            link_pending: None,
+            backlinks: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -336,6 +353,7 @@ impl NotesApp {
         let Some(v) = &self.vault else { return };
         self.notes = vault::scan(v);
         self.folders = vault::folders(v);
+        self.notes_gen += 1;
     }
 
     fn vault_name(&self) -> String {
@@ -392,6 +410,7 @@ impl NotesApp {
                     && let Some(fresh) = vault::read_note(v, &d.path)
                 {
                     *n = fresh;
+                    self.notes_gen += 1;
                 }
             }
             Err(e) => self.note_msg = Some((format!("Couldn't save: {e}"), true)),
@@ -464,7 +483,50 @@ impl NotesApp {
         self.current_folder = folder.to_string();
     }
 
-    fn new_note(&mut self, folder: &str, title: &str) {
+/// Open the note a link names (from the open note), or make it beside the open note when
+    /// there's no note by that name yet.
+    pub(super) fn follow_link(&mut self, target: &str) {
+        let from = self.doc.as_ref().map(|d| d.path.clone()).or_else(|| self.vault.clone()).unwrap_or_default();
+        if let Some(p) = vault::resolve(&self.notes, &from, target).map(|n| n.path.clone()) {
+            self.open_note(&p);
+            return;
+        }
+        let folder = from.parent().and_then(|p| self.vault.as_ref().and_then(|v| p.strip_prefix(v).ok())).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+        // A name with folders ("Projects/Plan") goes in that folder.
+        let (folder, name) = match target.rsplit_once('/') {
+            Some((f, n)) => (f.to_string(), n.to_string()),
+            None => (folder, target.to_string()),
+        };
+        self.new_note(&folder, name.trim());
+    }
+
+    /// After a note was renamed from any of `old` (its old file name and title) to `new`: the
+    /// links to it in other notes (and the open one) now use the new name. `linking` are the
+    /// notes whose links led to it. Returns how many notes changed.
+    fn relink(&mut self, linking: &[PathBuf], old: &[String], new: &str) -> usize {
+        let mut changed = 0;
+        let open = self.doc.as_ref().map(|d| d.path.clone());
+        if let Some(d) = self.doc.as_mut()
+            && linking.contains(&d.path)
+            && let Some(b) = crate::links::rename_links(&d.body, old, new)
+        {
+            d.body = b;
+            d.dirty = true;
+            changed += 1;
+        }
+        for p in linking.iter().filter(|p| Some(*p) != open.as_ref()) {
+            let Ok(text) = std::fs::read_to_string(p) else { continue };
+            if let Some(t) = crate::links::rename_links(&text, old, new) {
+                let tmp = p.with_extension("md.rivet-tmp");
+                if std::fs::write(&tmp, t).and_then(|_| std::fs::rename(&tmp, p)).is_ok() {
+                    changed += 1;
+                }
+            }
+        }
+        changed
+    }
+
+    pub(super) fn new_note(&mut self, folder: &str, title: &str) {
         let Some(v) = self.vault.clone() else { return };
         let dir = v.join(folder);
         let _ = std::fs::create_dir_all(&dir);
@@ -496,8 +558,23 @@ impl NotesApp {
             return;
         }
         self.save_now();
+        // Links to this note, to point at its new name afterwards.
+        let old_note = self.notes.iter().find(|n| n.path == path).cloned();
+        let linking: Vec<PathBuf> = match &old_note {
+            Some(_) => vault::backlinks(&self.notes, path).into_iter().map(|(n, _)| n.path.clone()).collect(),
+            None => Vec::new(),
+        };
         match std::fs::rename(path, &to) {
             Ok(()) => {
+                if let Some(n) = &old_note
+                    && !linking.is_empty()
+                {
+                    let old = vec![n.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(), n.title.clone()];
+                    let new = to.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                    // The renamed note is at its new path now.
+                    let linking: Vec<PathBuf> = linking.iter().map(|p| if p == path { to.clone() } else { p.clone() }).collect();
+                    self.relink(&linking, &old, &new);
+                }
                 if self.s.note_widths.iter().any(|(p, _)| p.starts_with(path)) {
                     self.s.moved(path, &to);
                     self.s.save();

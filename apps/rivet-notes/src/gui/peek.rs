@@ -14,7 +14,24 @@ use super::*;
 pub(super) const CENTERED_WIDTH: f32 = 720.0;
 
 impl NotesApp {
+    /// The open note's backlinks, worked out again only when the note or the list changes.
+    fn backlinks_now(&mut self) -> Vec<Backlink> {
+        let Some(path) = self.doc.as_ref().map(|d| d.path.clone()) else { return Vec::new() };
+        if let Some((p, g, list)) = &self.backlinks
+            && *p == path
+            && *g == self.notes_gen
+        {
+            return list.clone();
+        }
+        let list: Vec<Backlink> = vault::backlinks(&self.notes, &path).into_iter().map(|(n, lines)| (n.path.clone(), n.title.clone(), lines)).collect();
+        self.backlinks = Some((path, self.notes_gen, list.clone()));
+        list
+    }
+
     pub(super) fn peek(&mut self, ui: &mut egui::Ui) {
+        let back = self.backlinks_now();
+        let mut go: Option<PathBuf> = None;
+        let mut make: Option<String> = None;
         let v = ui.visuals().clone();
         let weak = v.weak_text_color();
         // No title or close button: the toolbar's Peek button and F11 open and close it.
@@ -61,6 +78,53 @@ impl NotesApp {
             };
             let vault = self.vault.clone().unwrap_or_default();
             let meta = std::fs::metadata(&d.path).ok();
+            // ---- links: the notes linking here, and where this note links to
+            card(ui, &format!("Backlinks  {}", back.len()), |ui| {
+                if back.is_empty() {
+                    ui.label(egui::RichText::new("No notes link here yet").color(weak));
+                }
+                for (p, title, lines) in &back {
+                    if link_row(ui, title, true).on_hover_text("Open this note").clicked() {
+                        go = Some(p.clone());
+                    }
+                    for l in lines.iter().take(2) {
+                        // Cut to the card's width (never widening Peek).
+                        let w = ui.available_width() - 8.0;
+                        let (r, _) = ui.allocate_exact_size(Vec2::new(w.max(20.0), 16.0), Sense::hover());
+                        let r = r.translate(Vec2::new(8.0, 0.0));
+                        let mut job = egui::text::LayoutJob::simple_singleline(l.clone(), fonts::ui_font(11.5), weak);
+                        job.wrap = egui::text::TextWrapping::truncate_at_width(r.width() - 8.0);
+                        let g = ui.painter().layout_job(job);
+                        ui.painter().galley(r.left_center() - Vec2::new(0.0, g.size().y / 2.0), g, weak);
+                    }
+                    ui.add_space(3.0);
+                }
+            });
+            let mut outgoing: Vec<String> = Vec::new();
+            for l in crate::links::outgoing(&d.body) {
+                if !outgoing.iter().any(|o| o.eq_ignore_ascii_case(&l.target)) {
+                    outgoing.push(l.target);
+                }
+            }
+            card(ui, &format!("Links  {}", outgoing.len()), |ui| {
+                if outgoing.is_empty() {
+                    ui.label(egui::RichText::new("No links. Type [[ to link a note").color(weak));
+                }
+                for t in &outgoing {
+                    match vault::resolve(&self.notes, &d.path, t) {
+                        Some(n) => {
+                            if link_row(ui, &n.title, true).on_hover_text("Open this note").clicked() {
+                                go = Some(n.path.clone());
+                            }
+                        }
+                        None => {
+                            if link_row(ui, t, false).on_hover_text("No note by this name yet: click to make it").clicked() {
+                                make = Some(t.clone());
+                            }
+                        }
+                    }
+                }
+            });
             // ---- the file
             card(ui, "File", |ui| {
                 let name = d.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -122,7 +186,23 @@ impl NotesApp {
                 }
             });
         });
+        if let Some(p) = go {
+            self.open_note(&p);
+        }
+        if let Some(name) = make {
+            let folder = self.doc.as_ref().and_then(|d| d.path.parent()).and_then(|p| self.vault.as_ref().and_then(|v| p.strip_prefix(v).ok())).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+            self.new_note(&folder, &name);
+        }
     }
+}
+
+/// A note's name in Peek's link lists: link-colored when it's there, faint when it isn't yet.
+fn link_row(ui: &mut egui::Ui, name: &str, exists: bool) -> egui::Response {
+    let v = ui.visuals().clone();
+    let col = if exists { v.hyperlink_color } else { v.weak_text_color() };
+    let text = if exists { name.to_string() } else { format!("{name}  (new)") };
+    let r = ui.add(egui::Label::new(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).truncate().sense(Sense::click()));
+    r.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 /// A rounded section with a small heading.
