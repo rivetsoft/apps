@@ -3,6 +3,7 @@
 //! apps' shared look: theme and desktop colors, icons, fonts, in-app windows.
 
 mod draw;
+mod peek;
 mod prefs;
 mod read;
 
@@ -90,6 +91,8 @@ pub struct NotesApp {
     pending_fmt: Option<crate::format::Fmt>,
     /// Where the selection's format bar was last drawn (kept up while the pointer is on it).
     fmt_bar: Option<egui::Rect>,
+    /// The note's page inside the window (for a centered column's margins).
+    page_rect: egui::Rect,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -119,6 +122,15 @@ impl NotesApp {
         // Test hook: RIVET_NOTES_SYSTEM_ICONS uses the desktop's icon theme.
         if std::env::var_os("RIVET_NOTES_SYSTEM_ICONS").is_some() {
             s.builtin_icons = false;
+        }
+        // Test hooks: RIVET_NOTES_PEEK opens Peek; RIVET_NOTES_WIDTH=centered|full.
+        if std::env::var_os("RIVET_NOTES_PEEK").is_some() {
+            s.show_peek = true;
+        }
+        match std::env::var("RIVET_NOTES_WIDTH").as_deref() {
+            Ok("centered") => s.centered = true,
+            Ok("full") => s.centered = false,
+            _ => {}
         }
         match std::env::var("RIVET_NOTES_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
@@ -151,6 +163,7 @@ impl NotesApp {
             reading: None,
             pending_fmt: None,
             fmt_bar: None,
+            page_rect: egui::Rect::NOTHING,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -472,7 +485,7 @@ impl NotesApp {
         }
         let cmd = Modifiers::COMMAND;
         let shift = Modifiers { shift: true, ..Modifiers::COMMAND };
-        let (f, n, s, comma, m, b, t, p, find) = ctx.input_mut(|i| {
+        let (f, n, s, comma, m, b, t, p, find, pk) = ctx.input_mut(|i| {
             (
                 // Shift first: a plain Ctrl+N pattern also matches with Shift held.
                 i.consume_shortcut(&KeyboardShortcut::new(shift, Key::N)),
@@ -484,6 +497,7 @@ impl NotesApp {
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::T)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::P)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::F)),
+                i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::F11)),
             )
         });
         if n && self.vault.is_some() {
@@ -504,6 +518,10 @@ impl NotesApp {
         }
         if b {
             self.s.show_sidebar = !self.s.show_sidebar;
+            self.s.save();
+        }
+        if pk && self.vault.is_some() {
+            self.s.show_peek = !self.s.show_peek;
             self.s.save();
         }
         if t {
@@ -644,6 +662,8 @@ impl NotesApp {
             let before = self.s.clone();
             c(ui, &mut self.s.show_properties, "Properties", "Ctrl+P");
             c(ui, &mut self.s.show_sidebar, "Sidebar", "F9");
+            c(ui, &mut self.s.show_peek, "Peek", "F11");
+            c(ui, &mut self.s.centered, "Centered Text", "");
             c(ui, &mut self.s.show_menubar, "Menubar", "Ctrl+M");
             if self.s != before {
                 self.s.save();

@@ -148,12 +148,27 @@ impl NotesApp {
             let side = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 10, right: 8, top: 0, bottom: 4 });
             egui::Panel::left("notes-side").show_separator_line(false).frame(side).resizable(true).default_size(260.0).size_range(190.0..=460.0).show(ui, |ui| self.sidebar(ui));
         }
+        let peek = self.s.show_peek && self.vault.is_some();
+        if peek {
+            let side = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 2, right: 12, top: 0, bottom: 4 });
+            egui::Panel::right("notes-peek").show_separator_line(false).frame(side).resizable(true).default_size(270.0).size_range(220.0..=420.0).show(ui, |ui| self.peek(ui));
+        }
         let left = if self.s.show_sidebar && self.vault.is_some() { 0 } else { 12 };
-        let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left, right: 12, top: 0, bottom: 0 });
+        let right = if peek { 6 } else { 12 };
+        let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left, right, top: 0, bottom: 0 });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();
             ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink2(Vec2::new(28.0, 18.0))).layout(egui::Layout::top_down(egui::Align::Min)));
+            // The note's page; centered text keeps to a column in the middle of it.
+            let page = r.shrink2(Vec2::new(28.0, 18.0));
+            self.page_rect = page;
+            let col = if self.s.centered && self.doc.is_some() {
+                let w = page.width().min(super::peek::CENTERED_WIDTH * fonts::scale().max(1.0));
+                Rect::from_min_max(Pos2::new(page.center().x - w / 2.0, page.top()), Pos2::new(page.center().x + w / 2.0, page.bottom()))
+            } else {
+                page
+            };
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(col).layout(egui::Layout::top_down(egui::Align::Min)));
             if self.vault.is_none() {
                 self.welcome(&mut child);
             } else if self.doc.is_some() {
@@ -204,6 +219,20 @@ impl NotesApp {
                     left_end = r.0.rect.right();
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Peek, at the far right.
+                    let peek_icon = self.icon(&ctx, &["dialog-information-symbolic", "document-properties-symbolic", "help-about-symbolic"], 16.0);
+                    let on = self.s.show_peek;
+                    let fg = if on { v.selection.stroke.color } else { v.text_color() };
+                    let b = match &peek_icon {
+                        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
+                        None => egui::Button::new("i"),
+                    };
+                    if ui.add_enabled(self.vault.is_some(), b.selected(on).frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Peek: this note's details and display (F11)").clicked() {
+                        self.s.show_peek = !on;
+                        self.s.save();
+                    }
+                    let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
+                    ui.painter().line_segment([sep.center_top(), sep.center_bottom()], Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.4)));
                     // New note, and the sidebar's tabs.
                     let new_icon = self.icon(&ctx, &["document-new-symbolic", "list-add-symbolic"], 16.0);
                     let b = match &new_icon {
@@ -519,6 +548,7 @@ impl NotesApp {
         let mut edit: Option<EditCmd> = None;
         let mut fmt_pick: Option<crate::format::Fmt> = None;
         let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
+        let page = self.page_rect;
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
@@ -698,7 +728,16 @@ impl NotesApp {
             state.store(&ctx, body_id);
             ctx.memory_mut(|m| m.request_focus(body_id));
         }
-        egui::ScrollArea::vertical().id_salt("note-text").auto_shrink([false, false]).show(ui, |ui| {
+        let col = ui.available_rect_before_wrap();
+        let outer = if page.is_positive() && page.width() > col.width() + 1.0 { Rect::from_min_max(Pos2::new(page.left(), col.top()), Pos2::new(page.right(), col.bottom())) } else { col };
+        let pad = col.left() - outer.left();
+        let mut scroll_ui = ui.new_child(egui::UiBuilder::new().max_rect(outer).layout(egui::Layout::top_down(egui::Align::Min)));
+        egui::ScrollArea::vertical().id_salt("note-text").auto_shrink([false, false]).show(&mut scroll_ui, |ui| {
+          ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            ui.add_space(pad);
+          ui.vertical(|ui| {
+            ui.set_width(col.width());
             let out = egui::TextEdit::multiline(&mut d.body)
                 .id(egui::Id::unique("note-body"))
                 .frame(egui::Frame::NONE)
@@ -767,6 +806,8 @@ impl NotesApp {
                     }
                 });
             });
+          });
+          });
         });
         if changed {
             d.dirty = true;

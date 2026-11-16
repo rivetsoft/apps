@@ -38,6 +38,10 @@ pub struct Settings {
     pub editor_size: f32,
     /// Line height as a multiple of the text size.
     pub line_spacing: f32,
+    /// The note's text in a centered column (else the full width of the window).
+    pub centered: bool,
+    /// Peek, the panel on the right about the open note.
+    pub show_peek: bool,
     /// The vaults, most recently used first.
     pub vaults: Vec<PathBuf>,
     /// Folders (vault-relative) and tags folded up in the sidebar.
@@ -61,6 +65,8 @@ impl Default for Settings {
             mono_font: String::new(),
             editor_size: 15.0,
             line_spacing: 1.6,
+            centered: false,
+            show_peek: false,
             vaults: Vec::new(),
             collapsed: Vec::new(),
         }
@@ -111,6 +117,8 @@ impl Settings {
                     s.layout = crate::layout::Layout::from_text(v, split);
                 }
                 "split" => s.layout.split = v.parse::<f32>().unwrap_or(0.4).clamp(0.15, 0.85),
+                "note_width" => s.centered = v == "centered",
+                "show_peek" => s.show_peek = b,
                 "vaults" => s.vaults = v.split(SEP).filter(|x| !x.is_empty()).map(PathBuf::from).collect(),
                 "collapsed" => s.collapsed = v.split(SEP).filter(|x| !x.is_empty()).map(str::to_string).collect(),
                 _ => {}
@@ -131,7 +139,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -145,6 +153,8 @@ impl Settings {
             self.mono_font.replace('\n', ""),
             self.editor_size,
             self.line_spacing,
+            if self.centered { "centered" } else { "full" },
+            self.show_peek,
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),
         );

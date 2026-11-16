@@ -50,7 +50,7 @@ impl Page {
 /// The keys, for the Keyboard page.
 const KEYS: [(&str, &[(&str, &str)]); 3] = [
     ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F")]),
-    ("View", &[("Reading view (Esc closes it)", "Ctrl+Space"), ("Switch folders / tags", "Ctrl+T"), ("Show or hide properties", "Ctrl+P"), ("Show or hide the sidebar", "F9"), ("Show or hide the menu bar", "Ctrl+M"), ("Preferences", "Ctrl+,")]),
+    ("View", &[("Reading view (Esc closes it)", "Ctrl+Space"), ("Switch folders / tags", "Ctrl+T"), ("Show or hide properties", "Ctrl+P"), ("Show or hide the sidebar", "F9"), ("Show or hide Peek", "F11"), ("Show or hide the menu bar", "Ctrl+M"), ("Preferences", "Ctrl+,")]),
     ("Formatting", &[]),
 ];
 
@@ -223,9 +223,18 @@ impl NotesApp {
                                             ui.end_row();
                                         });
                                     });
+                                    section(ui, "Note width", &mut |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.selectable_value(&mut self.s.centered, false, "Full width").on_hover_text("The text uses the whole window");
+                                            ui.selectable_value(&mut self.s.centered, true, "Centered").on_hover_text("The text keeps to a readable column in the middle");
+                                        });
+                                        ui.add_space(4.0);
+                                        hint(ui, "Peek (F11) switches it too, for a quick look.");
+                                    });
                                     section(ui, "Window", &mut |ui| {
                                         ui.checkbox(&mut self.s.show_menubar, "Menu bar");
                                         ui.checkbox(&mut self.s.show_sidebar, "Sidebar");
+                                        ui.checkbox(&mut self.s.show_peek, "Peek");
                                     });
                                 }
                                 Page::Editor => {

@@ -54,6 +54,14 @@ Copy button, tables, rules, links, `#tags` and pictures stored beside the note. 
 notes (`[[Name]]` or a relative `.md` path) open them in place, and Backspace goes back. Arrow
 keys, Page Up/Down, Space, Home and End scroll. Esc or Ctrl+Space closes it.
 
+## Peek
+
+The button at the far right of the toolbar (or F11, or View → Peek) opens Peek, a panel on the
+right about the open note: how it's shown (full width or a centered column, and whether the
+properties sit above the text), the file (name, folder, size, words, characters, lines, reading
+time), its dates (edited, created, saved) and its properties. Preferences → Appearance → Note
+width sets the same choice.
+
 ## Fonts
 
 Preferences → Editor sets three fonts, the editor's size and its line spacing: **Interface** (menus, sidebar;
@@ -68,6 +76,7 @@ sample shows the editor's fonts as you choose.
 | Ctrl+N / Shift+Ctrl+N | New note / new folder (in the current folder) |
 | Ctrl+S | Save now |
 | Ctrl+Space | Reading view (Esc closes it) |
+| F11 | Peek |
 | Ctrl+F | Search |
 | Ctrl+T | Switch folders / tags, or fold the tags pane when it's below |
 | Ctrl+P | Show or hide properties |
