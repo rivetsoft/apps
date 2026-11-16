@@ -90,8 +90,11 @@ impl NotesApp {
         let mut s = if checking { Settings::default() } else { Settings::load() };
         // Test hooks for checks.
         if let Ok(v) = std::env::var("RIVET_NOTES_BROWSE") {
-            s.browse = if v == "tags" { Browse::Tags } else { Browse::Folders };
-            s.tags_below = v == "below";
+            s.layout = match v.as_str() {
+                "tags" => crate::layout::Layout::tabs(Browse::Tags),
+                "below" => crate::layout::Layout::stacked(),
+                _ => crate::layout::Layout::tabs(Browse::Folders),
+            };
         }
         match std::env::var("RIVET_NOTES_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
@@ -387,16 +390,18 @@ impl NotesApp {
             self.s.save();
         }
         if t {
-            if self.s.tags_below {
-                // Both are showing: Ctrl+T folds or opens the tags pane.
-                let k = "pane:tags".to_string();
+            // Switch the tabs; with no tabs, fold or open the last pane.
+            let l = &mut self.s.layout;
+            if let Some(i) = l.tabbed() {
+                let s = &mut l.slots[i];
+                s.active = (s.active + 1) % s.panels.len();
+            } else if let Some(last) = l.slots.last() {
+                let k = crate::layout::fold_key(last);
                 if let Some(i) = self.s.collapsed.iter().position(|x| *x == k) {
                     self.s.collapsed.remove(i);
                 } else {
                     self.s.collapsed.push(k);
                 }
-            } else {
-                self.s.browse = if self.s.browse == Browse::Tags { Browse::Folders } else { Browse::Tags };
             }
             self.s.save();
         }
@@ -494,23 +499,17 @@ impl NotesApp {
         });
         ui.menu_button("View", |ui| {
             style(ui);
-            if ui.add(egui::RadioButton::new(!self.s.tags_below && self.s.browse == Browse::Folders, "By Folder")).clicked() {
-                self.s.tags_below = false;
-                self.s.browse = Browse::Folders;
-                self.s.save();
-                ui.close();
+            use crate::layout::Layout;
+            for (label, preset) in [("By Folder", Layout::tabs(Browse::Folders)), ("By Tag", Layout::tabs(Browse::Tags)), ("Tags Below Folders", Layout::stacked())] {
+                let on = self.s.layout.slots == preset.slots;
+                if ui.add(egui::RadioButton::new(on, label)).clicked() {
+                    let split = self.s.layout.split;
+                    self.s.layout = Layout { split, ..preset };
+                    self.s.save();
+                    ui.close();
+                }
             }
-            if ui.add(egui::RadioButton::new(!self.s.tags_below && self.s.browse == Browse::Tags, "By Tag")).clicked() {
-                self.s.tags_below = false;
-                self.s.browse = Browse::Tags;
-                self.s.save();
-                ui.close();
-            }
-            if ui.add(egui::RadioButton::new(self.s.tags_below, "Tags Below Folders")).clicked() {
-                self.s.tags_below = true;
-                self.s.save();
-                ui.close();
-            }
+            ui.label(egui::RichText::new("Or drag a panel's title in the sidebar").small().weak());
             ui.separator();
             let c = |ui: &mut egui::Ui, v: &mut bool, label: &str, sc: &str| {
                 let mut b = *v;
@@ -579,6 +578,27 @@ impl eframe::App for NotesApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(shot) = &self.shot {
             rivet_kit::scripted_click("RIVET_NOTES", shot.frames(), raw);
+            // RIVET_NOTES_DRAG=X1,Y1>X2,Y2: press at one point, move to the other, let go.
+            if let Some((a, b)) = std::env::var("RIVET_NOTES_DRAG").ok().and_then(|v| {
+                let (a, b) = v.split_once('>')?;
+                let pt = |s: &str| {
+                    let (x, y) = s.split_once(',')?;
+                    Some(egui::Pos2::new(x.trim().parse().ok()?, y.trim().parse().ok()?))
+                };
+                Some((pt(a)?, pt(b)?))
+            }) {
+                let f = shot.frames();
+                let button = egui::PointerButton::Primary;
+                match f {
+                    30 => raw.events.push(egui::Event::PointerMoved(a)),
+                    31 => raw.events.push(egui::Event::PointerButton { pos: a, button, pressed: true, modifiers: Default::default() }),
+                    32..=45 => raw.events.push(egui::Event::PointerMoved(a + (b - a) * ((f - 31) as f32 / 14.0))),
+                    // Hold still over the target for a while (so the drop marker can be seen).
+                    46..=59 if std::env::var_os("RIVET_NOTES_DRAG_HOLD").is_some() => {}
+                    46 | 60 => raw.events.push(egui::Event::PointerButton { pos: b, button, pressed: false, modifiers: Default::default() }),
+                    _ => {}
+                }
+            }
         }
         let Some(cmd) = self.edit_cmd.take() else { return };
         let key = |key: Key, modifiers: Modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };

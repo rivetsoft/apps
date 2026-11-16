@@ -29,11 +29,19 @@ enum Pick {
     /// Fold (true) or open everything in a panel.
     FoldAll(bool, Browse),
     Reload,
-    /// Tags below the folders (true) or in their place.
-    TagsBelow(bool),
-    /// Fold or open a whole pane.
-    FoldPane(&'static str),
+    /// A whole layout (from a menu).
+    Preset(crate::layout::Layout),
+    /// Show this tab.
+    ShowTab(Browse),
+    /// A panel dropped on a slot.
+    MovePanel(Browse, usize, crate::layout::Zone),
+    /// Fold or open a pane (its key).
+    FoldSlot(String),
 }
+
+/// The panel being dragged by its title.
+#[derive(Clone, Copy)]
+struct PanelDrag(Browse);
 
 /// Comfortable menu rows, like Rivet's right-click menus.
 fn menu_style(ui: &mut egui::Ui) {
@@ -231,14 +239,15 @@ impl NotesApp {
                 if ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)").clicked() {
                     self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
                 }
-                // Switching only matters while tags take the folders' place.
-                if !self.s.tags_below {
+                // The tabs of the sidebar's tabbed slot (when there is one), most recent last.
+                if let Some(i) = self.s.layout.tabbed() {
                     ui.add_space(4.0);
-                    let before = self.s.browse;
-                    ui.selectable_value(&mut self.s.browse, Browse::Tags, "Tags").on_hover_text("Notes by tag (Ctrl+T)");
-                    ui.selectable_value(&mut self.s.browse, Browse::Folders, "Folders").on_hover_text("Notes by folder (Ctrl+T)");
-                    if self.s.browse != before {
-                        self.s.save();
+                    let slot = self.s.layout.slots[i].clone();
+                    for (k, p) in slot.panels.iter().enumerate().rev() {
+                        if ui.selectable_label(k == slot.active, crate::layout::title(*p)).on_hover_text("Ctrl+T switches").clicked() {
+                            self.s.layout.show(*p);
+                            self.s.save();
+                        }
                     }
                 }
             });
@@ -292,53 +301,114 @@ impl NotesApp {
             note_icon,
             tag_icon,
         };
-        let below = self.s.tags_below;
+        let layout = self.s.layout.clone();
         ui.add_space(2.0);
         if searching {
-            pane_header(ui, &format!("{} found", data.notes.len()), None, None, below, &mut pick);
+            plain_header(ui, &format!("{} found", data.notes.len()));
             egui::ScrollArea::vertical().id_salt("side-search").auto_shrink([false, false]).show(ui, |ui| {
                 for n in &data.notes {
                     note_row(ui, n, 0, data.open.as_ref() == Some(&n.path), &data.note_icon, true, &mut pick, &data.root);
                 }
             });
-        } else if below {
-            // Folders on top, tags in their own pane below; the line between them drags.
-            let tags_open = !data.collapsed.contains("pane:tags");
+        } else {
+            // The slots, top to bottom. Each has a title bar (tabs when it holds several panels),
+            // then its panel; a line between two slots drags to share the room.
+            let n = layout.slots.len();
             let total = ui.available_height();
             let header_h = 30.0;
             let handle_h = 8.0;
-            let tags_h = if tags_open { (total * self.s.tags_split).clamp(90.0, (total - 150.0).max(90.0)) } else { 0.0 };
-            let folders_h = (total - header_h * 2.0 - handle_h - tags_h).max(60.0);
-            pane_header(ui, "Folders", Some(Browse::Folders), None, below, &mut pick);
-            egui::ScrollArea::vertical().id_salt("side-folders").max_height(folders_h).min_scrolled_height(folders_h).auto_shrink([false, false]).show(ui, |ui| {
-                panel(ui, Browse::Folders, &data, &mut pick);
-            });
-            // The divider.
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), handle_h), Sense::drag());
-            let v = ui.visuals();
-            let col = if resp.hovered() || resp.dragged() { v.selection.bg_fill } else { v.widgets.noninteractive.bg_stroke.color };
-            ui.painter().line_segment([Pos2::new(r.left() + 6.0, r.center().y), Pos2::new(r.right() - 6.0, r.center().y)], Stroke::new(if resp.dragged() { 2.0 } else { 1.0 }, col));
-            if tags_open {
-                let resp = resp.on_hover_cursor(egui::CursorIcon::ResizeVertical).on_hover_text("Drag to share the room between folders and tags");
-                if resp.dragged() && total > 0.0 {
-                    self.s.tags_split = (self.s.tags_split - resp.drag_delta().y / total).clamp(0.15, 0.85);
+            let folded: Vec<bool> = layout.slots.iter().enumerate().map(|(i, s)| i > 0 && data.collapsed.contains(&crate::layout::fold_key(s))).collect();
+            let last_h = if n > 1 && !folded[n - 1] { (total * layout.split).clamp(90.0, (total - 150.0).max(90.0)) } else { 0.0 };
+            let mut rects: Vec<(Rect, Rect)> = Vec::new();
+            for (i, slot) in layout.slots.iter().enumerate() {
+                if i > 0 {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), handle_h), Sense::drag());
+                    let v = ui.visuals();
+                    let col = if resp.hovered() || resp.dragged() { v.selection.bg_fill } else { v.widgets.noninteractive.bg_stroke.color };
+                    ui.painter().line_segment([Pos2::new(r.left() + 6.0, r.center().y), Pos2::new(r.right() - 6.0, r.center().y)], Stroke::new(if resp.dragged() { 2.0 } else { 1.0 }, col));
+                    if n == 2 && !folded[1] {
+                        let resp = resp.on_hover_cursor(egui::CursorIcon::ResizeVertical).on_hover_text("Drag to share the room");
+                        if resp.dragged() && total > 0.0 {
+                            self.s.layout.split = (self.s.layout.split - resp.drag_delta().y / total).clamp(0.15, 0.85);
+                        }
+                        if resp.drag_stopped() {
+                            self.s.save();
+                        }
+                    }
                 }
-                if resp.drag_stopped() {
-                    self.s.save();
+                let fold = if i > 0 { Some(!folded[i]) } else { None };
+                let hdr = slot_header(ui, i, slot, fold, n > 1, &mut pick);
+                if folded[i] {
+                    rects.push((hdr, hdr));
+                    continue;
                 }
+                let kind = slot.shown();
+                let mut sa = egui::ScrollArea::vertical().id_salt(("side-slot", crate::layout::id(kind))).auto_shrink([false, false]);
+                if i + 1 < n {
+                    // This slot gets what the last one leaves.
+                    let h = (total - header_h * n as f32 - handle_h * (n - 1) as f32 - last_h).max(60.0);
+                    sa = sa.max_height(h).min_scrolled_height(h);
+                }
+                let out = sa.show(ui, |ui| panel(ui, kind, &data, &mut pick));
+                rects.push((hdr, out.inner_rect));
             }
-            pane_header(ui, "Tags", Some(Browse::Tags), Some(tags_open), below, &mut pick);
-            if tags_open {
-                egui::ScrollArea::vertical().id_salt("side-tags").auto_shrink([false, false]).show(ui, |ui| {
-                    panel(ui, Browse::Tags, &data, &mut pick);
+            // A panel being dragged by its title: where it would land, and the drop.
+            if let Some(drag) = egui::DragAndDrop::payload::<PanelDrag>(&ctx)
+                && let Some(pos) = ctx.pointer_hover_pos()
+            {
+                use crate::layout::Zone;
+                let v = ui.visuals().clone();
+                let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("panel-drop")));
+                let target = rects.iter().enumerate().find(|(_, (h, b))| h.union(*b).contains(pos)).map(|(i, (h, b))| {
+                    let zone = if h.contains(pos) || h == b {
+                        Zone::Join
+                    } else if pos.y < b.top() + b.height() * 0.3 {
+                        Zone::Above
+                    } else if pos.y > b.bottom() - b.height() * 0.3 {
+                        Zone::Below
+                    } else {
+                        Zone::Join
+                    };
+                    (i, *h, *b, zone)
                 });
+                if let Some((i, h, b, zone)) = target {
+                    let mut test = layout.clone();
+                    test.move_panel(drag.0, i, zone);
+                    if test != layout {
+                        let accent = v.selection.bg_fill;
+                        match zone {
+                            Zone::Join => {
+                                let r = h.union(b).shrink(2.0);
+                                painter.rect_filled(r, r_md(), accent.gamma_multiply(0.15));
+                                painter.rect_stroke(r, r_md(), Stroke::new(2.0, accent), egui::StrokeKind::Inside);
+                            }
+                            Zone::Above => {
+                                painter.line_segment([Pos2::new(h.left(), h.top() + 1.0), Pos2::new(h.right(), h.top() + 1.0)], Stroke::new(3.0, accent));
+                            }
+                            Zone::Below => {
+                                painter.line_segment([Pos2::new(b.left(), b.bottom() - 1.0), Pos2::new(b.right(), b.bottom() - 1.0)], Stroke::new(3.0, accent));
+                            }
+                        }
+                        if ctx.input(|i| i.pointer.any_released()) {
+                            pick = Some(Pick::MovePanel(drag.0, i, zone));
+                        }
+                    }
+                }
+                // What's being carried, under the pointer.
+                let text = match target.map(|t| t.3) {
+                    Some(Zone::Join) => format!("{} (as a tab)", crate::layout::title(drag.0)),
+                    Some(Zone::Above) => format!("{} (above)", crate::layout::title(drag.0)),
+                    Some(Zone::Below) => format!("{} (below)", crate::layout::title(drag.0)),
+                    None => crate::layout::title(drag.0).to_string(),
+                };
+                let g = painter.layout_no_wrap(text, fonts::ui_font(12.5), v.selection.stroke.color);
+                let r = Rect::from_min_size(pos + Vec2::new(14.0, 10.0), g.size() + Vec2::new(16.0, 8.0));
+                painter.rect_filled(r, r_sm(), v.selection.bg_fill);
+                painter.galley(r.min + Vec2::new(8.0, 4.0), g, v.selection.stroke.color);
+                if ctx.input(|i| i.pointer.any_released()) {
+                    egui::DragAndDrop::clear_payload(&ctx);
+                }
             }
-        } else {
-            let kind = self.s.browse;
-            pane_header(ui, if kind == Browse::Tags { "Tags" } else { "Folders" }, Some(kind), None, below, &mut pick);
-            egui::ScrollArea::vertical().id_salt("side-main").auto_shrink([false, false]).show(ui, |ui| {
-                panel(ui, kind, &data, &mut pick);
-            });
         }
         match pick {
             Some(Pick::Note(p)) => self.open_note(&p),
@@ -382,15 +452,20 @@ impl NotesApp {
                 }
                 self.s.save();
             }
-            Some(Pick::TagsBelow(b)) => {
-                self.s.tags_below = b;
-                if !b {
-                    self.s.browse = Browse::Folders;
-                }
+            Some(Pick::Preset(l)) => {
+                let split = self.s.layout.split;
+                self.s.layout = crate::layout::Layout { split, ..l };
                 self.s.save();
             }
-            Some(Pick::FoldPane(p)) => {
-                let k = format!("pane:{p}");
+            Some(Pick::ShowTab(p)) => {
+                self.s.layout.show(p);
+                self.s.save();
+            }
+            Some(Pick::MovePanel(p, slot, zone)) => {
+                self.s.layout.move_panel(p, slot, zone);
+                self.s.save();
+            }
+            Some(Pick::FoldSlot(k)) => {
                 if let Some(i) = self.s.collapsed.iter().position(|x| *x == k) {
                     self.s.collapsed.remove(i);
                 } else {
@@ -868,9 +943,16 @@ impl NotesApp {
                     let vaults = self.s.vaults.clone();
                     let current = self.vault.clone();
                     section(ui, "Sidebar", &mut |ui| {
-                        ui.label("Folders are the main panel. Tags can:");
-                        ui.radio_value(&mut self.s.tags_below, true, "Sit in their own pane below the folders");
-                        ui.radio_value(&mut self.s.tags_below, false, "Take the folders' place (switch with Ctrl+T or the toolbar)");
+                        use crate::layout::Layout;
+                        let stacked = self.s.layout.is_stacked();
+                        let shown = self.s.layout.slots[0].shown();
+                        if ui.radio(!stacked, "Folders and tags as tabs (switch with Ctrl+T)").clicked() {
+                            self.s.layout = Layout { split: self.s.layout.split, ..Layout::tabs(shown) };
+                        }
+                        if ui.radio(stacked, "Stacked: each in its own pane").clicked() && !stacked {
+                            self.s.layout = Layout { split: self.s.layout.split, ..Layout::stacked() };
+                        }
+                        ui.label(egui::RichText::new("You can also drag a panel's title in the sidebar: onto another panel to make tabs, or to its top or bottom edge to stack them.").small().color(weak));
                     });
                     section(ui, "Vaults", &mut |ui| {
                         if vaults.is_empty() {
@@ -1025,53 +1107,92 @@ fn panel(ui: &mut egui::Ui, kind: Browse, data: &SideData, pick: &mut Option<Pic
     }
 }
 
-/// A pane's title bar: its name (a triangle to fold it when `open` is given) and a menu for
-/// where the tags go.
-fn pane_header(ui: &mut egui::Ui, title: &str, kind: Option<Browse>, open: Option<bool>, below: bool, pick: &mut Option<Pick>) {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+/// A plain title bar (search results).
+fn plain_header(ui: &mut egui::Ui, title: &str) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::hover());
+    ui.painter().text(Pos2::new(rect.left() + 4.0, rect.center().y), Align2::LEFT_CENTER, title.to_uppercase(), fonts::ui_font(11.5), ui.visuals().weak_text_color());
+}
+
+/// A slot's title bar: its panel's name, or a tab for each of its panels. Titles drag (to move
+/// the panel); a triangle folds the slot when `open` is given; ⋯ holds the layout choices.
+/// Returns the bar's rectangle (a drop target).
+fn slot_header(ui: &mut egui::Ui, index: usize, slot: &crate::layout::Slot, open: Option<bool>, stacked: bool, pick: &mut Option<Pick>) -> Rect {
+    use crate::layout::{Layout, fold_key, title};
+    let (rect, bar) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
     let v = ui.visuals().clone();
-    let col = v.weak_text_color();
+    let weak = v.weak_text_color();
     let mut x = rect.left() + 4.0;
     if let Some(o) = open {
         let c = Pos2::new(x + 6.0, rect.center().y);
         let pts = if o { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
-        ui.painter().add(egui::Shape::convex_polygon(pts, if resp.hovered() { v.strong_text_color() } else { col }, Stroke::NONE));
+        ui.painter().add(egui::Shape::convex_polygon(pts, if bar.hovered() { v.strong_text_color() } else { weak }, Stroke::NONE));
+        if bar.clicked() {
+            *pick = Some(Pick::FoldSlot(fold_key(slot)));
+        }
         x += 16.0;
     }
-    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, title.to_uppercase(), fonts::ui_font(11.5), col);
-    if open.is_some() && resp.clicked() {
-        *pick = Some(Pick::FoldPane("tags"));
+    let tabs = slot.panels.len() > 1;
+    for (k, p) in slot.panels.iter().enumerate() {
+        let on = k == slot.active;
+        let text = title(*p).to_uppercase();
+        let g = ui.painter().layout_no_wrap(text, fonts::ui_font(11.5), weak);
+        let w = g.size().x + if tabs { 18.0 } else { 6.0 };
+        let r = Rect::from_min_size(Pos2::new(x, rect.top() + 3.0), Vec2::new(w, rect.height() - 6.0));
+        let resp = ui.interact(r, egui::Id::unique(("panel-title", index, k)), Sense::click_and_drag());
+        let col = if on || !tabs { if resp.hovered() { v.strong_text_color() } else { v.text_color() } } else if resp.hovered() { v.text_color() } else { weak };
+        if tabs && on {
+            let (fill, stroke) = selected_tile(&v, v.panel_fill);
+            ui.painter().rect_filled(r, r_sm(), fill);
+            ui.painter().rect_stroke(r, r_sm(), stroke, egui::StrokeKind::Inside);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
+        }
+        let tx = if tabs { r.left() + 9.0 } else { r.left() + 3.0 };
+        ui.painter().text(Pos2::new(tx, r.center().y), Align2::LEFT_CENTER, title(*p).to_uppercase(), fonts::ui_font(11.5), col);
+        let resp = resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(if tabs { "Click to show · drag to move this panel" } else { "Drag to move this panel" });
+        if resp.clicked() && tabs {
+            *pick = Some(Pick::ShowTab(*p));
+        }
+        if resp.drag_started() {
+            egui::DragAndDrop::set_payload(ui.ctx(), PanelDrag(*p));
+        }
+        if resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
+        x = r.right() + 4.0;
     }
-    let Some(kind) = kind else { return };
-    // The panel menu (three dots, drawn), also on right-click.
+    // The ⋯ menu (drawn dots), also on right-click.
+    let shown = slot.shown();
     let dots = Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::new(24.0, 22.0));
     let mut menu = |ui: &mut egui::Ui| {
         menu_style(ui);
-        ui.label(egui::RichText::new("Tags").small().weak());
-        if ui.radio(below, "Below the folders").clicked() {
-            *pick = Some(Pick::TagsBelow(true));
+        ui.label(egui::RichText::new("Panels").small().weak());
+        if ui.radio(!stacked, "As tabs").clicked() {
+            *pick = Some(Pick::Preset(Layout::tabs(shown)));
             ui.close();
         }
-        if ui.radio(!below, "In place of the folders (switch with Ctrl+T)").clicked() {
-            *pick = Some(Pick::TagsBelow(false));
+        if ui.radio(stacked, "Stacked: tags below folders").clicked() {
+            *pick = Some(Pick::Preset(Layout::stacked()));
             ui.close();
         }
+        ui.label(egui::RichText::new("Or drag a panel's title onto another panel").small().weak());
         ui.separator();
         if item(ui, "Collapse All", "") {
-            *pick = Some(Pick::FoldAll(true, kind));
+            *pick = Some(Pick::FoldAll(true, shown));
         }
         if item(ui, "Expand All", "") {
-            *pick = Some(Pick::FoldAll(false, kind));
+            *pick = Some(Pick::FoldAll(false, shown));
         }
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(dots));
     let btn = egui::Button::new("").frame_when_inactive(false).min_size(dots.size()).corner_radius(r_sm());
     let (r, _) = egui::containers::menu::MenuButton::from_button(btn).ui(&mut child, &mut menu);
     for dx in [-5.0f32, 0.0, 5.0] {
-        ui.painter().circle_filled(r.rect.center() + Vec2::new(dx, 0.0), 1.6, col);
+        ui.painter().circle_filled(r.rect.center() + Vec2::new(dx, 0.0), 1.6, weak);
     }
     r.on_hover_text("Panel options");
-    resp.context_menu(menu);
+    bar.context_menu(menu);
+    rect
 }
 
 /// A folder (and what's in it) in the tree, then its sub-folders.

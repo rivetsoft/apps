@@ -20,7 +20,9 @@ pub struct Shot {
 
 impl Shot {
     pub fn new(path: PathBuf) -> Shot {
-        Shot { path, after: 120, frames: 0, requested: false, done: Arc::new(AtomicBool::new(false)) }
+        // RIVET_SHOT_AFTER=N takes the picture at frame N instead (to catch something mid-way).
+        let after = std::env::var("RIVET_SHOT_AFTER").ok().and_then(|v| v.parse().ok()).unwrap_or(120);
+        Shot { path, after, frames: 0, requested: false, done: Arc::new(AtomicBool::new(false)) }
     }
 
     /// Frames drawn so far.

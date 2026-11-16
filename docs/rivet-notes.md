@@ -22,9 +22,10 @@ the list and leaves the folder alone).
 - **Tags** come from the frontmatter (`tags: [a, b]` or a `- item` list) and from `#tags` in
   the text (not inside code).
 - **Browse** by folder (a tree that folds) or by tag (each tag with its notes, plus Untagged).
-  Folders are the sidebar's main panel; tags either take their place (Ctrl+T switches) or sit
-  in their own pane below, with a divider to drag (Ctrl+T then folds the tags pane). Choose with
-  the panel's ⋯ menu, View, or Preferences → Sidebar.
+  The sidebar holds panels (Folders, Tags). Drag a panel's title onto another panel to make
+  them tabs, or to its top or bottom edge to stack them, each in its own pane with a divider to
+  drag. The ⋯ menu, View and Preferences → Sidebar have the same choices; Ctrl+T switches tabs
+  (or folds the last pane when they're stacked).
   Search finds titles, paths, the first line and tags; `#name` searches tags only.
 - Notes save a second after you stop typing, and with Ctrl+S. A note changed by another program
   is reloaded, or you're asked if you had unsaved changes.
