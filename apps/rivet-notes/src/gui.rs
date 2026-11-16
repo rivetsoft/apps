@@ -367,6 +367,10 @@ impl NotesApp {
         self.save_now();
         match std::fs::rename(path, &to) {
             Ok(()) => {
+                if self.s.note_widths.iter().any(|(p, _)| p.starts_with(path)) {
+                    self.s.moved(path, &to);
+                    self.s.save();
+                }
                 if let Some(d) = self.doc.as_mut() {
                     if d.path == path {
                         d.path = to.clone();
@@ -397,6 +401,9 @@ impl NotesApp {
         self.save_now();
         match std::fs::rename(src, &to) {
             Ok(()) => {
+                if self.s.note_widths.iter().any(|(p, _)| p.starts_with(src)) {
+                    self.s.moved(src, &to);
+                }
                 if let Some(d) = self.doc.as_mut() {
                     if d.path == src {
                         d.path = to.clone();
@@ -663,7 +670,7 @@ impl NotesApp {
             c(ui, &mut self.s.show_properties, "Properties", "Ctrl+P");
             c(ui, &mut self.s.show_sidebar, "Sidebar", "F9");
             c(ui, &mut self.s.show_peek, "Peek", "F11");
-            c(ui, &mut self.s.centered, "Centered Text", "");
+            c(ui, &mut self.s.centered, "Center Notes by Default", "");
             c(ui, &mut self.s.show_menubar, "Menubar", "Ctrl+M");
             if self.s != before {
                 self.s.save();

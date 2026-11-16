@@ -223,13 +223,13 @@ impl NotesApp {
                                             ui.end_row();
                                         });
                                     });
-                                    section(ui, "Note width", &mut |ui| {
+                                    section(ui, "Default note width", &mut |ui| {
                                         ui.horizontal(|ui| {
                                             ui.selectable_value(&mut self.s.centered, false, "Full width").on_hover_text("The text uses the whole window");
                                             ui.selectable_value(&mut self.s.centered, true, "Centered").on_hover_text("The text keeps to a readable column in the middle");
                                         });
                                         ui.add_space(4.0);
-                                        hint(ui, "Peek (F11) switches it too, for a quick look.");
+                                        hint(ui, "For every note, unless a note has its own width: choosing a width in Peek (F11) sets it for that note only.");
                                     });
                                     section(ui, "Window", &mut |ui| {
                                         ui.checkbox(&mut self.s.show_menubar, "Menu bar");

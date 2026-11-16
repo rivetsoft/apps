@@ -38,8 +38,11 @@ pub struct Settings {
     pub editor_size: f32,
     /// Line height as a multiple of the text size.
     pub line_spacing: f32,
-    /// The note's text in a centered column (else the full width of the window).
+    /// The note's text in a centered column (else the full width of the window), for notes
+    /// without their own choice.
     pub centered: bool,
+    /// Notes whose width was chosen in Peek: the file, and whether it's centered.
+    pub note_widths: Vec<(PathBuf, bool)>,
     /// Peek, the panel on the right about the open note.
     pub show_peek: bool,
     /// The vaults, most recently used first.
@@ -66,6 +69,7 @@ impl Default for Settings {
             editor_size: 15.0,
             line_spacing: 1.6,
             centered: false,
+            note_widths: Vec::new(),
             show_peek: false,
             vaults: Vec::new(),
             collapsed: Vec::new(),
@@ -119,6 +123,16 @@ impl Settings {
                 "split" => s.layout.split = v.parse::<f32>().unwrap_or(0.4).clamp(0.15, 0.85),
                 "note_width" => s.centered = v == "centered",
                 "show_peek" => s.show_peek = b,
+                "note_widths" => {
+                    s.note_widths = v
+                        .split(SEP)
+                        .filter_map(|e| match e.split_at_checked(1)? {
+                            ("c", p) if !p.is_empty() => Some((PathBuf::from(p), true)),
+                            ("f", p) if !p.is_empty() => Some((PathBuf::from(p), false)),
+                            _ => None,
+                        })
+                        .collect()
+                }
                 "vaults" => s.vaults = v.split(SEP).filter(|x| !x.is_empty()).map(PathBuf::from).collect(),
                 "collapsed" => s.collapsed = v.split(SEP).filter(|x| !x.is_empty()).map(str::to_string).collect(),
                 _ => {}
@@ -139,7 +153,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -155,6 +169,7 @@ impl Settings {
             self.line_spacing,
             if self.centered { "centered" } else { "full" },
             self.show_peek,
+            join(self.note_widths.iter().map(|(p, c)| format!("{}{}", if *c { 'c' } else { 'f' }, p.to_string_lossy())).collect()),
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),
         );
@@ -168,9 +183,56 @@ impl Settings {
         }
     }
 
+    /// This note's own width choice, if it has one.
+    pub fn note_width(&self, note: &std::path::Path) -> Option<bool> {
+        self.note_widths.iter().find(|(p, _)| p == note).map(|(_, c)| *c)
+    }
+
+    /// Whether this note's text is centered: its own choice, else the default.
+    pub fn centered_for(&self, note: &std::path::Path) -> bool {
+        self.note_width(note).unwrap_or(self.centered)
+    }
+
+    /// Give a note its own width (`None`: follow the default again).
+    pub fn set_note_width(&mut self, note: &std::path::Path, centered: Option<bool>) {
+        self.note_widths.retain(|(p, _)| p != note);
+        if let Some(c) = centered {
+            self.note_widths.push((note.to_path_buf(), c));
+        }
+    }
+
+    /// A note or folder was renamed or moved: its notes keep their widths.
+    pub fn moved(&mut self, from: &std::path::Path, to: &std::path::Path) {
+        for (p, _) in &mut self.note_widths {
+            if let Ok(rest) = p.strip_prefix(from) {
+                *p = if rest.as_os_str().is_empty() { to.to_path_buf() } else { to.join(rest) };
+            }
+        }
+    }
+
     /// Make this vault the current one (first in the list).
     pub fn use_vault(&mut self, p: PathBuf) {
         self.vaults.retain(|v| *v != p);
         self.vaults.insert(0, p);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn note_widths_override_and_follow_moves() {
+        let mut s = Settings { centered: false, ..Default::default() };
+        let a = Path::new("/v/Projects/a.md");
+        assert!(!s.centered_for(a));
+        s.set_note_width(a, Some(true));
+        assert!(s.centered_for(a));
+        assert!(!s.centered_for(Path::new("/v/b.md")), "other notes keep the default");
+        s.moved(Path::new("/v/Projects"), Path::new("/v/Work"));
+        assert_eq!(s.note_width(Path::new("/v/Work/a.md")), Some(true));
+        s.set_note_width(Path::new("/v/Work/a.md"), None);
+        assert!(s.note_widths.is_empty());
     }
 }

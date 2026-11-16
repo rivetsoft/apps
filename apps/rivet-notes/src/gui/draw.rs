@@ -162,7 +162,7 @@ impl NotesApp {
             // The note's page; centered text keeps to a column in the middle of it.
             let page = r.shrink2(Vec2::new(28.0, 18.0));
             self.page_rect = page;
-            let col = if self.s.centered && self.doc.is_some() {
+            let col = if self.doc.as_ref().is_some_and(|d| self.s.centered_for(&d.path)) {
                 let w = page.width().min(super::peek::CENTERED_WIDTH * fonts::scale().max(1.0));
                 Rect::from_min_max(Pos2::new(page.center().x - w / 2.0, page.top()), Pos2::new(page.center().x + w / 2.0, page.bottom()))
             } else {

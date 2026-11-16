@@ -32,20 +32,44 @@ impl NotesApp {
         egui::ScrollArea::vertical().id_salt("notes-peek").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
             // ---- how the note is shown
+            // The width chosen here is this note's own; the default is in Preferences.
+            let note = self.doc.as_ref().map(|d| d.path.clone());
             card(ui, "Display", |ui| {
-                ui.label(egui::RichText::new("Width").color(weak));
                 let before = self.s.clone();
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    segment(ui, &mut self.s.centered, false, "Full width");
-                    segment(ui, &mut self.s.centered, true, "Centered");
-                });
-                ui.add_space(2.0);
+                if let Some(note) = &note {
+                    ui.label(egui::RichText::new("Width of this note").color(weak));
+                    let own = self.s.note_width(note);
+                    let mut centered = self.s.centered_for(note);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let was = centered;
+                        segment(ui, &mut centered, false, "Full width");
+                        segment(ui, &mut centered, true, "Centered");
+                        if centered != was {
+                            self.s.set_note_width(note, Some(centered));
+                        }
+                    });
+                    let default = if self.s.centered { "Centered" } else { "Full width" };
+                    match own {
+                        Some(_) => {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 6.0;
+                                ui.label(egui::RichText::new("Just this note.").small().color(weak));
+                                if ui.add(egui::Label::new(egui::RichText::new(format!("Use the default ({default})")).small().color(ui.visuals().hyperlink_color)).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                    self.s.set_note_width(note, None);
+                                }
+                            });
+                        }
+                        None => {
+                            ui.label(egui::RichText::new(format!("Following the default ({default}), set in Preferences → Appearance.")).small().color(weak));
+                        }
+                    }
+                    ui.add_space(4.0);
+                }
                 ui.checkbox(&mut self.s.show_properties, "Properties above the text");
                 if self.s != before {
                     self.s.save();
                 }
-                ui.label(egui::RichText::new("The default is in Preferences → Appearance.").small().color(weak));
             });
             let Some(d) = self.doc.as_ref() else {
                 ui.add_space(20.0);
