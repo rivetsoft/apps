@@ -13,6 +13,7 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 ## Rivet FTP
 
 - [Rivet FTP](rivet-ftp.md): what it is, how it should work, and the plan
+- [Feature checklist](rivet-ftp-parity.md): what a mature transfer client has, and what's done
 - [Command line](../apps/rivet-ftp/README.md): saved connections, `ssh` and `sftp`
 
 ## Both apps

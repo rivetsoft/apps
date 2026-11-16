@@ -82,6 +82,8 @@ struct Job {
     to: String,
     /// Folder it lands in (to refresh that pane when it's showing it).
     to_dir: String,
+    /// Where it comes from (to send it again).
+    from: String,
     is_dir: bool,
     size: u64,
     /// For downloads: the local file, so progress can be read from its size.
@@ -115,11 +117,17 @@ struct Form {
     focused_once: bool,
     /// The key is a file typed by hand (not one from ~/.ssh).
     key_other: bool,
+    /// A new password to keep in the keyring (empty: leave it as it is).
+    password: String,
+    /// A password is in the keyring for this connection.
+    has_saved: bool,
+    /// Forget the saved password and passphrase.
+    forget: bool,
 }
 
 impl Form {
     fn blank() -> Form {
-        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None, focused_once: false, key_other: false }
+        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None, focused_once: false, key_other: false, password: String::new(), has_saved: false, forget: false }
     }
     fn from(c: &Connection) -> Form {
         Form {
@@ -135,6 +143,9 @@ impl Form {
             error: None,
             focused_once: false,
             key_other: false,
+            password: String::new(),
+            has_saved: false,
+            forget: false,
         }
     }
     fn build(&self) -> Result<Connection, String> {
@@ -191,6 +202,29 @@ enum Prompt {
     Replace(Pending),
     /// An edited file changed on the server since it was opened (index into `edits`).
     EditConflict(usize),
+    /// The server wants a password or the key's passphrase.
+    Secret(SecretAsk),
+    /// Details and permissions of a file or folder.
+    Info(InfoState),
+}
+
+pub(super) struct SecretAsk {
+    conn: Connection,
+    kind: rivet_connections::secrets::Kind,
+    text: String,
+    remember: bool,
+    /// The last one given was refused.
+    wrong: bool,
+    focused_once: bool,
+}
+
+pub(super) struct InfoState {
+    side: Side,
+    entry: Entry,
+    /// Where it is: a path, or the server address.
+    location: String,
+    mode: u32,
+    recursive: bool,
 }
 
 /// What's being dragged between the panes.
@@ -256,6 +290,13 @@ pub struct FtpApp {
     apps: Option<Vec<rivet_xdg::launch::DesktopApp>>,
     /// Test hook RIVET_FTP_EDIT=NAME: edit this server file once the folder is listed.
     hook_edit: Option<String>,
+    /// Test hook RIVET_FTP_INFO=NAME: open Info for this server file once listed.
+    hook_info: Option<String>,
+
+    /// The password or passphrase the current connection logged in with.
+    secret: Option<crate::sftp::Secret>,
+    /// Keep these in the keyring once the login works: (connection, kind, secret).
+    remember: Vec<(String, rivet_connections::secrets::Kind, String)>,
     shot_wait: u32,
 }
 

@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Entry {
     pub name: String,
     pub is_dir: bool,
@@ -13,6 +13,10 @@ pub struct Entry {
     pub modified: String,
     /// Seconds since 1970 (for sorting; to the minute for server files).
     pub mtime: i64,
+    /// Permission bits (0o755), owner and group names, where known.
+    pub mode: u32,
+    pub owner: String,
+    pub group: String,
 }
 
 /// Which column the list is sorted by.
@@ -47,7 +51,9 @@ pub fn read_local(dir: &Path, hidden: bool) -> Result<Vec<Entry>, String> {
         let t = md.as_ref().and_then(|m| m.modified().ok());
         let modified = t.map(fmt_time).unwrap_or_default();
         let mtime = t.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
-        out.push(Entry { name, is_dir, is_link: link, size: if is_dir { 0 } else { md.map(|m| m.len()).unwrap_or(0) }, modified, mtime });
+        use std::os::unix::fs::MetadataExt;
+        let (mode, owner, group) = md.as_ref().map(|m| (m.mode() & 0o7777, user_name(m.uid()), group_name(m.gid()))).unwrap_or_default();
+        out.push(Entry { name, is_dir, is_link: link, size: if is_dir { 0 } else { md.map(|m| m.len()).unwrap_or(0) }, modified, mtime, mode, owner, group });
     }
     sort(&mut out);
     Ok(out)
@@ -144,7 +150,57 @@ pub fn parse_ls_line(line: &str, dir: &str) -> Option<Entry> {
     }
     let is_dir = perms.starts_with('d');
     let mtime = ls_time(fields[5], fields[6], fields[7]).unwrap_or(0);
-    Some(Entry { name, is_dir, is_link: perms.starts_with('l'), size: if is_dir { 0 } else { size }, modified: format!("{} {:>2} {:>5}", fields[5], fields[6], fields[7]), mtime })
+    Some(Entry {
+        name,
+        is_dir,
+        is_link: perms.starts_with('l'),
+        size: if is_dir { 0 } else { size },
+        modified: format!("{} {:>2} {:>5}", fields[5], fields[6], fields[7]),
+        mtime,
+        mode: mode_from(perms),
+        owner: fields[2].to_string(),
+        group: fields[3].to_string(),
+    })
+}
+
+/// "rwxr-xr--" (after the type letter) → 0o754, with setuid/setgid/sticky.
+pub fn mode_from(perms: &str) -> u32 {
+    let b = perms.as_bytes();
+    let at = |i: usize| b.get(i).copied().unwrap_or(b'-');
+    let mut m = 0;
+    for (i, bit) in [0o400, 0o200, 0o100, 0o040, 0o020, 0o010, 0o004, 0o002, 0o001].iter().enumerate() {
+        // s and t also mean x; S and T mean the special bit without x.
+        if matches!(at(i + 1), b'r' | b'w' | b'x' | b's' | b't') {
+            m |= bit;
+        }
+    }
+    for (i, bit) in [(3, 0o4000), (6, 0o2000), (9, 0o1000)] {
+        if matches!(at(i), b's' | b'S' | b't' | b'T') {
+            m |= bit;
+        }
+    }
+    m
+}
+
+/// A user's name from /etc/passwd (or the number).
+fn user_name(uid: u32) -> String {
+    name_from("/etc/passwd", uid)
+}
+
+fn group_name(gid: u32) -> String {
+    name_from("/etc/group", gid)
+}
+
+fn name_from(file: &str, id: u32) -> String {
+    std::fs::read_to_string(file)
+        .ok()
+        .and_then(|t| t.lines().find_map(|l| {
+            let mut f = l.split(':');
+            let name = f.next()?;
+            f.next();
+            (f.next()?.parse::<u32>().ok()? == id).then(|| name.to_string())
+        }))
+        .unwrap_or_else(|| id.to_string())
 }
 
 /// `ls` dates: "Nov 15 21:49" (within the last half year) or "Nov 15 2024".
@@ -203,7 +259,7 @@ mod tests {
         let mut v: Vec<Entry> = ["file10", "File2", "dir"]
             .iter()
             .enumerate()
-            .map(|(i, n)| Entry { name: n.to_string(), is_dir: *n == "dir", is_link: false, size: i as u64, modified: String::new(), mtime: 10 - i as i64 })
+            .map(|(i, n)| Entry { name: n.to_string(), is_dir: *n == "dir", size: i as u64, mtime: 10 - i as i64, ..Default::default() })
             .collect();
         sort(&mut v);
         assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"]);
@@ -212,6 +268,10 @@ mod tests {
         sort_by(&mut v, Sort { col: SortCol::Modified, desc: false });
         assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"]);
         assert!(ls_time("Nov", "15", "2024").is_some() && ls_time("Foo", "1", "2024").is_none());
+        assert_eq!(mode_from("-rw-r--r--"), 0o644);
+        assert_eq!(mode_from("drwxr-x--x"), 0o751);
+        assert_eq!(mode_from("-rwsr-xr-x"), 0o4755);
+        assert_eq!(mode_from("drwxrwxrwt"), 0o1777);
         assert_eq!(human_size(1), "1 byte");
         assert_eq!(human_size(1_234_567), "1.2 MB");
     }

@@ -60,6 +60,9 @@ impl FtpApp {
             edits: Vec::new(),
             apps: None,
             hook_edit: std::env::var("RIVET_FTP_EDIT").ok(),
+            hook_info: std::env::var("RIVET_FTP_INFO").ok(),
+            secret: None,
+            remember: Vec::new(),
             shot_wait: 0,
         };
         if screenshot_mode(&app) {
@@ -184,7 +187,21 @@ impl FtpApp {
                 self.reload_local();
             }
         }
-        self.browse = Some(Session::open(&c, ctx.clone()));
+        // A remembered password or passphrase (never read during checks).
+        let secret = if crate::settings::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed) {
+            None
+        } else {
+            use rivet_connections::secrets::{Kind, lookup};
+            let s = crate::sftp::Secret { password: lookup(&c.name, Kind::Password), passphrase: lookup(&c.name, Kind::Passphrase) };
+            (s.password.is_some() || s.passphrase.is_some()).then_some(s)
+        };
+        self.open_session(c, secret, ctx);
+    }
+
+    /// Log in with this password/passphrase (or none).
+    pub(super) fn open_session(&mut self, c: Connection, secret: Option<crate::sftp::Secret>, ctx: &egui::Context) {
+        self.browse = Some(Session::open(&c, ctx.clone(), secret.clone()));
+        self.secret = secret;
         self.connecting = true;
         self.remote = Pane { loading: true, sort: self.remote.sort, ..Default::default() };
         self.note = Some((format!("Connecting to {}…", c.target()), false));
@@ -223,7 +240,13 @@ impl FtpApp {
                     if let Some(c) = &self.conn {
                         self.note = Some((format!("Connected to {}.", c.target()), false));
                         // Transfers get their own session, so browsing never waits behind them.
-                        self.transfer = Some(Session::open(c, ctx.clone()));
+                        self.transfer = Some(Session::open(c, ctx.clone(), self.secret.clone()));
+                        // It worked: keep what was asked to be remembered.
+                        for (name, kind, secret) in std::mem::take(&mut self.remember) {
+                            if let Err(e) = rivet_connections::secrets::store(&name, kind, &secret) {
+                                self.note = Some((format!("Connected, but couldn't save it in the keyring: {e}"), true));
+                            }
+                        }
                     }
                     self.open_remote(start);
                 }
@@ -239,6 +262,10 @@ impl FtpApp {
                         self.remote.error = None;
                         if let Some(spec) = self.hook_send.take() {
                             self.run_send_hook(&spec);
+                        }
+                        if let Some(name) = self.hook_info.take() {
+                            self.select_only(Side::Remote, &name);
+                            self.show_info(Side::Remote);
                         }
                         if let Some(name) = self.hook_edit.take()
                             && let Some(e) = self.remote.entries.iter().find(|e| e.name == name).cloned()
@@ -272,6 +299,24 @@ impl FtpApp {
                 }
                 // Browsing never asks for one file's details.
                 Reply::Stat(..) => {}
+                Reply::AuthFailed(why) => {
+                    use rivet_connections::secrets::Kind;
+                    let Some(c) = self.conn.clone() else { continue };
+                    let tried = self.secret.clone();
+                    self.disconnect();
+                    self.remember.clear();
+                    // A key with a passphrase, not tried yet: ask for that; otherwise the password.
+                    let key_locked = c.key.as_deref().map(expand).and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| rivet_connections::keys::has_passphrase(&t)).unwrap_or(false);
+                    let kind = match &tried {
+                        None if key_locked => Kind::Passphrase,
+                        None => Kind::Password,
+                        Some(s) if s.passphrase.is_some() && s.password.is_none() && key_locked => Kind::Passphrase,
+                        Some(_) => Kind::Password,
+                    };
+                    self.note = Some((format!("{}: {}", c.name, why), tried.is_some()));
+                    let remember = rivet_connections::secrets::available() && !crate::settings::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed);
+                    self.prompt = Some(Prompt::Secret(SecretAsk { conn: c, kind, text: String::new(), remember, wrong: tried.is_some(), focused_once: false }));
+                }
                 Reply::Closed(why) => {
                     let name = self.conn.as_ref().map(|c| c.name.clone()).unwrap_or_default();
                     self.disconnect();
@@ -507,7 +552,11 @@ impl FtpApp {
                 }
             };
             let id = t.send(req);
-            self.queue.push(Job { id, dir: p.dir, name: e.name.clone(), to, to_dir: p.to_dir.clone(), is_dir: e.is_dir, size: e.size, local_target, state: JobState::Waiting });
+            let from = match p.dir {
+                Dir::Up => Path::new(&p.from_dir).join(&e.name).to_string_lossy().into_owned(),
+                Dir::Down => sftp::join(&p.from_dir, &e.name),
+            };
+            self.queue.push(Job { id, dir: p.dir, name: e.name.clone(), to, to_dir: p.to_dir.clone(), from, is_dir: e.is_dir, size: e.size, local_target, state: JobState::Waiting });
         }
     }
 
@@ -624,6 +673,58 @@ impl FtpApp {
         self.store.items.iter().filter(|c| c.key.as_deref().is_some_and(|k| expand(k).to_string_lossy() == p)).map(|c| c.name.clone()).collect()
     }
 
+    /// Send a failed transfer again.
+    pub(super) fn retry_job(&mut self, i: usize) {
+        let Some(t) = self.transfer.as_mut() else { return };
+        let j = &mut self.queue[i];
+        let req = match j.dir {
+            Dir::Up => Request::Put(std::path::PathBuf::from(&j.from), j.to.clone(), j.is_dir),
+            Dir::Down => Request::Get(j.from.clone(), std::path::PathBuf::from(&j.to), j.is_dir),
+        };
+        j.id = t.send(req);
+        j.state = JobState::Waiting;
+    }
+
+    /// Open the Info window for the selection's first item.
+    pub(super) fn show_info(&mut self, side: Side) {
+        let Some(e) = self.pane_ref(side).selected_entries().into_iter().next() else { return };
+        let location = match side {
+            Side::Local => Path::new(&self.local.path).join(&e.name).display().to_string(),
+            Side::Remote => match &self.conn {
+                Some(c) => {
+                    let mut c = c.clone();
+                    c.remote = Some(sftp::join(&self.remote.path, &e.name));
+                    c.url()
+                }
+                None => return,
+            },
+        };
+        self.prompt = Some(Prompt::Info(InfoState { side, mode: e.mode & 0o777, entry: e, location, recursive: false }));
+    }
+
+    /// Apply new permissions from the Info window.
+    pub(super) fn apply_mode(&mut self, side: Side, e: &Entry, mode: u32, recursive: bool) {
+        match side {
+            Side::Local => {
+                use std::os::unix::fs::PermissionsExt;
+                let p = Path::new(&self.local.path).join(&e.name);
+                let r = if recursive && e.is_dir { set_mode_tree(&p, mode) } else { std::fs::set_permissions(&p, std::fs::Permissions::from_mode(mode)).map_err(|x| x.to_string()) };
+                match r {
+                    Ok(()) => self.note = Some((format!("Changed the permissions of \"{}\".", e.name), false)),
+                    Err(err) => self.note = Some((format!("Couldn't change the permissions: {err}"), true)),
+                }
+                self.reload_local();
+            }
+            Side::Remote => {
+                let path = sftp::join(&self.remote.path, &e.name);
+                if let Some(s) = self.browse.as_mut() {
+                    let id = s.send(Request::Chmod(path, mode, recursive && e.is_dir));
+                    self.pending.insert(id, format!("Changed the permissions of \"{}\"", e.name));
+                }
+            }
+        }
+    }
+
     pub(super) fn toggle_hidden(&mut self) {
         self.s.show_hidden = !self.s.show_hidden;
         self.s.save();
@@ -699,4 +800,23 @@ fn mtime(p: &std::path::Path) -> Option<std::time::SystemTime> {
 
 fn screenshot_mode(app: &FtpApp) -> bool {
     app.shot.is_some()
+}
+
+/// Permissions for a local folder and everything in it (folders also get x where readable).
+fn set_mode_tree(p: &Path, mode: u32) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dir_mode = mode | ((mode & 0o444) >> 2);
+    std::fs::set_permissions(p, std::fs::Permissions::from_mode(dir_mode)).map_err(|e| e.to_string())?;
+    for d in std::fs::read_dir(p).map_err(|e| e.to_string())?.flatten() {
+        let t = d.file_type().map_err(|e| e.to_string())?;
+        if t.is_symlink() {
+            continue;
+        }
+        if t.is_dir() {
+            set_mode_tree(&d.path(), mode)?;
+        } else {
+            std::fs::set_permissions(d.path(), std::fs::Permissions::from_mode(mode)).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }

@@ -52,6 +52,27 @@ fn raised(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32
     resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
 }
 
+/// `secret` that can take the keyboard (`focus`).
+fn secret_focused(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32, accent: Color32, focus: bool) -> bool {
+    let enter = secret(ui, id, text, hint, width, accent);
+    if focus {
+        ui.memory_mut(|m| m.request_focus(egui::Id::unique(("form-field", id))));
+    }
+    enter
+}
+
+/// "rwxr-xr-x" for a mode.
+fn mode_text(mode: u32, dir: bool) -> String {
+    let mut s = String::from(if dir { "d" } else { "-" });
+    for shift in [6, 3, 0] {
+        let m = (mode >> shift) & 7;
+        s.push(if m & 4 != 0 { 'r' } else { '-' });
+        s.push(if m & 2 != 0 { 'w' } else { '-' });
+        s.push(if m & 1 != 0 { 'x' } else { '-' });
+    }
+    s
+}
+
 /// `raised`, for a password: the text is hidden.
 fn secret(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32, accent: Color32) -> bool {
     let v = ui.visuals().clone();
@@ -133,6 +154,12 @@ impl FtpApp {
             };
             let first = !form.focused_once;
             form.focused_once = true;
+            if first
+                && let Some(name) = &form.original
+                && !crate::settings::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed)
+            {
+                form.has_saved = rivet_connections::secrets::lookup(name, rivet_connections::secrets::Kind::Password).is_some();
+            }
             row(ui, "Name", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-name", &mut form.name, "Work site", w, accent, first) });
             ui.add_space(8.0);
             heading(ui, "Server");
@@ -211,6 +238,21 @@ impl FtpApp {
                     row(ui, "", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-key", &mut form.key, "~/.ssh/my_key", w, accent, false) });
                 }
             }
+            // A password kept in the keyring (never in the connections file).
+            let keyring = rivet_connections::secrets::available() && !crate::settings::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed);
+            if keyring {
+                row(ui, "Password", &mut |ui| {
+                    if form.has_saved && !form.forget {
+                        ui.label(egui::RichText::new("Saved in your keyring").color(weak));
+                        if ui.button("Forget").on_hover_text("Remove the saved password and passphrase").clicked() {
+                            form.forget = true;
+                        }
+                    } else {
+                        let w = ui.available_width();
+                        enter |= secret_focused(ui, "f-pass", &mut form.password, "Asked when connecting", w, accent, false);
+                    }
+                });
+            }
             ui.add_space(8.0);
             heading(ui, "Folders");
             row(ui, "On the server", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-remote", &mut form.remote, "Your home folder there", w, accent, false) });
@@ -262,6 +304,20 @@ impl FtpApp {
                             Ok(()) => {
                                 keep = false;
                                 self.note = Some((format!("Saved \"{}\".", c.name), false));
+                                if !crate::settings::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed) {
+                                    use rivet_connections::secrets;
+                                    if let Some(old) = form.original.as_ref().filter(|o| **o != c.name) {
+                                        secrets::rename(old, &c.name);
+                                    }
+                                    if form.forget {
+                                        secrets::clear(&c.name);
+                                    }
+                                    if !form.password.is_empty()
+                                        && let Err(e) = secrets::store(&c.name, secrets::Kind::Password, &form.password)
+                                    {
+                                        self.note = Some((format!("Saved \"{}\", but not its password: {e}", c.name), true));
+                                    }
+                                }
                                 if connect {
                                     self.connect(c, ctx);
                                 } else if self.conn.as_ref().is_some_and(|k| k.host == c.host && self.store.find(&k.name).is_none()) {
@@ -384,6 +440,19 @@ impl FtpApp {
     fn prompt_dialog(&mut self, ctx: &egui::Context) {
         let Some(prompt) = self.prompt.take() else { return };
         let mut next: Option<Prompt> = None;
+        let px = (36.0 * ctx.pixels_per_point()) as u32;
+        let lock_icon = matches!(prompt, Prompt::Secret(_)).then(|| self.icons.texture(ctx, &["dialog-password", "channel-secure", "security-high"], px)).flatten();
+        let (info_icon, info_kind) = match &prompt {
+            Prompt::Info(i) => {
+                let mime = if i.entry.is_dir { "inode/directory".to_string() } else { self.mime.guess_by_name(std::path::Path::new(&i.entry.name)).unwrap_or_else(|| "application/octet-stream".into()) };
+                let names = self.mime.icon_names(&mime);
+                let refs: Vec<&str> = names.iter().map(|s| s.as_str()).chain(["text-x-generic"]).collect();
+                let kind = if i.entry.is_dir { "Folder".to_string() } else { self.mime.describe(&mime) };
+                let place = if i.side == Side::Local { "on this computer" } else { "on the server" };
+                (self.icons.texture(ctx, &refs, px), format!("{kind}, {place}"))
+            }
+            _ => (None, String::new()),
+        };
         let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(r_lg());
         egui::Modal::new(egui::Id::unique("prompt")).frame(frame).show(ctx, |ui| {
             ui.set_width(400.0);
@@ -436,6 +505,155 @@ impl FtpApp {
                         self.delete_remote(items);
                     } else if !(cancel || esc) {
                         next = Some(Prompt::Delete(items));
+                    }
+                }
+                Prompt::Secret(mut ask) => {
+                    use rivet_connections::secrets::Kind;
+                    let v = ui.visuals().clone();
+                    let key_name = ask.conn.key.as_deref().and_then(|k| std::path::Path::new(k).file_name().map(|n| n.to_string_lossy().into_owned())).unwrap_or_default();
+                    let (title, hint_text) = match ask.kind {
+                        Kind::Password => (format!("Password for {}", ask.conn.target()), "Password"),
+                        Kind::Passphrase => (format!("Passphrase for the key {key_name}"), "Key passphrase"),
+                    };
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        if let Some(t) = &lock_icon {
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
+                            paint_tex(ui.painter(), t, r, Color32::WHITE);
+                        }
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(egui::RichText::new(&title).heading().color(v.strong_text_color()));
+                            ui.label(egui::RichText::new(format!("To connect to {}", ask.conn.name)).color(v.weak_text_color()));
+                        });
+                    });
+                    ui.add_space(14.0);
+                    if ask.wrong {
+                        ui.label(egui::RichText::new("That didn't work. Try again.").color(status(ctx).danger));
+                        ui.add_space(4.0);
+                    }
+                    let first = !ask.focused_once;
+                    ask.focused_once = true;
+                    let w = ui.available_width();
+                    let accent = v.selection.bg_fill;
+                    let enter = secret_focused(ui, "secret-ask", &mut ask.text, hint_text, w, accent, first);
+                    ui.add_space(8.0);
+                    if rivet_connections::secrets::available() && !crate::settings::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed) {
+                        ui.checkbox(&mut ask.remember, "Remember it in the keyring");
+                    } else {
+                        ui.label(egui::RichText::new("Install secret-tool (libsecret) to keep passwords in your keyring.").small().color(v.weak_text_color()));
+                    }
+                    // Test hook for checks: type this in and connect.
+                    let test = std::env::var("RIVET_FTP_SECRET_TEST").ok().filter(|_| self.shot.is_some() && ask.text.is_empty() && !ask.wrong);
+                    if let Some(t) = &test {
+                        ask.text = t.clone();
+                    }
+                    ui.add_space(14.0);
+                    let (mut ok, mut cancel) = (false, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().button_padding = Vec2::new(14.0, 6.0);
+                        ok = primary(ui, "Connect");
+                        cancel = plain(ui, "Cancel");
+                    });
+                    if (ok || enter || test.is_some()) && !ask.text.is_empty() {
+                        let secret = match ask.kind {
+                            Kind::Password => crate::sftp::Secret { password: Some(ask.text.clone()), passphrase: None },
+                            Kind::Passphrase => crate::sftp::Secret { password: None, passphrase: Some(ask.text.clone()) },
+                        };
+                        if ask.remember {
+                            self.remember.push((ask.conn.name.clone(), ask.kind, ask.text.clone()));
+                        }
+                        self.open_session(ask.conn.clone(), Some(secret), ctx);
+                    } else if !(cancel || esc) {
+                        next = Some(Prompt::Secret(ask));
+                    }
+                }
+                Prompt::Info(mut info) => {
+                    let v = ui.visuals().clone();
+                    let weak = v.weak_text_color();
+                    let e = info.entry.clone();
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 12.0;
+                        if let Some(t) = &info_icon {
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(36.0), Sense::hover());
+                            paint_tex(ui.painter(), t, r, Color32::WHITE);
+                        }
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.add(egui::Label::new(egui::RichText::new(&e.name).heading().color(v.strong_text_color())).truncate());
+                            ui.label(egui::RichText::new(&info_kind).color(weak));
+                        });
+                    });
+                    ui.add_space(14.0);
+                    egui::Grid::new("info-grid").num_columns(2).spacing([18.0, 8.0]).show(ui, |ui| {
+                        if !e.is_dir {
+                            ui.label(egui::RichText::new("Size").color(weak));
+                            ui.label(format!("{} ({} bytes)", crate::listing::human_size(e.size), e.size));
+                            ui.end_row();
+                        }
+                        ui.label(egui::RichText::new("Modified").color(weak));
+                        ui.label(&e.modified);
+                        ui.end_row();
+                        ui.label(egui::RichText::new("Where").color(weak));
+                        ui.horizontal(|ui| {
+                            ui.add(egui::Label::new(&info.location).truncate()).on_hover_text(&info.location);
+                        });
+                        ui.end_row();
+                        if !e.owner.is_empty() {
+                            ui.label(egui::RichText::new("Owner").color(weak));
+                            ui.label(if e.group.is_empty() { e.owner.clone() } else { format!("{} (group {})", e.owner, e.group) });
+                            ui.end_row();
+                        }
+                    });
+                    ui.add_space(14.0);
+                    ui.label(egui::RichText::new("Permissions").strong());
+                    ui.add_space(4.0);
+                    egui::Frame::NONE.fill(v.faint_bg_color).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        egui::Grid::new("perm-grid").num_columns(4).spacing([22.0, 8.0]).show(ui, |ui| {
+                            ui.label("");
+                            for h in ["Read", "Write", if e.is_dir { "Open" } else { "Run" }] {
+                                ui.label(egui::RichText::new(h).color(weak));
+                            }
+                            ui.end_row();
+                            for (who, shift) in [("Owner", 6), ("Group", 3), ("Everyone", 0)] {
+                                ui.label(who);
+                                for bit in [4u32, 2, 1] {
+                                    let mask = bit << shift;
+                                    let mut on = info.mode & mask != 0;
+                                    if ui.checkbox(&mut on, "").changed() {
+                                        info.mode = if on { info.mode | mask } else { info.mode & !mask };
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        });
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new(format!("{:03o}   {}", info.mode, mode_text(info.mode, e.is_dir))).monospace().color(weak));
+                    });
+                    if e.is_dir {
+                        ui.add_space(6.0);
+                        ui.checkbox(&mut info.recursive, "Also for everything inside");
+                        if info.recursive {
+                            ui.label(egui::RichText::new("Folders inside also get Open wherever they can be read, so they stay usable.").small().color(weak));
+                        }
+                    }
+                    ui.add_space(14.0);
+                    let changed = info.mode != (e.mode & 0o777) || info.recursive;
+                    let (mut ok, mut cancel) = (false, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().button_padding = Vec2::new(14.0, 6.0);
+                        ok = ui.add_enabled(changed, egui::Button::new(egui::RichText::new("Apply").color(if changed { v.selection.stroke.color } else { weak })).fill(if changed { v.selection.bg_fill } else { v.widgets.inactive.weak_bg_fill }).corner_radius(r_sm())).clicked();
+                        cancel = plain(ui, "Close");
+                    });
+                    // Test hook for checks: RIVET_FTP_CHMOD=755 applies these permissions.
+                    let hook = std::env::var("RIVET_FTP_CHMOD").ok().filter(|_| self.shot.is_some()).and_then(|m| u32::from_str_radix(&m, 8).ok());
+                    if let Some(m) = hook {
+                        self.apply_mode(info.side, &e, m, false);
+                    } else if ok {
+                        self.apply_mode(info.side, &e, info.mode, info.recursive);
+                    } else if !(cancel || esc) {
+                        next = Some(Prompt::Info(info));
                     }
                 }
                 Prompt::EditConflict(i) => {

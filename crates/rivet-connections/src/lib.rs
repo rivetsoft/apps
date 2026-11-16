@@ -21,6 +21,7 @@
 //! `scp`, `rsync` and `git` reach saved connections by name too.
 
 pub mod keys;
+pub mod secrets;
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};

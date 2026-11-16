@@ -44,6 +44,8 @@ alone means SFTP. Passwords are never saved in the connections file
 (~/.config/rivet-ftp/connections.conf); SSH logins use your keys or ssh agent.";
 
 fn main() -> ExitCode {
+    // Run by ssh as its askpass helper: answer and exit.
+    sftp::askpass_main();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     // --screenshot FILE.png: draw the window in memory, save a picture of it and exit (checks).
     let mut screenshot = None;

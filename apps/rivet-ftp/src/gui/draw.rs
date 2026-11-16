@@ -577,6 +577,10 @@ impl FtpApp {
                 ui.close();
             }
             ui.separator();
+            if ui.add(egui::Button::new("Info…").shortcut_text("Ctrl+I")).clicked() {
+                self.show_info(side);
+                ui.close();
+            }
             if sel.len() == 1 && ui.button("Rename…").clicked() {
                 self.prompt = Some(Prompt::Rename(side, sel[0].name.clone(), sel[0].name.clone()));
                 ui.close();
@@ -661,6 +665,7 @@ impl FtpApp {
         ui.add_space(4.0);
         self.edits_panel(ui);
         let running = self.queue.iter().find(|j| j.state == JobState::Waiting).map(|j| j.id);
+        let mut retry: Option<usize> = None;
         let mut arrows = std::collections::HashMap::new();
         for n in [["go-up-symbolic", "go-up"], ["go-down-symbolic", "go-down"]] {
             arrows.insert(n[0], self.icon_named(&ctx, &n));
@@ -669,7 +674,7 @@ impl FtpApp {
             if self.queue.is_empty() {
                 ui.label(egui::RichText::new("Drag files between the panes, double-click a file, or use Upload and Download.").weak());
             }
-            for j in self.queue.iter().rev() {
+            for (idx, j) in self.queue.iter().enumerate().rev() {
                 ui.horizontal(|ui| {
                     let names: &[&str] = if j.dir == Dir::Up { &["go-up-symbolic", "go-up"] } else { &["go-down-symbolic", "go-down"] };
                     match arrows.get(names[0]).cloned().flatten() {
@@ -687,6 +692,9 @@ impl FtpApp {
                             ui.label(egui::RichText::new("Done").color(status(&ctx).success));
                         }
                         JobState::Failed(e) => {
+                            if self.transfer.is_some() && ui.add(egui::Button::new("Retry").corner_radius(r_sm())).clicked() {
+                                retry = Some(idx);
+                            }
                             ui.label(egui::RichText::new("Failed").color(status(&ctx).danger)).on_hover_text(e);
                         }
                         JobState::Waiting if Some(j.id) == running => {
@@ -708,6 +716,9 @@ impl FtpApp {
                 });
             }
         });
+        if let Some(i) = retry {
+            self.retry_job(i);
+        }
     }
 }
 
