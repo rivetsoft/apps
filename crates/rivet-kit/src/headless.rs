@@ -148,13 +148,16 @@ fn draw_mesh(px: &mut [[f32; 4]], w: usize, h: usize, mesh: &Mesh, clip: Rect, t
                 if pxf < clip.min.x || pxf > clip.max.x {
                     continue;
                 }
-                // Barycentric weights (any winding).
-                let w0 = ((b.x - pxf) * (c.y - py) - (b.y - py) * (c.x - pxf)) / area;
-                let w1 = ((c.x - pxf) * (a.y - py) - (c.y - py) * (a.x - pxf)) / area;
-                let w2 = 1.0 - w0 - w1;
-                if w0 < -1e-4 || w1 < -1e-4 || w2 < -1e-4 {
+                // Edge tests, computed the same way for both triangles that share an edge, so a
+                // pixel on that edge belongs to exactly one of them (the "top-left" rule).
+                // Otherwise see-through shapes made of two triangles draw a darker seam.
+                let p = egui::Pos2::new(pxf, py);
+                let (e0, e1, e2) = (edge(b, c, p, area), edge(c, a, p, area), edge(a, b, p, area));
+                if !(inside(e0, b, c, area) && inside(e1, c, a, area) && inside(e2, a, b, area)) {
                     continue;
                 }
+                let (w0, w1) = (e0 / area.abs(), e1 / area.abs());
+                let w2 = 1.0 - w0 - w1;
                 let mut col = [0.0f32; 4];
                 for (i, vert) in v.iter().enumerate() {
                     let wt = [w0, w1, w2][i];
@@ -181,6 +184,26 @@ fn draw_mesh(px: &mut [[f32; 4]], w: usize, h: usize, mesh: &Mesh, clip: Rect, t
             }
         }
     }
+}
+
+/// How far `p` is inside the edge a→b (positive inside), for a triangle of signed `area`.
+/// The two endpoints are always taken in the same order, so neighbours sharing the edge get
+/// exactly opposite values.
+fn edge(a: Pos2, b: Pos2, p: Pos2, area: f32) -> f32 {
+    let raw = |a: Pos2, b: Pos2| (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+    let flip = (a.x, a.y) > (b.x, b.y);
+    let e = if flip { -raw(b, a) } else { raw(a, b) };
+    if area > 0.0 { e } else { -e }
+}
+
+/// Inside, or exactly on a top or left edge.
+fn inside(e: f32, a: Pos2, b: Pos2, area: f32) -> bool {
+    if e != 0.0 {
+        return e > 0.0;
+    }
+    // Direction of the edge as the triangle (made counter-clockwise) walks it.
+    let (dx, dy) = if area > 0.0 { (b.x - a.x, b.y - a.y) } else { (a.x - b.x, a.y - b.y) };
+    dy < 0.0 || (dy == 0.0 && dx > 0.0)
 }
 
 /// Bilinear texture lookup (clamped), premultiplied values 0–255.
@@ -217,5 +240,21 @@ mod tests {
         let img = render(&prims, &HashMap::new(), [8, 8], [0.0, 0.0, 0.0, 1.0]);
         assert_eq!(img.pixels[3 * 8 + 3], Color32::from_rgb(255, 0, 0));
         assert_eq!(img.pixels[0], Color32::from_rgb(0, 0, 0));
+    }
+}
+
+#[cfg(test)]
+mod seam_tests {
+    use super::*;
+
+    #[test]
+    fn two_see_through_triangles_leave_no_seam() {
+        // A half-transparent square made of two triangles: every pixel gets exactly one coat.
+        let mut mesh = Mesh::default();
+        mesh.add_colored_rect(Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(16.0, 16.0)), Color32::from_black_alpha(128));
+        let prims = vec![ClippedPrimitive { clip_rect: Rect::EVERYTHING, primitive: Primitive::Mesh(mesh) }];
+        let img = render(&prims, &HashMap::new(), [16, 16], [1.0, 1.0, 1.0, 1.0]);
+        let first = img.pixels[0];
+        assert!(img.pixels.iter().all(|p| *p == first), "a seam: {:?}", img.pixels.iter().filter(|p| **p != first).count());
     }
 }

@@ -1,8 +1,9 @@
 //! The connection editor and the small questions: new folder, rename, delete, replace.
 
-use eframe::egui::{self, Key};
+use eframe::egui::{self, Color32, Key, Sense, Stroke, Vec2};
 use rivet_connections::Protocol;
-use rivet_look::theme::{r_sm, status};
+use rivet_look::palette;
+use rivet_look::theme::{paint_tex, r_lg, r_md, r_sm, status};
 
 use super::*;
 
@@ -14,6 +15,39 @@ fn primary(ui: &mut egui::Ui, text: &str) -> bool {
 
 fn plain(ui: &mut egui::Ui, text: &str) -> bool {
     ui.add(egui::Button::new(text).corner_radius(r_sm())).clicked()
+}
+
+/// A small group heading inside a dialog.
+fn heading(ui: &mut egui::Ui, text: &str) {
+    ui.label(egui::RichText::new(text).strong().size(13.0).color(ui.visuals().weak_text_color()));
+    ui.add_space(6.0);
+}
+
+/// A raised text field like Rivet's: a lifted surface, outlined in the accent while typing.
+/// True when Enter was pressed in it.
+fn raised(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32, accent: Color32, focus: bool) -> bool {
+    let v = ui.visuals().clone();
+    let field_id = egui::Id::unique(("form-field", id));
+    let focused = ui.memory(|m| m.has_focus(field_id));
+    let fill = palette::mix(v.window_fill, v.text_color(), 0.06);
+    let shadow = egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
+    let stroke = Stroke::new(1.5, if focused { accent } else { Color32::TRANSPARENT });
+    let resp = egui::Frame::NONE
+        .fill(fill)
+        .shadow(shadow)
+        .stroke(stroke)
+        .corner_radius(r_md())
+        .inner_margin(egui::Margin::symmetric(10, 6))
+        .show(ui, |ui| {
+            // The margin (2 × 10) and the outline (2 × 1.5) are outside this width.
+            ui.set_width(width - 23.0);
+            ui.add(egui::TextEdit::singleline(text).id(field_id).frame(egui::Frame::NONE).hint_text(hint).min_size(Vec2::new(0.0, 22.0)).desired_width(f32::INFINITY))
+        })
+        .inner;
+    if focus {
+        resp.request_focus();
+    }
+    resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
 }
 
 /// A text field that has the keyboard; true when Enter was pressed in it.
@@ -35,61 +69,88 @@ impl FtpApp {
         let Some(mut form) = self.form.take() else { return };
         let mut keep = true;
         let mut save: Option<bool> = None; // Some(connect afterwards)
-        egui::Modal::new(egui::Id::unique("conn-form")).show(ctx, |ui| {
-            ui.set_width(440.0);
-            ui.heading(if form.original.is_some() { "Edit connection" } else { "New connection" });
-            ui.add_space(10.0);
-            egui::Grid::new("form-grid").num_columns(2).spacing([14.0, 8.0]).show(ui, |ui| {
-                ui.label("Name");
-                ui.add(egui::TextEdit::singleline(&mut form.name).hint_text("Work site").desired_width(300.0));
-                ui.end_row();
-                ui.label("Type");
-                let label = |p: Protocol| match p {
-                    Protocol::Sftp => "SFTP (SSH)",
-                    Protocol::Ftps => "FTPS (FTP over TLS)",
-                    Protocol::Ftp => "FTP",
-                };
-                egui::ComboBox::from_id_salt("proto").width(300.0).selected_text(label(form.protocol)).show_ui(ui, |ui| {
-                    for p in [Protocol::Sftp, Protocol::Ftps, Protocol::Ftp] {
-                        ui.selectable_value(&mut form.protocol, p, label(p));
-                    }
-                });
-                ui.end_row();
-                ui.label("Server");
-                ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut form.host).hint_text("example.com").desired_width(226.0));
-                    ui.add(egui::TextEdit::singleline(&mut form.port).hint_text(format!("port {}", form.protocol.default_port())).desired_width(66.0));
-                });
-                ui.end_row();
-                ui.label("User");
-                ui.add(egui::TextEdit::singleline(&mut form.user).desired_width(300.0));
-                ui.end_row();
-                if form.protocol == Protocol::Sftp {
-                    ui.label("SSH key");
-                    ui.add(egui::TextEdit::singleline(&mut form.key).hint_text("Your ssh agent or usual keys").desired_width(300.0));
-                    ui.end_row();
+        let icon = self.app_icon(ctx);
+        let accent = ctx.global_style().visuals.selection.bg_fill;
+        let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(24)).corner_radius(r_lg());
+        egui::Modal::new(egui::Id::unique("conn-form")).frame(frame).show(ctx, |ui| {
+            ui.set_width(460.0);
+            let v = ui.visuals().clone();
+            let weak = v.weak_text_color();
+            let editing = form.original.is_some();
+            // Icon, title, and what it's for.
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
+                if let Some(t) = &icon {
+                    let (r, _) = ui.allocate_exact_size(Vec2::splat(40.0), Sense::hover());
+                    paint_tex(ui.painter(), t, r, Color32::WHITE);
                 }
-                ui.label("Server folder");
-                ui.add(egui::TextEdit::singleline(&mut form.remote).hint_text("Your home folder there").desired_width(300.0));
-                ui.end_row();
-                ui.label("Local folder");
-                ui.add(egui::TextEdit::singleline(&mut form.local).hint_text("Your home folder").desired_width(300.0));
-                ui.end_row();
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.label(egui::RichText::new(if editing { "Edit Connection" } else { "New Connection" }).heading().color(v.strong_text_color()));
+                    ui.label(egui::RichText::new("Saved for this window and for rivet-ftp in a terminal").color(weak));
+                });
             });
+            ui.add_space(18.0);
+
+            let mut enter = false;
+            let label_w = 104.0;
+            let row = |ui: &mut egui::Ui, label: &str, body: &mut dyn FnMut(&mut egui::Ui)| {
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(label_w, 37.0), Sense::hover());
+                    ui.painter().text(r.left_center(), egui::Align2::LEFT_CENTER, label, rivet_look::fonts::ui_font(13.5), v.text_color());
+                    body(ui);
+                });
+                ui.add_space(6.0);
+            };
+            let first = !form.focused_once;
+            form.focused_once = true;
+            row(ui, "Name", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-name", &mut form.name, "Work site", w, accent, first) });
+            ui.add_space(8.0);
+            heading(ui, "Server");
+            row(ui, "Type", &mut |ui| {
+                ui.spacing_mut().button_padding = Vec2::new(12.0, 6.0);
+                for (p, label) in [(Protocol::Sftp, "SFTP"), (Protocol::Ftps, "FTPS"), (Protocol::Ftp, "FTP")] {
+                    let tip = match p {
+                        Protocol::Sftp => "Files over SSH: your keys and ssh agent",
+                        Protocol::Ftps => "FTP over TLS (encrypted)",
+                        Protocol::Ftp => "Plain FTP (nothing is encrypted)",
+                    };
+                    ui.selectable_value(&mut form.protocol, p, label).on_hover_text(tip);
+                }
+            });
+            row(ui, "Address", &mut |ui| {
+                let w = ui.available_width() - 92.0;
+                enter |= raised(ui, "f-host", &mut form.host, "example.com", w, accent, false);
+                ui.add_space(4.0);
+                let port_hint = format!("Port {}", form.protocol.default_port());
+                let w = ui.available_width();
+                enter |= raised(ui, "f-port", &mut form.port, &port_hint, w, accent, false);
+            });
+            row(ui, "User", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-user", &mut form.user, "Your user name there", w, accent, false) });
+            if form.protocol == Protocol::Sftp {
+                row(ui, "SSH key", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-key", &mut form.key, "Your ssh agent or usual keys", w, accent, false) });
+            }
+            ui.add_space(8.0);
+            heading(ui, "Folders");
+            row(ui, "On the server", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-remote", &mut form.remote, "Your home folder there", w, accent, false) });
+            row(ui, "On this computer", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-local", &mut form.local, "Your home folder", w, accent, false) });
+
             ui.add_space(6.0);
             let hint = if form.protocol == Protocol::Sftp {
-                "Logs in with your SSH keys or ssh agent. From a terminal, use rivet-ftp ssh with the connection's name."
+                "Logs in with your SSH keys or ssh agent, like ssh does."
             } else {
-                "FTP and FTPS browsing comes next; the connection can be saved now. Passwords will be kept in your keyring."
+                "FTP and FTPS browsing comes next; you can save this now. Passwords will be kept in your keyring."
             };
-            ui.label(egui::RichText::new(hint).small().weak());
+            ui.add(egui::Label::new(egui::RichText::new(hint).size(12.0).color(weak)).wrap());
             if let Some(e) = &form.error {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(e).color(status(ctx).danger));
             }
-            ui.add_space(10.0);
+            ui.add_space(18.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if primary(ui, "Save and connect") {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.spacing_mut().button_padding = Vec2::new(14.0, 6.0);
+                if primary(ui, "Save and Connect") || enter {
                     save = Some(true);
                 }
                 if plain(ui, "Save") {
@@ -141,7 +202,8 @@ impl FtpApp {
     fn prompt_dialog(&mut self, ctx: &egui::Context) {
         let Some(prompt) = self.prompt.take() else { return };
         let mut next: Option<Prompt> = None;
-        egui::Modal::new(egui::Id::unique("prompt")).show(ctx, |ui| {
+        let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(r_lg());
+        egui::Modal::new(egui::Id::unique("prompt")).frame(frame).show(ctx, |ui| {
             ui.set_width(400.0);
             let esc = ui.input(|i| i.key_pressed(Key::Escape));
             match prompt {

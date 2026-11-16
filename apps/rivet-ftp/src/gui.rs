@@ -110,11 +110,13 @@ struct Form {
     remote: String,
     local: String,
     error: Option<String>,
+    /// The name field gets the keyboard once, when the editor opens.
+    focused_once: bool,
 }
 
 impl Form {
     fn blank() -> Form {
-        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None }
+        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None, focused_once: false }
     }
     fn from(c: &Connection) -> Form {
         Form {
@@ -128,6 +130,7 @@ impl Form {
             remote: c.remote.clone().unwrap_or_default(),
             local: c.local.clone().unwrap_or_default(),
             error: None,
+            focused_once: false,
         }
     }
     fn build(&self) -> Result<Connection, String> {
