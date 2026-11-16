@@ -60,7 +60,7 @@ The button at the far right of the toolbar (or F11, or View → Peek) opens Peek
 right about the open note: how it's shown (full width or a centered column, and whether the
 properties sit above the text), the file (name, folder, size, words, characters, lines, reading
 time), its dates (edited, created, saved) and its properties. A width chosen in Peek is that note's
-own (it follows the note when it's renamed or moved; *Use the default* drops it). Preferences →
+own (it follows the note when it's renamed or moved; its Reset button drops it). Preferences →
 Appearance → Default note width sets it for every other note.
 
 ## Fonts

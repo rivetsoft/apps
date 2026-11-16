@@ -26,7 +26,7 @@ impl NotesApp {
             card(ui, "Display", |ui| {
                 let before = self.s.clone();
                 if let Some(note) = &note {
-                    ui.label(egui::RichText::new("Width of this note").color(weak));
+                    // Width: this note's own; Reset goes back to the default.
                     let own = self.s.note_width(note);
                     let mut centered = self.s.centered_for(note);
                     ui.horizontal(|ui| {
@@ -37,25 +37,18 @@ impl NotesApp {
                         if centered != was {
                             self.s.set_note_width(note, Some(centered));
                         }
-                    });
-                    let default = if self.s.centered { "Centered" } else { "Full width" };
-                    match own {
-                        Some(_) => {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 6.0;
-                                ui.label(egui::RichText::new("Just this note.").small().color(weak));
-                                if ui.add(egui::Label::new(egui::RichText::new(format!("Use the default ({default})")).small().color(ui.visuals().hyperlink_color)).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        if own.is_some() {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                let default = if self.s.centered { "centered" } else { "full width" };
+                                if ui.small_button("Reset").on_hover_text(format!("Back to the default ({default})")).clicked() {
                                     self.s.set_note_width(note, None);
                                 }
                             });
                         }
-                        None => {
-                            ui.label(egui::RichText::new(format!("Following the default ({default}), set in Preferences → Appearance.")).small().color(weak));
-                        }
-                    }
+                    });
                     ui.add_space(4.0);
                 }
-                ui.checkbox(&mut self.s.show_properties, "Properties above the text");
+                ui.checkbox(&mut self.s.show_properties, "Show properties");
                 if self.s != before {
                     self.s.save();
                 }
