@@ -22,14 +22,14 @@ build() {
   cd "${pkgname}-${pkgver}"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
-  cargo build --frozen --release
+  cargo build --frozen --release -p rivet
 }
 
 package() {
   cd "${pkgname}-${pkgver}"
   install -Dm755 target/release/rivet "${pkgdir}/usr/bin/rivet"
-  install -Dm644 data/rivet-files.desktop "${pkgdir}/usr/share/applications/rivet-files.desktop"
+  install -Dm644 apps/rivet-files/data/rivet-files.desktop "${pkgdir}/usr/share/applications/rivet-files.desktop"
   mkdir -p "${pkgdir}/usr/share/icons"
-  cp -a data/icons/hicolor "${pkgdir}/usr/share/icons/"
+  cp -a apps/rivet-files/data/icons/hicolor "${pkgdir}/usr/share/icons/"
   install -Dm644 LICENSE-MIT LICENSE-APACHE -t "${pkgdir}/usr/share/licenses/${pkgname}"
 }

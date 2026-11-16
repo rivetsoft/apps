@@ -1,7 +1,7 @@
 #!/bin/sh
 # Point the AUR PKGBUILDs at a published release and refresh .SRCINFO.
 #
-#   ./packaging/aur/bump.sh 0.1.3
+#   ./apps/rivet-files/packaging/aur/bump.sh 0.1.3
 #
 # Downloads the binary tarball and the git tag archive, then rewrites pkgver
 # and the checksums. Publishing to the AUR itself is still a manual push.

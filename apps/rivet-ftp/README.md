@@ -1,8 +1,13 @@
 # Rivet FTP
 
+Part of [Rivet Apps](../../README.md).
+
+> **Early alpha.** Rivet FTP is not ready for daily use: things are missing, change without
+> notice, or break. Try it on servers and files you don't mind losing, and keep backups.
+
 A dual-pane file-transfer app for SFTP, FTP and FTPS, built on Rivet's core: this computer on
-one side, the server on the other, and a transfer queue underneath. It's in development
-([plan and keys](../../docs/rivet-ftp.md)). SFTP works; FTP and FTPS come next.
+one side, the server on the other, and a transfer queue underneath. See the
+[plan and keys](../../docs/rivet-ftp.md). SFTP works; FTP and FTPS come next.
 
 ```sh
 cargo build -p rivet-ftp

@@ -1,5 +1,8 @@
 # Rivet FTP
 
+> **Early alpha.** Rivet FTP is not ready for daily use: things are missing, change without
+> notice, or break. Try it on servers and files you don't mind losing, and keep backups.
+
 A dual-pane file-transfer app for Linux (SFTP, FTP and FTPS), built on Rivet's core and
 written in Rust and egui, with no GTK or Qt. It's in the same family as Transmit and FileZilla
 and works the way people expect from those, but it has its own name, icon and look.

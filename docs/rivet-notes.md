@@ -1,5 +1,8 @@
 # Rivet Notes
 
+> **Early alpha.** Rivet Notes is not ready for daily use: things are missing, change without
+> notice, or break. Try it on a copy of your notes you don't mind losing, and keep backups.
+
 Markdown notes kept in plain folders, built on the same shared parts as Rivet Files and Rivet FTP
 (theme and desktop colors, icons, fonts, in-app windows, Markdown coloring). It's an original app
 in the same family as other folder-based note apps.

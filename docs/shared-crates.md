@@ -87,10 +87,14 @@ reads (show hidden, picker filter) removes both dependencies.
 Steps 1–3 are low-risk and pay off even if the second app changes plans. Step 5 is the big
 one, but it also makes Rivet's interface code easier to test.
 
-## One repository, for now
+## One repository: Rivet Apps
 
-Decided November 2026: both apps share this repository for now. Rivet's README stays its
-front page, with a short section for Rivet FTP. Rivet FTP gets its own README in
+Decided November 2026: the apps share this repository, called Rivet Apps. Every app lives in
+`apps/` (Rivet Files in `apps/rivet-files`), the top of the repository is only the Cargo
+workspace, and its README is the front page for all of them. Plain `cargo build` still builds
+Rivet Files (the workspace's default member), so its scripts and packaging only needed their
+paths updated. Before that, Rivet Files sat at the top of the repository with a short section
+for Rivet FTP in its README. Rivet FTP gets its own README in
 `apps/rivet-ftp`, and the longer pages live in `docs/` as wiki pages. Releases are told apart by
 tag (`v0.7.0` for Rivet as today, `rivet-ftp-v0.1.0` for Rivet FTP).
 

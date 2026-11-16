@@ -107,7 +107,7 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: rivet-files.flatpak
-          manifest-path: packaging/flatpak/io.github.ulinaaron.rivet-files.yml
+          manifest-path: apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml
           cache-key: flatpak-26.08
           # Download the metainfo screenshots into the repo and rewrite their
           # URLs to dl.flathub.org/media, which is what the linter checks for.
@@ -153,7 +153,7 @@ jobs:
                   print("unexpected linter errors:", sorted(unexpected), file=sys.stderr)
                   sys.exit(1)
               print("file-manager permissions pending a Flathub exception:", sorted(set(data.get("errors") or [])))
-          run(["manifest", "packaging/flatpak/io.github.ulinaaron.rivet-files.yml"])
+          run(["manifest", "apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml"])
           run(["repo", "repo"])
           PY
 

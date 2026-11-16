@@ -22,7 +22,7 @@ Build it from this checkout:
 
 ```sh
 flatpak install -y flathub org.freedesktop.Platform//26.08 org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.rust-stable//26.08 org.flatpak.Builder
-flatpak run org.flatpak.Builder --force-clean --install --user flatpak-build packaging/flatpak/io.github.ulinaaron.rivet-files.yml
+flatpak run org.flatpak.Builder --force-clean --install --user flatpak-build apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml
 flatpak run io.github.ulinaaron.rivet-files
 ```
 
@@ -31,7 +31,7 @@ CI builds `rivet-files.flatpak` on pull requests and attaches that file to a pub
 When `Cargo.lock` changes, regenerate the offline crate list (no network during the Flatpak build):
 
 ```sh
-python3 flatpak-cargo-generator.py Cargo.lock -o packaging/flatpak/cargo-sources.json
+python3 flatpak-cargo-generator.py Cargo.lock -o apps/rivet-files/packaging/flatpak/cargo-sources.json
 ```
 
 The script is [flatpak-cargo-generator](https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo). CI does not refresh it for you.
@@ -53,10 +53,10 @@ Wait until the Flatpak path fixes are in a tagged release. The copy in this repo
    git checkout -b add-io.github.ulinaaron.rivet-files new-pr
    ```
 
-4. Copy only these two files into that branch, at the top of the tree (not under `packaging/`):
+4. Copy only these two files into that branch, at the top of the tree (not under `apps/rivet-files/packaging/`):
 
-   - `packaging/flatpak/io.github.ulinaaron.rivet-files.yml`, renamed to `io.github.ulinaaron.rivet-files.yml`
-   - `packaging/flatpak/cargo-sources.json`
+   - `apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml`, renamed to `io.github.ulinaaron.rivet-files.yml`
+   - `apps/rivet-files/packaging/flatpak/cargo-sources.json`
 
    Do not copy the Rust source, the icons, or a built Flatpak. Flathub builds from the git tag. The desktop file, metainfo and icons are installed from that tag by the manifest's `build-commands`.
 
@@ -99,12 +99,12 @@ The app id `io.github.ulinaaron.rivet-files` is the Flathub id for `https://gith
 
 Two packages live here:
 
-- `packaging/aur/rivet-files-bin` installs the release tarball (`rivet` plus the desktop file and icons).
-- `packaging/aur/rivet-files` builds from the git tag with cargo.
+- `apps/rivet-files/packaging/aur/rivet-files-bin` installs the release tarball (`rivet` plus the desktop file and icons).
+- `apps/rivet-files/packaging/aur/rivet-files` builds from the git tag with cargo.
 
 They conflict with each other. `rivet-files-bin` is the one most people want.
 
-The published 0.1.2 tarball was linked on Fedora 44 and does not start on older glibc. Let the portable release go out first. The workflow `.github/workflows/aur-bump.yml` rewrites `pkgver` and the checksums on `main` when a GitHub release is published. If branch protection rejects that push, run `./packaging/aur/bump.sh X.Y.Z` yourself and commit it.
+The published 0.1.2 tarball was linked on Fedora 44 and does not start on older glibc. Let the portable release go out first. The workflow `.github/workflows/aur-bump.yml` rewrites `pkgver` and the checksums on `main` when a GitHub release is published. If branch protection rejects that push, run `./apps/rivet-files/packaging/aur/bump.sh X.Y.Z` yourself and commit it.
 
 The AUR is a separate git host. This repository cannot push there.
 
@@ -113,7 +113,7 @@ The AUR is a separate git host. This repository cannot push there.
 
    ```sh
    git clone ssh://aur@aur.archlinux.org/rivet-files-bin.git
-   cp packaging/aur/rivet-files-bin/PKGBUILD packaging/aur/rivet-files-bin/.SRCINFO rivet-files-bin/
+   cp apps/rivet-files/packaging/aur/rivet-files-bin/PKGBUILD apps/rivet-files/packaging/aur/rivet-files-bin/.SRCINFO rivet-files-bin/
    cd rivet-files-bin
    git add PKGBUILD .SRCINFO
    git commit -m "Initial import of rivet-files-bin 0.1.2"
@@ -121,7 +121,7 @@ The AUR is a separate git host. This repository cannot push there.
 
    cd ..
    git clone ssh://aur@aur.archlinux.org/rivet-files.git
-   cp packaging/aur/rivet-files/PKGBUILD packaging/aur/rivet-files/.SRCINFO rivet-files/
+   cp apps/rivet-files/packaging/aur/rivet-files/PKGBUILD apps/rivet-files/packaging/aur/rivet-files/.SRCINFO rivet-files/
    cd rivet-files
    git add PKGBUILD .SRCINFO
    git commit -m "Initial import of rivet-files 0.1.2"

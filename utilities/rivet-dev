@@ -54,7 +54,7 @@ case "$cmd" in
     bump)          exec sh "$LIB/bump.sh" "$@" ;;
     release)       exec sh "$LIB/release.sh" "$@" ;;
     push|publish)  exec sh "$LIB/push.sh" "$@" ;;   # "publish" was its old name
-    aur-bump)      exec sh "$HERE/../packaging/aur/bump.sh" "$@" ;;
+    aur-bump)      exec sh "$HERE/../apps/rivet-files/packaging/aur/bump.sh" "$@" ;;
     appimage)      exec sh "$LIB/appimage.sh" "$@" ;;
     portable)      exec sh "$LIB/portable-build.sh" "$@" ;;
     portable-bin)  exec sh "$LIB/portable-bin.sh" "$@" ;;

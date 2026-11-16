@@ -8,19 +8,19 @@ set -e
 cd "$(dirname "$0")"
 # Run from utilities/lib in a source checkout: work from the repository root.
 [ -f ../../Cargo.toml ] && cd ../..
-if [ -x ./rivet ] && [ ! -d ./src ]; then
+if [ -x ./rivet ] && [ ! -d ./apps ]; then
     SRC=./rivet                                  # release download
 else
-    cargo build --release && SRC=target/release/rivet   # source checkout
+    cargo build --release -p rivet && SRC=target/release/rivet   # source checkout
 fi
-DESKTOP=data/rivet-files.desktop
+DESKTOP=apps/rivet-files/data/rivet-files.desktop
 [ -f "$DESKTOP" ] || DESKTOP=rivet-files.desktop
 BIN="${XDG_BIN_HOME:-$HOME/.local/bin}"
 APPS="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
 install -Dm755 "$SRC" "$BIN/rivet"
 mkdir -p "$APPS"
-# Logo at every standard size (data/icons in a checkout, icons/ in a release download).
-ICONS=data/icons
+# Logo at every standard size (apps/rivet-files/data/icons in a checkout, icons/ in a release download).
+ICONS=apps/rivet-files/data/icons
 [ -d "$ICONS" ] || ICONS=icons
 ICON_HOME="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
 (cd "$ICONS" && find hicolor -type f) | while read -r f; do install -Dm644 "$ICONS/$f" "$ICON_HOME/$f"; done

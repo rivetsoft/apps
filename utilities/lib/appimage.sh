@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")/../.."
 
-VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' apps/rivet-files/Cargo.toml | head -1)
 ARCH=$(uname -m)
 OUT="dist/Rivet_Files-$VERSION-$ARCH.AppImage"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/rivet-build"
@@ -35,11 +35,11 @@ strip -o "$APPDIR/usr/bin/rivet" "$RIVET_BIN"
 # winit dlopens these; ldd on rivet does not see them. Ubuntu 22.04 builds,
 # so the bundle itself does not need glibc 2.43.
 ./utilities/lib/bundle-runtime-libs.sh "$APPDIR/usr/lib"
-cp data/rivet-files.desktop "$APPDIR/rivet-files.desktop"
-cp data/rivet-files.desktop "$APPDIR/usr/share/applications/"
-cp data/rivet-files.svg "$APPDIR/rivet-files.svg"
-cp -r data/icons/hicolor "$APPDIR/usr/share/icons/"
-cp data/icons/hicolor/256x256/apps/rivet-files.png "$APPDIR/.DirIcon"
+cp apps/rivet-files/data/rivet-files.desktop "$APPDIR/rivet-files.desktop"
+cp apps/rivet-files/data/rivet-files.desktop "$APPDIR/usr/share/applications/"
+cp apps/rivet-files/data/rivet-files.svg "$APPDIR/rivet-files.svg"
+cp -r apps/rivet-files/data/icons/hicolor "$APPDIR/usr/share/icons/"
+cp apps/rivet-files/data/icons/hicolor/256x256/apps/rivet-files.png "$APPDIR/.DirIcon"
 cat > "$APPDIR/AppRun" <<'EOF'
 #!/bin/sh
 HERE="$(dirname "$(readlink -f "$0")")"

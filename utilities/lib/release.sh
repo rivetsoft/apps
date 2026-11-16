@@ -10,8 +10,9 @@
 # For a new release: run utilities/rivet-dev bump first (sets the version, changelog section, commits), then this.
 set -e
 cd "$(dirname "$0")/../.."
+APP=apps/rivet-files   # Rivet Files: its version, changelog, desktop file and icons
 
-VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' $APP/Cargo.toml | head -1)
 ARCH=$(uname -m)
 NAME="rivet-files-$VERSION-$ARCH-linux"
 TAG="v$VERSION"
@@ -25,7 +26,7 @@ fi
 if [ "$1" = "--publish" ] && git remote get-url origin >/dev/null 2>&1; then
     git pull --rebase origin main
 fi
-grep -q "^## $VERSION" CHANGELOG.md || { echo "CHANGELOG.md has no section for $VERSION." >&2; exit 1; }
+grep -q "^## $VERSION" "$APP/CHANGELOG.md" || { echo "CHANGELOG.md has no section for $VERSION." >&2; exit 1; }
 
 # A published version never moves to a different commit: ask for a new version instead.
 HEAD_COMMIT=$(git rev-parse HEAD)
@@ -52,8 +53,8 @@ ROOT=$(pwd)
 . ./utilities/lib/ensure-zigbuild.sh
 ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/rivet"
 BIN_GLIBC=$(objdump -T "$STAGE/rivet" | sed -n 's/.*GLIBC_\([0-9][0-9.]*\).*/\1/p' | sort -Vu | tail -n 1)
-cp data/rivet-files.desktop data/rivet-files.svg utilities/lib/install.sh README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$STAGE/"
-cp -r data/icons "$STAGE/icons"
+cp "$APP/data/rivet-files.desktop" "$APP/data/rivet-files.svg" utilities/lib/install.sh "$APP/README.md" "$APP/CHANGELOG.md" LICENSE-MIT LICENSE-APACHE "$STAGE/"
+cp -r "$APP/data/icons" "$STAGE/icons"
 tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
 rm -rf "$STAGE"
 (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
@@ -61,7 +62,7 @@ rm -rf "$STAGE"
 APPIMAGE="dist/Rivet_Files-$VERSION-$ARCH.AppImage"
 
 # Release notes = this version's CHANGELOG section.
-awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' CHANGELOG.md | tail -n +2 > "dist/notes-$VERSION.md"
+awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "dist/notes-$VERSION.md"
 cat >> "dist/notes-$VERSION.md" <<EOF
 
 ### Install
