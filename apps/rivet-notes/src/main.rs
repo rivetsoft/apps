@@ -3,6 +3,7 @@
 mod gui;
 mod format;
 mod layout;
+mod props;
 mod render;
 mod settings;
 mod vault;
@@ -27,7 +28,7 @@ fn sample_vault() -> Option<PathBuf> {
     let files: [(&str, &str); 6] = [
         ("Welcome.md", "---\ntitle: Welcome\ntags: [start]\ncreated: 2026-11-16 09:00\n---\n# Welcome\n\nThis vault is just a folder of **Markdown** files. Properties live in each note's *frontmatter*.\n\n- Browse by folder or by tag\n- Search with Ctrl+F\n"),
         ("Inbox.md", "Ideas to sort later. #todo\n\n- Look at sync options\n- Try the light theme\n"),
-        ("Projects/Rivet FTP.md", "---\ntitle: Rivet FTP\ntags: [work, rivet]\nstatus: active\ndue: 2026-12-01\n---\n# Rivet FTP\n\nNext: FTP and FTPS support.\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n"),
+        ("Projects/Rivet FTP.md", "---\ntitle: Rivet FTP\ntags: [work, rivet]\nstatus: active\ndue: 2026-12-01\npriority: 2\nshipped: false\nrepo: https://example.org/rivet-ftp\naliases: [FTP client, Transfers]\n---\n# Rivet FTP\n\nNext: FTP and FTPS support.\n\n```rust\nfn main() {\n    println!(\"hello\");\n}\n```\n"),
         ("Projects/Rivet Notes.md", "---\ntitle: Rivet Notes\ntags: [work, rivet, notes]\nstatus: planning\n---\n# Rivet Notes\n\nVaults, frontmatter, folders and tags.\n"),
         ("Journal/2026-11-16.md", "---\ntags: [journal]\nmood: good\n---\n# Sunday\n\nWrote the notes app. #rivet\n"),
         ("Reading/Books.md", "---\ntitle: Books\ntags:\n  - reading\n  - lists\n---\n# Books\n\n1. A Pattern Language\n2. The Design of Everyday Things\n"),

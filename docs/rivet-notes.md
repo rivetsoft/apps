@@ -19,8 +19,12 @@ the list and leaves the folder alone).
 
 ## Notes
 
-- **Frontmatter**: the `---` block at the top of a note is shown as **Properties**: text
-  fields, lists, and tags as chips. Nested values are kept exactly as written and shown read-only.
+- **Frontmatter**: the `---` block at the top of a note is shown as **Properties**, each
+  with a type: Text, Number, Checkbox, Date (with a calendar), List, Tags (chips) or Link (with an
+  open button). The type is worked out from the value; click a property's name (or right-click it)
+  to change its type, rename or remove it. *+ Add property* asks for a name and a type. The
+  block folds from its header. The file stays plain YAML. Nested values are kept exactly as
+  written and shown read-only.
   Saving writes back only what changed in the block; the rest of the file is untouched.
 - **Tags** come from the frontmatter (`tags: [a, b]` or a `- item` list) and from `#tags` in
   the text (not inside code).
@@ -56,7 +60,7 @@ keys, Page Up/Down, Space, Home and End scroll. Esc or Ctrl+Space closes it.
 
 ## Peek
 
-The button at the far right of the toolbar (or F11, or View → Peek) opens Peek, a panel on the
+The right-sidebar button at the far right of the toolbar (or F11, or View → Peek) opens Peek, a panel on the
 right about the open note: how it's shown (full width or a centered column, and whether the
 properties sit above the text), the file (name, folder, size, words, characters, lines, reading
 time), its dates (edited, created, saved) and its properties. A width chosen in Peek is that note's

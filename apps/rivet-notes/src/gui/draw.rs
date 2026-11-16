@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
-use rivet_look::theme::{paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile, status};
+use rivet_look::theme::{paint_tex, r_lg, r_md, r_sm, selected_tile, status};
 use rivet_look::{builtin_icons, fonts, highlight, palette};
 
 use super::*;
@@ -199,6 +199,18 @@ impl NotesApp {
             .horizontal(|ui| {
                 ui.set_min_height(32.0);
                 ui.spacing_mut().item_spacing.x = 6.0;
+                // The left sidebar, at the far left (Peek's button mirrors it at the far right).
+                let side_icon = self.icon(&ctx, &["sidebar-show-symbolic", "view-left-pane-symbolic"], 16.0);
+                let on = self.s.show_sidebar;
+                let fg = if on { v.selection.stroke.color } else { v.text_color() };
+                let b = match &side_icon {
+                    Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
+                    None => egui::Button::new("▯"),
+                };
+                if ui.add_enabled(self.vault.is_some(), b.selected(on && self.vault.is_some()).frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Sidebar (F9)").clicked() {
+                    self.s.show_sidebar = !on;
+                    self.s.save();
+                }
                 if !self.s.show_menubar {
                     let fg = v.text_color();
                     let btn = egui::Button::new("").min_size(Vec2::new(34.0, 32.0)).frame_when_inactive(false).corner_radius(r_sm());
@@ -230,7 +242,7 @@ impl NotesApp {
                 left_end = r.rect.right();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Peek, at the far right.
-                    let peek_icon = self.icon(&ctx, &["dialog-information-symbolic", "document-properties-symbolic", "help-about-symbolic"], 16.0);
+                    let peek_icon = self.icon(&ctx, &["sidebar-show-right-symbolic", "view-right-pane-symbolic", "dialog-information-symbolic"], 16.0);
                     let on = self.s.show_peek;
                     let fg = if on { v.selection.stroke.color } else { v.text_color() };
                     let b = match &peek_icon {
@@ -551,6 +563,10 @@ impl NotesApp {
         let mut fmt_pick: Option<crate::format::Fmt> = None;
         let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
         let page = self.page_rect;
+        let prop_icons = super::props::PropIcons {
+            tag: self.icon(&ctx, &["tag-symbolic"], 14.0),
+            link: self.icon(&ctx, &["insert-link-symbolic", "emblem-symbolic-link"], 14.0),
+        };
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
@@ -560,112 +576,8 @@ impl NotesApp {
         ui.add_space(10.0);
         let mut changed = false;
         // ---- properties (the frontmatter)
-        if show_props {
-            if let Some(fm) = d.fm.as_mut() {
-                egui::Frame::NONE.fill(v.faint_bg_color).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new("Properties").strong());
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if d.new_prop.is_none() && ui.small_button("Add").on_hover_text("Add a property").clicked() {
-                                d.new_prop = Some(String::new());
-                            }
-                        });
-                    });
-                    ui.add_space(4.0);
-                    let mut remove: Option<usize> = None;
-                    {
-                        for (i, (k, val)) in fm.fields.iter_mut().enumerate() {
-                          ui.horizontal(|ui| {
-                            // A fixed column for names; the value takes the room up to the × button.
-                            let (lr, _) = ui.allocate_exact_size(Vec2::new(110.0, 26.0), Sense::hover());
-                            ui.painter().with_clip_rect(lr).text(lr.left_center(), Align2::LEFT_CENTER, k.as_str(), fonts::ui_font(13.0), weak);
-                            let value_w = (ui.available_width() - 34.0).max(80.0);
-                            let is_tags = k.eq_ignore_ascii_case("tags") || k.eq_ignore_ascii_case("tag");
-                            match val {
-                                Value::List(items) if is_tags => {
-                                    ui.allocate_ui_with_layout(Vec2::new(value_w, 26.0), egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true), |ui| {
-                                        ui.set_width(value_w);
-                                        let mut drop: Option<usize> = None;
-                                        for (j, t) in items.iter().enumerate() {
-                                            let chip = egui::Button::new(egui::RichText::new(format!("#{t}  ×")).size(12.5)).fill(palette::mix(v.faint_bg_color, v.selection.bg_fill, 0.35)).corner_radius(r_xs());
-                                            if ui.add(chip).on_hover_text("Remove this tag").clicked() {
-                                                drop = Some(j);
-                                            }
-                                        }
-                                        if let Some(j) = drop {
-                                            items.remove(j);
-                                            changed = true;
-                                        }
-                                        let r = ui.add(egui::TextEdit::singleline(&mut d.new_tag).hint_text("add tag").desired_width(90.0));
-                                        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                                            for t in d.new_tag.split([',', ' ']).map(|t| t.trim().trim_start_matches('#')).filter(|t| !t.is_empty()) {
-                                                if !items.iter().any(|x| x.eq_ignore_ascii_case(t)) {
-                                                    items.push(t.to_string());
-                                                }
-                                            }
-                                            d.new_tag.clear();
-                                            changed = true;
-                                            r.request_focus();
-                                        }
-                                    });
-                                }
-                                Value::List(items) => {
-                                    let mut text = items.join(", ");
-                                    if ui.add(egui::TextEdit::singleline(&mut text).desired_width(value_w)).changed() {
-                                        *items = text.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect();
-                                        changed = true;
-                                    }
-                                }
-                                Value::Text(t) => {
-                                    if ui.add(egui::TextEdit::singleline(t).desired_width(value_w)).changed() {
-                                        changed = true;
-                                    }
-                                }
-                                Value::Raw(r) => {
-                                    ui.set_max_width(value_w + 110.0);
-                                    ui.add(egui::Label::new(egui::RichText::new(r.trim()).monospace().size(12.0).color(weak)).wrap()).on_hover_text("Kept as written; edit it in the file's text");
-                                }
-                            }
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.small_button("×").on_hover_text("Remove this property").clicked() {
-                                    remove = Some(i);
-                                }
-                            });
-                          });
-                        }
-                    }
-                    if let Some(i) = remove {
-                        fm.fields.remove(i);
-                        changed = true;
-                    }
-                    if let Some(mut name) = d.new_prop.take() {
-                        let mut done = false;
-                        ui.horizontal(|ui| {
-                            let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text("Property name").desired_width(160.0));
-                            r.request_focus();
-                            if r.lost_focus() {
-                                let n = name.trim().replace(':', "");
-                                if ui.input(|i| i.key_pressed(Key::Enter)) && !n.is_empty() && fm.get(&n).is_none() {
-                                    let val = if n.eq_ignore_ascii_case("tags") { Value::List(Vec::new()) } else { Value::Text(String::new()) };
-                                    fm.fields.push((n, val));
-                                    changed = true;
-                                }
-                                done = true;
-                            }
-                        });
-                        if !done {
-                            d.new_prop = Some(name);
-                        }
-                    }
-                });
-                ui.add_space(12.0);
-            } else if ui.small_button("Add Properties").on_hover_text("Start a frontmatter block for this note").clicked() {
-                let mut fm = Frontmatter::default();
-                fm.set("tags", Value::List(Vec::new()));
-                d.fm = Some(fm);
-                changed = true;
-            }
+        if show_props && super::props::block(ui, d, &prop_icons) {
+            changed = true;
         }
         // ---- the text, colored like Markdown
         // The editor's own font; code (fenced blocks and `inline`) in the monospace one.

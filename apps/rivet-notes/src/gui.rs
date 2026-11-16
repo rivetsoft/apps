@@ -4,6 +4,7 @@
 
 mod draw;
 mod peek;
+mod props;
 mod prefs;
 mod read;
 
@@ -33,7 +34,16 @@ struct Doc {
     saved_at: Option<String>,
     /// A property being added: its name.
     new_prop: Option<String>,
-    new_tag: String,
+    /// The new property's type.
+    new_type: crate::props::PropType,
+    /// What's being typed into each list or tags property's "add" box.
+    item_input: std::collections::HashMap<String, String>,
+    /// Each property's type (worked out once, or chosen from its menu).
+    types: Vec<(String, crate::props::PropType)>,
+    /// A property being renamed: its row and the new name.
+    renaming: Option<(usize, String)>,
+    /// The properties block is open (not folded).
+    props_open: bool,
 }
 
 /// An editing command from the text's right-click menu, carried out on the next frame (once
@@ -298,7 +308,13 @@ impl NotesApp {
             return;
         };
         let (fm, body) = vault::split(&text);
-        self.doc = Some(Doc { path: p.to_path_buf(), fm, body: body.to_string(), dirty: false, edited_at: 0.0, disk: mtime(p), saved_at: None, new_prop: None, new_tag: String::new() });
+        self.doc = Some(Doc { path: p.to_path_buf(), fm, body: body.to_string(), dirty: false, edited_at: 0.0, disk: mtime(p), saved_at: None, new_prop: None,
+            new_type: crate::props::PropType::Text,
+            item_input: Default::default(),
+            types: Vec::new(),
+            renaming: None,
+            props_open: true,
+        });
         if let (Some(v), Some(dir)) = (&self.vault, p.parent()) {
             self.current_folder = dir.strip_prefix(v).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
         }
