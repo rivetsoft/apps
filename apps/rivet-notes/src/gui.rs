@@ -77,6 +77,8 @@ pub struct NotesApp {
     about_open: bool,
     shot: Option<rivet_kit::Shot>,
     edit_cmd: Option<EditCmd>,
+    /// The window title shown (it names the vault).
+    title: String,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -120,6 +122,7 @@ impl NotesApp {
             about_open: false,
             shot: screenshot.map(rivet_kit::Shot::new),
             edit_cmd: None,
+            title: String::new(),
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -650,6 +653,15 @@ impl eframe::App for NotesApp {
                 }
             }
             ctx.request_repaint_after(std::time::Duration::from_secs(5));
+        }
+        // The window's title names the vault (the toolbar no longer does).
+        let title = match &self.vault {
+            Some(_) => format!("{} – Rivet Notes", self.vault_name()),
+            None => "Rivet Notes".to_string(),
+        };
+        if title != self.title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title = title;
         }
         self.draw(ui, &ctx);
         if let Some(shot) = self.shot.as_mut() {

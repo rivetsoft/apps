@@ -174,82 +174,89 @@ impl NotesApp {
     fn toolbar(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            if !self.s.show_menubar {
-                let fg = v.text_color();
-                let btn = egui::Button::new("").min_size(Vec2::new(34.0, 32.0)).frame_when_inactive(false).corner_radius(r_sm());
-                let r = egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
-                    ui.set_min_width(220.0);
-                    if ui.add(egui::Button::new("Show Menubar").shortcut_text("Ctrl+M")).clicked() {
-                        self.s.show_menubar = true;
-                        self.s.save();
-                        ui.close();
-                    }
-                    ui.separator();
-                    self.menus(ui);
-                });
-                let c = r.0.rect.center();
-                for dy in [-4.5f32, 0.0, 4.5] {
-                    ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, fg));
-                }
-            }
-            // The vault switcher: the vault's name, with every vault one click away.
-            let vault_icon = self.icon(&ctx, &["folder-documents-symbolic", "folder-symbolic", "folder"], 16.0);
-            let name = self.vault_name();
-            let label = egui::RichText::new(&name).strong();
-            let b = match &vault_icon {
-                Some(t) => egui::Button::image_and_text(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color()), label),
-                None => egui::Button::new(label),
-            };
-            let fill = palette::mix(v.window_fill, v.text_color(), 0.04);
-            let (resp, _) = egui::containers::menu::MenuButton::from_button(b.fill(fill).corner_radius(r_md()).min_size(Vec2::new(150.0, 32.0)).right_text("     ")).ui(ui, |ui| {
-                ui.set_min_width(240.0);
-                ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
-                ui.label(egui::RichText::new("Vaults").small().weak());
-                self.vault_list(ui);
-            });
-            let c = Pos2::new(resp.rect.right() - 14.0, resp.rect.center().y);
-            let st = Stroke::new(1.6, v.weak_text_color());
-            ui.painter().line_segment([c + Vec2::new(-4.0, -2.0), c + Vec2::new(0.0, 2.0)], st);
-            ui.painter().line_segment([c + Vec2::new(0.0, 2.0), c + Vec2::new(4.0, -2.0)], st);
-            resp.on_hover_text(self.vault.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "Open a folder as a vault".into()));
-            // Search, on the location bar's raised surface.
-            let shadow = egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) };
-            let find = self.icon(&ctx, &["edit-find-symbolic", "system-search-symbolic"], 14.0);
-            let w = (ui.available_width() - 150.0).clamp(160.0, 520.0);
-            ui.allocate_ui_with_layout(Vec2::new(w, 32.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                egui::Frame::NONE.fill(fill).shadow(shadow).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 7)).show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        if let Some(t) = &find {
-                            ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.weak_text_color()));
-                        }
-                        ui.add_enabled(self.vault.is_some(), egui::TextEdit::singleline(&mut self.search).id(egui::Id::unique("notes-search")).frame(egui::Frame::NONE).hint_text("Search notes, or #tag").desired_width(f32::INFINITY));
-                    });
-                });
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // New note, and folders / tags.
-                let new_icon = self.icon(&ctx, &["document-new-symbolic", "list-add-symbolic"], 16.0);
-                let b = match &new_icon {
-                    Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
-                    None => egui::Button::new("New"),
-                };
-                if ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)").clicked() {
-                    self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
-                }
-                // The tabs of the sidebar's tabbed slot (when there is one), most recent last.
-                if let Some(i) = self.s.layout.tabbed() {
-                    ui.add_space(4.0);
-                    let slot = self.s.layout.slots[i].clone();
-                    for (k, p) in slot.panels.iter().enumerate().rev() {
-                        if ui.selectable_label(k == slot.active, crate::layout::title(*p)).on_hover_text("Ctrl+T switches").clicked() {
-                            self.s.layout.show(*p);
+        let full = ui.max_rect();
+        let mut left_end = full.left();
+        let mut right_start = full.right();
+        let row = ui
+            .horizontal(|ui| {
+                ui.set_min_height(32.0);
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if !self.s.show_menubar {
+                    let fg = v.text_color();
+                    let btn = egui::Button::new("").min_size(Vec2::new(34.0, 32.0)).frame_when_inactive(false).corner_radius(r_sm());
+                    let r = egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
+                        ui.set_min_width(220.0);
+                        if ui.add(egui::Button::new("Show Menubar").shortcut_text("Ctrl+M")).clicked() {
+                            self.s.show_menubar = true;
                             self.s.save();
+                            ui.close();
+                        }
+                        ui.separator();
+                        self.menus(ui);
+                    });
+                    let c = r.0.rect.center();
+                    for dy in [-4.5f32, 0.0, 4.5] {
+                        ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, fg));
+                    }
+                    left_end = r.0.rect.right();
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // New note, and the sidebar's tabs.
+                    let new_icon = self.icon(&ctx, &["document-new-symbolic", "list-add-symbolic"], 16.0);
+                    let b = match &new_icon {
+                        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
+                        None => egui::Button::new("New"),
+                    };
+                    if ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)").clicked() {
+                        self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                    }
+                    if let Some(i) = self.s.layout.tabbed() {
+                        ui.add_space(4.0);
+                        let slot = self.s.layout.slots[i].clone();
+                        for (k, p) in slot.panels.iter().enumerate().rev() {
+                            if ui.selectable_label(k == slot.active, crate::layout::title(*p)).on_hover_text("Ctrl+T switches").clicked() {
+                                self.s.layout.show(*p);
+                                self.s.save();
+                            }
                         }
                     }
+                    right_start = ui.min_rect().left();
+                });
+            })
+            .response
+            .rect;
+        // Search, centred on the window (and kept clear of the buttons either side), on the
+        // location bar's raised surface. Icon, hint and text share one centred line.
+        let cx = full.center().x;
+        let room = ((cx - left_end).min(right_start - cx) - 12.0) * 2.0;
+        let w = room.min(560.0);
+        if w < 120.0 {
+            return;
+        }
+        let rect = Rect::from_center_size(Pos2::new(cx, row.center().y), Vec2::new(w, 32.0));
+        let fill = palette::mix(v.window_fill, v.text_color(), 0.04);
+        let shadow = egui::Shadow { offset: [0, 1], blur: 6, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 90 } else { 40 }) };
+        let find = self.icon(&ctx, &["edit-find-symbolic", "system-search-symbolic"], 14.0);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        egui::Frame::NONE.fill(fill).shadow(shadow).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 0)).show(&mut child, |ui| {
+            ui.set_min_size(Vec2::new(w - 20.0, 32.0));
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if let Some(t) = &find {
+                    ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.weak_text_color()));
                 }
+                let font = fonts::ui_font(13.5);
+                ui.add_enabled(
+                    self.vault.is_some(),
+                    egui::TextEdit::singleline(&mut self.search)
+                        .id(egui::Id::unique("notes-search"))
+                        .frame(egui::Frame::NONE)
+                        .margin(egui::Margin::ZERO)
+                        .font(font)
+                        .align(Align2::LEFT_CENTER)
+                        .hint_text("Search notes, or #tag")
+                        .desired_width(f32::INFINITY),
+                );
             });
         });
     }
@@ -259,8 +266,9 @@ impl NotesApp {
         let v = ui.visuals().clone();
         ui.horizontal(|ui| {
             let n = self.notes.len();
-            if self.vault.is_some() {
-                ui.label(egui::RichText::new(format!("{n} note{}", if n == 1 { "" } else { "s" })).color(v.weak_text_color()));
+            if let Some(path) = &self.vault {
+                ui.label(egui::RichText::new(self.vault_name()).color(v.text_color())).on_hover_text(format!("{}\nSwitch vaults from File → Switch Vault", path.display()));
+                ui.label(egui::RichText::new(format!("·  {n} note{}", if n == 1 { "" } else { "s" })).color(v.weak_text_color()));
             }
             if let Some((m, bad)) = &self.note_msg {
                 ui.add_space(10.0);
