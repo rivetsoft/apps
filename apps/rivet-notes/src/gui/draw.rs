@@ -26,8 +26,13 @@ enum Pick {
     ShowInFiles(PathBuf),
     /// Show only notes with this tag (in the search field).
     OnlyTag(String),
-    FoldAll(bool),
+    /// Fold (true) or open everything in a panel.
+    FoldAll(bool, Browse),
     Reload,
+    /// Tags below the folders (true) or in their place.
+    TagsBelow(bool),
+    /// Fold or open a whole pane.
+    FoldPane(&'static str),
 }
 
 /// Comfortable menu rows, like Rivet's right-click menus.
@@ -226,12 +231,15 @@ impl NotesApp {
                 if ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)").clicked() {
                     self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
                 }
-                ui.add_space(4.0);
-                let before = self.s.browse;
-                ui.selectable_value(&mut self.s.browse, Browse::Tags, "Tags").on_hover_text("Notes by tag (Ctrl+T)");
-                ui.selectable_value(&mut self.s.browse, Browse::Folders, "Folders").on_hover_text("Notes by folder (Ctrl+T)");
-                if self.s.browse != before {
-                    self.s.save();
+                // Switching only matters while tags take the folders' place.
+                if !self.s.tags_below {
+                    ui.add_space(4.0);
+                    let before = self.s.browse;
+                    ui.selectable_value(&mut self.s.browse, Browse::Tags, "Tags").on_hover_text("Notes by tag (Ctrl+T)");
+                    ui.selectable_value(&mut self.s.browse, Browse::Folders, "Folders").on_hover_text("Notes by folder (Ctrl+T)");
+                    if self.s.browse != before {
+                        self.s.save();
+                    }
                 }
             });
         });
@@ -272,96 +280,66 @@ impl NotesApp {
         let notes: Vec<Note> = self.notes.iter().filter(|n| self.matches(n)).cloned().collect();
         let searching = !self.search.trim().is_empty();
         let collapsed: BTreeSet<String> = self.s.collapsed.iter().cloned().collect();
+        let data = SideData {
+            notes,
+            folders: self.folders.clone(),
+            tags: self.tag_counts(),
+            collapsed,
+            open,
+            root: root.clone(),
+            current: self.current_folder.clone(),
+            folder_icon,
+            note_icon,
+            tag_icon,
+        };
+        let below = self.s.tags_below;
         ui.add_space(2.0);
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            // Right-click empty space: the vault's own menu.
-            let bg = ui.interact(ui.max_rect(), egui::Id::unique("notes-side-bg"), Sense::click());
-            bg.context_menu(|ui| {
-                menu_style(ui);
-                if item(ui, "New Note…", "Ctrl+N") {
-                    pick = Some(Pick::NewNote(String::new()));
-                }
-                if item(ui, "Create New Folder…", "Shift+Ctrl+N") {
-                    pick = Some(Pick::NewFolder(String::new()));
-                }
-                ui.separator();
-                if item(ui, "Collapse All", "") {
-                    pick = Some(Pick::FoldAll(true));
-                }
-                if item(ui, "Expand All", "") {
-                    pick = Some(Pick::FoldAll(false));
-                }
-                ui.separator();
-                if item(ui, "Reload Vault", "F5") {
-                    pick = Some(Pick::Reload);
-                }
-                if item(ui, "Open in File Manager", "") {
-                    pick = Some(Pick::ShowInFiles(root.clone()));
+        if searching {
+            pane_header(ui, &format!("{} found", data.notes.len()), None, None, below, &mut pick);
+            egui::ScrollArea::vertical().id_salt("side-search").auto_shrink([false, false]).show(ui, |ui| {
+                for n in &data.notes {
+                    note_row(ui, n, 0, data.open.as_ref() == Some(&n.path), &data.note_icon, true, &mut pick, &data.root);
                 }
             });
-            if searching {
-                ui.label(egui::RichText::new(format!("{} found", notes.len())).small().weak());
-                ui.add_space(4.0);
-                for n in &notes {
-                    note_row(ui, n, 0, open.as_ref() == Some(&n.path), &note_icon, true, &mut pick, &root);
+        } else if below {
+            // Folders on top, tags in their own pane below; the line between them drags.
+            let tags_open = !data.collapsed.contains("pane:tags");
+            let total = ui.available_height();
+            let header_h = 30.0;
+            let handle_h = 8.0;
+            let tags_h = if tags_open { (total * self.s.tags_split).clamp(90.0, (total - 150.0).max(90.0)) } else { 0.0 };
+            let folders_h = (total - header_h * 2.0 - handle_h - tags_h).max(60.0);
+            pane_header(ui, "Folders", Some(Browse::Folders), None, below, &mut pick);
+            egui::ScrollArea::vertical().id_salt("side-folders").max_height(folders_h).min_scrolled_height(folders_h).auto_shrink([false, false]).show(ui, |ui| {
+                panel(ui, Browse::Folders, &data, &mut pick);
+            });
+            // The divider.
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), handle_h), Sense::drag());
+            let v = ui.visuals();
+            let col = if resp.hovered() || resp.dragged() { v.selection.bg_fill } else { v.widgets.noninteractive.bg_stroke.color };
+            ui.painter().line_segment([Pos2::new(r.left() + 6.0, r.center().y), Pos2::new(r.right() - 6.0, r.center().y)], Stroke::new(if resp.dragged() { 2.0 } else { 1.0 }, col));
+            if tags_open {
+                let resp = resp.on_hover_cursor(egui::CursorIcon::ResizeVertical).on_hover_text("Drag to share the room between folders and tags");
+                if resp.dragged() && total > 0.0 {
+                    self.s.tags_split = (self.s.tags_split - resp.drag_delta().y / total).clamp(0.15, 0.85);
                 }
-                return;
-            }
-            match self.s.browse {
-                Browse::Folders => {
-                    let folders = self.folders.clone();
-                    folder_tree(ui, "", 0, &folders, &notes, &collapsed, open.as_ref(), &folder_icon, &note_icon, &mut pick, &self.current_folder, &root);
-                }
-                Browse::Tags => {
-                    let tags = self.tag_counts();
-                    if tags.is_empty() {
-                        ui.add_space(6.0);
-                        ui.label(egui::RichText::new("No tags yet. Add them in a note's properties, or write #tag in its text.").small().weak());
-                    }
-                    let key = |t: &str| format!("#{}", t.to_lowercase());
-                    for (t, count) in &tags {
-                        let folded = collapsed.contains(&key(t));
-                        let h = group_header(ui, &format!("#{t}"), *count, !folded, &tag_icon);
-                        if h.clicked() {
-                            pick = Some(Pick::Fold(key(t)));
-                        }
-                        h.context_menu(|ui| {
-                            menu_style(ui);
-                            if item(ui, if folded { "Expand" } else { "Collapse" }, "") {
-                                pick = Some(Pick::Fold(key(t)));
-                            }
-                            if item(ui, &format!("Show Only #{t}"), "") {
-                                pick = Some(Pick::OnlyTag(t.clone()));
-                            }
-                            ui.separator();
-                            if item(ui, "Collapse All", "") {
-                                pick = Some(Pick::FoldAll(true));
-                            }
-                            if item(ui, "Expand All", "") {
-                                pick = Some(Pick::FoldAll(false));
-                            }
-                        });
-                        if !folded {
-                            for n in notes.iter().filter(|n| n.tags.iter().any(|x| x.eq_ignore_ascii_case(t))) {
-                                note_row(ui, n, 1, open.as_ref() == Some(&n.path), &note_icon, false, &mut pick, &root);
-                            }
-                        }
-                    }
-                    let untagged: Vec<&Note> = notes.iter().filter(|n| n.tags.is_empty()).collect();
-                    if !untagged.is_empty() {
-                        let folded = collapsed.contains("#");
-                        if group_header(ui, "Untagged", untagged.len(), !folded, &None).clicked() {
-                            pick = Some(Pick::Fold("#".into()));
-                        }
-                        if !folded {
-                            for n in untagged {
-                                note_row(ui, n, 1, open.as_ref() == Some(&n.path), &note_icon, false, &mut pick, &root);
-                            }
-                        }
-                    }
+                if resp.drag_stopped() {
+                    self.s.save();
                 }
             }
-        });
+            pane_header(ui, "Tags", Some(Browse::Tags), Some(tags_open), below, &mut pick);
+            if tags_open {
+                egui::ScrollArea::vertical().id_salt("side-tags").auto_shrink([false, false]).show(ui, |ui| {
+                    panel(ui, Browse::Tags, &data, &mut pick);
+                });
+            }
+        } else {
+            let kind = self.s.browse;
+            pane_header(ui, if kind == Browse::Tags { "Tags" } else { "Folders" }, Some(kind), None, below, &mut pick);
+            egui::ScrollArea::vertical().id_salt("side-main").auto_shrink([false, false]).show(ui, |ui| {
+                panel(ui, kind, &data, &mut pick);
+            });
+        }
         match pick {
             Some(Pick::Note(p)) => self.open_note(&p),
             Some(Pick::Fold(k)) => {
@@ -392,15 +370,32 @@ impl NotesApp {
                 }
             }
             Some(Pick::OnlyTag(t)) => self.search = format!("#{t}"),
-            Some(Pick::FoldAll(fold)) => {
-                self.s.collapsed = if fold {
-                    match self.s.browse {
-                        Browse::Folders => self.folders.clone(),
-                        Browse::Tags => self.tag_counts().into_iter().map(|(t, _)| format!("#{}", t.to_lowercase())).chain(["#".to_string()]).collect(),
+            Some(Pick::FoldAll(fold, kind)) => {
+                // Only that panel's groups: folders have plain names, tags start with #.
+                let is_tag = |k: &String| k.starts_with('#');
+                self.s.collapsed.retain(|k| k.starts_with("pane:") || if kind == Browse::Tags { !is_tag(k) } else { is_tag(k) });
+                if fold {
+                    match kind {
+                        Browse::Folders => self.s.collapsed.extend(self.folders.clone()),
+                        Browse::Tags => self.s.collapsed.extend(self.tag_counts().into_iter().map(|(t, _)| format!("#{}", t.to_lowercase())).chain(["#".to_string()])),
                     }
+                }
+                self.s.save();
+            }
+            Some(Pick::TagsBelow(b)) => {
+                self.s.tags_below = b;
+                if !b {
+                    self.s.browse = Browse::Folders;
+                }
+                self.s.save();
+            }
+            Some(Pick::FoldPane(p)) => {
+                let k = format!("pane:{p}");
+                if let Some(i) = self.s.collapsed.iter().position(|x| *x == k) {
+                    self.s.collapsed.remove(i);
                 } else {
-                    Vec::new()
-                };
+                    self.s.collapsed.push(k);
+                }
                 self.s.save();
             }
             Some(Pick::Reload) => self.rescan(),
@@ -872,6 +867,11 @@ impl NotesApp {
                     });
                     let vaults = self.s.vaults.clone();
                     let current = self.vault.clone();
+                    section(ui, "Sidebar", &mut |ui| {
+                        ui.label("Folders are the main panel. Tags can:");
+                        ui.radio_value(&mut self.s.tags_below, true, "Sit in their own pane below the folders");
+                        ui.radio_value(&mut self.s.tags_below, false, "Take the folders' place (switch with Ctrl+T or the toolbar)");
+                    });
                     section(ui, "Vaults", &mut |ui| {
                         if vaults.is_empty() {
                             ui.label(egui::RichText::new("None yet.").color(weak));
@@ -926,6 +926,152 @@ fn expand(p: &str) -> PathBuf {
         None if p == "~" => rivet_xdg::places::home(),
         None => PathBuf::from(p),
     }
+}
+
+/// What the sidebar's panels draw from.
+struct SideData {
+    notes: Vec<Note>,
+    folders: Vec<String>,
+    tags: Vec<(String, usize)>,
+    collapsed: BTreeSet<String>,
+    open: Option<PathBuf>,
+    root: PathBuf,
+    current: String,
+    folder_icon: Option<egui::TextureHandle>,
+    note_icon: Option<egui::TextureHandle>,
+    tag_icon: Option<egui::TextureHandle>,
+}
+
+/// One panel's contents: the folder tree, or the tags with their notes.
+fn panel(ui: &mut egui::Ui, kind: Browse, data: &SideData, pick: &mut Option<Pick>) {
+    // Right-click empty space: this panel's menu.
+    let bg = ui.interact(ui.max_rect(), egui::Id::unique(("notes-side-bg", kind == Browse::Tags)), Sense::click());
+    let root = &data.root;
+    bg.context_menu(|ui| {
+        menu_style(ui);
+        if item(ui, "New Note…", "Ctrl+N") {
+            *pick = Some(Pick::NewNote(String::new()));
+        }
+        if item(ui, "Create New Folder…", "Shift+Ctrl+N") {
+            *pick = Some(Pick::NewFolder(String::new()));
+        }
+        ui.separator();
+        if item(ui, "Collapse All", "") {
+            *pick = Some(Pick::FoldAll(true, kind));
+        }
+        if item(ui, "Expand All", "") {
+            *pick = Some(Pick::FoldAll(false, kind));
+        }
+        ui.separator();
+        if item(ui, "Reload Vault", "F5") {
+            *pick = Some(Pick::Reload);
+        }
+        if item(ui, "Open in File Manager", "") {
+            *pick = Some(Pick::ShowInFiles(root.clone()));
+        }
+    });
+    let open = data.open.as_ref();
+    match kind {
+        Browse::Folders => {
+            folder_tree(ui, "", 0, &data.folders, &data.notes, &data.collapsed, open, &data.folder_icon, &data.note_icon, pick, &data.current, root);
+        }
+        Browse::Tags => {
+            if data.tags.is_empty() {
+                ui.add_space(6.0);
+                ui.label(egui::RichText::new("No tags yet. Add them in a note's properties, or write #tag in its text.").small().weak());
+            }
+            let key = |t: &str| format!("#{}", t.to_lowercase());
+            for (t, count) in &data.tags {
+                let folded = data.collapsed.contains(&key(t));
+                let h = group_header(ui, &format!("#{t}"), *count, !folded, &data.tag_icon);
+                if h.clicked() {
+                    *pick = Some(Pick::Fold(key(t)));
+                }
+                h.context_menu(|ui| {
+                    menu_style(ui);
+                    if item(ui, if folded { "Expand" } else { "Collapse" }, "") {
+                        *pick = Some(Pick::Fold(key(t)));
+                    }
+                    if item(ui, &format!("Show Only #{t}"), "") {
+                        *pick = Some(Pick::OnlyTag(t.clone()));
+                    }
+                    ui.separator();
+                    if item(ui, "Collapse All", "") {
+                        *pick = Some(Pick::FoldAll(true, kind));
+                    }
+                    if item(ui, "Expand All", "") {
+                        *pick = Some(Pick::FoldAll(false, kind));
+                    }
+                });
+                if !folded {
+                    for n in data.notes.iter().filter(|n| n.tags.iter().any(|x| x.eq_ignore_ascii_case(t))) {
+                        note_row(ui, n, 1, open == Some(&n.path), &data.note_icon, false, pick, root);
+                    }
+                }
+            }
+            let untagged: Vec<&Note> = data.notes.iter().filter(|n| n.tags.is_empty()).collect();
+            if !untagged.is_empty() {
+                let folded = data.collapsed.contains("#");
+                if group_header(ui, "Untagged", untagged.len(), !folded, &None).clicked() {
+                    *pick = Some(Pick::Fold("#".into()));
+                }
+                if !folded {
+                    for n in untagged {
+                        note_row(ui, n, 1, open == Some(&n.path), &data.note_icon, false, pick, root);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A pane's title bar: its name (a triangle to fold it when `open` is given) and a menu for
+/// where the tags go.
+fn pane_header(ui: &mut egui::Ui, title: &str, kind: Option<Browse>, open: Option<bool>, below: bool, pick: &mut Option<Pick>) {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    let v = ui.visuals().clone();
+    let col = v.weak_text_color();
+    let mut x = rect.left() + 4.0;
+    if let Some(o) = open {
+        let c = Pos2::new(x + 6.0, rect.center().y);
+        let pts = if o { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
+        ui.painter().add(egui::Shape::convex_polygon(pts, if resp.hovered() { v.strong_text_color() } else { col }, Stroke::NONE));
+        x += 16.0;
+    }
+    ui.painter().text(Pos2::new(x, rect.center().y), Align2::LEFT_CENTER, title.to_uppercase(), fonts::ui_font(11.5), col);
+    if open.is_some() && resp.clicked() {
+        *pick = Some(Pick::FoldPane("tags"));
+    }
+    let Some(kind) = kind else { return };
+    // The panel menu (three dots, drawn), also on right-click.
+    let dots = Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::new(24.0, 22.0));
+    let mut menu = |ui: &mut egui::Ui| {
+        menu_style(ui);
+        ui.label(egui::RichText::new("Tags").small().weak());
+        if ui.radio(below, "Below the folders").clicked() {
+            *pick = Some(Pick::TagsBelow(true));
+            ui.close();
+        }
+        if ui.radio(!below, "In place of the folders (switch with Ctrl+T)").clicked() {
+            *pick = Some(Pick::TagsBelow(false));
+            ui.close();
+        }
+        ui.separator();
+        if item(ui, "Collapse All", "") {
+            *pick = Some(Pick::FoldAll(true, kind));
+        }
+        if item(ui, "Expand All", "") {
+            *pick = Some(Pick::FoldAll(false, kind));
+        }
+    };
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(dots));
+    let btn = egui::Button::new("").frame_when_inactive(false).min_size(dots.size()).corner_radius(r_sm());
+    let (r, _) = egui::containers::menu::MenuButton::from_button(btn).ui(&mut child, &mut menu);
+    for dx in [-5.0f32, 0.0, 5.0] {
+        ui.painter().circle_filled(r.rect.center() + Vec2::new(dx, 0.0), 1.6, col);
+    }
+    r.on_hover_text("Panel options");
+    resp.context_menu(menu);
 }
 
 /// A folder (and what's in it) in the tree, then its sub-folders.

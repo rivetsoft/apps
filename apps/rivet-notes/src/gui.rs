@@ -91,6 +91,7 @@ impl NotesApp {
         // Test hooks for checks.
         if let Ok(v) = std::env::var("RIVET_NOTES_BROWSE") {
             s.browse = if v == "tags" { Browse::Tags } else { Browse::Folders };
+            s.tags_below = v == "below";
         }
         match std::env::var("RIVET_NOTES_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
@@ -386,7 +387,17 @@ impl NotesApp {
             self.s.save();
         }
         if t {
-            self.s.browse = if self.s.browse == Browse::Tags { Browse::Folders } else { Browse::Tags };
+            if self.s.tags_below {
+                // Both are showing: Ctrl+T folds or opens the tags pane.
+                let k = "pane:tags".to_string();
+                if let Some(i) = self.s.collapsed.iter().position(|x| *x == k) {
+                    self.s.collapsed.remove(i);
+                } else {
+                    self.s.collapsed.push(k);
+                }
+            } else {
+                self.s.browse = if self.s.browse == Browse::Tags { Browse::Folders } else { Browse::Tags };
+            }
             self.s.save();
         }
         if p {
@@ -483,17 +494,23 @@ impl NotesApp {
         });
         ui.menu_button("View", |ui| {
             style(ui);
-            if ui.add(egui::RadioButton::new(self.s.browse == Browse::Folders, "By Folder")).clicked() {
+            if ui.add(egui::RadioButton::new(!self.s.tags_below && self.s.browse == Browse::Folders, "By Folder")).clicked() {
+                self.s.tags_below = false;
                 self.s.browse = Browse::Folders;
                 self.s.save();
                 ui.close();
             }
-            if ui.add(egui::RadioButton::new(self.s.browse == Browse::Tags, "By Tag")).clicked() {
+            if ui.add(egui::RadioButton::new(!self.s.tags_below && self.s.browse == Browse::Tags, "By Tag")).clicked() {
+                self.s.tags_below = false;
                 self.s.browse = Browse::Tags;
                 self.s.save();
                 ui.close();
             }
-            ui.label(egui::RichText::new("Ctrl+T switches").small().weak());
+            if ui.add(egui::RadioButton::new(self.s.tags_below, "Tags Below Folders")).clicked() {
+                self.s.tags_below = true;
+                self.s.save();
+                ui.close();
+            }
             ui.separator();
             let c = |ui: &mut egui::Ui, v: &mut bool, label: &str, sc: &str| {
                 let mut b = *v;
