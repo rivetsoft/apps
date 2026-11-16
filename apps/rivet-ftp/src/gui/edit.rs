@@ -174,7 +174,9 @@ impl FtpApp {
         let mut notes: Vec<(String, bool)> = Vec::new();
         let mut refresh = false;
         for (id, err) in done {
-            let Some(ed) = self.edits.iter_mut().find(|e| e.get_id == Some(id) || e.put_id == Some(id) || e.stat_id == Some(id) || e.refresh_id == Some(id)) else {
+            // Request numbers are per connection: only this tab's edits.
+            let here = self.conn.as_ref().map(|c| c.name.clone());
+            let Some(ed) = self.edits.iter_mut().find(|e| Some(&e.conn) == here.as_ref() && (e.get_id == Some(id) || e.put_id == Some(id) || e.stat_id == Some(id) || e.refresh_id == Some(id))) else {
                 rest.push((id, err));
                 continue;
             };
@@ -219,7 +221,8 @@ impl FtpApp {
             }
         }
         for (id, entry) in stats {
-            let Some(i) = self.edits.iter().position(|e| e.stat_id == Some(id) || e.refresh_id == Some(id)) else { continue };
+            let here = self.conn.as_ref().map(|c| c.name.clone());
+            let Some(i) = self.edits.iter().position(|e| Some(&e.conn) == here.as_ref() && (e.stat_id == Some(id) || e.refresh_id == Some(id))) else { continue };
             let ed = &mut self.edits[i];
             if ed.refresh_id == Some(id) {
                 ed.refresh_id = None;
@@ -263,9 +266,14 @@ impl FtpApp {
         ctx.request_repaint_after(std::time::Duration::from_millis(400));
         let current = self.conn.as_ref().map(|c| c.name.clone());
         let live = self.transfer.is_some();
+        // Connections open in another tab: that tab looks after their edits.
+        let elsewhere: Vec<String> = self.tabs.iter().filter_map(|t| t.conn_name()).collect();
         for i in 0..self.edits.len() {
             let ed = &mut self.edits[i];
             let here = live && current.as_deref() == Some(ed.conn.as_str());
+            if !here && elsewhere.contains(&ed.conn) {
+                continue;
+            }
             match (&ed.state, here) {
                 (EditState::Paused, true) => ed.state = EditState::Watching,
                 (EditState::Opening | EditState::Checking | EditState::Uploading, false) => {

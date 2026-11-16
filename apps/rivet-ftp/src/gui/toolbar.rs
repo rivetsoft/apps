@@ -85,7 +85,13 @@ impl FtpApp {
         });
         if clicked || (go && can) {
             match Connection::from_url("Quick connect", self.quick.trim()) {
-                Ok(c) => self.connect(c, ctx),
+                Ok(c) => {
+                    // A connected tab stays as it is: this one gets its own tab.
+                    if self.conn.is_some() {
+                        self.new_tab();
+                    }
+                    self.connect(c, ctx)
+                }
                 Err(e) => self.note = Some((e, true)),
             }
         }

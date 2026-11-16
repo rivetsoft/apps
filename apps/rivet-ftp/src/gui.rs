@@ -8,6 +8,7 @@ mod edit;
 mod logic;
 mod menus;
 mod prefs;
+mod tabs;
 mod preview;
 mod toolbar;
 
@@ -303,6 +304,13 @@ pub struct FtpApp {
 
     /// Server files open in editors.
     edits: Vec<edit::EditSession>,
+    /// Every tab; the open one's state is in the fields above (its slot holds a blank).
+    tabs: Vec<tabs::ConnTab>,
+    active: usize,
+    /// A background tab is swapped in (for its replies only).
+    in_background: bool,
+    /// Test hook RIVET_FTP_TABS=NAME,NAME: open these, each in a tab.
+    hook_tabs: Option<String>,
     /// The light box, when open.
     preview: Option<preview::PreviewState>,
     /// Test hook RIVET_FTP_PREVIEW=local:NAME or remote:NAME.
@@ -354,6 +362,14 @@ impl eframe::App for FtpApp {
         self.watch_palette(&ctx);
         self.apply_look(&ctx);
         self.poll(&ctx);
+        self.poll_background(&ctx);
+        if let Some(list) = self.hook_tabs.take() {
+            for name in list.split(',') {
+                if let Some(c) = self.store.find(name.trim()).cloned() {
+                    self.open_connection(c, &ctx, false);
+                }
+            }
+        }
         self.shortcuts(&ctx);
         self.keys(&ctx);
         let v = ctx.global_style().visuals.clone();
@@ -377,6 +393,11 @@ impl eframe::App for FtpApp {
             egui::Panel::bottom("status").show_separator_line(false).frame(st).show(ui, |ui| self.status_line(ui));
         }
         let left_pad = if self.s.show_sidebar { 0 } else { 12 };
+        // The tabs sit above the panes (beside the sidebar, not over it).
+        if self.tab_count() > 1 {
+            let bar = egui::Frame::NONE.fill(v.panel_fill).inner_margin(egui::Margin { left: left_pad, right: 12, top: 0, bottom: 6 });
+            egui::Panel::top("tabs").show_separator_line(false).frame(bar).show(ui, |ui| self.tab_bar(ui));
+        }
         let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: left_pad, right: 12, top: 0, bottom: 0 });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();

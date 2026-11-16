@@ -28,6 +28,10 @@ pub(super) enum Cmd {
     EditRemote,
     Properties,
     Preview,
+    NewTab,
+    CloseTab,
+    NextTab,
+    PrevTab,
     Up,
     LocalHome,
     ServerHome,
@@ -61,6 +65,12 @@ pub(super) const GLOBAL: &[(Modifiers, Key, Cmd)] = &[
     (CTRL, Key::U, Cmd::Upload),
     (CTRL, Key::D, Cmd::Download),
     (Modifiers::NONE, Key::F1, Cmd::Shortcuts),
+    (CTRL, Key::T, Cmd::NewTab),
+    (CTRL, Key::W, Cmd::CloseTab),
+    (CTRL, Key::PageDown, Cmd::NextTab),
+    (CTRL, Key::PageUp, Cmd::PrevTab),
+    (CTRL, Key::Tab, Cmd::NextTab),
+    (CTRL_SHIFT, Key::Tab, Cmd::PrevTab),
     (CTRL_SHIFT, Key::N, Cmd::NewFolder),
 ];
 
@@ -184,6 +194,16 @@ impl FtpApp {
                 p.sort = crate::listing::Sort { col, desc: if p.sort.col == col { p.sort.desc } else { col != crate::listing::SortCol::Name } };
                 let order = p.sort;
                 crate::listing::sort_by(&mut p.entries, order);
+            }
+            Cmd::NewTab => self.new_tab(),
+            Cmd::CloseTab => self.close_tab(self.active),
+            Cmd::NextTab => {
+                let n = self.tab_count();
+                self.switch_tab((self.active + 1) % n);
+            }
+            Cmd::PrevTab => {
+                let n = self.tab_count();
+                self.switch_tab((self.active + n - 1) % n);
             }
             Cmd::Preview => {
                 if side == Side::Local || self.transfer.is_some() {
@@ -326,6 +346,7 @@ impl FtpApp {
             self.item(ui, "Open in Editor", Cmd::EditRemote, one_file);
             self.item(ui, "Properties", Cmd::Properties, sel_focus > 0 && (focus == Side::Local || connected));
             ui.separator();
+            self.item(ui, "New Tab", Cmd::NewTab, true);
             self.item(ui, "New Connection…", Cmd::NewConnection, true);
             ui.menu_button("Connect To", |ui| {
                 menu_style(ui);
@@ -335,7 +356,7 @@ impl FtpApp {
                 for c in self.store.items.clone() {
                     if ui.button(&c.name).clicked() {
                         let ctx = ui.ctx().clone();
-                        self.connect(c, &ctx);
+                        self.open_connection(c, &ctx, false);
                         ui.close();
                     }
                 }
@@ -344,6 +365,7 @@ impl FtpApp {
             self.item(ui, "Edit Connection…", Cmd::EditConnection, saved_conn);
             self.item(ui, "Disconnect", Cmd::Disconnect, self.conn.is_some());
             ui.separator();
+            self.item(ui, if self.tab_count() > 1 { "Close Tab" } else { "Close Tab (Disconnect)" }, Cmd::CloseTab, self.tab_count() > 1 || self.conn.is_some());
             self.item(ui, "Close Window", Cmd::Quit, true);
         });
         ui.menu_button("Edit", |ui| {

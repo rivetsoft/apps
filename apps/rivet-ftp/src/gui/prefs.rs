@@ -593,7 +593,7 @@ impl FtpApp {
                                 && let Some(c) = self.store.find(&name).cloned()
                             {
                                 let ctx = ui.ctx().clone();
-                                self.connect(c, &ctx);
+                                self.open_connection(c, &ctx, false);
                             }
                         });
                     });
@@ -704,6 +704,10 @@ fn cmd_label(c: Cmd) -> &'static str {
         Cmd::EditRemote => "Open a server file in an editor",
         Cmd::Properties => "Properties and permissions",
         Cmd::Preview => "Preview (pictures, video, music, code)",
+        Cmd::NewTab => "New tab",
+        Cmd::CloseTab => "Close the tab",
+        Cmd::NextTab => "Next tab",
+        Cmd::PrevTab => "Previous tab",
         Cmd::Up => "Up a folder",
         Cmd::LocalHome => "Home folder",
         Cmd::ServerHome => "Server home",

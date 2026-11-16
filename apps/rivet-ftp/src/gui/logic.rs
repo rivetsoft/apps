@@ -58,6 +58,10 @@ impl FtpApp {
             keys_asked: false,
             new_key: None,
             edits: Vec::new(),
+            tabs: vec![Default::default()],
+            active: 0,
+            in_background: false,
+            hook_tabs: std::env::var("RIVET_FTP_TABS").ok(),
             preview: None,
             hook_preview: std::env::var("RIVET_FTP_PREVIEW").ok(),
             apps: None,
@@ -272,8 +276,11 @@ impl FtpApp {
                         self.remote.selected.retain(|n| names.contains(n));
                         self.remote.loading = false;
                         self.remote.error = None;
-                        if let Some(spec) = self.hook_send.take() {
-                            self.run_send_hook(&spec);
+                        // Test hook: in the tab (folder) that has the named files.
+                        if let Some(spec) = self.hook_send.take()
+                            && !self.run_send_hook(&spec)
+                        {
+                            self.hook_send = Some(spec);
                         }
                         if let Some(name) = self.hook_preview.clone().and_then(|h| h.strip_prefix("remote:").map(str::to_string)) {
                             self.hook_preview = None;
@@ -651,14 +658,18 @@ impl FtpApp {
         }
     }
 
-    fn run_send_hook(&mut self, spec: &str) {
+    /// Returns false when none of the named files are here (so another tab can try).
+    fn run_send_hook(&mut self, spec: &str) -> bool {
+        let mut found = false;
         for part in spec.split(';') {
             let Some((dir, names)) = part.split_once(':') else { continue };
             let side = if dir.trim() == "up" { Side::Local } else { Side::Remote };
             let wanted: Vec<&str> = names.split(',').map(str::trim).collect();
             let items: Vec<Entry> = self.pane_ref(side).entries.iter().filter(|e| wanted.contains(&e.name.as_str())).cloned().collect();
+            found |= !items.is_empty();
             self.transfer_items(side, items);
         }
+        found
     }
 
     /// Read the SSH keys in the background, once (until `reload_keys`).

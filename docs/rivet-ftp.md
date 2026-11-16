@@ -55,6 +55,8 @@ All of these are also in the menus, and in Help → Keyboard Shortcuts.
 | Ctrl+M, F9, F8 | Show or hide the menu bar, connections, transfers |
 | Ctrl+, | Preferences |
 | F5 | Refresh |
+| Ctrl+T / Ctrl+W | New tab / close the tab |
+| Ctrl+Tab, Ctrl+PageDown / PageUp | Next / previous tab |
 
 ## Where things are kept
 

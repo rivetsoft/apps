@@ -11,6 +11,7 @@ of any of them. ✅ done · 🟡 partly · ⬜ not yet.
 | SFTP | ✅ | Through OpenSSH: keys, agent, `~/.ssh/config`, known_hosts, jump hosts all apply |
 | Saved connections (bookmarks) | ✅ | Plain file, shared with the command line and `ssh` |
 | Quick connect | ✅ | |
+| Several connections at once, in tabs | ✅ | Each tab has its own panes and transfers; background tabs keep transferring |
 | Categories for saved connections, folding in the sidebar | ✅ | Also `--category` on the command line |
 | SSH keys: choose per connection, manage, make new | ✅ | Preferences → SSH Keys |
 | Passwords and key passphrases | ✅ | Asked when needed, handed to ssh privately (askpass) |

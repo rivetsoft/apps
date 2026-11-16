@@ -120,6 +120,10 @@ impl FtpApp {
 
     /// Transfer answers for preview downloads. Returns the rest.
     pub(super) fn preview_replies(&mut self, done: Vec<(u64, Option<String>)>) -> Vec<(u64, Option<String>)> {
+        // The light box belongs to the open tab.
+        if self.in_background {
+            return done;
+        }
         let Some(p) = self.preview.as_mut() else { return done };
         let mut rest = Vec::new();
         for (id, err) in done {

@@ -128,13 +128,21 @@ impl FtpApp {
                     };
                     ui.painter().with_clip_rect(text_rect).galley(Pos2::new(text_rect.left(), rect.center().y - galley.size().y / 2.0), galley, fg);
                     let resp = resp.on_hover_ui(|ui| connection_tooltip(ui, c));
+                    // Open in another tab: a dot, like the tab's own.
+                    if !current && self.tab_with(&c.name).is_some() {
+                        ui.painter().circle_filled(Pos2::new(rect.right() - 10.0, rect.center().y), 3.5, status(&ctx).success);
+                    }
                     if resp.clicked() && !current {
-                        self.connect(c.clone(), &ctx);
+                        self.open_connection(c.clone(), &ctx, false);
                     }
                     resp.context_menu(|ui| {
                         menu_style(ui);
                         if ui.button("Connect").clicked() {
-                            self.connect(c.clone(), &ctx);
+                            self.open_connection(c.clone(), &ctx, false);
+                            ui.close();
+                        }
+                        if self.tab_with(&c.name).is_none() && ui.button("Connect in New Tab").clicked() {
+                            self.open_connection(c.clone(), &ctx, true);
                             ui.close();
                         }
                         if ui.button("Edit…").clicked() {
