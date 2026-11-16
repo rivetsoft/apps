@@ -160,7 +160,9 @@ impl NotesApp {
             let r = ui.max_rect();
             ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
             // The note's page; centered text keeps to a column in the middle of it.
-            let page = r.shrink2(Vec2::new(28.0, 18.0));
+            // The breadcrumbs sit near the page's top edge.
+            let top = if self.s.show_breadcrumbs && self.doc.is_some() { 10.0 } else { 18.0 };
+            let page = Rect::from_min_max(r.min + Vec2::new(28.0, top), r.max - Vec2::new(28.0, 18.0));
             self.page_rect = page;
             let col = if self.doc.as_ref().is_some_and(|d| self.s.centered_for(&d.path)) {
                 let w = page.width().min(super::peek::CENTERED_WIDTH * fonts::scale().max(1.0));
@@ -552,7 +554,6 @@ impl NotesApp {
         let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
         let page = self.page_rect;
         let mut title_commit: Option<String> = None;
-        let mut crumb_pick: Option<String> = None;
         let show_crumbs = self.s.show_breadcrumbs;
         let vault_name = self.vault_name();
         let vault_icon = self.icon(&ctx, &["folder-symbolic"], 13.0);
@@ -563,45 +564,32 @@ impl NotesApp {
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
-        // ---- breadcrumbs: the vault, its folders and the file; a folder shows it in the sidebar
+        // ---- breadcrumbs: where the note is (vault › folders › file), just to read
         if show_crumbs {
             let rel = d.path.strip_prefix(&vault).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
             let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
-            ui.horizontal(|ui| {
-                ui.set_min_height(24.0);
-                ui.spacing_mut().item_spacing.x = 2.0;
-                let mut crumb = |ui: &mut egui::Ui, text: &str, folder: Option<String>, last: bool| {
-                    let col = if last { v.text_color() } else { weak };
-                    let b = egui::Button::new(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).frame_when_inactive(false).min_size(Vec2::new(0.0, 22.0)).corner_radius(r_sm());
-                    match folder {
-                        Some(f) => {
-                            let tip = if f.is_empty() { "Show the top of the vault".to_string() } else { format!("Show \"{f}\" in the sidebar") };
-                            if ui.add(b).on_hover_text(tip).clicked() {
-                                crumb_pick = Some(f);
-                            }
-                        }
-                        None => {
-                            ui.add_space(5.0);
-                            ui.label(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).on_hover_text(d.path.display().to_string());
-                        }
-                    }
-                };
+            let font = fonts::ui_font(12.5);
+            let row = ui.horizontal(|ui| {
+                ui.set_min_height(20.0);
+                ui.spacing_mut().item_spacing.x = 6.0;
                 if let Some(t) = &vault_icon {
                     ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(13.0)).tint(weak));
                 }
-                crumb(ui, &vault_name, Some(String::new()), parts.is_empty());
+                ui.label(egui::RichText::new(&vault_name).font(font.clone()).color(weak));
                 for (k, p) in parts.iter().enumerate() {
-                    ui.label(egui::RichText::new("›").font(fonts::ui_font(12.5)).color(weak.gamma_multiply(0.7)));
-                    let last = k + 1 == parts.len();
-                    let folder = (!last).then(|| parts[..=k].join("/"));
-                    crumb(ui, p, folder, last);
+                    ui.label(egui::RichText::new("›").font(font.clone()).color(weak.gamma_multiply(0.7)));
+                    let col = if k + 1 == parts.len() { v.text_color() } else { weak };
+                    ui.label(egui::RichText::new(*p).font(font.clone()).color(col));
                 }
             });
+            row.response.on_hover_text(d.path.display().to_string());
             // A hairline under the bar sets it apart from the note.
-            let y = ui.cursor().top() + 3.0;
+            let y = ui.cursor().top() + 4.0;
             let r = ui.max_rect();
             ui.painter().line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], Stroke::new(1.0, palette::mix(v.extreme_bg_color, v.text_color(), 0.08)));
-            ui.add_space(14.0);
+            ui.add_space(26.0);
+        } else {
+            ui.add_space(8.0);
         }
         // The title can be edited in place: Enter (or clicking away) keeps it, Esc puts it back.
         let title_id = egui::Id::unique("note-title");
@@ -611,7 +599,7 @@ impl NotesApp {
                 .id(title_id)
                 .frame(egui::Frame::NONE)
                 .margin(egui::Margin::ZERO)
-                .font(egui::FontId::new(22.0 * fonts::scale(), rivet_look::live::editor_bold_family()))
+                .font(egui::FontId::new(25.0 * fonts::scale(), rivet_look::live::editor_bold_family()))
                 .text_color(v.strong_text_color())
                 .hint_text("Untitled")
                 .desired_width(f32::INFINITY),
@@ -630,7 +618,7 @@ impl NotesApp {
                 }
             }
         }
-        ui.add_space(10.0);
+        ui.add_space(18.0);
         let mut changed = false;
         // ---- properties (the frontmatter)
         if show_props && super::props::block(ui, d, &prop_icons) {
@@ -809,14 +797,6 @@ impl NotesApp {
         }
         if let Some(t) = title_commit {
             self.retitle(&t);
-        }
-        if let Some(f) = crumb_pick {
-            // Show the folder: open it and its parents in the sidebar, and make it where new
-            // notes go.
-            self.s.collapsed.retain(|k| !(f == *k || f.starts_with(&format!("{k}/"))));
-            self.s.show_sidebar = true;
-            self.current_folder = f;
-            self.s.save();
         }
         if let Some(c) = edit {
             self.edit_cmd = Some(c);

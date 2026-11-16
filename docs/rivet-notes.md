@@ -44,8 +44,7 @@ the list and leaves the folder alone).
 - **The title** at the top of a note can be edited in place: Enter or clicking away keeps it,
   Esc puts it back. It changes the `title` property when the note has one, and renames the file
   when its name was the title (or there's no `title` property).
-- **Breadcrumbs** above the title show the vault, folders and file; clicking the vault or a
-  folder shows it in the sidebar. View → Breadcrumbs (or Preferences → Appearance → Window)
+- **Breadcrumbs** above the title show the vault, folders and file. View → Breadcrumbs (or Preferences → Appearance → Window)
   hides the bar.
 
 ## Formatting
