@@ -3,6 +3,7 @@
 //! apps' shared look: theme and desktop colors, icons, fonts, in-app windows.
 
 mod draw;
+mod live_edit;
 mod peek;
 mod props;
 mod quick;
@@ -151,6 +152,10 @@ impl NotesApp {
         // Test hook: RIVET_NOTES_NO_STATUS hides the status bar.
         if std::env::var_os("RIVET_NOTES_NO_STATUS").is_some() {
             s.show_statusbar = false;
+        }
+        // Test hook: RIVET_NOTES_LIVE turns live mode on.
+        if std::env::var_os("RIVET_NOTES_LIVE").is_some() {
+            s.live_mode = true;
         }
         if std::env::var_os("RIVET_NOTES_PEEK").is_some() {
             s.show_peek = true;
@@ -805,6 +810,7 @@ impl NotesApp {
             c(ui, &mut self.s.show_properties, "Properties", "");
             c(ui, &mut self.s.show_sidebar, "Sidebar", "F9");
             c(ui, &mut self.s.show_peek, "Peek", "F11");
+            c(ui, &mut self.s.live_mode, "Live Mode", "");
             c(ui, &mut self.s.show_breadcrumbs, "Breadcrumbs", "");
             c(ui, &mut self.s.centered, "Center Notes by Default", "");
             c(ui, &mut self.s.show_menubar, "Menubar", "Ctrl+M");

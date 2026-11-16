@@ -247,6 +247,14 @@ impl NotesApp {
                                     let (fams, monos) = fonts_lists.clone().unwrap_or_default();
                                     let desktop = fonts::desktop_font_cached().map(|(f, _)| f).unwrap_or_else(|| "Sans".into());
                                     let system_mono = fonts::system_mono_name();
+                                    section(ui, "Editing mode", &mut |ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.selectable_value(&mut self.s.live_mode, false, "Source").on_hover_text("Markdown as written, with colors");
+                                            ui.selectable_value(&mut self.s.live_mode, true, "Live").on_hover_text("Rendered, except the line you're editing");
+                                        });
+                                        ui.add_space(4.0);
+                                        hint(ui, "Live: you still write Markdown, but each line shows rendered once you leave it.");
+                                    });
                                     section(ui, "Fonts", &mut |ui| {
                                         grid(ui, "notes-fonts", &mut |ui| {
                                             ui.label("Interface");

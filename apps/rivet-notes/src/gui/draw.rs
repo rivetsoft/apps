@@ -576,6 +576,7 @@ impl NotesApp {
         let mut fmt_pick: Option<crate::format::Fmt> = None;
         let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
         let page = self.page_rect;
+        let live_on = self.s.live_mode;
         let mut title_commit: Option<String> = None;
         let show_crumbs = self.s.show_breadcrumbs;
         let vault_name = self.vault_name();
@@ -651,7 +652,26 @@ impl NotesApp {
         // The editor's own font; code (fenced blocks and `inline`) in the monospace one.
         let font = egui::FontId::new(editor_size * fonts::scale(), rivet_look::live::editor_family());
         let mono = egui::FontId::monospace(editor_size * 0.92 * fonts::scale());
+        // Live mode: rendered except on the line being edited.
+        let live_raw = if live_on { super::live_edit::raw_range(&ctx, egui::Id::unique("note-body"), &d.body) } else { None };
+        let live_look = super::live_edit::LiveLook {
+            size: editor_size * fonts::scale(),
+            line_spacing,
+            text: v.text_color(),
+            strong: v.strong_text_color(),
+            weak,
+            link: v.hyperlink_color,
+            tag: accent_p,
+            accent: accent_p,
+            code_bg: palette::mix(v.extreme_bg_color, v.text_color(), 0.06),
+            code: colors.string,
+        };
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
+            if live_on {
+                let mut job = super::live_edit::job(buf.as_str(), live_raw, &live_look, &colors);
+                job.wrap.max_width = wrap;
+                return ui.fonts_mut(|f| f.layout_job(job));
+            }
             let mut job = highlight::layout(buf.as_str(), "note.md", &colors, font.clone());
             mono_code(&mut job, buf.as_str(), &mono);
             // Roomier lines than the interface's (Preferences → Editor → Line spacing).
@@ -729,6 +749,14 @@ impl NotesApp {
                 .hint_text("Write in Markdown…")
                 .layouter(&mut layouter)
                 .show(ui);
+            // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
+            if live_on
+                && let Some(b) = super::live_edit::decorate(ui, &d.body, live_raw, &out, &live_look)
+                && let Some(c) = d.body.as_bytes().get(b).copied()
+            {
+                d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });
+                changed = true;
+            }
             // Where a selection sits on screen, for the format bar.
             if let Some(range) = out.cursor_range
                 && !range.is_empty()

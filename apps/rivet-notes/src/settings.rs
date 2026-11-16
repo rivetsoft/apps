@@ -38,6 +38,9 @@ pub struct Settings {
     pub mono_font: String,
     /// The editor's text size in points.
     pub editor_size: f32,
+    /// Live mode: Markdown shows rendered except on the line being edited (else plain
+    /// Markdown with colors).
+    pub live_mode: bool,
     /// Line height as a multiple of the text size.
     pub line_spacing: f32,
     /// The note's text in a centered column (else the full width of the window), for notes
@@ -77,6 +80,7 @@ impl Default for Settings {
             mono_font: String::new(),
             editor_size: 15.0,
             line_spacing: 1.6,
+            live_mode: false,
             centered: false,
             note_widths: Vec::new(),
             daily_notes: false,
@@ -136,6 +140,7 @@ impl Settings {
                 "split" => s.layout.split = v.parse::<f32>().unwrap_or(0.4).clamp(0.15, 0.85),
                 "note_width" => s.centered = v == "centered",
                 "show_peek" => s.show_peek = b,
+                "edit_mode" => s.live_mode = v == "live",
                 "show_breadcrumbs" => s.show_breadcrumbs = b,
                 "daily_notes" => s.daily_notes = b,
                 "daily_folder" => s.daily_folder = v.trim_matches('/').to_string(),
@@ -169,7 +174,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nshow_breadcrumbs={}\ndaily_notes={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nedit_mode={}\nshow_breadcrumbs={}\ndaily_notes={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -186,6 +191,7 @@ impl Settings {
             self.line_spacing,
             if self.centered { "centered" } else { "full" },
             self.show_peek,
+            if self.live_mode { "live" } else { "source" },
             self.show_breadcrumbs,
             self.daily_notes,
             self.daily_folder.replace('\n', ""),

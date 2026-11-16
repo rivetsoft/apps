@@ -67,6 +67,19 @@ Optional features, turned on in Preferences → Modules.
   the + button (which then offers New Note or Daily Note) opens today's note, making it
   with a `daily` tag when it isn't there yet.
 
+## Live mode
+
+Two ways to edit (Preferences → Editor → Editing mode, Peek's Display card, View → Live Mode,
+or Quick Actions):
+
+- **Source**: the Markdown as written, colored.
+- **Live**: you still write Markdown, but every line except the one you're on shows rendered:
+  the marks (`**`, `#`, backticks, link addresses…) fold away, headings show at their size
+  (also while you edit them, with the `#` marks faint), lists get bullets, tasks get check boxes
+  you can click, quotes get a bar, `---` becomes a rule, and code blocks are colored for their
+  language with their fences tucked away until you move into the block. With the keyboard
+  elsewhere, the whole note shows rendered.
+
 ## Formatting
 
 Keys that turn the selection (or the word under the cursor) into Markdown, and back again when

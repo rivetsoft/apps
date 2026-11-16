@@ -48,6 +48,13 @@ impl NotesApp {
                     });
                     ui.add_space(4.0);
                 }
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    segment(ui, &mut self.s.live_mode, false, "Source").on_hover_text("Markdown as written, with colors");
+                    segment(ui, &mut self.s.live_mode, true, "Live").on_hover_text("Rendered, except the line you're editing");
+                });
+                ui.add_space(2.0);
                 ui.checkbox(&mut self.s.show_properties, "Show properties");
                 if self.s != before {
                     self.s.save();
@@ -150,10 +157,12 @@ fn rows(ui: &mut egui::Ui, items: &[(&str, String)]) {
 }
 
 /// One half of a two-way switch.
-fn segment(ui: &mut egui::Ui, value: &mut bool, this: bool, label: &str) {
-    if ui.selectable_label(*value == this, label).clicked() {
+fn segment(ui: &mut egui::Ui, value: &mut bool, this: bool, label: &str) -> egui::Response {
+    let r = ui.selectable_label(*value == this, label);
+    if r.clicked() {
         *value = this;
     }
+    r
 }
 
 fn chip(ui: &mut egui::Ui, text: &str, fill: Color32, fg: Color32) {

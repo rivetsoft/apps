@@ -28,6 +28,7 @@ enum Cmd {
     Menubar,
     Statusbar,
     Centered,
+    LiveMode,
     Theme(Mode),
     Preferences,
     Reload,
@@ -71,6 +72,7 @@ impl NotesApp {
         add("View", "Breadcrumbs", "", Some(self.s.show_breadcrumbs), Cmd::Breadcrumbs, true);
         add("View", "Menu Bar", "Ctrl+M", Some(self.s.show_menubar), Cmd::Menubar, true);
         add("View", "Status Bar", "", Some(self.s.show_statusbar), Cmd::Statusbar, true);
+        add("Editor", "Live Mode", "", Some(self.s.live_mode), Cmd::LiveMode, true);
         add("View", "Center Notes by Default", "", Some(self.s.centered), Cmd::Centered, true);
         add("Theme", "Follow System", "", Some(self.s.theme == Mode::System && !self.s.follow_desktop_colors), Cmd::Theme(Mode::System), true);
         add("Theme", "Light", "", Some(self.s.theme == Mode::Light && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Light), true);
@@ -188,6 +190,7 @@ impl NotesApp {
             Cmd::Menubar => self.s.show_menubar = !self.s.show_menubar,
             Cmd::Statusbar => self.s.show_statusbar = !self.s.show_statusbar,
             Cmd::Centered => self.s.centered = !self.s.centered,
+            Cmd::LiveMode => self.s.live_mode = !self.s.live_mode,
             Cmd::Theme(m) => {
                 self.s.theme = m;
                 self.s.follow_desktop_colors = false;
