@@ -55,7 +55,7 @@ like `rvft` for Rivet FTP) and press Enter. With nothing typed it lists the most
 notes. Shift+Ctrl+P opens Quick Actions: every command and option by name, with on / off options
 ticked. Both are the same panel as Rivet Files' (shared in `rivet_look::quick`).
 
-The status bar shows the vault, how many notes it has and the open note's words, plus any
+The status bar shows the vault (muted, with a vault icon) and the open note's words, plus any
 problem (in red); View → Status Bar hides it.
 
 ## Modules

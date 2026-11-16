@@ -332,11 +332,14 @@ impl NotesApp {
     fn status_line(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
+        let vault_icon = self.icon(&ctx, &["vault-symbolic", "folder-symbolic"], 14.0);
         ui.horizontal(|ui| {
-            let n = self.notes.len();
-            if let Some(path) = &self.vault {
-                ui.label(egui::RichText::new(self.vault_name()).color(v.text_color())).on_hover_text(format!("{}\nSwitch vaults from File → Switch Vault", path.display()));
-                ui.label(egui::RichText::new(format!("·  {n} note{}", if n == 1 { "" } else { "s" })).color(v.weak_text_color()));
+            if let Some(path) = self.vault.clone() {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if let Some(t) = &vault_icon {
+                    ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.weak_text_color()));
+                }
+                ui.label(egui::RichText::new(self.vault_name()).color(v.weak_text_color())).on_hover_text(format!("{}\nSwitch vaults from File → Switch Vault", path.display()));
             }
             // Only problems show here (no activity); they stay until the next one.
             if let Some((m, true)) = &self.note_msg {
@@ -580,7 +583,7 @@ impl NotesApp {
         let mut title_commit: Option<String> = None;
         let show_crumbs = self.s.show_breadcrumbs;
         let vault_name = self.vault_name();
-        let vault_icon = self.icon(&ctx, &["folder-symbolic"], 13.0);
+        let vault_icon = self.icon(&ctx, &["vault-symbolic", "folder-symbolic"], 13.0);
         let prop_icons = super::props::PropIcons {
             tag: self.icon(&ctx, &["tag-symbolic"], 14.0),
             link: self.icon(&ctx, &["insert-link-symbolic", "emblem-symbolic-link"], 14.0),
