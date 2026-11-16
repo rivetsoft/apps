@@ -293,14 +293,14 @@ impl NotesApp {
                                         use crate::layout::Layout;
                                         let stacked = self.s.layout.is_stacked();
                                         let shown = self.s.layout.slots[0].shown();
-                                        if ui.radio(!stacked, "Folders and tags as tabs (switch with Ctrl+T)").clicked() {
-                                            self.s.layout = Layout { split: self.s.layout.split, ..Layout::tabs(shown) };
-                                        }
-                                        if ui.radio(stacked, "Stacked: each in its own pane").clicked() && !stacked {
-                                            self.s.layout = Layout { split: self.s.layout.split, ..Layout::stacked() };
-                                        }
-                                        ui.add_space(6.0);
-                                        hint(ui, "You can also drag a panel's title in the sidebar: onto another panel to make tabs, or to its top or bottom edge to stack them.");
+                                        ui.horizontal(|ui| {
+                                            if ui.selectable_label(!stacked, "Tabs").on_hover_text("Folders and tags share the sidebar (Ctrl+T switches)").clicked() && stacked {
+                                                self.s.layout = Layout { split: self.s.layout.split, ..Layout::tabs(shown) };
+                                            }
+                                            if ui.selectable_label(stacked, "Stacked").on_hover_text("Tags below folders").clicked() && !stacked {
+                                                self.s.layout = Layout { split: self.s.layout.split, ..Layout::stacked() };
+                                            }
+                                        });
                                     });
                                 }
                                 Page::Vaults => {
@@ -337,9 +337,6 @@ impl NotesApp {
                                         if ui.button("Open Folder as Vault…").clicked() {
                                             ask_vault = true;
                                         }
-                                    });
-                                    section(ui, "About vaults", &mut |ui| {
-                                        hint(ui, "A vault is any folder: its Markdown files are the notes, its sub-folders their folders. Properties are the frontmatter at the top of each note. Folders and notes starting with a dot (like .git) are left out, and nothing is added to the folder.");
                                     });
                                 }
                                 Page::Keyboard => {

@@ -1396,16 +1396,14 @@ fn slot_header(ui: &mut egui::Ui, index: usize, slot: &crate::layout::Slot, open
     let dots = Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::new(24.0, 22.0));
     let mut menu = |ui: &mut egui::Ui| {
         menu_style(ui);
-        ui.label(egui::RichText::new("Panels").small().weak());
-        if ui.radio(!stacked, "As tabs").clicked() {
+        if ui.radio(!stacked, "Tabs").clicked() {
             *pick = Some(Pick::Preset(Layout::tabs(shown)));
             ui.close();
         }
-        if ui.radio(stacked, "Stacked: tags below folders").clicked() {
+        if ui.radio(stacked, "Stacked").clicked() {
             *pick = Some(Pick::Preset(Layout::stacked()));
             ui.close();
         }
-        ui.label(egui::RichText::new("Or drag a panel's title onto another panel").small().weak());
         ui.separator();
         if item(ui, "Collapse All", "") {
             *pick = Some(Pick::FoldAll(true, shown));
