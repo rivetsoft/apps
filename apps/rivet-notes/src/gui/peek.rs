@@ -30,6 +30,8 @@ impl NotesApp {
 
     pub(super) fn peek(&mut self, ui: &mut egui::Ui) {
         let back = self.backlinks_now();
+        let full_icon = self.icon(ui.ctx(), &["rivet-full-width-symbolic", "format-justify-fill-symbolic"], 16.0);
+        let center_icon = self.icon(ui.ctx(), &["rivet-centered-symbolic", "format-justify-center-symbolic"], 16.0);
         let mut go: Option<PathBuf> = None;
         let mut make: Option<String> = None;
         let v = ui.visuals().clone();
@@ -49,8 +51,8 @@ impl NotesApp {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let was = centered;
-                        segment(ui, &mut centered, false, "Full width");
-                        segment(ui, &mut centered, true, "Centered");
+                        icon_segment(ui, &mut centered, false, &full_icon, "Full width");
+                        icon_segment(ui, &mut centered, true, &center_icon, "Centered");
                         if centered != was {
                             self.s.set_note_width(note, Some(centered));
                         }
@@ -79,37 +81,25 @@ impl NotesApp {
             let vault = self.vault.clone().unwrap_or_default();
             let meta = std::fs::metadata(&d.path).ok();
             // ---- links: the notes linking here, and where this note links to
-            card(ui, &format!("Backlinks  {}", back.len()), |ui| {
-                if back.is_empty() {
-                    ui.label(egui::RichText::new("No notes link here yet").color(weak));
-                }
-                for (p, title, lines) in &back {
-                    if link_row(ui, title, true).on_hover_text("Open this note").clicked() {
-                        go = Some(p.clone());
+            if !back.is_empty() {
+                card(ui, &format!("Backlinks  {}", back.len()), |ui| {
+                    for (p, title, lines) in &back {
+                        // The line the link is on shows on hover.
+                        let tip = lines.first().cloned().unwrap_or_default();
+                        if link_row(ui, title, true).on_hover_text(tip).clicked() {
+                            go = Some(p.clone());
+                        }
                     }
-                    for l in lines.iter().take(2) {
-                        // Cut to the card's width (never widening Peek).
-                        let w = ui.available_width() - 8.0;
-                        let (r, _) = ui.allocate_exact_size(Vec2::new(w.max(20.0), 16.0), Sense::hover());
-                        let r = r.translate(Vec2::new(8.0, 0.0));
-                        let mut job = egui::text::LayoutJob::simple_singleline(l.clone(), fonts::ui_font(11.5), weak);
-                        job.wrap = egui::text::TextWrapping::truncate_at_width(r.width() - 8.0);
-                        let g = ui.painter().layout_job(job);
-                        ui.painter().galley(r.left_center() - Vec2::new(0.0, g.size().y / 2.0), g, weak);
-                    }
-                    ui.add_space(3.0);
-                }
-            });
+                });
+            }
             let mut outgoing: Vec<String> = Vec::new();
             for l in crate::links::outgoing(&d.body) {
                 if !outgoing.iter().any(|o| o.eq_ignore_ascii_case(&l.target)) {
                     outgoing.push(l.target);
                 }
             }
+            if !outgoing.is_empty() {
             card(ui, &format!("Links  {}", outgoing.len()), |ui| {
-                if outgoing.is_empty() {
-                    ui.label(egui::RichText::new("No links. Type [[ to link a note").color(weak));
-                }
                 for t in &outgoing {
                     match vault::resolve(&self.notes, &d.path, t) {
                         Some(n) => {
@@ -118,13 +108,14 @@ impl NotesApp {
                             }
                         }
                         None => {
-                            if link_row(ui, t, false).on_hover_text("No note by this name yet: click to make it").clicked() {
+                            if link_row(ui, t, false).on_hover_text("Not made yet").clicked() {
                                 make = Some(t.clone());
                             }
                         }
                     }
                 }
             });
+            }
             // ---- the file
             card(ui, "File", |ui| {
                 let name = d.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -200,7 +191,7 @@ impl NotesApp {
 fn link_row(ui: &mut egui::Ui, name: &str, exists: bool) -> egui::Response {
     let v = ui.visuals().clone();
     let col = if exists { v.hyperlink_color } else { v.weak_text_color() };
-    let text = if exists { name.to_string() } else { format!("{name}  (new)") };
+    let text = name.to_string();
     let r = ui.add(egui::Label::new(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).truncate().sense(Sense::click()));
     r.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -231,6 +222,28 @@ fn rows(ui: &mut egui::Ui, items: &[(&str, String)]) {
 }
 
 /// One half of a two-way switch.
+/// One half of a two-way switch, as an icon (its name in the tooltip).
+fn icon_segment(ui: &mut egui::Ui, value: &mut bool, this: bool, icon: &Option<egui::TextureHandle>, name: &str) {
+    let on = *value == this;
+    let v = ui.visuals().clone();
+    let fg = if on { v.strong_text_color() } else { v.text_color() };
+    let b = match icon {
+        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
+        None => egui::Button::new(name),
+    };
+    // The chosen one sits on Rivet's selected tile.
+    let under = ui.painter().add(egui::Shape::Noop);
+    let r = ui.add(b.frame_when_inactive(false).min_size(Vec2::new(34.0, 28.0)).corner_radius(rivet_look::theme::r_sm()));
+    if on {
+        let (fill, stroke) = rivet_look::theme::selected_tile(&v, v.extreme_bg_color);
+        ui.painter().set(under, egui::Shape::Vec(vec![egui::Shape::rect_filled(r.rect, rivet_look::theme::r_sm(), fill), egui::Shape::rect_stroke(r.rect, rivet_look::theme::r_sm(), stroke, egui::StrokeKind::Inside)]));
+    }
+    if r.on_hover_text(name).clicked() {
+        *value = this;
+    }
+}
+
+#[allow(dead_code)]
 fn segment(ui: &mut egui::Ui, value: &mut bool, this: bool, label: &str) -> egui::Response {
     let r = ui.selectable_label(*value == this, label);
     if r.clicked() {

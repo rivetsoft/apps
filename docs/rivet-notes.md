@@ -58,7 +58,8 @@ links to `.md` files count too. A link finds its note by path, file name or titl
 - **Following a link**: Ctrl+click it in either mode, or just click it in live mode (where it
   shows rendered). A link to a note that isn't there yet makes it, beside the current note.
 - **Backlinks**: Peek lists the notes linking to the open one, with the line each link is on,
-  and the open note's own links (ones with no note yet are marked *new*; clicking makes it).
+  and the open note's own links (faint when there's no note yet; clicking makes it). Each shows
+  only when there are some.
 - **Renaming** a note (its title, or Rename) changes the `[[links]]` to it in every note, keeping
   their `|shown text` and `#heading`.
 
