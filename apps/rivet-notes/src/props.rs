@@ -89,6 +89,12 @@ impl PropType {
     }
 }
 
+/// Properties kept in the file but not listed: the title is the note's heading, and when it
+/// was created is in Peek's dates.
+pub fn hidden(key: &str) -> bool {
+    key.eq_ignore_ascii_case("title") || key.eq_ignore_ascii_case("created")
+}
+
 pub fn parse_bool(t: &str) -> Option<bool> {
     match t.trim().to_ascii_lowercase().as_str() {
         "true" | "yes" => Some(true),
@@ -130,6 +136,12 @@ mod tests {
 
     fn t(s: &str) -> Value {
         Value::Text(s.into())
+    }
+
+    #[test]
+    fn title_and_created_are_not_listed() {
+        assert!(hidden("title") && hidden("Created"));
+        assert!(!hidden("tags") && !hidden("due"));
     }
 
     #[test]

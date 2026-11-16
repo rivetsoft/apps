@@ -23,7 +23,8 @@ the list and leaves the folder alone).
   with a type: Text, Number, Checkbox, Date (with a calendar), List, Tags (chips) or Link (with an
   open button). The type is worked out from the value; click a property's name (or right-click it)
   to change its type, rename or remove it. *+ Add property* asks for a name and a type. The
-  block folds from its header. The file stays plain YAML. Nested values are kept exactly as
+  block folds from its header. `title` (the heading) and `created` (in Peek's dates) stay in
+  the file but aren't listed. The file stays plain YAML. Nested values are kept exactly as
   written and shown read-only.
   Saving writes back only what changed in the block; the rest of the file is untouched.
 - **Tags** come from the frontmatter (`tags: [a, b]` or a `- item` list) and from `#tags` in

@@ -95,12 +95,12 @@ impl NotesApp {
                 rows(ui, &[("Edited", edited), ("Created", created), ("Saved", saved)]);
             });
             // ---- properties (the frontmatter), read-only here
-            card(ui, "Properties", |ui| match d.fm.as_ref().filter(|f| !f.fields.is_empty()) {
+            card(ui, "Properties", |ui| match d.fm.as_ref().filter(|f| f.fields.iter().any(|(k, _)| !crate::props::hidden(k))) {
                 None => {
                     ui.label(egui::RichText::new("No properties").color(weak));
                 }
                 Some(fm) => {
-                    for (k, val) in &fm.fields {
+                    for (k, val) in fm.fields.iter().filter(|(k, _)| !crate::props::hidden(k)) {
                         let is_tags = k.eq_ignore_ascii_case("tags") || k.eq_ignore_ascii_case("tag");
                         match val {
                             Value::List(items) if is_tags => {

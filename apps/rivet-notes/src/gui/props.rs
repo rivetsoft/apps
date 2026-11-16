@@ -73,7 +73,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
         let title = ui.painter().layout_no_wrap("Properties".into(), fonts::ui_font(13.0), v.strong_text_color());
         let tw = title.size().x;
         ui.painter().galley(Pos2::new(hr.left() + 22.0, hr.center().y - title.size().y / 2.0), title, v.strong_text_color());
-        ui.painter().text(Pos2::new(hr.left() + 30.0 + tw, hr.center().y), Align2::LEFT_CENTER, fm.fields.len().to_string(), fonts::ui_font(12.0), weak);
+        ui.painter().text(Pos2::new(hr.left() + 30.0 + tw, hr.center().y), Align2::LEFT_CENTER, fm.fields.iter().filter(|(k, _)| !props::hidden(k)).count().to_string(), fonts::ui_font(12.0), weak);
         if hresp.on_hover_text(if d.props_open { "Fold the properties" } else { "Show the properties" }).clicked() {
             d.props_open = !d.props_open;
         }
@@ -84,6 +84,9 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
         // ---- the rows
         for i in 0..fm.fields.len() {
             let key = fm.fields[i].0.clone();
+            if props::hidden(&key) {
+                continue;
+            }
             let ty = type_of(&mut d.types, &key, &fm.fields[i].1);
             let row_id = egui::Id::unique(("prop-row", i));
             let was_hovered = ui.ctx().data(|m| m.get_temp::<bool>(row_id)).unwrap_or(false);
@@ -204,7 +207,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
                 }
                 let enter = ui.input(|i| i.key_pressed(Key::Enter));
                 let n = name.trim().replace(':', "");
-                let ok = !n.is_empty() && fm.get(&n).is_none();
+                let ok = !n.is_empty() && fm.get(&n).is_none() && !props::hidden(&n);
                 if ui.add_enabled(ok, egui::Button::new("Add").corner_radius(r_sm())).clicked() || (r.lost_focus() && enter && ok) {
                     fm.fields.push((n.clone(), d.new_type.empty()));
                     d.types.retain(|(k, _)| *k != n);
