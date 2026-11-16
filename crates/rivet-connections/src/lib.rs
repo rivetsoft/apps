@@ -148,6 +148,14 @@ impl Connection {
         s
     }
 
+    /// What to call it in lists: its name, or `user@server` when it wasn't given a real one
+    /// (left empty, or just the server's address).
+    pub fn title(&self) -> String {
+        let n = self.name.trim();
+        let unnamed = n.is_empty() || n == "Quick connect" || n.eq_ignore_ascii_case(&self.host) || n.eq_ignore_ascii_case(&self.target()) || n == self.url();
+        if unnamed { self.target() } else { n.to_string() }
+    }
+
     /// `me@example.com`
     pub fn target(&self) -> String {
         match &self.user {
@@ -522,6 +530,16 @@ mod tests {
         let _ = std::fs::remove_file(back.ssh_config_path());
         let _ = std::fs::remove_file(&path);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn titles() {
+        let mut c = Connection::from_url("Work site", "sftp://me@example.com/var").unwrap();
+        assert_eq!(c.title(), "Work site");
+        c.name = "example.com".into();
+        assert_eq!(c.title(), "me@example.com", "named after the server: show user@server");
+        c.name = "me@example.com".into();
+        assert_eq!(c.title(), "me@example.com");
     }
 
     #[test]

@@ -315,6 +315,13 @@ impl eframe::App for FtpApp {
             return;
         };
         let pos = Pos2::new(x, y);
+        // RIVET_FTP_HOVER: only move the pointer there (to show a tooltip).
+        if std::env::var_os("RIVET_FTP_HOVER").is_some() {
+            if shot.frames() == 30 {
+                raw.events.push(egui::Event::PointerMoved(pos));
+            }
+            return;
+        }
         match shot.frames() {
             30 => raw.events.push(egui::Event::PointerMoved(pos)),
             31 => raw.events.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() }),

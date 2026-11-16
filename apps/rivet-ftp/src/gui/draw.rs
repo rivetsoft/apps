@@ -61,7 +61,9 @@ impl FtpApp {
         egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
             for c in &items {
                 let current = self.conn.as_ref().is_some_and(|k| k.name == c.name);
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), Sense::click());
+                // One line: the name, or user@server for a connection that wasn't given one.
+                // Everything else is in the tooltip, so the sidebar can stay narrow.
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
                 let v = ui.visuals();
                 if current {
                     ui.painter().rect_filled(rect, r_md(), v.selection.bg_fill);
@@ -69,19 +71,24 @@ impl FtpApp {
                     ui.painter().rect_filled(rect, r_md(), v.widgets.hovered.weak_bg_fill);
                 }
                 let fg = if current { v.selection.stroke.color } else { v.text_color() };
-                let weak = if current { fg.gamma_multiply(0.8) } else { v.weak_text_color() };
                 if let Some(t) = &server_icon {
-                    let r = Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), Vec2::splat(16.0));
+                    let r = Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(16.0));
                     ui.painter().image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                 }
-                let x = rect.left() + 36.0;
-                ui.painter().text(Pos2::new(x, rect.top() + 13.0), Align2::LEFT_CENTER, &c.name, fonts::ui_font(13.5), fg);
-                let mut addr = c.target();
-                if c.protocol != Protocol::Sftp {
-                    addr = format!("{} · {addr}", c.protocol.scheme().to_uppercase());
-                }
-                ui.painter().text(Pos2::new(x, rect.top() + 29.0), Align2::LEFT_CENTER, addr, fonts::ui_font(11.5), weak);
-                let resp = resp.on_hover_text(c.url());
+                let text_rect = Rect::from_min_max(Pos2::new(rect.left() + 32.0, rect.top()), Pos2::new(rect.right() - 8.0, rect.bottom()));
+                let title = c.title();
+                let galley = ui.painter().layout_no_wrap(title.clone(), fonts::ui_font(13.5), fg);
+                let cut = galley.size().x > text_rect.width();
+                // Too long for the sidebar: fade it out at the edge rather than spill over.
+                let galley = if cut {
+                    let mut job = egui::text::LayoutJob::single_section(title, egui::TextFormat::simple(fonts::ui_font(13.5), fg));
+                    job.wrap = egui::text::TextWrapping::truncate_at_width(text_rect.width());
+                    ui.painter().layout_job(job)
+                } else {
+                    galley
+                };
+                ui.painter().with_clip_rect(text_rect).galley(Pos2::new(text_rect.left(), rect.center().y - galley.size().y / 2.0), galley, fg);
+                let resp = resp.on_hover_ui(|ui| connection_tooltip(ui, c));
                 if resp.clicked() && !current {
                     self.connect(c.clone(), &ctx);
                 }
@@ -131,7 +138,7 @@ impl FtpApp {
         // Header: which side, up, refresh, and the folder.
         let title = match side {
             Side::Local => "This computer".to_string(),
-            Side::Remote => self.conn.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "Server".into()),
+            Side::Remote => self.conn.as_ref().map(|c| c.title()).unwrap_or_else(|| "Server".into()),
         };
         let live = side == Side::Local || (self.browse.is_some() && !self.connecting);
         ui.horizontal(|ui| {
@@ -687,3 +694,30 @@ impl FtpApp {
     }
 }
 
+
+/// Everything about a saved connection, for its tooltip.
+fn connection_tooltip(ui: &mut egui::Ui, c: &rivet_connections::Connection) {
+    let weak = ui.visuals().weak_text_color();
+    ui.label(egui::RichText::new(c.title()).strong());
+    ui.add_space(2.0);
+    egui::Grid::new(("conn-tip", c.name.as_str())).num_columns(2).spacing([12.0, 2.0]).show(ui, |ui| {
+        let mut row = |k: &str, v: String| {
+            ui.label(egui::RichText::new(k).color(weak));
+            ui.label(v);
+            ui.end_row();
+        };
+        row("Server", c.target());
+        row("Type", format!("{}, port {}", c.protocol.scheme().to_uppercase(), c.port()));
+        if let Some(k) = &c.key {
+            row("SSH key", std::path::Path::new(k).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| k.clone()));
+        }
+        if let Some(r) = &c.remote {
+            row("Server folder", r.clone());
+        }
+        if let Some(l) = &c.local {
+            row("Local folder", l.clone());
+        }
+    });
+    ui.add_space(2.0);
+    ui.label(egui::RichText::new(c.url()).small().color(weak));
+}

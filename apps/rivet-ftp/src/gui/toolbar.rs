@@ -217,8 +217,8 @@ impl FtpApp {
     fn status_pill(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let v = ui.visuals().clone();
         let (dot, text) = match (&self.conn, self.connecting) {
-            (Some(c), true) => (status(ctx).warning, format!("Connecting to {}…", c.name)),
-            (Some(c), false) => (status(ctx).success, c.name.clone()),
+            (Some(c), true) => (status(ctx).warning, format!("Connecting to {}…", c.title())),
+            (Some(c), false) => (status(ctx).success, c.title()),
             (None, _) => (v.weak_text_color(), "Not connected".to_string()),
         };
         let galley = ui.painter().layout_no_wrap(text, fonts::ui_font(13.0), v.text_color());
