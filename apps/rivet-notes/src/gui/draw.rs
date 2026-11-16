@@ -199,18 +199,6 @@ impl NotesApp {
             .horizontal(|ui| {
                 ui.set_min_height(32.0);
                 ui.spacing_mut().item_spacing.x = 6.0;
-                // The left sidebar, at the far left (Peek's button mirrors it at the far right).
-                let side_icon = self.icon(&ctx, &["sidebar-show-symbolic", "view-left-pane-symbolic"], 16.0);
-                let on = self.s.show_sidebar;
-                let fg = if on { v.selection.stroke.color } else { v.text_color() };
-                let b = match &side_icon {
-                    Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
-                    None => egui::Button::new("▯"),
-                };
-                if ui.add_enabled(self.vault.is_some(), b.selected(on && self.vault.is_some()).frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Sidebar (F9)").clicked() {
-                    self.s.show_sidebar = !on;
-                    self.s.save();
-                }
                 if !self.s.show_menubar {
                     let fg = v.text_color();
                     let btn = egui::Button::new("").min_size(Vec2::new(34.0, 32.0)).frame_when_inactive(false).corner_radius(r_sm());
@@ -229,7 +217,14 @@ impl NotesApp {
                         ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, fg));
                     }
                 }
-                // New note: a plus, right after the menu.
+                // The left sidebar, right after the menu (Peek's button mirrors it at the far right).
+                let side_icon = self.icon(&ctx, &["sidebar-show-symbolic", "view-left-pane-symbolic"], 16.0);
+                let on = self.s.show_sidebar && self.vault.is_some();
+                if toggle_button(ui, &side_icon, "▯", "Sidebar (F9)", self.vault.is_some(), on).clicked() {
+                    self.s.show_sidebar = !self.s.show_sidebar;
+                    self.s.save();
+                }
+                // New note: a plus, after the sidebar button.
                 let add_icon = self.icon(&ctx, &["list-add-symbolic", "tab-new-symbolic"], 16.0);
                 let b = match &add_icon {
                     Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
@@ -243,14 +238,9 @@ impl NotesApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Peek, at the far right.
                     let peek_icon = self.icon(&ctx, &["sidebar-show-right-symbolic", "view-right-pane-symbolic", "dialog-information-symbolic"], 16.0);
-                    let on = self.s.show_peek;
-                    let fg = if on { v.selection.stroke.color } else { v.text_color() };
-                    let b = match &peek_icon {
-                        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
-                        None => egui::Button::new("i"),
-                    };
-                    if ui.add_enabled(self.vault.is_some(), b.selected(on).frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Peek: this note's details and display (F11)").clicked() {
-                        self.s.show_peek = !on;
+                    let on = self.s.show_peek && self.vault.is_some();
+                    if toggle_button(ui, &peek_icon, "i", "Peek: this note's details and display (F11)", self.vault.is_some(), on).clicked() {
+                        self.s.show_peek = !self.s.show_peek;
                         self.s.save();
                     }
                     let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
@@ -1160,6 +1150,24 @@ fn drag_and_drop(ui: &egui::Ui, resp: &egui::Response, rect: Rect, me: &Path, na
         }
     }
     false
+}
+
+/// A flat toolbar button that shows when it's on with Rivet's selected tile (like Rivet Files'
+/// toolbar); the icon keeps the toolbar's text color.
+fn toggle_button(ui: &mut egui::Ui, icon: &Option<egui::TextureHandle>, fallback: &str, tip: &str, enabled: bool, on: bool) -> egui::Response {
+    let v = ui.visuals().clone();
+    let fg = if on { v.strong_text_color() } else { v.text_color() };
+    let b = match icon {
+        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
+        None => egui::Button::new(fallback),
+    };
+    let under = ui.painter().add(egui::Shape::Noop);
+    let resp = ui.add_enabled(enabled, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm()));
+    if on {
+        let (fill, stroke) = selected_tile(&v, v.panel_fill);
+        ui.painter().set(under, egui::Shape::Vec(vec![egui::Shape::rect_filled(resp.rect, r_sm(), fill), egui::Shape::rect_stroke(resp.rect, r_sm(), stroke, egui::StrokeKind::Inside)]));
+    }
+    resp.on_hover_text(tip)
 }
 
 /// What's being dragged, under the pointer.
