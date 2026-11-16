@@ -219,8 +219,7 @@ impl NotesApp {
                 }
                 // The left sidebar, right after the menu (Peek's button mirrors it at the far right).
                 let side_icon = self.icon(&ctx, &["sidebar-show-symbolic", "view-left-pane-symbolic"], 16.0);
-                let on = self.s.show_sidebar && self.vault.is_some();
-                if toggle_button(ui, &side_icon, "▯", "Sidebar (F9)", self.vault.is_some(), on).clicked() {
+                if toggle_button(ui, &side_icon, "▯", "Sidebar (F9)", self.vault.is_some()).clicked() {
                     self.s.show_sidebar = !self.s.show_sidebar;
                     self.s.save();
                 }
@@ -238,8 +237,7 @@ impl NotesApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Peek, at the far right.
                     let peek_icon = self.icon(&ctx, &["sidebar-show-right-symbolic", "view-right-pane-symbolic", "dialog-information-symbolic"], 16.0);
-                    let on = self.s.show_peek && self.vault.is_some();
-                    if toggle_button(ui, &peek_icon, "i", "Peek: this note's details and display (F11)", self.vault.is_some(), on).clicked() {
+                    if toggle_button(ui, &peek_icon, "i", "Peek: this note's details and display (F11)", self.vault.is_some()).clicked() {
                         self.s.show_peek = !self.s.show_peek;
                         self.s.save();
                     }
@@ -1152,22 +1150,15 @@ fn drag_and_drop(ui: &egui::Ui, resp: &egui::Response, rect: Rect, me: &Path, na
     false
 }
 
-/// A flat toolbar button that shows when it's on with Rivet's selected tile (like Rivet Files'
-/// toolbar); the icon keeps the toolbar's text color.
-fn toggle_button(ui: &mut egui::Ui, icon: &Option<egui::TextureHandle>, fallback: &str, tip: &str, enabled: bool, on: bool) -> egui::Response {
-    let v = ui.visuals().clone();
-    let fg = if on { v.strong_text_color() } else { v.text_color() };
+/// A flat toolbar button for showing or hiding a sidebar. It looks the same open or closed;
+/// the sidebar itself shows which it is.
+fn toggle_button(ui: &mut egui::Ui, icon: &Option<egui::TextureHandle>, fallback: &str, tip: &str, enabled: bool) -> egui::Response {
+    let fg = ui.visuals().text_color();
     let b = match icon {
         Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
         None => egui::Button::new(fallback),
     };
-    let under = ui.painter().add(egui::Shape::Noop);
-    let resp = ui.add_enabled(enabled, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm()));
-    if on {
-        let (fill, stroke) = selected_tile(&v, v.panel_fill);
-        ui.painter().set(under, egui::Shape::Vec(vec![egui::Shape::rect_filled(resp.rect, r_sm(), fill), egui::Shape::rect_stroke(resp.rect, r_sm(), stroke, egui::StrokeKind::Inside)]));
-    }
-    resp.on_hover_text(tip)
+    ui.add_enabled(enabled, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text(tip)
 }
 
 /// What's being dragged, under the pointer.
@@ -1440,7 +1431,17 @@ fn folder_tree(
         }
         resp.context_menu(|ui| folder_menu(ui, root, sub, open_f, pick));
         if open_f {
+            // A faint guide down the left of the folder's contents, under their rows (so a
+            // selected or hovered row covers it).
+            let guide = ui.painter().add(egui::Shape::Noop);
+            let top = rect.bottom();
             folder_tree(ui, sub, depth + 1, folders, notes, collapsed, open, folder_icon, note_icon, pick, current, root);
+            let bottom = ui.min_rect().bottom();
+            if bottom > top + 1.0 {
+                let v = ui.visuals();
+                let col = palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.16 } else { 0.20 });
+                ui.painter().set(guide, egui::Shape::line_segment([Pos2::new(c.x, top + 2.0), Pos2::new(c.x, bottom - 4.0)], Stroke::new(1.0, col)));
+            }
         }
     }
     for n in notes.iter().filter(|n| n.folder() == folder) {
