@@ -226,7 +226,25 @@ impl FtpApp {
         };
         let live = side == Side::Local || (self.browse.is_some() && !self.connecting);
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(title).strong());
+            // The server's state, as a dot before its name: green connected, amber
+            // connecting, grey not connected.
+            if side == Side::Remote {
+                let (dot, state) = match (&self.conn, self.connecting) {
+                    (Some(_), true) => (status(&ctx).warning, "Connecting…"),
+                    (Some(_), false) => (status(&ctx).success, "Connected"),
+                    (None, _) => (v.weak_text_color(), "Not connected"),
+                };
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(12.0, 18.0), Sense::hover());
+                ui.painter().circle_filled(r.center(), 4.0, dot);
+                let tip = match &self.conn {
+                    Some(c) => format!("{state}: {}", c.url()),
+                    None => state.to_string(),
+                };
+                let title_resp = ui.label(egui::RichText::new(title).strong());
+                resp.union(title_resp).on_hover_text(tip);
+            } else {
+                ui.label(egui::RichText::new(title).strong());
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if live {
                     if self.icon_button(ui, &["view-refresh-symbolic", "view-refresh"], "Refresh", "Refresh (F5)").clicked() {

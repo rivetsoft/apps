@@ -4,8 +4,7 @@
 
 use eframe::egui::{self, Color32, Key, Pos2, Sense, Stroke, Vec2};
 use rivet_connections::Connection;
-use rivet_look::fonts;
-use rivet_look::theme::{r_md, r_sm, selected_tile, status};
+use rivet_look::theme::{r_md, r_sm, selected_tile};
 
 use super::menus::{Cmd, menu_style};
 use super::*;
@@ -109,7 +108,6 @@ impl FtpApp {
                 }
                 self.mini_menu(ui);
             }
-            Tool::Status => self.status_pill(ui, ctx),
             Tool::Disconnect => {
                 if self.tool_button(ui, t, self.conn.is_some(), false, "Disconnect (Shift+Ctrl+D)").clicked() {
                     self.run(Cmd::Disconnect, ctx);
@@ -211,24 +209,6 @@ impl FtpApp {
             ui.painter().set(under, egui::Shape::Vec(vec![egui::Shape::rect_filled(resp.rect, r_sm(), fill), egui::Shape::rect_stroke(resp.rect, r_sm(), stroke, egui::StrokeKind::Inside)]));
         }
         resp.on_hover_text(tip).on_disabled_hover_text(tip)
-    }
-
-    /// Where we are: a pill with a status dot.
-    fn status_pill(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        let v = ui.visuals().clone();
-        let (dot, text) = match (&self.conn, self.connecting) {
-            (Some(c), true) => (status(ctx).warning, format!("Connecting to {}…", c.title())),
-            (Some(c), false) => (status(ctx).success, c.title()),
-            (None, _) => (v.weak_text_color(), "Not connected".to_string()),
-        };
-        let galley = ui.painter().layout_no_wrap(text, fonts::ui_font(13.0), v.text_color());
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(galley.size().x + 34.0, 30.0), Sense::hover());
-        ui.painter().rect_filled(r, r_md(), v.faint_bg_color);
-        ui.painter().circle_filled(Pos2::new(r.left() + 14.0, r.center().y), 4.0, dot);
-        ui.painter().galley(Pos2::new(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, v.text_color());
-        if let Some(c) = &self.conn {
-            resp.on_hover_text(c.url());
-        }
     }
 
     /// The menu bar folded into one button (three bars, the same in every icon theme), like

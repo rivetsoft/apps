@@ -17,7 +17,6 @@ pub enum Tool {
     Connections,
     NewConnection,
     QuickConnect,
-    Status,
     Disconnect,
     Up,
     Refresh,
@@ -35,12 +34,11 @@ pub enum Tool {
 }
 
 impl Tool {
-    pub const ALL: [Tool; 19] = [
+    pub const ALL: [Tool; 18] = [
         Tool::Menu,
         Tool::Connections,
         Tool::NewConnection,
         Tool::QuickConnect,
-        Tool::Status,
         Tool::Disconnect,
         Tool::Up,
         Tool::Refresh,
@@ -59,7 +57,7 @@ impl Tool {
 
     pub fn default_layout() -> Vec<Tool> {
         use Tool::*;
-        vec![Menu, Connections, NewConnection, Separator, QuickConnect, Status, Disconnect, Separator, Upload, Download]
+        vec![Menu, Connections, NewConnection, Separator, QuickConnect, Disconnect, Separator, Upload, Download]
     }
 
     /// Can't be taken off the toolbar.
@@ -74,7 +72,6 @@ impl Tool {
             Connections => "connections",
             NewConnection => "new-connection",
             QuickConnect => "quick-connect",
-            Status => "status",
             Disconnect => "disconnect",
             Up => "up",
             Refresh => "refresh",
@@ -99,7 +96,6 @@ impl Tool {
             Connections => "Saved Connections",
             NewConnection => "New Connection",
             QuickConnect => "Quick Connect",
-            Status => "Connection Status",
             Disconnect => "Disconnect",
             Up => "Up",
             Refresh => "Reload",
@@ -125,7 +121,6 @@ impl Tool {
             Connections => (&["network-server-symbolic", "network-workgroup-symbolic", "folder-remote-symbolic"], "Sites"),
             NewConnection => (&["list-add-symbolic", "bookmark-new-symbolic", "list-add"], "+"),
             QuickConnect => (&["network-server-symbolic", "network-workgroup-symbolic"], "…"),
-            Status => (&["network-wired-symbolic", "network-idle-symbolic"], "•"),
             Disconnect => (&["network-offline-symbolic", "process-stop-symbolic", "window-close-symbolic"], "×"),
             Up => (&["go-up-symbolic", "go-up"], "Up"),
             Refresh => (&["view-refresh-symbolic", "view-refresh"], "⟳"),
