@@ -4,7 +4,7 @@ A dual-pane file-transfer app for Linux (SFTP, FTP and FTPS), built on Rivet's c
 written in Rust and egui, with no GTK or Qt. It's in the same family as Transmit and FileZilla
 and works the way people expect from those, but it has its own name, icon and look.
 
-**Status:** the first window works over SFTP. It has the connection list, both panes, transfers
+**Status:** the window works over SFTP, with Rivet's look: a menu bar (or a menu button), Preferences (style, accent, desktop colors, text size, transfer behavior), sortable columns, and Rivet's stepped path bar. It has the connection list, both panes, transfers
 both ways (files and whole folders) with a queue, new folder, rename and delete on the
 server, and a quick-connect field. The command line works too. FTP and FTPS can be saved but
 not opened yet. Open the window with `rivet-ftp`, or `rivet-ftp open NAME` to connect straight
@@ -33,17 +33,26 @@ These come from the owner's guidance and set the direction.
 
 ## Keys
 
+All of these are also in the menus, and in Help → Keyboard Shortcuts.
+
 | Key | |
 | --- | --- |
 | Tab | Switch between the panes |
 | Enter / double-click | Open a folder, or send a file to the other side |
-| Backspace | Up a folder |
+| Backspace, Alt+Up | Up a folder |
+| Alt+Home | Home folder |
 | Up / Down, Shift to extend | Move through the list |
 | Ctrl+A | Select everything |
+| Ctrl+U / Ctrl+D | Upload / download the selection |
 | F2 | Rename |
 | Delete | Delete on the server (asks first) |
 | Ctrl+Shift+N | New folder |
+| Ctrl+L | Type a path |
+| Ctrl+N / Ctrl+K | New connection / quick connect |
+| Ctrl+Shift+D | Disconnect |
 | Ctrl+H | Show hidden files |
+| Ctrl+M, F9, F8 | Show or hide the menu bar, connections, transfers |
+| Ctrl+, | Preferences |
 | F5 | Refresh |
 
 ## Where things are kept

@@ -11,6 +11,24 @@ pub struct Entry {
     pub size: u64,
     /// As shown: "Nov 15 21:49", or "Nov 15  2024" for older files.
     pub modified: String,
+    /// Seconds since 1970 (for sorting; to the minute for server files).
+    pub mtime: i64,
+}
+
+/// Which column the list is sorted by.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortCol {
+    #[default]
+    Name,
+    Size,
+    Modified,
+}
+
+/// Sort column and direction (descending when true).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Sort {
+    pub col: SortCol,
+    pub desc: bool,
 }
 
 /// A local folder, folders first then by name (natural order, ignoring case). Hidden files
@@ -26,15 +44,30 @@ pub fn read_local(dir: &Path, hidden: bool) -> Result<Vec<Entry>, String> {
         let link = d.file_type().map(|t| t.is_symlink()).unwrap_or(false);
         let md = std::fs::metadata(d.path()).ok();
         let is_dir = md.as_ref().is_some_and(|m| m.is_dir());
-        let modified = md.as_ref().and_then(|m| m.modified().ok()).map(fmt_time).unwrap_or_default();
-        out.push(Entry { name, is_dir, is_link: link, size: if is_dir { 0 } else { md.map(|m| m.len()).unwrap_or(0) }, modified });
+        let t = md.as_ref().and_then(|m| m.modified().ok());
+        let modified = t.map(fmt_time).unwrap_or_default();
+        let mtime = t.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+        out.push(Entry { name, is_dir, is_link: link, size: if is_dir { 0 } else { md.map(|m| m.len()).unwrap_or(0) }, modified, mtime });
     }
     sort(&mut out);
     Ok(out)
 }
 
+/// Folders first, then by name.
 pub fn sort(v: &mut [Entry]) {
-    v.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| natural(&a.name, &b.name)));
+    sort_by(v, Sort::default());
+}
+
+/// Folders first, then by the chosen column (name breaks ties).
+pub fn sort_by(v: &mut [Entry], s: Sort) {
+    v.sort_by(|a, b| {
+        let by = match s.col {
+            SortCol::Name => natural(&a.name, &b.name),
+            SortCol::Size => a.size.cmp(&b.size).then_with(|| natural(&a.name, &b.name)),
+            SortCol::Modified => a.mtime.cmp(&b.mtime).then_with(|| natural(&a.name, &b.name)),
+        };
+        b.is_dir.cmp(&a.is_dir).then(if s.desc { by.reverse() } else { by })
+    });
 }
 
 /// "file2" before "file10", ignoring case.
@@ -110,7 +143,29 @@ pub fn parse_ls_line(line: &str, dir: &str) -> Option<Entry> {
         return None;
     }
     let is_dir = perms.starts_with('d');
-    Some(Entry { name, is_dir, is_link: perms.starts_with('l'), size: if is_dir { 0 } else { size }, modified: format!("{} {:>2} {:>5}", fields[5], fields[6], fields[7]) })
+    let mtime = ls_time(fields[5], fields[6], fields[7]).unwrap_or(0);
+    Some(Entry { name, is_dir, is_link: perms.starts_with('l'), size: if is_dir { 0 } else { size }, modified: format!("{} {:>2} {:>5}", fields[5], fields[6], fields[7]), mtime })
+}
+
+/// `ls` dates: "Nov 15 21:49" (within the last half year) or "Nov 15 2024".
+fn ls_time(month: &str, day: &str, time_or_year: &str) -> Option<i64> {
+    use chrono::{Datelike, NaiveDate, TimeZone};
+    const M: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let m = M.iter().position(|x| *x == month)? as u32 + 1;
+    let d: u32 = day.parse().ok()?;
+    let now = chrono::Local::now();
+    let (year, h, min) = match time_or_year.split_once(':') {
+        Some((h, mi)) => {
+            let (h, mi): (u32, u32) = (h.parse().ok()?, mi.parse().ok()?);
+            // Without a year it's within the last six months: a date ahead of today is last year's.
+            let this = NaiveDate::from_ymd_opt(now.year(), m, d)?;
+            let y = if this > now.date_naive() + chrono::Duration::days(1) { now.year() - 1 } else { now.year() };
+            (y, h, mi)
+        }
+        None => (time_or_year.parse().ok()?, 0, 0),
+    };
+    let dt = NaiveDate::from_ymd_opt(year, m, d)?.and_hms_opt(h, min, 0)?;
+    chrono::Local.from_local_datetime(&dt).earliest().map(|t| t.timestamp())
 }
 
 /// 1234567 → "1.2 MB"
@@ -145,9 +200,18 @@ mod tests {
 
     #[test]
     fn natural_order_and_sizes() {
-        let mut v: Vec<Entry> = ["file10", "File2", "dir"].iter().map(|n| Entry { name: n.to_string(), is_dir: *n == "dir", is_link: false, size: 0, modified: String::new() }).collect();
+        let mut v: Vec<Entry> = ["file10", "File2", "dir"]
+            .iter()
+            .enumerate()
+            .map(|(i, n)| Entry { name: n.to_string(), is_dir: *n == "dir", is_link: false, size: i as u64, modified: String::new(), mtime: 10 - i as i64 })
+            .collect();
         sort(&mut v);
         assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"]);
+        sort_by(&mut v, Sort { col: SortCol::Size, desc: true });
+        assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"], "folders stay first");
+        sort_by(&mut v, Sort { col: SortCol::Modified, desc: false });
+        assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"]);
+        assert!(ls_time("Nov", "15", "2024").is_some() && ls_time("Foo", "1", "2024").is_none());
         assert_eq!(human_size(1), "1 byte");
         assert_eq!(human_size(1_234_567), "1.2 MB");
     }

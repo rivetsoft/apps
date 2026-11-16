@@ -3,9 +3,9 @@
 
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 
-use super::paint_tex;
+use crate::theme::paint_tex;
 
-pub(super) struct WinState {
+pub struct WinState {
     pub id: u64,
     pub pos: Option<Pos2>,
     pub size: Vec2,
@@ -22,7 +22,7 @@ impl WinState {
 }
 
 /// Textures for the title bar: (window icon, roll-up, maximize/restore, close).
-pub(super) struct Chrome {
+pub struct Chrome {
     pub title: String,
     pub icon: Option<egui::TextureHandle>,
     pub close: Option<egui::TextureHandle>,
@@ -30,7 +30,7 @@ pub(super) struct Chrome {
     pub flush: bool,
 }
 
-pub(super) struct Shown {
+pub struct Shown {
     pub open: bool,
     pub rect: Option<Rect>,
 }
@@ -38,7 +38,7 @@ pub(super) struct Shown {
 const HEADER_H: f32 = 36.0;
 
 /// Draw one in-app window. `area` is where it may live (the app minus a margin).
-pub(super) fn show<R>(ctx: &egui::Context, st: &mut WinState, chrome: &Chrome, area: Rect, min: Vec2, add: impl FnOnce(&mut egui::Ui) -> R) -> Shown {
+pub fn show<R>(ctx: &egui::Context, st: &mut WinState, chrome: &Chrome, area: Rect, min: Vec2, add: impl FnOnce(&mut egui::Ui) -> R) -> Shown {
     // Separate memory for the maximized state, so restoring brings back the old size.
     let id = Id::unique(("inner-window", st.id, st.maximized, st.shaded));
     let size = st.size.min(area.size());
@@ -86,10 +86,10 @@ pub(super) fn show<R>(ctx: &egui::Context, st: &mut WinState, chrome: &Chrome, a
             let resp = ui.interact(r, ui.scope_id().with(("winbtn", *kind)), Sense::click());
             let hover = resp.hovered();
             if hover {
-                let c = if *kind == 2 { super::status(ui.ctx()).danger } else { v.widgets.hovered.bg_fill };
+                let c = if *kind == 2 { crate::theme::status(ui.ctx()).danger } else { v.widgets.hovered.bg_fill };
                 ui.painter().circle_filled(r.center(), 11.0, c);
             }
-            let tint = if hover && *kind == 2 { super::StatusColors::on(super::status(ui.ctx()).danger) } else { fg };
+            let tint = if hover && *kind == 2 { crate::theme::StatusColors::on(crate::theme::status(ui.ctx()).danger) } else { fg };
             match tex {
                 Some(t) => paint_tex(ui.painter(), t, Rect::from_center_size(r.center(), Vec2::splat(14.0)), tint),
                 None => {

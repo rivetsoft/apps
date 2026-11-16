@@ -4,6 +4,7 @@
 
 mod gui;
 mod listing;
+mod settings;
 mod sftp;
 
 use std::path::PathBuf;
@@ -69,7 +70,11 @@ fn window(open: Option<String>, screenshot: Option<PathBuf>) -> ExitCode {
         rivet_kit::headless::run([1100.0, 700.0], move |cc| Box::new(gui::FtpApp::new(cc, open, screenshot)));
         return ExitCode::SUCCESS;
     }
-    let viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet FTP").with_app_id("rivet-ftp").with_inner_size([1100.0, 720.0]).with_min_inner_size([640.0, 420.0]);
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet FTP").with_app_id("rivet-ftp").with_inner_size([1100.0, 720.0]).with_min_inner_size([640.0, 420.0]);
+    if let Some(img) = rivet_look::icons::render_svg(gui::ICON_SVG.as_bytes(), 128) {
+        let rgba = img.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+        viewport = viewport.with_icon(eframe::egui::IconData { rgba, width: 128, height: 128 });
+    }
     let options = eframe::NativeOptions { viewport, persist_window: false, ..Default::default() };
     match eframe::run_native("Rivet FTP", options, Box::new(move |cc| Ok(Box::new(gui::FtpApp::new(cc, open, None))))) {
         Ok(()) => ExitCode::SUCCESS,

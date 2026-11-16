@@ -5,20 +5,24 @@
 mod dialogs;
 mod draw;
 mod logic;
+mod menus;
+mod prefs;
+
+pub use prefs::ICON_SVG;
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
-use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
+use eframe::egui::{self, Pos2, Rect, Vec2};
 use rivet_connections::{Connection, Protocol, Store};
 use rivet_look::icons::IconTheme;
-use rivet_look::palette;
+use rivet_look::{palette, windows};
 use rivet_xdg::mime::MimeDb;
 
 use crate::listing::Entry;
+use crate::settings::Settings;
 use crate::sftp::Session;
-
-const DEFAULT_ACCENT: Color32 = Color32::from_rgb(0x35, 0x84, 0xe4);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Side {
@@ -47,6 +51,7 @@ struct Pane {
     /// The path being typed (the path bar in edit mode).
     editing: Option<String>,
     scroll_to_cursor: bool,
+    sort: crate::listing::Sort,
 }
 
 impl Pane {
@@ -176,7 +181,21 @@ pub struct FtpApp {
     local: Pane,
     remote: Pane,
     focus: Side,
-    show_hidden: bool,
+    s: Settings,
+    /// The server's starting folder (Go → Server Home).
+    remote_home: Option<String>,
+    /// Put the keyboard in the quick-connect field next frame.
+    focus_quick: bool,
+
+    prefs_open: bool,
+    prefs_page: prefs::Page,
+    prefs_win: windows::WinState,
+    keys_open: bool,
+    keys_win: windows::WinState,
+    app_icon: Option<egui::TextureHandle>,
+    /// Desktop color files and when they last changed (checked every couple of seconds).
+    palette_watch: Vec<(PathBuf, Option<SystemTime>)>,
+    palette_checked: f64,
 
     conn: Option<Connection>,
     browse: Option<Session>,
@@ -201,15 +220,33 @@ pub struct FtpApp {
 impl eframe::App for FtpApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.watch_palette(&ctx);
         self.apply_look(&ctx);
         self.poll(&ctx);
+        self.shortcuts(&ctx);
         self.keys(&ctx);
         let v = ctx.global_style().visuals.clone();
-        let chrome = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin::symmetric(12, 8));
-        egui::Panel::top("toolbar").frame(chrome).show(ui, |ui| self.toolbar(ui));
-        egui::Panel::left("sites").frame(chrome).resizable(true).default_size(220.0).show(ui, |ui| self.sidebar(ui));
-        egui::Panel::bottom("queue").frame(chrome).resizable(true).default_size(150.0).show(ui, |ui| self.queue_panel(ui));
-        let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 0, right: 12, top: 0, bottom: 0 });
+        if self.s.show_menubar {
+            let bar = egui::Frame::NONE.fill(v.panel_fill).inner_margin(egui::Margin::symmetric(6, 2));
+            egui::Panel::top("menubar").show_separator_line(false).frame(bar).show(ui, |ui| {
+                egui::MenuBar::new().ui(ui, |ui| self.menus(ui));
+            });
+        }
+        let chrome = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 6, bottom: 8 });
+        egui::Panel::top("toolbar").show_separator_line(false).frame(chrome).show(ui, |ui| self.toolbar(ui));
+        let side = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 10, right: 8, top: 0, bottom: 8 });
+        if self.s.show_sidebar {
+            egui::Panel::left("sites").show_separator_line(false).frame(side).resizable(true).default_size(220.0).size_range(170.0..=360.0).show(ui, |ui| self.sidebar(ui));
+        }
+        if self.s.show_queue {
+            let q = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 2, bottom: 8 });
+            egui::Panel::bottom("queue").show_separator_line(false).frame(q).resizable(true).default_size(150.0).size_range(90.0..=400.0).show(ui, |ui| self.queue_panel(ui));
+        } else {
+            let st = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 4, bottom: 6 });
+            egui::Panel::bottom("status").show_separator_line(false).frame(st).show(ui, |ui| self.status_line(ui));
+        }
+        let left_pad = if self.s.show_sidebar { 0 } else { 12 };
+        let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: left_pad, right: 12, top: 0, bottom: 0 });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();
             let gap = 10.0;
@@ -219,6 +256,7 @@ impl eframe::App for FtpApp {
             self.draw_pane(ui, Side::Local, left);
             self.draw_pane(ui, Side::Remote, right);
         });
+        self.windows(&ctx);
         self.dialogs(&ctx);
         if let Some(shot) = self.shot.as_mut() {
             // Checks: wait for logging in and listing to finish first (up to about 10 s).

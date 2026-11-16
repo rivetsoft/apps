@@ -6,6 +6,7 @@ use rivet_look::fonts;
 use rivet_look::theme::{r_lg, r_md, r_sm, status};
 
 use super::logic::{expand, first_line};
+use super::menus::menu_style;
 use super::*;
 use crate::listing;
 use crate::sftp;
@@ -17,18 +18,47 @@ impl FtpApp {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
         ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            // Quick connect: an address, used without saving it.
-            let field_w = (ui.available_width() - 300.0).clamp(220.0, 520.0);
+            ui.spacing_mut().item_spacing.x = 6.0;
+            // With the menu bar hidden, its menus live behind a button (like Rivet's).
+            if !self.s.show_menubar {
+                let tex = self.named_icon(&ctx, &["open-menu-symbolic", "application-menu-symbolic", "view-more-symbolic"]);
+                let b = match &tex {
+                    Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
+                    None => egui::Button::new("Menu"),
+                };
+                egui::containers::menu::MenuButton::from_button(b.min_size(Vec2::new(30.0, 30.0)).corner_radius(r_sm())).ui(ui, |ui| {
+                    menu_style(ui);
+                    self.menus(ui);
+                });
+            }
+            if !self.s.show_sidebar && self.icon_button(ui, &["sidebar-show-symbolic", "view-dual-symbolic"], "Connections", "Show saved connections (F9)").clicked() {
+                self.s.show_sidebar = true;
+                self.s.save();
+            }
+            // Quick connect: an address, used without saving it. Same height and surface as
+            // Rivet's location bar.
+            let field_w = (ui.available_width() - 320.0).clamp(240.0, 560.0);
             let mut go = false;
-            egui::Frame::new().fill(v.text_edit_bg_color()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 6)).show(ui, |ui| {
+            let server = self.named_icon(&ctx, &["network-server-symbolic", "network-workgroup-symbolic"]);
+            egui::Frame::new().fill(v.text_edit_bg_color()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 7)).show(ui, |ui| {
                 ui.set_width(field_w);
-                let r = ui.add(egui::TextEdit::singleline(&mut self.quick).frame(egui::Frame::NONE).hint_text("Quick connect: user@server or sftp://user@server:port/folder").desired_width(f32::INFINITY));
-                go = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                ui.horizontal(|ui| {
+                    if let Some(t) = &server {
+                        ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.weak_text_color()));
+                    }
+                    let r = ui.add(egui::TextEdit::singleline(&mut self.quick).id(egui::Id::unique("quick-connect")).frame(egui::Frame::NONE).hint_text("user@server  or  sftp://user@server:port/folder").desired_width(f32::INFINITY));
+                    if self.focus_quick {
+                        self.focus_quick = false;
+                        r.request_focus();
+                    }
+                    go = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+                });
             });
             let busy = self.connecting;
             let can = !busy && !self.quick.trim().is_empty();
-            if ui.add_enabled(can, egui::Button::new("Connect").corner_radius(r_sm())).clicked() || (go && can) {
+            let (fill, fg) = if can { (v.selection.bg_fill, v.selection.stroke.color) } else { (v.widgets.inactive.weak_bg_fill, v.weak_text_color()) };
+            let connect = egui::Button::new(egui::RichText::new("Connect").color(fg)).fill(fill).corner_radius(r_md()).min_size(Vec2::new(84.0, 32.0));
+            if ui.add_enabled(can, connect).on_hover_text("Connect without saving (Ctrl+K to type an address)").clicked() || (go && can) {
                 match Connection::from_url("Quick connect", self.quick.trim()) {
                     Ok(c) => self.connect(c, &ctx),
                     Err(e) => self.note = Some((e, true)),
@@ -36,14 +66,17 @@ impl FtpApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if self.conn.is_some() {
-                    if ui.add(egui::Button::new("Disconnect").corner_radius(r_sm())).clicked() {
-                        let name = self.conn.as_ref().map(|c| c.name.clone()).unwrap_or_default();
-                        self.disconnect();
-                        self.note = Some((format!("Disconnected from {name}."), false));
+                    let tex = self.named_icon(&ctx, &["network-offline-symbolic", "process-stop-symbolic", "window-close-symbolic"]);
+                    let b = match &tex {
+                        Some(t) => egui::Button::image_and_text(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.text_color()), "Disconnect"),
+                        None => egui::Button::new("Disconnect"),
+                    };
+                    if ui.add(b.corner_radius(r_md()).min_size(Vec2::new(0.0, 32.0))).on_hover_text("Disconnect (Ctrl+Shift+D)").clicked() {
+                        self.run(super::menus::Cmd::Disconnect, &ctx);
                     }
                     // A quick connection can be kept.
                     if let Some(c) = self.conn.clone().filter(|c| self.store.find(&c.name).is_none())
-                        && ui.add(egui::Button::new("Save…").corner_radius(r_sm())).on_hover_text("Save this connection").clicked()
+                        && ui.add(egui::Button::new("Save…").corner_radius(r_md()).min_size(Vec2::new(0.0, 32.0))).on_hover_text("Save this connection").clicked()
                     {
                         let mut f = Form::from(&c);
                         f.original = None;
@@ -51,14 +84,40 @@ impl FtpApp {
                         self.form = Some(f);
                     }
                 }
+                // Where we are: a pill with a status dot.
                 let (dot, text) = match (&self.conn, self.connecting) {
-                    (Some(c), true) => (status(&ctx).warning, format!("Connecting to {}", c.name)),
+                    (Some(c), true) => (status(&ctx).warning, format!("Connecting to {}…", c.name)),
                     (Some(c), false) => (status(&ctx).success, c.name.clone()),
                     (None, _) => (v.weak_text_color(), "Not connected".to_string()),
                 };
-                ui.label(text);
-                let (r, _) = ui.allocate_exact_size(Vec2::splat(10.0), Sense::hover());
-                ui.painter().circle_filled(r.center(), 4.0, dot);
+                let galley = ui.painter().layout_no_wrap(text, fonts::ui_font(13.0), v.text_color());
+                let (r, _) = ui.allocate_exact_size(Vec2::new(galley.size().x + 34.0, 30.0), Sense::hover());
+                ui.painter().rect_filled(r, r_md(), v.faint_bg_color);
+                ui.painter().circle_filled(Pos2::new(r.left() + 14.0, r.center().y), 4.0, dot);
+                ui.painter().galley(Pos2::new(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, v.text_color());
+            });
+        });
+    }
+
+    /// The bottom line when the transfer list is hidden: the last message and a count.
+    pub(super) fn status_line(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let v = ui.visuals().clone();
+        ui.horizontal(|ui| {
+            let waiting = self.queue.iter().filter(|j| j.state == JobState::Waiting).count();
+            if waiting > 0 {
+                ui.add(egui::Spinner::new().size(12.0));
+                ui.label(format!("{waiting} transfer{} to go", if waiting == 1 { "" } else { "s" }));
+            }
+            if let Some((msg, bad)) = &self.note {
+                let c = if *bad { status(&ctx).danger } else { v.weak_text_color() };
+                ui.label(egui::RichText::new(first_line(msg)).color(c)).on_hover_text(msg.as_str());
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(egui::Button::new("Transfers").frame(false)).on_hover_text("Show transfers (F8)").clicked() {
+                    self.s.show_queue = true;
+                    self.s.save();
+                }
             });
         });
     }
@@ -180,12 +239,44 @@ impl FtpApp {
         let cols = (row_w - 190.0, 80.0);
         let head_y = ui.cursor().top() + 9.0;
         let weak = v.weak_text_color();
-        let hf = fonts::ui_font(11.5);
         let x0 = inner.left();
         if live {
-            ui.painter().text(Pos2::new(x0 + 28.0, head_y), Align2::LEFT_CENTER, "Name", hf.clone(), weak);
-            ui.painter().text(Pos2::new(x0 + cols.0 + cols.1, head_y), Align2::RIGHT_CENTER, "Size", hf.clone(), weak);
-            ui.painter().text(Pos2::new(x0 + cols.0 + cols.1 + 16.0, head_y), Align2::LEFT_CENTER, "Modified", hf, weak);
+            use crate::listing::{Sort, SortCol};
+            let sort = self.pane_ref(side).sort;
+            let mut pick: Option<SortCol> = None;
+            let cells = [
+                (SortCol::Name, "Name", Rect::from_min_max(Pos2::new(x0 + 22.0, head_y - 10.0), Pos2::new(x0 + cols.0 - 8.0, head_y + 10.0)), false),
+                (SortCol::Size, "Size", Rect::from_min_max(Pos2::new(x0 + cols.0, head_y - 10.0), Pos2::new(x0 + cols.0 + cols.1 + 4.0, head_y + 10.0)), true),
+                (SortCol::Modified, "Modified", Rect::from_min_max(Pos2::new(x0 + cols.0 + cols.1 + 10.0, head_y - 10.0), Pos2::new(inner.right(), head_y + 10.0)), false),
+            ];
+            for (col, label, r, right) in cells {
+                let resp = ui.interact(r, egui::Id::unique(("sort", side as u8, label)), Sense::click());
+                let on = sort.col == col;
+                let c = if on || resp.hovered() { v.text_color() } else { weak };
+                // Right-aligned headings leave room on their right for the arrow.
+                let (pos, align) = if right { (Pos2::new(r.right() - if on { 16.0 } else { 4.0 }, head_y), Align2::RIGHT_CENTER) } else { (Pos2::new(r.left() + 6.0, head_y), Align2::LEFT_CENTER) };
+                let tr = ui.painter().text(pos, align, label, fonts::ui_font(11.5), c);
+                if on {
+                    // A small drawn triangle: up for ascending, down for descending.
+                    let cx = tr.right() + 8.0;
+                    let pts = if sort.desc {
+                        vec![Pos2::new(cx - 3.5, head_y - 1.5), Pos2::new(cx + 3.5, head_y - 1.5), Pos2::new(cx, head_y + 2.5)]
+                    } else {
+                        vec![Pos2::new(cx - 3.5, head_y + 2.0), Pos2::new(cx + 3.5, head_y + 2.0), Pos2::new(cx, head_y - 2.0)]
+                    };
+                    ui.painter().add(egui::Shape::convex_polygon(pts, c, Stroke::NONE));
+                }
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    pick = Some(col);
+                }
+            }
+            if let Some(col) = pick {
+                let p = self.pane(side);
+                p.sort = if p.sort.col == col { Sort { col, desc: !p.sort.desc } } else { Sort { col, desc: col != SortCol::Name } };
+                let order = p.sort;
+                crate::listing::sort_by(&mut p.entries, order);
+                p.cursor = None;
+            }
         }
         ui.allocate_space(Vec2::new(row_w, 20.0));
 
@@ -269,6 +360,7 @@ impl FtpApp {
 
     fn path_bar(&mut self, ui: &mut egui::Ui, side: Side) {
         let v = ui.visuals().clone();
+        let ctx = ui.ctx().clone();
         let mut go: Option<String> = None;
         egui::Frame::new().fill(v.text_edit_bg_color()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(8, 3)).show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -284,32 +376,56 @@ impl FtpApp {
                     r.request_focus();
                 }
             } else {
-                // The folder as steps: click one to go there, or the empty end to type a path.
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    let path = pane.path.clone();
-                    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
-                    if ui.add(egui::Button::new(egui::RichText::new("/").color(v.weak_text_color())).frame(false)).clicked() {
-                        go = Some("/".into());
-                    }
-                    let mut acc = String::new();
-                    for (i, p) in parts.iter().enumerate() {
-                        acc.push('/');
-                        acc.push_str(p);
-                        let last = i + 1 == parts.len();
-                        let txt = if last { egui::RichText::new(*p).strong() } else { egui::RichText::new(*p) };
-                        if ui.add(egui::Button::new(txt).frame(false)).clicked() {
-                            go = Some(acc.clone());
-                        }
-                        if !last {
-                            ui.label(egui::RichText::new(" › ").color(v.weak_text_color()));
-                        }
-                    }
-                    let rest = ui.allocate_response(Vec2::new(ui.available_width(), 20.0), Sense::click()).on_hover_cursor(egui::CursorIcon::Text);
-                    if rest.clicked() {
-                        pane.editing = Some(path.clone());
-                    }
-                });
+                // The folder as steps, like Rivet's path bar: click one to go there; the current
+                // folder is an accent pill; the empty end switches to typing a path.
+                let path = pane.path.clone();
+                let home = rivet_xdg::places::home().to_string_lossy().into_owned();
+                let mut crumbs: Vec<(String, String, &str)> = Vec::new();
+                let rest = if side == Side::Local && (path == home || path.starts_with(&format!("{home}/"))) {
+                    crumbs.push(("Home".into(), home.clone(), "user-home"));
+                    path[home.len()..].to_string()
+                } else {
+                    crumbs.push((if side == Side::Local { "File System".into() } else { "/".into() }, "/".into(), if side == Side::Local { "drive-harddisk" } else { "network-server" }));
+                    path.clone()
+                };
+                let mut acc = crumbs[0].1.trim_end_matches('/').to_string();
+                for part in rest.split('/').filter(|s| !s.is_empty()) {
+                    acc.push('/');
+                    acc.push_str(part);
+                    crumbs.push((part.to_string(), acc.clone(), ""));
+                }
+                let last = crumbs.len() - 1;
+                let icons: Vec<Option<egui::TextureHandle>> = crumbs.iter().map(|(_, _, i)| if i.is_empty() { None } else { self.named_icon(&ctx, &[&format!("{i}-symbolic"), i]) }).collect();
+                let pane = self.pane(side);
+                egui::ScrollArea::horizontal()
+                    .id_salt(("crumbs", side as u8))
+                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                    .stick_to_right(true)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 2.0;
+                            for (i, (label, target, _)) in crumbs.iter().enumerate() {
+                                let sel = i == last;
+                                let fg = if sel { v.selection.stroke.color } else { v.text_color() };
+                                let text = if sel { egui::RichText::new(label).strong().color(fg) } else { egui::RichText::new(label) };
+                                let btn = match &icons[i] {
+                                    Some(t) => egui::Button::image_and_text(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(fg), text),
+                                    None => egui::Button::new(text),
+                                };
+                                let resp = ui.add(btn.selected(sel).frame_when_inactive(sel).min_size(Vec2::new(0.0, 22.0)).corner_radius(r_sm()));
+                                if resp.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                }
+                                if resp.clicked() {
+                                    go = Some(target.clone());
+                                }
+                            }
+                            let rest = ui.allocate_response(Vec2::new(ui.available_width().max(24.0), 22.0), Sense::click()).on_hover_cursor(egui::CursorIcon::Text);
+                            if rest.clicked() {
+                                pane.editing = Some(path.clone());
+                            }
+                        });
+                    });
             }
         });
         if let Some(p) = go {
@@ -414,7 +530,10 @@ impl FtpApp {
         }
         if let Some(i) = activated {
             self.focus = side;
-            self.activate(side, &entries[i]);
+            let e = &entries[i];
+            if e.is_dir || (e.is_link && side == Side::Remote) || self.s.double_click_sends {
+                self.activate(side, e);
+            }
         }
         if let Some(i) = drag_start {
             let p = self.pane(side);
@@ -459,7 +578,8 @@ impl FtpApp {
                 ui.close();
             }
             if side == Side::Remote && ui.button("Delete…").clicked() {
-                self.prompt = Some(Prompt::Delete(sel.clone()));
+                let ctx = ui.ctx().clone();
+                self.run(super::menus::Cmd::Delete, &ctx);
                 ui.close();
             }
             if side == Side::Remote && sel.len() == 1 && ui.button("Copy address").clicked() {
@@ -481,7 +601,7 @@ impl FtpApp {
             self.reload(side);
             ui.close();
         }
-        let mut hidden = self.show_hidden;
+        let mut hidden = self.s.show_hidden;
         if ui.checkbox(&mut hidden, "Show hidden files").clicked() {
             self.toggle_hidden();
             ui.close();
@@ -585,7 +705,3 @@ impl FtpApp {
     }
 }
 
-pub(super) fn menu_style(ui: &mut egui::Ui) {
-    ui.set_min_width(190.0);
-    ui.spacing_mut().button_padding = Vec2::new(8.0, 5.0);
-}

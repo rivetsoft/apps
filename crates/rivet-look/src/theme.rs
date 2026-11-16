@@ -2,10 +2,21 @@
 //! and the desktop's palette; one scale of corner radii (square in terminal mode); and the
 //! info / danger / warning / success colours.
 
-use eframe::egui::{self, Color32, CornerRadius, Stroke, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Stroke, Vec2};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::palette::{self, Palette, mix};
+
+/// The accent colours every Rivet app offers, with their names.
+pub const ACCENTS: [([u8; 3], &str); 7] = [
+    ([0x35, 0x84, 0xe4], "Blue"),
+    ([0x5e, 0x9c, 0x3c], "Green"),
+    ([0x1f, 0x9e, 0x9a], "Teal"),
+    ([0x91, 0x41, 0xac], "Purple"),
+    ([0xe6, 0x61, 0x00], "Orange"),
+    ([0xc0, 0x1c, 0x28], "Red"),
+    ([0x77, 0x76, 0x7b], "Grey"),
+];
 
 /// Light, dark, or whatever the desktop prefers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -195,4 +206,17 @@ pub fn apply(ctx: &egui::Context, look: &Look) {
             }
         });
     }
+}
+
+/// Paint a texture fitted (aspect kept) and centred in `rect`, tinted.
+pub fn paint_tex(painter: &egui::Painter, tex: &egui::TextureHandle, rect: Rect, tint: Color32) {
+    let size = tex.size_vec2();
+    let scale = (rect.width() / size.x).min(rect.height() / size.y);
+    let r = Rect::from_center_size(rect.center(), size * scale);
+    painter.image(tex.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), tint);
+}
+
+/// The tile behind a selected item on a surface `bg`: a light accent tint and an accent edge.
+pub fn selected_tile(v: &egui::Visuals, bg: Color32) -> (Color32, Stroke) {
+    (mix(bg, v.selection.bg_fill, 0.30), Stroke::new(1.0, v.selection.bg_fill.gamma_multiply(0.65)))
 }

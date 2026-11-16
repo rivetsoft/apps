@@ -26,7 +26,6 @@ mod netview;
 mod peek;
 mod quickview;
 mod views;
-mod windows;
 mod zen;
 mod commands;
 mod crashview;
@@ -341,17 +340,11 @@ pub struct RivetApp {
 
 // The look shared with the other Rivet apps: corner radii (square in terminal mode) and the
 // status colours.
-pub(crate) use rivet_look::theme::{StatusColors, r_lg, r_md, r_sm, r_xs, set_square, status};
+pub(crate) use rivet_look::theme::{StatusColors, paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile, set_square, status};
+// In-app windows (Preferences, Properties, …), shared with the other Rivet apps.
+use rivet_look::windows;
 
-const ACCENTS: [([u8; 3], &str); 7] = [
-    ([0x35, 0x84, 0xe4], "Blue"),
-    ([0x5e, 0x9c, 0x3c], "Green"),
-    ([0x1f, 0x9e, 0x9a], "Teal"),
-    ([0x91, 0x41, 0xac], "Purple"),
-    ([0xe6, 0x61, 0x00], "Orange"),
-    ([0xc0, 0x1c, 0x28], "Red"),
-    ([0x77, 0x76, 0x7b], "Grey"),
-];
+use rivet_look::theme::ACCENTS;
 
 fn accent_color(s: &Settings) -> Color32 {
     let a = s.live_accent.unwrap_or(s.accent);
@@ -407,10 +400,6 @@ fn desktop_icon(p: &Path) -> Option<String> {
 
 /// The shared "selected" look (selected files, active view and sidebar-mode buttons):
 /// the surface tinted with the accent plus a thin accent outline. `bg` is the surface underneath.
-pub(crate) fn selected_tile(v: &egui::Visuals, bg: Color32) -> (Color32, Stroke) {
-    (crate::palette::mix(bg, v.selection.bg_fill, 0.30), Stroke::new(1.0, v.selection.bg_fill.gamma_multiply(0.65)))
-}
-
 /// A small right arrow (drawn, so it looks the same in every font), sized like a label.
 pub(crate) fn arrow_label(ui: &mut egui::Ui, color: Color32) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(18.0, 14.0), egui::Sense::hover());
@@ -471,13 +460,6 @@ pub(crate) fn tui_panel(ui: &egui::Ui, panel: Rect, m: egui::Margin, title: &str
         painter.rect_filled(r, 0.0, bg);
     }
     tui_title(ui, b, title);
-}
-
-fn paint_tex(painter: &egui::Painter, tex: &egui::TextureHandle, rect: Rect, tint: Color32) {
-    let size = tex.size_vec2();
-    let scale = (rect.width() / size.x).min(rect.height() / size.y);
-    let r = Rect::from_center_size(rect.center(), size * scale);
-    painter.image(tex.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), tint);
 }
 
 impl RivetApp {

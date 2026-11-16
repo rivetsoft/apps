@@ -1,6 +1,6 @@
 //! The look shared by the Rivet apps: live desktop colours (`palette`), fonts, icon themes and
 //! Rivet's own icons (`icons`, `builtin_icons`, `nerd`), theme-coloured code (`highlight`), and
-//! the egui theme built from them (`theme`).
+//! the egui theme built from them (`theme`), and in-app windows (`windows`).
 
 use rivet_xdg::places;
 
@@ -11,3 +11,4 @@ pub mod icons;
 pub mod nerd;
 pub mod palette;
 pub mod theme;
+pub mod windows;

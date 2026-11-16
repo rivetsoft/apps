@@ -11,12 +11,13 @@ use rivet_look::{fonts, palette, theme};
 use rivet_xdg::mime::MimeDb;
 
 use super::*;
+use crate::settings::OnExists;
 use crate::listing::{self, Entry};
 use crate::sftp::{self, Reply, Request, Session};
 
 impl FtpApp {
     pub fn new(cc: &eframe::CreationContext, open: Option<String>, screenshot: Option<std::path::PathBuf>) -> FtpApp {
-        let (pal, _) = palette::load();
+        let (pal, watched) = palette::load();
         let home = rivet_xdg::places::home();
         let mut app = FtpApp {
             store: Store::load(),
@@ -28,7 +29,17 @@ impl FtpApp {
             local: Pane { path: home.to_string_lossy().into_owned(), ..Default::default() },
             remote: Pane::default(),
             focus: Side::Local,
-            show_hidden: false,
+            s: if screenshot.is_some() { Settings::default() } else { Settings::load() },
+            remote_home: None,
+            focus_quick: false,
+            prefs_open: false,
+            prefs_page: super::prefs::Page::Appearance,
+            prefs_win: rivet_look::windows::WinState::new(10, eframe::egui::Vec2::new(720.0, 520.0)),
+            keys_open: false,
+            keys_win: rivet_look::windows::WinState::new(11, eframe::egui::Vec2::new(480.0, 520.0)),
+            app_icon: None,
+            palette_watch: watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect(),
+            palette_checked: 0.0,
             conn: None,
             browse: None,
             transfer: None,
@@ -44,9 +55,33 @@ impl FtpApp {
             hook_send: std::env::var("RIVET_FTP_SEND").ok(),
             shot_wait: 0,
         };
-        // Test hook for checks: start in this local folder.
+        if screenshot_mode(&app) {
+            crate::settings::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        if app.s.remember_local && std::path::Path::new(&app.s.last_local).is_dir() {
+            app.local.path = app.s.last_local.clone();
+        }
+        // Test hooks for checks: start in this local folder; a style; a Preferences page.
         if let Ok(p) = std::env::var("RIVET_FTP_LOCAL") {
             app.local.path = p;
+        }
+        match std::env::var("RIVET_FTP_THEME").as_deref() {
+            Ok("light") => (app.s.theme, app.s.follow_desktop_colors) = (theme::Mode::Light, false),
+            Ok("dark") => (app.s.theme, app.s.follow_desktop_colors) = (theme::Mode::Dark, false),
+            _ => {}
+        }
+        if let Ok(p) = std::env::var("RIVET_FTP_PREFS") {
+            app.prefs_open = true;
+            app.prefs_page = match p.as_str() {
+                "transfers" => super::prefs::Page::Transfers,
+                "connections" => super::prefs::Page::Connections,
+                "about" => super::prefs::Page::About,
+                _ => super::prefs::Page::Appearance,
+            };
+        }
+        app.keys_open = std::env::var_os("RIVET_FTP_KEYS").is_some();
+        if std::env::var_os("RIVET_FTP_NO_MENUBAR").is_some() {
+            app.s.show_menubar = false;
         }
         app.reload_local();
         if let Some(name) = open {
@@ -67,8 +102,6 @@ impl FtpApp {
     pub(super) fn apply_look(&mut self, ctx: &egui::Context) {
         if !self.font_set {
             self.font_set = true;
-            let size = fonts::desktop_font_cached().map(|(_, pt)| fonts::points_to_ui(pt)).unwrap_or(fonts::BASE_SIZE);
-            fonts::set_scale(size / fonts::BASE_SIZE);
             let mut defs = egui::FontDefinitions::default();
             if let Some((_, path)) = fonts::resolve("")
                 && let Ok(bytes) = std::fs::read(&path)
@@ -78,13 +111,34 @@ impl FtpApp {
             }
             ctx.set_fonts(defs);
         }
-        let key = format!("{:?}", self.palette);
+        let size = if self.s.text_size > 0.0 { self.s.text_size } else { fonts::desktop_font_cached().map(|(_, pt)| fonts::points_to_ui(pt)).unwrap_or(fonts::BASE_SIZE) };
+        fonts::set_scale(size / fonts::BASE_SIZE);
+        let (mode, accent, pal) = self.look();
+        let pal = pal.cloned();
+        let key = format!("{mode:?}{accent:?}{pal:?}{size}");
         if self.look_key.as_ref() == Some(&key) {
             return;
         }
         self.look_key = Some(key);
-        let accent = self.palette.as_ref().and_then(|p| p.accent).unwrap_or(DEFAULT_ACCENT);
-        theme::apply(ctx, &theme::Look { mode: theme::Mode::System, accent, palette: self.palette.as_ref(), terminal: false });
+        theme::apply(ctx, &theme::Look { mode, accent, palette: pal.as_ref(), terminal: false });
+    }
+
+    /// Follow the desktop's colors live: every two seconds, see whether a color file changed.
+    pub(super) fn watch_palette(&mut self, ctx: &egui::Context) {
+        let now = ctx.input(|i| i.time);
+        if now - self.palette_checked < 2.0 && self.palette_checked > 0.0 {
+            return;
+        }
+        self.palette_checked = now;
+        let changed = self.palette_watch.iter().any(|(p, t)| mtime(p) != *t);
+        if changed {
+            let (pal, watched) = palette::load();
+            self.palette = pal;
+            self.palette_watch = watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect();
+        }
+        if self.s.follow_desktop_colors && self.shot.is_none() {
+            ctx.request_repaint_after(std::time::Duration::from_secs(2));
+        }
     }
 
     pub(super) fn icon(&mut self, ctx: &egui::Context, e: &Entry) -> Option<egui::TextureHandle> {
@@ -121,7 +175,7 @@ impl FtpApp {
         }
         self.browse = Some(Session::open(&c, ctx.clone()));
         self.connecting = true;
-        self.remote = Pane { loading: true, ..Default::default() };
+        self.remote = Pane { loading: true, sort: self.remote.sort, ..Default::default() };
         self.note = Some((format!("Connecting to {}…", c.target()), false));
         self.conn = Some(c);
     }
@@ -133,7 +187,8 @@ impl FtpApp {
         self.connecting = false;
         self.pending.clear();
         self.list_req = None;
-        self.remote = Pane::default();
+        self.remote = Pane { sort: self.remote.sort, ..Default::default() };
+        self.remote_home = None;
         for j in &mut self.queue {
             if j.state == JobState::Waiting {
                 j.state = JobState::Failed("Disconnected".into());
@@ -152,6 +207,7 @@ impl FtpApp {
             match r {
                 Reply::Connected(home) => {
                     self.connecting = false;
+                    self.remote_home = Some(home.clone());
                     let start = self.conn.as_ref().and_then(|c| c.remote.clone()).unwrap_or(home);
                     if let Some(c) = &self.conn {
                         self.note = Some((format!("Connected to {}.", c.target()), false));
@@ -162,9 +218,9 @@ impl FtpApp {
                 }
                 Reply::Listing(path, entries) => {
                     if path == self.remote.path {
-                        let hidden = self.show_hidden;
+                        let hidden = self.s.show_hidden;
                         let mut entries: Vec<Entry> = entries.into_iter().filter(|e| hidden || !e.name.starts_with('.')).collect();
-                        listing::sort(&mut entries);
+                        listing::sort_by(&mut entries, self.remote.sort);
                         self.remote.entries = entries;
                         let names: BTreeSet<String> = self.remote.entries.iter().map(|e| e.name.clone()).collect();
                         self.remote.selected.retain(|n| names.contains(n));
@@ -228,6 +284,9 @@ impl FtpApp {
                 }
             }
         }
+        if self.s.clear_finished {
+            self.queue.retain(|j| j.state != JobState::Done);
+        }
         if let Some(why) = closed {
             self.transfer = None;
             for j in &mut self.queue {
@@ -250,8 +309,9 @@ impl FtpApp {
     // ---------------------------------------------------------------- navigation
 
     pub(super) fn reload_local(&mut self) {
-        match listing::read_local(Path::new(&self.local.path), self.show_hidden) {
-            Ok(v) => {
+        match listing::read_local(Path::new(&self.local.path), self.s.show_hidden) {
+            Ok(mut v) => {
+                listing::sort_by(&mut v, self.local.sort);
                 self.local.entries = v;
                 self.local.error = None;
             }
@@ -290,6 +350,10 @@ impl FtpApp {
         self.local.selected.clear();
         self.local.cursor = None;
         self.reload_local();
+        if self.s.remember_local && self.local.error.is_none() {
+            self.s.last_local = self.local.path.clone();
+            self.s.save();
+        }
         // Coming up out of a folder: select it.
         let oldp = Path::new(&old);
         if oldp.parent().is_some_and(|p| p.to_string_lossy() == self.local.path.as_str())
@@ -389,10 +453,14 @@ impl FtpApp {
             to_dir: to_pane.path.clone(),
             clashes,
         };
-        if pending.clashes.is_empty() {
-            self.enqueue(pending, true);
-        } else {
-            self.prompt = Some(Prompt::Replace(pending));
+        match (pending.clashes.is_empty(), self.s.on_exists) {
+            (true, _) | (false, OnExists::Replace) => self.enqueue(pending, true),
+            (false, OnExists::Skip) => {
+                let n = pending.clashes.len();
+                self.note = Some((format!("Skipped {n} item{} that {} already there.", if n == 1 { "" } else { "s" }, if n == 1 { "was" } else { "were" }), false));
+                self.enqueue(pending, false);
+            }
+            (false, OnExists::Ask) => self.prompt = Some(Prompt::Replace(pending)),
         }
     }
 
@@ -501,7 +569,8 @@ impl FtpApp {
     }
 
     pub(super) fn toggle_hidden(&mut self) {
-        self.show_hidden = !self.show_hidden;
+        self.s.show_hidden = !self.s.show_hidden;
+        self.s.save();
         self.reload_local();
         self.reload_remote();
     }
@@ -514,7 +583,7 @@ impl FtpApp {
         }
         let side = self.focus;
         let (pressed, mods) = ctx.input(|i| {
-            let keys: Vec<Key> = [Key::ArrowUp, Key::ArrowDown, Key::Enter, Key::Backspace, Key::Tab, Key::F5, Key::F2, Key::Delete, Key::Home, Key::End, Key::A, Key::N, Key::H]
+            let keys: Vec<Key> = [Key::ArrowUp, Key::ArrowDown, Key::Enter, Key::Home, Key::End]
                 .into_iter()
                 .filter(|k| i.key_pressed(*k))
                 .collect();
@@ -523,8 +592,7 @@ impl FtpApp {
         for k in pressed {
             let n = self.pane_ref(side).entries.len();
             match k {
-                Key::Tab => self.focus = side.other(),
-                Key::ArrowDown | Key::ArrowUp | Key::Home | Key::End if n > 0 => {
+                Key::ArrowDown | Key::ArrowUp | Key::Home | Key::End if n > 0 && !mods.alt => {
                     let p = self.pane(side);
                     let cur = p.cursor.unwrap_or(0);
                     let next = match k {
@@ -551,26 +619,6 @@ impl FtpApp {
                         self.transfer_items(side, sel);
                     }
                 }
-                Key::Backspace => self.go_up(side),
-                Key::F5 => self.reload(side),
-                Key::F2 => {
-                    let sel = self.pane_ref(side).selected_entries();
-                    if sel.len() == 1 {
-                        self.prompt = Some(Prompt::Rename(side, sel[0].name.clone(), sel[0].name.clone()));
-                    }
-                }
-                Key::Delete if side == Side::Remote => {
-                    let sel = self.remote.selected_entries();
-                    if !sel.is_empty() {
-                        self.prompt = Some(Prompt::Delete(sel));
-                    }
-                }
-                Key::A if mods.command => {
-                    let p = self.pane(side);
-                    p.selected = p.entries.iter().map(|e| e.name.clone()).collect();
-                }
-                Key::N if mods.command && mods.shift => self.prompt = Some(Prompt::NewFolder(side, String::new())),
-                Key::H if mods.command => self.toggle_hidden(),
                 _ => {}
             }
         }
@@ -587,4 +635,12 @@ pub(super) fn expand(p: &str) -> std::path::PathBuf {
         None if p == "~" => rivet_xdg::places::home(),
         None => std::path::PathBuf::from(p),
     }
+}
+
+fn mtime(p: &std::path::Path) -> Option<std::time::SystemTime> {
+    std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+fn screenshot_mode(app: &FtpApp) -> bool {
+    app.shot.is_some()
 }
