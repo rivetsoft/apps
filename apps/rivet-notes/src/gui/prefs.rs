@@ -52,8 +52,8 @@ impl Page {
 
 /// The keys, for the Keyboard page.
 const KEYS: [(&str, &[(&str, &str)]); 3] = [
-    ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Today's daily note (Daily notes module)", "Ctrl+D"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F")]),
-    ("View", &[("Reading view (Esc closes it)", "Ctrl+Space"), ("Switch folders / tags", "Ctrl+T"), ("Show or hide properties", "Ctrl+P"), ("Show or hide the sidebar", "F9"), ("Show or hide Peek", "F11"), ("Show or hide the menu bar", "Ctrl+M"), ("Preferences", "Ctrl+,")]),
+    ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Daily note (Daily notes module)", "Ctrl+D"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F"), ("Quick Open: go to a note", "Ctrl+P"), ("Quick Actions: every command", "Shift+Ctrl+P")]),
+    ("View", &[("Reading view (Esc closes it)", "Ctrl+Space"), ("Switch folders / tags", "Ctrl+T"), ("Show or hide the sidebar", "F9"), ("Show or hide Peek", "F11"), ("Show or hide the menu bar", "Ctrl+M"), ("Preferences", "Ctrl+,")]),
     ("Formatting", &[]),
 ];
 
@@ -237,6 +237,7 @@ impl NotesApp {
                                     });
                                     section(ui, "Window", &mut |ui| {
                                         ui.checkbox(&mut self.s.show_menubar, "Menu bar");
+                                        ui.checkbox(&mut self.s.show_statusbar, "Status bar");
                                         ui.checkbox(&mut self.s.show_sidebar, "Sidebar");
                                         ui.checkbox(&mut self.s.show_peek, "Peek");
                                         ui.checkbox(&mut self.s.show_breadcrumbs, "Breadcrumbs above the note's title");

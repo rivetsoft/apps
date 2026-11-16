@@ -143,7 +143,9 @@ impl NotesApp {
         let chrome = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 6, bottom: 8 });
         egui::Panel::top("toolbar").show_separator_line(false).frame(chrome).show(ui, |ui| self.toolbar(ui));
         let st = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 14, right: 14, top: 4, bottom: 6 });
-        egui::Panel::bottom("status").show_separator_line(false).frame(st).show(ui, |ui| self.status_line(ui));
+        if self.s.show_statusbar {
+            egui::Panel::bottom("status").show_separator_line(false).frame(st).show(ui, |ui| self.status_line(ui));
+        }
         if self.s.show_sidebar && self.vault.is_some() {
             let side = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 10, right: 8, top: 0, bottom: 4 });
             egui::Panel::left("notes-side").show_separator_line(false).frame(side).resizable(true).default_size(260.0).size_range(190.0..=460.0).show(ui, |ui| self.sidebar(ui));
@@ -155,7 +157,8 @@ impl NotesApp {
         }
         let left = if self.s.show_sidebar && self.vault.is_some() { 0 } else { 12 };
         let right = if peek { 6 } else { 12 };
-        let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left, right, top: 0, bottom: 0 });
+        let bottom = if self.s.show_statusbar { 0 } else { 12 };
+        let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left, right, top: 0, bottom });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();
             ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
@@ -182,7 +185,21 @@ impl NotesApp {
                 child.painter().text(c + Vec2::new(0.0, 14.0), Align2::CENTER_CENTER, "or make a new one with Ctrl+N", fonts::ui_font(12.5), weak);
             }
         });
+        // Without the status bar, a problem shows over the bottom of the window (click to hide).
+        if !self.s.show_statusbar
+            && let Some((m, true)) = self.note_msg.clone()
+        {
+            let r = egui::Area::new(egui::Id::unique("notes-problem")).order(egui::Order::Foreground).anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -18.0)).show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(14, 8)).show(ui, |ui| {
+                    ui.label(egui::RichText::new(m).color(status(ctx).danger));
+                });
+            });
+            if r.response.interact(Sense::click()).on_hover_text("Click to hide").clicked() {
+                self.note_msg = None;
+            }
+        }
         self.reading_view(ctx);
+        self.quick_panel(ctx);
         self.prompts(ctx);
         if self.prefs_open {
             self.prefs_window(ctx);
@@ -240,11 +257,11 @@ impl NotesApp {
                         if item(ui, "New Note", "Ctrl+N") {
                             self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
                         }
-                        if item(ui, "Today's Daily Note", "Ctrl+D") {
+                        if item(ui, "Daily Note", "Ctrl+D") {
                             self.daily_note();
                         }
                     });
-                    r.on_hover_text("New note (Ctrl+N) or today's daily note (Ctrl+D)")
+                    r.on_hover_text("New note (Ctrl+N) or daily note (Ctrl+D)")
                 } else {
                     let r = ui.add_enabled(self.vault.is_some(), b).on_hover_text("New note (Ctrl+N)");
                     if r.clicked() {
@@ -321,15 +338,15 @@ impl NotesApp {
                 ui.label(egui::RichText::new(self.vault_name()).color(v.text_color())).on_hover_text(format!("{}\nSwitch vaults from File → Switch Vault", path.display()));
                 ui.label(egui::RichText::new(format!("·  {n} note{}", if n == 1 { "" } else { "s" })).color(v.weak_text_color()));
             }
-            if let Some((m, bad)) = &self.note_msg {
+            // Only problems show here (no activity); they stay until the next one.
+            if let Some((m, true)) = &self.note_msg {
                 ui.add_space(10.0);
-                ui.label(egui::RichText::new(m).color(if *bad { status(&ctx).danger } else { v.weak_text_color() }));
+                ui.label(egui::RichText::new(m).color(status(&ctx).danger));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if let Some(d) = &self.doc {
                     let words = d.body.split_whitespace().count();
-                    let state = if d.dirty { "Saving…".to_string() } else { d.saved_at.as_ref().map(|t| format!("Saved at {t}")).unwrap_or_else(|| "Saved".into()) };
-                    ui.label(egui::RichText::new(format!("{words} words  ·  {state}")).color(v.weak_text_color()));
+                    ui.label(egui::RichText::new(format!("{words} word{}", if words == 1 { "" } else { "s" })).color(v.weak_text_color()));
                 }
             });
         });

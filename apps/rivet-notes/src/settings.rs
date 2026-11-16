@@ -22,6 +22,8 @@ pub struct Settings {
     pub follow_desktop_colors: bool,
     pub text_size: f32,
     pub show_menubar: bool,
+    /// The bar along the bottom: the vault, how many notes, the open note's words.
+    pub show_statusbar: bool,
     pub show_sidebar: bool,
     /// The sidebar's panels: which slot each is in, tabs, and the split.
     pub layout: crate::layout::Layout,
@@ -65,6 +67,7 @@ impl Default for Settings {
             follow_desktop_colors: true,
             text_size: 0.0,
             show_menubar: true,
+            show_statusbar: true,
             show_sidebar: true,
             layout: Default::default(),
             show_properties: true,
@@ -112,6 +115,7 @@ impl Settings {
                 "follow_desktop_colors" => s.follow_desktop_colors = b,
                 "text_size" => s.text_size = v.parse::<f32>().unwrap_or(0.0).clamp(0.0, 24.0),
                 "show_menubar" => s.show_menubar = b,
+                "show_statusbar" => s.show_statusbar = b,
                 "show_sidebar" => s.show_sidebar = b,
                 // Older settings: the two fixed arrangements.
                 "browse" if v == "tags" => s.layout.show(Browse::Tags),
@@ -165,10 +169,11 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nshow_breadcrumbs={}\ndaily_notes={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nshow_breadcrumbs={}\ndaily_notes={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
+            self.show_statusbar,
             self.show_sidebar,
             self.layout.to_text(),
             self.layout.split,

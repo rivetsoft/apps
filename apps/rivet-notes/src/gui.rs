@@ -5,6 +5,7 @@
 mod draw;
 mod peek;
 mod props;
+mod quick;
 mod prefs;
 mod read;
 
@@ -105,6 +106,8 @@ pub struct NotesApp {
     fmt_bar: Option<egui::Rect>,
     /// The note's page inside the window (for a centered column's margins).
     page_rect: egui::Rect,
+    /// Quick Open or Quick Actions, while one is up.
+    quick: Option<(quick::QuickKind, rivet_look::quick::QuickPanel)>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -143,6 +146,11 @@ impl NotesApp {
         // Test hook: RIVET_NOTES_DAILY turns the daily notes module on.
         if std::env::var_os("RIVET_NOTES_DAILY").is_some() {
             s.daily_notes = true;
+        }
+        // Test hook: RIVET_NOTES_QUICK=open|actions[:query] opens a quick panel (applied below).
+        // Test hook: RIVET_NOTES_NO_STATUS hides the status bar.
+        if std::env::var_os("RIVET_NOTES_NO_STATUS").is_some() {
+            s.show_statusbar = false;
         }
         if std::env::var_os("RIVET_NOTES_PEEK").is_some() {
             s.show_peek = true;
@@ -184,6 +192,7 @@ impl NotesApp {
             pending_fmt: None,
             fmt_bar: None,
             page_rect: egui::Rect::NOTHING,
+            quick: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -257,6 +266,13 @@ impl NotesApp {
                 crate::settings::NO_SAVE.store(false, std::sync::atomic::Ordering::Relaxed);
                 app.save_now();
                 crate::settings::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        if let Ok(q) = std::env::var("RIVET_NOTES_QUICK") {
+            let (k, query) = q.split_once(':').unwrap_or((q.as_str(), ""));
+            app.toggle_quick(if k == "actions" { quick::QuickKind::Actions } else { quick::QuickKind::Open });
+            if let Some((_, p)) = app.quick.as_mut() {
+                p.query = query.to_string();
             }
         }
         // Test hook for checks: RIVET_NOTES_RETITLE with RIVET_NOTES_WRITE renames the open note
@@ -600,7 +616,7 @@ impl NotesApp {
         let cmd = Modifiers::COMMAND;
         let shift = Modifiers { shift: true, ..Modifiers::COMMAND };
         let daily_on = self.s.daily_notes;
-        let (f, n, s, comma, m, b, t, p, find, pk, day) = ctx.input_mut(|i| {
+        let (f, n, s, comma, m, b, t, qa, qo, find, pk, day) = ctx.input_mut(|i| {
             (
                 // Shift first: a plain Ctrl+N pattern also matches with Shift held.
                 i.consume_shortcut(&KeyboardShortcut::new(shift, Key::N)),
@@ -610,6 +626,7 @@ impl NotesApp {
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::M)),
                 i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::F9)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::T)),
+                i.consume_shortcut(&KeyboardShortcut::new(shift, Key::P)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::P)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::F)),
                 i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::F11)),
@@ -659,9 +676,11 @@ impl NotesApp {
             }
             self.s.save();
         }
-        if p {
-            self.s.show_properties = !self.s.show_properties;
-            self.s.save();
+        // Quick Actions first: a plain Ctrl+P pattern also matches with Shift held.
+        if qa {
+            self.toggle_quick(quick::QuickKind::Actions);
+        } else if qo && self.vault.is_some() {
+            self.toggle_quick(quick::QuickKind::Open);
         }
         if find {
             ctx.memory_mut(|m| m.request_focus(egui::Id::unique("notes-search")));
@@ -695,7 +714,7 @@ impl NotesApp {
                 self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
                 ui.close();
             }
-            if self.s.daily_notes && ui.add_enabled(has_vault, egui::Button::new("Today's Daily Note").shortcut_text("Ctrl+D")).clicked() {
+            if self.s.daily_notes && ui.add_enabled(has_vault, egui::Button::new("Daily Note").shortcut_text("Ctrl+D")).clicked() {
                 self.daily_note();
                 ui.close();
             }
@@ -783,12 +802,13 @@ impl NotesApp {
                 });
             };
             let before = self.s.clone();
-            c(ui, &mut self.s.show_properties, "Properties", "Ctrl+P");
+            c(ui, &mut self.s.show_properties, "Properties", "");
             c(ui, &mut self.s.show_sidebar, "Sidebar", "F9");
             c(ui, &mut self.s.show_peek, "Peek", "F11");
             c(ui, &mut self.s.show_breadcrumbs, "Breadcrumbs", "");
             c(ui, &mut self.s.centered, "Center Notes by Default", "");
             c(ui, &mut self.s.show_menubar, "Menubar", "Ctrl+M");
+            c(ui, &mut self.s.show_statusbar, "Status Bar", "");
             if self.s != before {
                 self.s.save();
             }

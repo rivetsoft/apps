@@ -48,13 +48,23 @@ the list and leaves the folder alone).
 - **Breadcrumbs** above the title show the vault, folders and file. View → Breadcrumbs (or Preferences → Appearance → Window)
   hides the bar.
 
+## Quick Open and Quick Actions
+
+Ctrl+P opens Quick Open: type part of a note's title or folder (letters in order are enough,
+like `rvft` for Rivet FTP) and press Enter. With nothing typed it lists the most recently edited
+notes. Shift+Ctrl+P opens Quick Actions: every command and option by name, with on / off options
+ticked. Both are the same panel as Rivet Files' (shared in `rivet_look::quick`).
+
+The status bar shows the vault, how many notes it has and the open note's words, plus any
+problem (in red); View → Status Bar hides it.
+
 ## Modules
 
 Optional features, turned on in Preferences → Modules.
 
 - **Daily notes**: a note for each day, named by its date (`2026-11-16.md`) in a folder you
-  pick (Daily by default; it's made when first needed). Ctrl+D, File → Today's Daily Note, or
-  the + button (which then offers New Note or Today's Daily Note) opens today's note, making it
+  pick (Daily by default; it's made when first needed). Ctrl+D, File → Daily Note, or
+  the + button (which then offers New Note or Daily Note) opens today's note, making it
   with a `daily` tag when it isn't there yet.
 
 ## Formatting
@@ -101,7 +111,9 @@ sample shows the editor's fonts as you choose.
 | F11 | Peek |
 | Ctrl+F | Search |
 | Ctrl+T | Switch folders / tags, or fold the tags pane when it's below |
-| Ctrl+P | Show or hide properties |
+| Ctrl+P | Quick Open: go to any note by typing part of its title or folder |
+| Shift+Ctrl+P | Quick Actions: every command and option by name |
+| Ctrl+D | Daily note (with the Daily notes module on) |
 | F9, Ctrl+M | Show or hide the sidebar, the menu bar |
 | Ctrl+, | Preferences |
 
