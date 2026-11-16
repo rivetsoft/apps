@@ -61,7 +61,8 @@ impl FtpApp {
         let (fill, fg) = if can { (v.selection.bg_fill, v.selection.stroke.color) } else { (v.widgets.inactive.weak_bg_fill, v.weak_text_color()) };
         let connect = egui::Button::new(egui::RichText::new("Connect").color(fg)).fill(fill).corner_radius(r_md()).min_size(Vec2::new(80.0, 32.0));
         let clicked = ui.add_enabled(can, connect).on_hover_text("Connect without saving (Ctrl+K to type an address)").clicked();
-        let server = self.named_icon(ctx, &["network-server-symbolic", "network-workgroup-symbolic"]);
+        // A link: the field takes an address (the server icon is the Saved Connections button).
+        let server = self.named_icon(ctx, &["insert-link-symbolic", "emblem-symbolic-link", "network-workgroup-symbolic"]);
         let mut go = false;
         // The same raised surface as Rivet's location bar.
         let elevated = rivet_look::palette::mix(v.window_fill, v.text_color(), 0.04);

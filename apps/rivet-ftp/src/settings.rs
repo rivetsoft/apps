@@ -122,7 +122,7 @@ impl Tool {
         use Tool::*;
         match self {
             Menu => (&[], "≡"),
-            Connections => (&["sidebar-show-symbolic", "view-sidebar-symbolic", "view-dual-symbolic"], "Sites"),
+            Connections => (&["network-server-symbolic", "network-workgroup-symbolic", "folder-remote-symbolic"], "Sites"),
             NewConnection => (&["list-add-symbolic", "bookmark-new-symbolic", "list-add"], "+"),
             QuickConnect => (&["network-server-symbolic", "network-workgroup-symbolic"], "…"),
             Status => (&["network-wired-symbolic", "network-idle-symbolic"], "•"),
