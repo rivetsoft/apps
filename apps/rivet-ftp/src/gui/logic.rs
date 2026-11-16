@@ -58,6 +58,8 @@ impl FtpApp {
             keys_asked: false,
             new_key: None,
             edits: Vec::new(),
+            preview: None,
+            hook_preview: std::env::var("RIVET_FTP_PREVIEW").ok(),
             apps: None,
             hook_edit: std::env::var("RIVET_FTP_EDIT").ok(),
             hook_info: std::env::var("RIVET_FTP_INFO").ok(),
@@ -103,6 +105,11 @@ impl FtpApp {
             app.s.toolbar = crate::settings::parse_toolbar(&t);
         }
         app.reload_local();
+        if let Some(name) = app.hook_preview.clone().and_then(|h| h.strip_prefix("local:").map(str::to_string)) {
+            app.hook_preview = None;
+            app.select_only(Side::Local, &name);
+            app.open_preview(Side::Local);
+        }
         if let Some(name) = open {
             match app.store.find(&name).cloned() {
                 Some(c) => app.connect(c, &cc.egui_ctx),
@@ -268,6 +275,11 @@ impl FtpApp {
                         if let Some(spec) = self.hook_send.take() {
                             self.run_send_hook(&spec);
                         }
+                        if let Some(name) = self.hook_preview.clone().and_then(|h| h.strip_prefix("remote:").map(str::to_string)) {
+                            self.hook_preview = None;
+                            self.select_only(Side::Remote, &name);
+                            self.open_preview(Side::Remote);
+                        }
                         if let Some(name) = self.hook_info.take() {
                             self.select_only(Side::Remote, &name);
                             self.show_info(Side::Remote);
@@ -345,9 +357,11 @@ impl FtpApp {
         }
         // Answers for files open in editors are theirs.
         let done = self.edit_replies(done, stats);
+        let done = self.preview_replies(done);
         let (mut local, mut remote) = (false, false);
         for (id, err) in done {
             if let Some(j) = self.queue.iter_mut().find(|j| j.id == id) {
+                j.took = j.started.map(|t| t.elapsed());
                 j.state = match err {
                     None => JobState::Done,
                     Some(e) => JobState::Failed(first_line(&e).to_string()),
@@ -562,7 +576,7 @@ impl FtpApp {
                 Dir::Up => Path::new(&p.from_dir).join(&e.name).to_string_lossy().into_owned(),
                 Dir::Down => sftp::join(&p.from_dir, &e.name),
             };
-            self.queue.push(Job { id, dir: p.dir, name: e.name.clone(), to, to_dir: p.to_dir.clone(), from, is_dir: e.is_dir, size: e.size, local_target, state: JobState::Waiting });
+            self.queue.push(Job { id, dir: p.dir, name: e.name.clone(), to, to_dir: p.to_dir.clone(), from, is_dir: e.is_dir, size: e.size, local_target, state: JobState::Waiting, started: None, took: None, samples: Default::default() });
         }
     }
 
@@ -689,6 +703,8 @@ impl FtpApp {
         };
         j.id = t.send(req);
         j.state = JobState::Waiting;
+        (j.started, j.took) = (None, None);
+        j.samples.clear();
     }
 
     /// Open the Properties window for the selection's first item.
@@ -771,7 +787,7 @@ impl FtpApp {
     // ---------------------------------------------------------------- keys
 
     pub(super) fn keys(&mut self, ctx: &egui::Context) {
-        if self.form.is_some() || self.prompt.is_some() || ctx.memory(|m| m.focused().is_some()) {
+        if self.preview.is_some() || self.form.is_some() || self.prompt.is_some() || ctx.memory(|m| m.focused().is_some()) {
             return;
         }
         let side = self.focus;

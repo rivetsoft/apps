@@ -27,6 +27,7 @@ pub(super) enum Cmd {
     SortReverse,
     EditRemote,
     Properties,
+    Preview,
     Up,
     LocalHome,
     ServerHome,
@@ -72,6 +73,7 @@ pub(super) const LIST: &[(Modifiers, Key, Cmd)] = &[
     (ALT, Key::ArrowUp, Cmd::Up),
     (Modifiers::NONE, Key::Tab, Cmd::SwitchPane),
     (Modifiers::NONE, Key::F4, Cmd::EditRemote),
+    (Modifiers::NONE, Key::Space, Cmd::Preview),
     (CTRL, Key::I, Cmd::Properties),
 ];
 
@@ -183,6 +185,11 @@ impl FtpApp {
                 let order = p.sort;
                 crate::listing::sort_by(&mut p.entries, order);
             }
+            Cmd::Preview => {
+                if side == Side::Local || self.transfer.is_some() {
+                    self.open_preview(side);
+                }
+            }
             Cmd::Properties => {
                 if side == Side::Local || self.browse.is_some() {
                     self.show_info(side);
@@ -238,7 +245,7 @@ impl FtpApp {
     /// Shortcuts: the global ones always, the list ones when no text field or dialog has the
     /// keyboard.
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) {
-        if self.form.is_some() || self.prompt.is_some() {
+        if self.preview.is_some() || self.form.is_some() || self.prompt.is_some() {
             return;
         }
         let typing = ctx.memory(|m| m.focused().is_some());
@@ -315,6 +322,7 @@ impl FtpApp {
             menu_style(ui);
             self.item(ui, "Create New Folder", Cmd::NewFolder, can_edit);
             let one_file = focus == Side::Remote && connected && self.remote.selected_entries().first().is_some_and(|e| !e.is_dir) && sel_remote && self.remote.selected.len() == 1;
+            self.item(ui, "Preview", Cmd::Preview, sel_focus > 0 && (focus == Side::Local || connected));
             self.item(ui, "Open in Editor", Cmd::EditRemote, one_file);
             self.item(ui, "Properties", Cmd::Properties, sel_focus > 0 && (focus == Side::Local || connected));
             ui.separator();

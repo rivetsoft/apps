@@ -1,0 +1,15 @@
+[package]
+name = "rivet-media"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Previews shared by the Rivet apps: picture, video, audio and text loading, freedesktop thumbnails, and the full-window light box"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+rivet-look = { path = "../rivet-look" }
+rivet-xdg = { path = "../rivet-xdg" }
+eframe = { version = "0.37.0", default-features = false }
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
+png = "0.18"

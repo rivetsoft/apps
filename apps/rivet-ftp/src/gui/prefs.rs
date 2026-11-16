@@ -703,6 +703,7 @@ fn cmd_label(c: Cmd) -> &'static str {
         Cmd::SortReverse => "Reverse the order",
         Cmd::EditRemote => "Open a server file in an editor",
         Cmd::Properties => "Properties and permissions",
+        Cmd::Preview => "Preview (pictures, video, music, code)",
         Cmd::Up => "Up a folder",
         Cmd::LocalHome => "Home folder",
         Cmd::ServerHome => "Server home",

@@ -2270,6 +2270,7 @@ dependencies = [
  "resvg",
  "rivet-kit",
  "rivet-look",
+ "rivet-media",
  "rivet-xdg",
  "skrifa",
  "wayland-backend",
@@ -2293,6 +2294,7 @@ dependencies = [
  "rivet-connections",
  "rivet-kit",
  "rivet-look",
+ "rivet-media",
  "rivet-xdg",
 ]
 
@@ -2313,6 +2315,17 @@ dependencies = [
  "resvg",
  "rivet-xdg",
  "skrifa",
+]
+
+[[package]]
+name = "rivet-media"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+ "png",
+ "rivet-look",
+ "rivet-xdg",
 ]
 
 [[package]]

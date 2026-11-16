@@ -33,7 +33,7 @@ of any of them. ✅ done · 🟡 partly · ⬜ not yet.
 | Properties: size, date, owner, permissions (chmod) | ✅ | Also for everything in a folder |
 | Copy address of a server file | ✅ | |
 | Search/filter in a folder | ⬜ | Rivet's type-to-match and filters can come over |
-| Quick Look–style preview of server files | ⬜ | Rivet's Peek and light box can come over |
+| Preview (pictures, video, music, code) | ✅ | Rivet's light box, shared; server files are downloaded to a private temporary folder first |
 | Icon and compact views | ⬜ | Rivet's views, after the shared-widgets work |
 | Duplicate on the server, symlinks, owner change | ⬜ | |
 
@@ -42,7 +42,7 @@ of any of them. ✅ done · 🟡 partly · ⬜ not yet.
 | Feature | | Notes |
 | --- | --- | --- |
 | Upload and download files and folders | ✅ | Drag between panes, double-click, buttons, keys |
-| Queue with progress | 🟡 | Download progress; upload progress needs sftp's progress output |
+| Queue with progress | 🟡 | Downloads: amount, speed, time left; uploads: time so far (sftp doesn't report upload progress in batch mode); finished: size, time taken, speed |
 | If it's already there: ask, replace, skip | ✅ | "Replace if newer" and "rename" still to come |
 | Retry a failed transfer | ✅ | |
 | Pause and resume, resume a partial file | ⬜ | `reget` / `reput` |

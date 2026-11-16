@@ -71,7 +71,8 @@ reads (show hidden, picker filter) removes both dependencies.
      `ssh`.
    - ✅ **rivet-kit**: the in-memory screenshot renderer, and a `Shot` helper that gives any
      app `--screenshot FILE.png`.
-   - Next: rivet-fs, rivet-media, rivet-clip, and `crash` into rivet-xdg.
+   - ✅ **rivet-media**: `preview` and `thumbs`, plus the light box (`lightbox`), used by both apps.
+   - Next: rivet-fs, rivet-clip, and `crash` into rivet-xdg.
 3. ✅ **rivet-look:** `palette`, `fonts`, `icons`, `builtin_icons`, `nerd` and `highlight`
    moved over unchanged. The theme moved too: `theme::apply` takes a small `Look` value (light,
    dark or system; accent; desktop palette; terminal mode) and also provides the corner radii and

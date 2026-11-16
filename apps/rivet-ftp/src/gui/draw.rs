@@ -601,6 +601,11 @@ impl FtpApp {
         let one_file = sel.len() == 1 && !sel[0].is_dir;
         let can = side == Side::Local || connected;
         if !sel.is_empty() {
+            // ---- look at it
+            if sel.iter().any(|e| !e.is_dir) && (side == Side::Local || connected) && ui.add(egui::Button::new("Preview").shortcut_text("Space")).clicked() {
+                self.open_preview(side);
+                ui.close();
+            }
             // ---- open
             if sel.len() == 1 && sel[0].is_dir && ui.button("Open").clicked() {
                 self.activate(side, &sel[0]);
@@ -720,6 +725,26 @@ impl FtpApp {
         ui.add_space(4.0);
         self.edits_panel(ui);
         let running = self.queue.iter().find(|j| j.state == JobState::Waiting).map(|j| j.id);
+        // The running one: note when it started, and its speed over the last few seconds.
+        let mut progress: std::collections::HashMap<u64, (u64, f64)> = std::collections::HashMap::new();
+        if let Some(j) = self.queue.iter_mut().find(|j| Some(j.id) == running) {
+            let now = std::time::Instant::now();
+            j.started.get_or_insert(now);
+            if let Some(n) = j.local_target.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()) {
+                if j.samples.back().is_none_or(|(t, _)| now.duration_since(*t).as_millis() >= 250) {
+                    j.samples.push_back((now, n));
+                }
+                while j.samples.len() > 2 && j.samples.front().is_some_and(|(t, _)| now.duration_since(*t).as_secs_f64() > 4.0) {
+                    j.samples.pop_front();
+                }
+                let speed = match (j.samples.front(), j.samples.back()) {
+                    (Some((t0, b0)), Some((t1, b1))) if t1 > t0 => (b1.saturating_sub(*b0)) as f64 / t1.duration_since(*t0).as_secs_f64(),
+                    _ => 0.0,
+                };
+                progress.insert(j.id, (n, speed));
+            }
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+        }
         let mut retry: Option<usize> = None;
         let mut arrows = std::collections::HashMap::new();
         for n in [["go-up-symbolic", "go-up"], ["go-down-symbolic", "go-down"]] {
@@ -740,11 +765,20 @@ impl FtpApp {
                             ui.label(egui::RichText::new(if j.dir == Dir::Up { "Up" } else { "Down" }).color(v.selection.bg_fill));
                         }
                     }
-                    ui.label(&j.name).on_hover_text(&j.to);
-                    ui.label(egui::RichText::new(if j.is_dir { "folder".to_string() } else { listing::human_size(j.size) }).weak());
+                    // What and where: "report.pdf to /var/www", the full paths on hover.
+                    let dest = if j.dir == Dir::Up { j.to_dir.clone() } else { tilde_path(&j.to_dir) };
+                    ui.label(&j.name).on_hover_text(format!("From {}\nTo {}", j.from, j.to));
+                    ui.label(egui::RichText::new(format!("to {dest}")).weak()).on_hover_text(&j.to);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match &j.state {
                         JobState::Done => {
-                            ui.label(egui::RichText::new("Done").color(status(&ctx).success));
+                            let mut text = if j.is_dir { "Done".to_string() } else { format!("Done · {}", listing::human_size(j.size)) };
+                            if let Some(t) = j.took {
+                                text.push_str(&format!(" in {}", fmt_secs(t.as_secs_f64())));
+                                if !j.is_dir && t.as_secs_f64() > 0.2 {
+                                    text.push_str(&format!(" · {}/s", listing::human_size((j.size as f64 / t.as_secs_f64()) as u64)));
+                                }
+                            }
+                            ui.label(egui::RichText::new(text).color(status(&ctx).success));
                         }
                         JobState::Failed(e) => {
                             if self.transfer.is_some() && ui.add(egui::Button::new("Retry").corner_radius(r_sm())).clicked() {
@@ -753,14 +787,23 @@ impl FtpApp {
                             ui.label(egui::RichText::new("Failed").color(status(&ctx).danger)).on_hover_text(e);
                         }
                         JobState::Waiting if Some(j.id) == running => {
-                            // Downloads show how much has arrived so far.
-                            match j.local_target.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()) {
-                                Some(n) if j.size > 0 => {
+                            let elapsed = j.started.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0);
+                            match (j.local_target.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()), progress.get(&j.id)) {
+                                // Downloads: how much has arrived, the speed and the time left.
+                                (Some(n), Some(&(_, speed))) if j.size > 0 => {
+                                    let mut text = format!("{} of {}", listing::human_size(n.min(j.size)), listing::human_size(j.size));
+                                    if speed > 0.0 {
+                                        text.push_str(&format!(" · {}/s · {} left", listing::human_size(speed as u64), fmt_secs((j.size.saturating_sub(n)) as f64 / speed)));
+                                    }
+                                    ui.label(egui::RichText::new(text).weak());
                                     ui.add(egui::ProgressBar::new((n as f32 / j.size as f32).clamp(0.0, 1.0)).desired_width(140.0).corner_radius(r_sm()));
                                 }
+                                // Uploads and folders: sftp doesn't report how far it got, so the time so far.
                                 _ => {
+                                    let what = if j.dir == Dir::Up { "Uploading" } else { "Downloading" };
+                                    let size = if j.is_dir { String::new() } else { format!(" {}", listing::human_size(j.size)) };
+                                    ui.label(egui::RichText::new(format!("{what}{size} · {}", fmt_secs(elapsed))).weak());
                                     ui.add(egui::Spinner::new().size(14.0));
-                                    ui.label(egui::RichText::new(if j.dir == Dir::Up { "Uploading" } else { "Downloading" }).weak());
                                 }
                             }
                         }
@@ -847,4 +890,26 @@ fn connection_tooltip(ui: &mut egui::Ui, c: &rivet_connections::Connection) {
     });
     ui.add_space(2.0);
     ui.label(egui::RichText::new(c.url()).small().color(weak));
+}
+
+/// 75 → "1 min 15 s", 4 → "4 s", 0.3 → "under a second".
+fn fmt_secs(s: f64) -> String {
+    if !s.is_finite() || s < 1.0 {
+        return "under a second".into();
+    }
+    let s = s.round() as u64;
+    match s {
+        0..=59 => format!("{s} s"),
+        60..=3599 => format!("{} min {} s", s / 60, s % 60),
+        _ => format!("{} h {} min", s / 3600, (s % 3600) / 60),
+    }
+}
+
+/// A local path with the home folder as ~.
+fn tilde_path(p: &str) -> String {
+    let home = rivet_xdg::places::home().to_string_lossy().into_owned();
+    match p.strip_prefix(&home) {
+        Some(rest) if rest.is_empty() || rest.starts_with('/') => format!("~{rest}"),
+        _ => p.to_string(),
+    }
 }

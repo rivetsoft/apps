@@ -8,6 +8,7 @@ mod edit;
 mod logic;
 mod menus;
 mod prefs;
+mod preview;
 mod toolbar;
 
 pub use prefs::ICON_SVG;
@@ -90,6 +91,11 @@ struct Job {
     /// For downloads: the local file, so progress can be read from its size.
     local_target: Option<PathBuf>,
     state: JobState,
+    /// When it started moving, and how long it took once done.
+    started: Option<std::time::Instant>,
+    took: Option<std::time::Duration>,
+    /// Recent (time, bytes so far) readings, for the speed.
+    samples: std::collections::VecDeque<(std::time::Instant, u64)>,
 }
 
 /// Items waiting for "replace?" before they're sent.
@@ -297,6 +303,10 @@ pub struct FtpApp {
 
     /// Server files open in editors.
     edits: Vec<edit::EditSession>,
+    /// The light box, when open.
+    preview: Option<preview::PreviewState>,
+    /// Test hook RIVET_FTP_PREVIEW=local:NAME or remote:NAME.
+    hook_preview: Option<String>,
     apps: Option<Vec<rivet_xdg::launch::DesktopApp>>,
     /// Test hook RIVET_FTP_EDIT=NAME: edit this server file once the folder is listed.
     hook_edit: Option<String>,
@@ -380,10 +390,12 @@ impl eframe::App for FtpApp {
         self.watch_edits(&ctx);
         self.windows(&ctx);
         self.dialogs(&ctx);
+        self.preview_window(&ctx);
         if let Some(shot) = self.shot.as_mut() {
             // Checks: wait for logging in and listing to finish first (up to about 10 s).
             let editing = self.hook_edit.is_some() || self.edits.iter().any(|e| e.saved_at.is_none() && !matches!(e.state, edit::EditState::Failed(_)));
-            let busy = self.connecting || self.remote.loading || !self.pending.is_empty() || self.hook_send.is_some() || self.queue.iter().any(|j| j.state == JobState::Waiting) || editing;
+            let previewing = self.preview.as_ref().is_some_and(|p| !p.lb.current().ready) || self.hook_preview.is_some();
+            let busy = previewing || self.connecting || self.remote.loading || !self.pending.is_empty() || self.hook_send.is_some() || self.queue.iter().any(|j| j.state == JobState::Waiting) || editing;
             if busy && self.shot_wait < 800 {
                 self.shot_wait += 1;
                 ctx.request_repaint();
