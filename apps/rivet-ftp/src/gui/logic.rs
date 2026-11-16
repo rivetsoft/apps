@@ -86,6 +86,7 @@ impl FtpApp {
                 "transfers" => super::prefs::Page::Transfers,
                 "connections" => super::prefs::Page::Connections,
                 "keys" => super::prefs::Page::Keys,
+                "toolbar" => super::prefs::Page::Toolbar,
                 "about" => super::prefs::Page::About,
                 _ => super::prefs::Page::Appearance,
             };
@@ -96,6 +97,10 @@ impl FtpApp {
         }
         if std::env::var_os("RIVET_FTP_NO_MENUBAR").is_some() {
             app.s.show_menubar = false;
+        }
+        // Test hook: RIVET_FTP_TOOLBAR=menu,quick-connect,… sets the toolbar.
+        if let Ok(t) = std::env::var("RIVET_FTP_TOOLBAR") {
+            app.s.toolbar = crate::settings::parse_toolbar(&t);
         }
         app.reload_local();
         if let Some(name) = open {

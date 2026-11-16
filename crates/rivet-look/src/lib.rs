@@ -11,4 +11,5 @@ pub mod icons;
 pub mod nerd;
 pub mod palette;
 pub mod theme;
+pub mod widgets;
 pub mod windows;

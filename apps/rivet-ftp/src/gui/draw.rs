@@ -1,7 +1,7 @@
 //! Drawing: the toolbar, the connection list, the two panes and the transfer queue.
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
-use rivet_connections::{Connection, Protocol};
+use rivet_connections::Protocol;
 use rivet_look::fonts;
 use rivet_look::theme::{r_lg, r_md, r_sm, status};
 
@@ -14,91 +14,6 @@ use crate::sftp;
 const ROW_H: f32 = 26.0;
 
 impl FtpApp {
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        let v = ui.visuals().clone();
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 6.0;
-            // With the menu bar hidden, its menus live behind a button (like Rivet's).
-            if !self.s.show_menubar {
-                let tex = self.named_icon(&ctx, &["open-menu-symbolic", "application-menu-symbolic", "view-more-symbolic"]);
-                let b = match &tex {
-                    Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
-                    None => egui::Button::new("Menu"),
-                };
-                egui::containers::menu::MenuButton::from_button(b.min_size(Vec2::new(30.0, 30.0)).corner_radius(r_sm())).ui(ui, |ui| {
-                    menu_style(ui);
-                    self.menus(ui);
-                });
-            }
-            if !self.s.show_sidebar && self.icon_button(ui, &["sidebar-show-symbolic", "view-dual-symbolic"], "Connections", "Show saved connections (F9)").clicked() {
-                self.s.show_sidebar = true;
-                self.s.save();
-            }
-            // Quick connect: an address, used without saving it. Same height and surface as
-            // Rivet's location bar.
-            let field_w = (ui.available_width() - 320.0).clamp(240.0, 560.0);
-            let mut go = false;
-            let server = self.named_icon(&ctx, &["network-server-symbolic", "network-workgroup-symbolic"]);
-            egui::Frame::new().fill(v.text_edit_bg_color()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 7)).show(ui, |ui| {
-                ui.set_width(field_w);
-                ui.horizontal(|ui| {
-                    if let Some(t) = &server {
-                        ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.weak_text_color()));
-                    }
-                    let r = ui.add(egui::TextEdit::singleline(&mut self.quick).id(egui::Id::unique("quick-connect")).frame(egui::Frame::NONE).hint_text("user@server  or  sftp://user@server:port/folder").desired_width(f32::INFINITY));
-                    if self.focus_quick {
-                        self.focus_quick = false;
-                        r.request_focus();
-                    }
-                    go = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                });
-            });
-            let busy = self.connecting;
-            let can = !busy && !self.quick.trim().is_empty();
-            let (fill, fg) = if can { (v.selection.bg_fill, v.selection.stroke.color) } else { (v.widgets.inactive.weak_bg_fill, v.weak_text_color()) };
-            let connect = egui::Button::new(egui::RichText::new("Connect").color(fg)).fill(fill).corner_radius(r_md()).min_size(Vec2::new(84.0, 32.0));
-            if ui.add_enabled(can, connect).on_hover_text("Connect without saving (Ctrl+K to type an address)").clicked() || (go && can) {
-                match Connection::from_url("Quick connect", self.quick.trim()) {
-                    Ok(c) => self.connect(c, &ctx),
-                    Err(e) => self.note = Some((e, true)),
-                }
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.conn.is_some() {
-                    let tex = self.named_icon(&ctx, &["network-offline-symbolic", "process-stop-symbolic", "window-close-symbolic"]);
-                    let b = match &tex {
-                        Some(t) => egui::Button::image_and_text(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.text_color()), "Disconnect"),
-                        None => egui::Button::new("Disconnect"),
-                    };
-                    if ui.add(b.corner_radius(r_md()).min_size(Vec2::new(0.0, 32.0))).on_hover_text("Disconnect (Ctrl+Shift+D)").clicked() {
-                        self.run(super::menus::Cmd::Disconnect, &ctx);
-                    }
-                    // A quick connection can be kept.
-                    if let Some(c) = self.conn.clone().filter(|c| self.store.find(&c.name).is_none())
-                        && ui.add(egui::Button::new("Save…").corner_radius(r_md()).min_size(Vec2::new(0.0, 32.0))).on_hover_text("Save this connection").clicked()
-                    {
-                        let mut f = Form::from(&c);
-                        f.original = None;
-                        f.name = c.host.clone();
-                        self.form = Some(f);
-                    }
-                }
-                // Where we are: a pill with a status dot.
-                let (dot, text) = match (&self.conn, self.connecting) {
-                    (Some(c), true) => (status(&ctx).warning, format!("Connecting to {}…", c.name)),
-                    (Some(c), false) => (status(&ctx).success, c.name.clone()),
-                    (None, _) => (v.weak_text_color(), "Not connected".to_string()),
-                };
-                let galley = ui.painter().layout_no_wrap(text, fonts::ui_font(13.0), v.text_color());
-                let (r, _) = ui.allocate_exact_size(Vec2::new(galley.size().x + 34.0, 30.0), Sense::hover());
-                ui.painter().rect_filled(r, r_md(), v.faint_bg_color);
-                ui.painter().circle_filled(Pos2::new(r.left() + 14.0, r.center().y), 4.0, dot);
-                ui.painter().galley(Pos2::new(r.left() + 26.0, r.center().y - galley.size().y / 2.0), galley, v.text_color());
-            });
-        });
-    }
-
     /// The bottom line when the transfer list is hidden: the last message and a count.
     pub(super) fn status_line(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();

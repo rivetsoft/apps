@@ -11,6 +11,7 @@ use crate::settings::OnExists;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Page {
     Appearance,
+    Toolbar,
     Transfers,
     Connections,
     Keys,
@@ -18,10 +19,11 @@ pub(super) enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 5] = [Page::Appearance, Page::Transfers, Page::Connections, Page::Keys, Page::About];
+    const ALL: [Page; 6] = [Page::Appearance, Page::Toolbar, Page::Transfers, Page::Connections, Page::Keys, Page::About];
     fn label(self) -> &'static str {
         match self {
             Page::Appearance => "Appearance",
+            Page::Toolbar => "Menu and Toolbar",
             Page::Transfers => "Transfers",
             Page::Connections => "Connections",
             Page::Keys => "SSH Keys",
@@ -30,6 +32,7 @@ impl Page {
     }
     fn icons(self) -> &'static [&'static str] {
         match self {
+            Page::Toolbar => &["view-more-horizontal-symbolic", "open-menu-symbolic", "view-more-symbolic", "application-menu-symbolic"],
             Page::Appearance => &["preferences-desktop-appearance-symbolic", "applications-graphics-symbolic", "preferences-desktop-theme"],
             Page::Transfers => &["network-transmit-receive-symbolic", "emblem-synchronizing-symbolic", "view-refresh-symbolic"],
             Page::Connections => &["network-server-symbolic", "network-workgroup-symbolic", "folder-remote-symbolic"],
@@ -221,10 +224,91 @@ impl FtpApp {
                                         }
                                     });
                                     section(ui, "Window", &mut |ui| {
-                                        ui.checkbox(&mut self.s.show_menubar, "Menu bar");
                                         ui.checkbox(&mut self.s.show_sidebar, "Saved connections beside the panes");
                                         ui.checkbox(&mut self.s.show_queue, "Transfers under the panes");
                                         ui.checkbox(&mut self.s.show_hidden, "Hidden files");
+                                    });
+                                }
+                                Page::Toolbar => {
+                                    use crate::settings::Tool;
+                                    section(ui, "Menu bar", &mut |ui| {
+                                        ui.checkbox(&mut self.s.show_menubar, "Show the menu bar");
+                                        hint(ui, "Hidden, its menus fold into the menu button on the toolbar. Ctrl+M switches.");
+                                    });
+                                    let tools = self.s.toolbar.clone();
+                                    let tex: Vec<Option<egui::TextureHandle>> = tools.iter().map(|t| if t.icons().0.is_empty() { None } else { self.named_icon(ui.ctx(), t.icons().0) }).collect();
+                                    section(ui, "Toolbar", &mut |ui| {
+                                        let mut op: Option<(usize, i32)> = None; // -1 up, +1 down, 0 remove
+                                        let n = self.s.toolbar.len();
+                                        let fg = v.text_color();
+                                        for (i, t) in self.s.toolbar.clone().into_iter().enumerate() {
+                                            let field = t == Tool::QuickConnect;
+                                            let row_fill = if field { v.selection.bg_fill.gamma_multiply(0.18) } else { Color32::TRANSPARENT };
+                                            egui::Frame::NONE.fill(row_fill).corner_radius(r_sm()).inner_margin(egui::Margin::symmetric(6, 2)).show(ui, |ui| {
+                                                ui.horizontal(|ui| {
+                                                    ui.set_width(ui.available_width());
+                                                    let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                                                    match (&tex[i], t) {
+                                                        (Some(tx), _) => paint_tex(ui.painter(), tx, r.shrink(1.0), fg),
+                                                        (None, Tool::Menu) => {
+                                                            let c = r.center();
+                                                            for dy in [-4.0f32, 0.0, 4.0] {
+                                                                ui.painter().line_segment([c + Vec2::new(-6.0, dy), c + Vec2::new(6.0, dy)], Stroke::new(1.6, fg));
+                                                            }
+                                                        }
+                                                        (None, Tool::Separator) => {
+                                                            let c = r.center();
+                                                            ui.painter().line_segment([c - Vec2::new(0.0, 7.0), c + Vec2::new(0.0, 7.0)], Stroke::new(1.5, weak));
+                                                        }
+                                                        (None, _) => {
+                                                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, t.icons().1, fonts::ui_font(11.0), fg);
+                                                        }
+                                                    }
+                                                    ui.label(if field { egui::RichText::new(t.label()).strong() } else { egui::RichText::new(t.label()) });
+                                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                        ui.spacing_mut().item_spacing.x = 4.0;
+                                                        ui.allocate_ui_with_layout(Vec2::new(28.0, 22.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                            ui.set_min_width(28.0);
+                                                            if !t.fixed() && rivet_look::widgets::trash_button(ui).on_hover_text("Remove from the toolbar").clicked() {
+                                                                op = Some((i, 0));
+                                                            }
+                                                        });
+                                                        if rivet_look::widgets::arrow_button(ui, false, i + 1 < n).on_hover_text("Move down").clicked() {
+                                                            op = Some((i, 1));
+                                                        }
+                                                        if rivet_look::widgets::arrow_button(ui, true, i > 0).on_hover_text("Move up").clicked() {
+                                                            op = Some((i, -1));
+                                                        }
+                                                    });
+                                                });
+                                            });
+                                        }
+                                        if let Some((i, dir)) = op {
+                                            match dir {
+                                                0 => {
+                                                    self.s.toolbar.remove(i);
+                                                }
+                                                -1 => self.s.toolbar.swap(i, i - 1),
+                                                _ => self.s.toolbar.swap(i, i + 1),
+                                            }
+                                        }
+                                        ui.add_space(8.0);
+                                        ui.horizontal(|ui| {
+                                            let missing: Vec<Tool> = Tool::ALL.into_iter().filter(|t| *t == Tool::Separator || !self.s.toolbar.contains(t)).collect();
+                                            egui::ComboBox::from_id_salt("ftp-toolbar-add").selected_text("Add a button…").width(220.0).show_ui(ui, |ui| {
+                                                super::menus::menu_style(ui);
+                                                for t in missing {
+                                                    if ui.selectable_label(false, t.label()).clicked() {
+                                                        self.s.toolbar.push(t);
+                                                    }
+                                                }
+                                            });
+                                            if ui.button("Reset to Default").clicked() {
+                                                self.s.toolbar = Tool::default_layout();
+                                            }
+                                        });
+                                        ui.add_space(6.0);
+                                        hint(ui, "Buttons before Quick Connect sit on its left, the rest on its right. Right-click the toolbar to come back here.");
                                     });
                                 }
                                 Page::Transfers => {

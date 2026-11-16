@@ -9,6 +9,158 @@ use rivet_look::theme::Mode;
 /// Set for screenshot runs: settings are never written.
 pub static NO_SAVE: AtomicBool = AtomicBool::new(false);
 
+/// One thing on the toolbar. The quick-connect field and the menu button can be moved but
+/// not removed; the menu button shows only while the menu bar is hidden.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tool {
+    Menu,
+    Connections,
+    NewConnection,
+    QuickConnect,
+    Status,
+    Disconnect,
+    Up,
+    Refresh,
+    Home,
+    ServerHome,
+    NewFolder,
+    Upload,
+    Download,
+    EditRemote,
+    Info,
+    ShowHidden,
+    Transfers,
+    Preferences,
+    Separator,
+}
+
+impl Tool {
+    pub const ALL: [Tool; 19] = [
+        Tool::Menu,
+        Tool::Connections,
+        Tool::NewConnection,
+        Tool::QuickConnect,
+        Tool::Status,
+        Tool::Disconnect,
+        Tool::Up,
+        Tool::Refresh,
+        Tool::Home,
+        Tool::ServerHome,
+        Tool::NewFolder,
+        Tool::Upload,
+        Tool::Download,
+        Tool::EditRemote,
+        Tool::Info,
+        Tool::ShowHidden,
+        Tool::Transfers,
+        Tool::Preferences,
+        Tool::Separator,
+    ];
+
+    pub fn default_layout() -> Vec<Tool> {
+        use Tool::*;
+        vec![Menu, Connections, NewConnection, Separator, QuickConnect, Status, Disconnect, Separator, Upload, Download]
+    }
+
+    /// Can't be taken off the toolbar.
+    pub fn fixed(self) -> bool {
+        matches!(self, Tool::Menu | Tool::QuickConnect)
+    }
+
+    pub fn id(self) -> &'static str {
+        use Tool::*;
+        match self {
+            Menu => "menu",
+            Connections => "connections",
+            NewConnection => "new-connection",
+            QuickConnect => "quick-connect",
+            Status => "status",
+            Disconnect => "disconnect",
+            Up => "up",
+            Refresh => "refresh",
+            Home => "home",
+            ServerHome => "server-home",
+            NewFolder => "new-folder",
+            Upload => "upload",
+            Download => "download",
+            EditRemote => "edit",
+            Info => "info",
+            ShowHidden => "show-hidden",
+            Transfers => "transfers",
+            Preferences => "preferences",
+            Separator => "separator",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        use Tool::*;
+        match self {
+            Menu => "Menu (when the menu bar is hidden)",
+            Connections => "Saved Connections",
+            NewConnection => "New Connection",
+            QuickConnect => "Quick Connect",
+            Status => "Connection Status",
+            Disconnect => "Disconnect",
+            Up => "Up",
+            Refresh => "Reload",
+            Home => "Home Folder",
+            ServerHome => "Server Home",
+            NewFolder => "New Folder",
+            Upload => "Upload",
+            Download => "Download",
+            EditRemote => "Open in Editor",
+            Info => "Info",
+            ShowHidden => "Show Hidden Files",
+            Transfers => "Transfers",
+            Preferences => "Preferences",
+            Separator => "Separator",
+        }
+    }
+
+    /// Icon names to try (symbolic first), and a short text when none is found.
+    pub fn icons(self) -> (&'static [&'static str], &'static str) {
+        use Tool::*;
+        match self {
+            Menu => (&[], "≡"),
+            Connections => (&["sidebar-show-symbolic", "view-sidebar-symbolic", "view-dual-symbolic"], "Sites"),
+            NewConnection => (&["list-add-symbolic", "bookmark-new-symbolic", "list-add"], "+"),
+            QuickConnect => (&["network-server-symbolic", "network-workgroup-symbolic"], "…"),
+            Status => (&["network-wired-symbolic", "network-idle-symbolic"], "•"),
+            Disconnect => (&["network-offline-symbolic", "process-stop-symbolic", "window-close-symbolic"], "×"),
+            Up => (&["go-up-symbolic", "go-up"], "Up"),
+            Refresh => (&["view-refresh-symbolic", "view-refresh"], "⟳"),
+            Home => (&["user-home-symbolic", "go-home-symbolic", "user-home"], "Home"),
+            ServerHome => (&["folder-remote-symbolic", "network-server-symbolic"], "Srv"),
+            NewFolder => (&["folder-new-symbolic", "folder-new"], "+"),
+            Upload => (&["document-send-symbolic", "send-to-symbolic", "go-up-symbolic"], "Up"),
+            Download => (&["folder-download-symbolic", "document-save-symbolic", "go-down-symbolic"], "Down"),
+            EditRemote => (&["document-edit-symbolic", "accessories-text-editor-symbolic", "text-editor-symbolic"], "Edit"),
+            Info => (&["document-properties-symbolic", "dialog-information-symbolic", "document-properties"], "i"),
+            ShowHidden => (&["view-reveal-symbolic", "view-visible-symbolic", "eye-open-symbolic"], "Hid"),
+            Transfers => (&["network-transmit-receive-symbolic", "view-list-symbolic"], "Q"),
+            Preferences => (&["preferences-system-symbolic", "emblem-system-symbolic", "preferences-system"], "Prefs"),
+            Separator => (&[], "|"),
+        }
+    }
+
+    pub fn from_id(s: &str) -> Option<Tool> {
+        Tool::ALL.into_iter().find(|t| t.id() == s)
+    }
+}
+
+/// "menu,new-connection,quick-connect" → the tools; unknown names are skipped, and the fixed
+/// ones are put back if a hand-edited file lost them.
+pub fn parse_toolbar(v: &str) -> Vec<Tool> {
+    let mut t: Vec<Tool> = v.split(',').filter_map(|s| Tool::from_id(s.trim())).collect();
+    if !t.contains(&Tool::QuickConnect) {
+        t.push(Tool::QuickConnect);
+    }
+    if !t.contains(&Tool::Menu) {
+        t.insert(0, Tool::Menu);
+    }
+    t
+}
+
 /// What to do when a file being sent is already there.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum OnExists {
@@ -38,6 +190,7 @@ pub struct Settings {
     pub last_local: String,
     /// Desktop app id of the editor for server files; empty: the default app for each type.
     pub editor: String,
+    pub toolbar: Vec<Tool>,
 }
 
 impl Default for Settings {
@@ -58,6 +211,7 @@ impl Default for Settings {
             remember_local: true,
             last_local: String::new(),
             editor: String::new(),
+            toolbar: Tool::default_layout(),
         }
     }
 }
@@ -94,6 +248,7 @@ impl Settings {
                 "remember_local" => s.remember_local = b,
                 "last_local" => s.last_local = v.to_string(),
                 "editor" => s.editor = v.to_string(),
+                "toolbar" => s.toolbar = parse_toolbar(v),
                 _ => {}
             }
         }
@@ -116,7 +271,7 @@ impl Settings {
         };
         let [r, g, b] = self.accent;
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\nshow_queue={}\nshow_hidden={}\non_exists={on_exists}\ndouble_click_sends={}\nconfirm_delete={}\nclear_finished={}\nremember_local={}\nlast_local={}\neditor={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\nshow_queue={}\nshow_hidden={}\non_exists={on_exists}\ndouble_click_sends={}\nconfirm_delete={}\nclear_finished={}\nremember_local={}\nlast_local={}\neditor={}\ntoolbar={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -129,6 +284,7 @@ impl Settings {
             self.remember_local,
             self.last_local.replace('\n', ""),
             self.editor.replace('\n', ""),
+            self.toolbar.iter().map(|t| t.id()).collect::<Vec<_>>().join(","),
         );
         let p = path();
         if let Some(dir) = p.parent() {
@@ -153,6 +309,15 @@ fn parse_hex(s: &str) -> Option<[u8; 3]> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn toolbar_round_trip() {
+        let t = Tool::default_layout();
+        let text: Vec<&str> = t.iter().map(|x| x.id()).collect();
+        assert_eq!(parse_toolbar(&text.join(",")), t);
+        // Fixed tools come back; unknown names are skipped.
+        assert_eq!(parse_toolbar("upload,nonsense"), vec![Tool::Menu, Tool::Upload, Tool::QuickConnect]);
+    }
 
     #[test]
     fn hex_colors() {

@@ -8,6 +8,7 @@ mod edit;
 mod logic;
 mod menus;
 mod prefs;
+mod toolbar;
 
 pub use prefs::ICON_SVG;
 
@@ -305,7 +306,9 @@ impl eframe::App for FtpApp {
     /// settled (screenshot runs only).
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         let Some(shot) = &self.shot else { return };
-        let Some((x, y)) = std::env::var("RIVET_FTP_RIGHTCLICK").ok().and_then(|v| {
+        // RIVET_FTP_CLICK=X,Y does the same with the left button.
+        let (var, button) = if std::env::var_os("RIVET_FTP_CLICK").is_some() { ("RIVET_FTP_CLICK", egui::PointerButton::Primary) } else { ("RIVET_FTP_RIGHTCLICK", egui::PointerButton::Secondary) };
+        let Some((x, y)) = std::env::var(var).ok().and_then(|v| {
             let (a, b) = v.split_once(',')?;
             Some((a.trim().parse::<f32>().ok()?, b.trim().parse::<f32>().ok()?))
         }) else {
@@ -314,8 +317,8 @@ impl eframe::App for FtpApp {
         let pos = Pos2::new(x, y);
         match shot.frames() {
             30 => raw.events.push(egui::Event::PointerMoved(pos)),
-            31 => raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() }),
-            32 => raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() }),
+            31 => raw.events.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() }),
+            32 => raw.events.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: Default::default() }),
             _ => {}
         }
     }
