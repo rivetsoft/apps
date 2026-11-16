@@ -2,7 +2,6 @@
 //! when the menu bar is hidden.
 
 use eframe::egui::{self, Key, KeyboardShortcut, Modifiers, Pos2, Rect, Stroke, Vec2};
-use rivet_look::theme::Mode;
 
 use super::*;
 
@@ -22,7 +21,10 @@ pub(super) enum Cmd {
     ToggleQueue,
     ToggleHidden,
     Refresh,
-    Style(Mode),
+    EditConnection,
+    CopyLocation,
+    SortBy(crate::listing::SortCol),
+    SortReverse,
     Up,
     LocalHome,
     ServerHome,
@@ -73,11 +75,11 @@ pub(super) const LIST: &[(Modifiers, Key, Cmd)] = &[
 pub(super) fn shortcut_for(cmd: Cmd) -> String {
     let Some((m, k, _)) = GLOBAL.iter().chain(LIST).find(|(_, _, c)| *c == cmd) else { return String::new() };
     let mut s = String::new();
-    if m.command {
-        s.push_str("Ctrl+");
-    }
     if m.shift {
         s.push_str("Shift+");
+    }
+    if m.command {
+        s.push_str("Ctrl+");
     }
     if m.alt {
         s.push_str("Alt+");
@@ -144,9 +146,44 @@ impl FtpApp {
             }
             Cmd::ToggleHidden => self.toggle_hidden(),
             Cmd::Refresh => self.reload(side),
-            Cmd::Style(m) => {
-                self.s.theme = m;
-                self.s.save();
+            Cmd::EditConnection => {
+                if let Some(c) = self.conn.as_ref().and_then(|c| self.store.find(&c.name)).cloned() {
+                    self.form = Some(Form::from(&c));
+                }
+            }
+            Cmd::CopyLocation => {
+                let p = self.pane_ref(side);
+                let sel = p.selected_entries();
+                let text = match side {
+                    Side::Local => {
+                        let base = std::path::Path::new(&p.path);
+                        if sel.len() == 1 { base.join(&sel[0].name).display().to_string() } else { p.path.clone() }
+                    }
+                    Side::Remote => match &self.conn {
+                        Some(c) => {
+                            let mut c = c.clone();
+                            c.remote = Some(if sel.len() == 1 { crate::sftp::join(&p.path, &sel[0].name) } else { p.path.clone() });
+                            c.url()
+                        }
+                        None => String::new(),
+                    },
+                };
+                if !text.is_empty() {
+                    ctx.copy_text(text.clone());
+                    self.note = Some((format!("Copied {text}"), false));
+                }
+            }
+            Cmd::SortBy(col) => {
+                let p = self.pane(side);
+                p.sort = crate::listing::Sort { col, desc: if p.sort.col == col { p.sort.desc } else { col != crate::listing::SortCol::Name } };
+                let order = p.sort;
+                crate::listing::sort_by(&mut p.entries, order);
+            }
+            Cmd::SortReverse => {
+                let p = self.pane(side);
+                p.sort.desc = !p.sort.desc;
+                let order = p.sort;
+                crate::listing::sort_by(&mut p.entries, order);
             }
             Cmd::Up => self.go_up(side),
             Cmd::LocalHome => {
@@ -251,15 +288,19 @@ impl FtpApp {
     }
 
     pub(super) fn menus(&mut self, ui: &mut egui::Ui) {
+        use crate::listing::SortCol;
         let connected = self.browse.is_some() && !self.connecting;
+        let saved_conn = self.conn.as_ref().is_some_and(|c| self.store.find(&c.name).is_some());
         let sel_local = !self.local.selected.is_empty();
         let sel_remote = !self.remote.selected.is_empty();
-        let sel_focus = !self.pane_ref(self.focus).selected.is_empty();
-        let can_edit = self.focus == Side::Local || connected;
+        let focus = self.focus;
+        let sel_focus = self.pane_ref(focus).selected.len();
+        let can_edit = focus == Side::Local || connected;
         ui.menu_button("File", |ui| {
             menu_style(ui);
+            self.item(ui, "Create New Folder", Cmd::NewFolder, can_edit);
+            ui.separator();
             self.item(ui, "New Connection…", Cmd::NewConnection, true);
-            self.item(ui, "Quick Connect", Cmd::QuickConnect, true);
             ui.menu_button("Connect To", |ui| {
                 menu_style(ui);
                 if self.store.items.is_empty() {
@@ -273,50 +314,55 @@ impl FtpApp {
                     }
                 }
             });
+            self.item(ui, "Quick Connect", Cmd::QuickConnect, true);
+            self.item(ui, "Edit Connection…", Cmd::EditConnection, saved_conn);
             self.item(ui, "Disconnect", Cmd::Disconnect, self.conn.is_some());
             ui.separator();
-            self.item(ui, "Preferences", Cmd::Preferences, true);
-            ui.separator();
-            self.item(ui, "Quit", Cmd::Quit, true);
+            self.item(ui, "Close Window", Cmd::Quit, true);
         });
         ui.menu_button("Edit", |ui| {
             menu_style(ui);
             self.item(ui, "Select All", Cmd::SelectAll, true);
+            self.item(ui, "Copy Location", Cmd::CopyLocation, focus == Side::Local || connected);
             ui.separator();
-            self.item(ui, "New Folder…", Cmd::NewFolder, can_edit);
-            self.item(ui, "Rename…", Cmd::Rename, can_edit && self.pane_ref(self.focus).selected.len() == 1);
-            self.item(ui, "Delete…", Cmd::Delete, self.focus == Side::Remote && connected && sel_focus);
+            self.item(ui, "Rename…", Cmd::Rename, can_edit && sel_focus == 1);
+            self.item(ui, "Delete from Server…", Cmd::Delete, focus == Side::Remote && connected && sel_focus > 0);
+            ui.separator();
+            self.item(ui, "Preferences", Cmd::Preferences, true);
         });
         ui.menu_button("View", |ui| {
             menu_style(ui);
-            self.toggle(ui, self.s.show_menubar, "Menu Bar", Cmd::ToggleMenubar);
+            self.item(ui, "Reload", Cmd::Refresh, true);
+            ui.separator();
+            self.toggle(ui, self.s.show_hidden, "Show Hidden Files", Cmd::ToggleHidden);
             self.toggle(ui, self.s.show_sidebar, "Connections", Cmd::ToggleSidebar);
             self.toggle(ui, self.s.show_queue, "Transfers", Cmd::ToggleQueue);
-            self.toggle(ui, self.s.show_hidden, "Hidden Files", Cmd::ToggleHidden);
+            self.toggle(ui, self.s.show_menubar, "Menubar", Cmd::ToggleMenubar);
             ui.separator();
-            ui.menu_button("Style", |ui| {
+            ui.menu_button("Sort Items", |ui| {
                 menu_style(ui);
-                for (m, label) in [(Mode::System, "Follow System"), (Mode::Light, "Light"), (Mode::Dark, "Dark")] {
-                    let on = self.s.theme == m;
-                    self.toggle(ui, on, label, Cmd::Style(m));
+                let sort = self.pane_ref(focus).sort;
+                for (col, label) in [(SortCol::Name, "By Name"), (SortCol::Size, "By Size"), (SortCol::Modified, "By Modification Date")] {
+                    self.toggle(ui, sort.col == col, label, Cmd::SortBy(col));
                 }
+                ui.separator();
+                self.toggle(ui, sort.desc, "Reversed Order", Cmd::SortReverse);
             });
-            ui.separator();
-            self.item(ui, "Refresh", Cmd::Refresh, true);
         });
         ui.menu_button("Go", |ui| {
             menu_style(ui);
-            self.item(ui, "Up", Cmd::Up, true);
-            self.item(ui, "Home Folder", Cmd::LocalHome, true);
+            self.item(ui, "Open Parent", Cmd::Up, true);
+            ui.separator();
+            self.item(ui, "Home", Cmd::LocalHome, true);
             self.item(ui, "Server Home", Cmd::ServerHome, connected);
             ui.separator();
-            self.item(ui, "Type a Path…", Cmd::TypePath, true);
+            self.item(ui, "Location…", Cmd::TypePath, focus == Side::Local || connected);
             self.item(ui, "Other Pane", Cmd::SwitchPane, true);
         });
         ui.menu_button("Transfer", |ui| {
             menu_style(ui);
-            self.item(ui, "Upload Selected", Cmd::Upload, connected && sel_local);
-            self.item(ui, "Download Selected", Cmd::Download, connected && sel_remote);
+            self.item(ui, "Upload", Cmd::Upload, connected && sel_local);
+            self.item(ui, "Download", Cmd::Download, connected && sel_remote);
             ui.separator();
             let finished = self.queue.iter().any(|j| j.state != JobState::Waiting);
             self.item(ui, "Clear Finished", Cmd::ClearFinished, finished);
@@ -324,6 +370,7 @@ impl FtpApp {
         ui.menu_button("Help", |ui| {
             menu_style(ui);
             self.item(ui, "Keyboard Shortcuts", Cmd::Shortcuts, true);
+            ui.separator();
             self.item(ui, "About Rivet FTP", Cmd::About, true);
         });
     }

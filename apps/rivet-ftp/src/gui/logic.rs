@@ -34,7 +34,7 @@ impl FtpApp {
             focus_quick: false,
             prefs_open: false,
             prefs_page: super::prefs::Page::Appearance,
-            prefs_win: rivet_look::windows::WinState::new(10, eframe::egui::Vec2::new(720.0, 520.0)),
+            prefs_win: rivet_look::windows::WinState::new(10, eframe::egui::Vec2::new(800.0, 620.0)),
             keys_open: false,
             keys_win: rivet_look::windows::WinState::new(11, eframe::egui::Vec2::new(480.0, 520.0)),
             app_icon: None,

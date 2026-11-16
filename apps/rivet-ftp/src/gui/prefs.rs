@@ -135,12 +135,19 @@ impl FtpApp {
                                 ui.label(egui::RichText::new(page_now.label()).size(20.0).strong());
                                 ui.add_space(14.0);
                             }
+                            // A label on the left and its control on the right, like Rivet's rows.
+                            let grid = |ui: &mut egui::Ui, id: &str, body: &mut dyn FnMut(&mut egui::Ui)| {
+                                egui::Grid::new(id).num_columns(2).spacing([24.0, 18.0]).min_col_width(150.0).show(ui, |ui| body(ui));
+                            };
+                            let mut remove: Option<String> = None;
+                            let mut edit: Option<String> = None;
+                            let mut open: Option<String> = None;
                             match page_now {
                                 Page::Appearance => {
                                     let pal = self.palette.clone();
                                     section(ui, "Desktop colors", &mut |ui| {
-                                        ui.checkbox(&mut self.s.follow_desktop_colors, egui::RichText::new("Follow desktop colors").strong());
-                                        ui.add_space(4.0);
+                                        ui.checkbox(&mut self.s.follow_desktop_colors, "Follow desktop colors");
+                                        ui.add_space(6.0);
                                         match (&pal, self.s.follow_desktop_colors) {
                                             (Some(p), true) => {
                                                 ui.horizontal(|ui| {
@@ -155,13 +162,13 @@ impl FtpApp {
                                                     ui.label(egui::RichText::new(format!("from {name}")).small().color(weak)).on_hover_text(p.source.display().to_string());
                                                 });
                                             }
-                                            (None, true) => hint(ui, "No desktop color file found, so the style and accent below are used."),
-                                            _ => hint(ui, "Uses the style and accent below. The same colors as Rivet when both follow your desktop."),
+                                            (None, true) => hint(ui, "No desktop color file was found, so the style and accent below are used."),
+                                            _ => hint(ui, "The style and accent below are used."),
                                         }
                                     });
                                     let manual = !self.s.follow_desktop_colors || pal.is_none();
                                     section(ui, "Style and accent", &mut |ui| {
-                                        egui::Grid::new("ftp-look").num_columns(2).spacing([24.0, 18.0]).min_col_width(110.0).show(ui, |ui| {
+                                        grid(ui, "ftp-look", &mut |ui| {
                                             ui.label("Style");
                                             ui.add_enabled_ui(manual, |ui| {
                                                 ui.horizontal(|ui| {
@@ -189,18 +196,9 @@ impl FtpApp {
                                                 });
                                             });
                                             ui.end_row();
-                                        });
-                                        if !manual {
-                                            ui.add_space(6.0);
-                                            hint(ui, "Your desktop colors are in charge. Turn off Follow desktop colors to pick a style and accent here.");
-                                        }
-                                    });
-                                    section(ui, "Text", &mut |ui| {
-                                        egui::Grid::new("ftp-text").num_columns(2).spacing([24.0, 14.0]).min_col_width(110.0).show(ui, |ui| {
                                             ui.label("Text size");
                                             ui.horizontal(|ui| {
-                                                let desktop = self.s.text_size == 0.0;
-                                                if ui.selectable_label(desktop, "Like the desktop").clicked() {
+                                                if ui.selectable_label(self.s.text_size == 0.0, "Like the desktop").clicked() {
                                                     self.s.text_size = 0.0;
                                                 }
                                                 for (pt, label) in [(12.5, "Small"), (13.5, "Medium"), (15.0, "Large")] {
@@ -211,75 +209,158 @@ impl FtpApp {
                                             });
                                             ui.end_row();
                                         });
+                                        if !manual {
+                                            ui.add_space(10.0);
+                                            hint(ui, "Your desktop colors are in charge. Turn off Follow desktop colors to choose a style and accent here.");
+                                        }
                                     });
                                     section(ui, "Window", &mut |ui| {
-                                        ui.checkbox(&mut self.s.show_menubar, "Show the menu bar");
-                                        ui.checkbox(&mut self.s.show_sidebar, "Show saved connections");
-                                        ui.checkbox(&mut self.s.show_queue, "Show transfers");
-                                        ui.checkbox(&mut self.s.show_hidden, "Show hidden files");
+                                        ui.checkbox(&mut self.s.show_menubar, "Menu bar");
+                                        ui.checkbox(&mut self.s.show_sidebar, "Saved connections beside the panes");
+                                        ui.checkbox(&mut self.s.show_queue, "Transfers under the panes");
+                                        ui.checkbox(&mut self.s.show_hidden, "Hidden files");
                                     });
                                 }
                                 Page::Transfers => {
-                                    section(ui, "When a file is already there", &mut |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.selectable_value(&mut self.s.on_exists, OnExists::Ask, "Ask");
-                                            ui.selectable_value(&mut self.s.on_exists, OnExists::Replace, "Replace it");
-                                            ui.selectable_value(&mut self.s.on_exists, OnExists::Skip, "Skip it");
+                                    section(ui, "Sending files", &mut |ui| {
+                                        grid(ui, "ftp-send", &mut |ui| {
+                                            ui.label("If it's already there");
+                                            ui.horizontal(|ui| {
+                                                ui.selectable_value(&mut self.s.on_exists, OnExists::Ask, "Ask");
+                                                ui.selectable_value(&mut self.s.on_exists, OnExists::Replace, "Replace");
+                                                ui.selectable_value(&mut self.s.on_exists, OnExists::Skip, "Skip");
+                                            });
+                                            ui.end_row();
+                                            ui.label("Double-click a file");
+                                            ui.horizontal(|ui| {
+                                                ui.selectable_value(&mut self.s.double_click_sends, true, "Sends it across");
+                                                ui.selectable_value(&mut self.s.double_click_sends, false, "Only selects it");
+                                            });
+                                            ui.end_row();
                                         });
-                                        hint(ui, "Applies to files and folders with the same name in the folder you're sending to.");
+                                        ui.add_space(14.0);
+                                        ui.checkbox(&mut self.s.clear_finished, "Remove finished transfers from the list");
                                     });
-                                    section(ui, "Behavior", &mut |ui| {
-                                        ui.checkbox(&mut self.s.double_click_sends, "Double-clicking a file sends it to the other side");
-                                        ui.checkbox(&mut self.s.confirm_delete, "Ask before deleting on the server");
-                                        ui.checkbox(&mut self.s.clear_finished, "Clear finished transfers from the list");
-                                        ui.checkbox(&mut self.s.remember_local, "Start this computer's pane where you left it");
+                                    section(ui, "Deleting", &mut |ui| {
+                                        ui.checkbox(&mut self.s.confirm_delete, "Ask before deleting files on the server");
+                                        hint(ui, "Files deleted on a server can't be brought back.");
+                                    });
+                                    section(ui, "This computer", &mut |ui| {
+                                        grid(ui, "ftp-local", &mut |ui| {
+                                            ui.label("Start in");
+                                            ui.horizontal(|ui| {
+                                                ui.selectable_value(&mut self.s.remember_local, true, "Where you left off");
+                                                ui.selectable_value(&mut self.s.remember_local, false, "Your home folder");
+                                            });
+                                            ui.end_row();
+                                        });
+                                        hint(ui, "A saved connection with its own local folder always opens there.");
                                     });
                                 }
                                 Page::Connections => {
-                                    let store_path = self.store.path.clone();
-                                    let ssh_path = self.store.ssh_config_path();
-                                    let n = self.store.items.len();
+                                    let items = self.store.items.clone();
+                                    let current = self.conn.as_ref().map(|c| c.name.clone());
+                                    let server_icon = self.named_icon(ui.ctx(), &["network-server-symbolic", "network-workgroup-symbolic"]);
                                     section(ui, "Saved connections", &mut |ui| {
-                                        ui.label(format!("{n} saved. They're kept in a plain text file that only you can read:"));
-                                        ui.label(egui::RichText::new(tilde(&store_path)).monospace().color(weak));
-                                        ui.add_space(4.0);
-                                        hint(ui, "Passwords are never written there. SSH logins use your keys or ssh agent.");
-                                        ui.add_space(6.0);
-                                        if ui.button("New Connection…").clicked() {
-                                            self.form = Some(Form::blank());
+                                        if items.is_empty() {
+                                            hint(ui, "None yet.");
                                         }
-                                    });
-                                    section(ui, "Use them from a terminal", &mut |ui| {
-                                        ui.label("Log in to a saved connection, starting in its server folder:");
-                                        ui.label(egui::RichText::new("rivet-ftp ssh NAME").monospace());
-                                        ui.add_space(8.0);
-                                        ui.label("Or reach them by name from plain ssh, scp, rsync and git: add this line near the top of ~/.ssh/config.");
-                                        let line = format!("Include {}", tilde(&ssh_path));
+                                        for (i, c) in items.iter().enumerate() {
+                                            if i > 0 {
+                                                ui.add_space(4.0);
+                                                ui.separator();
+                                                ui.add_space(4.0);
+                                            }
+                                            ui.horizontal(|ui| {
+                                                if let Some(t) = &server_icon {
+                                                    let (r, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                                                    paint_tex(ui.painter(), t, r, v.text_color());
+                                                }
+                                                ui.add_space(4.0);
+                                                ui.vertical(|ui| {
+                                                    ui.spacing_mut().item_spacing.y = 1.0;
+                                                    ui.label(egui::RichText::new(&c.name).strong());
+                                                    let kind = c.protocol.scheme().to_uppercase();
+                                                    ui.label(egui::RichText::new(format!("{kind} · {}", c.target())).small().color(weak));
+                                                });
+                                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                                    ui.spacing_mut().item_spacing.x = 6.0;
+                                                    if ui.button("Remove").clicked() {
+                                                        remove = Some(c.name.clone());
+                                                    }
+                                                    if ui.button("Edit…").clicked() {
+                                                        edit = Some(c.name.clone());
+                                                    }
+                                                    let here = current.as_deref() == Some(c.name.as_str());
+                                                    if ui.add_enabled(!here, egui::Button::new(if here { "Connected" } else { "Connect" })).clicked() {
+                                                        open = Some(c.name.clone());
+                                                    }
+                                                });
+                                            });
+                                        }
+                                        ui.add_space(12.0);
                                         ui.horizontal(|ui| {
-                                            ui.label(egui::RichText::new(&line).monospace());
-                                            if ui.small_button("Copy").clicked() {
-                                                ui.ctx().copy_text(line.clone());
+                                            if ui.button("New Connection…").clicked() {
+                                                self.form = Some(Form::blank());
                                             }
                                         });
-                                        hint(ui, "Rivet FTP rewrites that file whenever you save a connection.");
+                                    });
+                                    let store_path = tilde(&self.store.path);
+                                    let ssh_path = tilde(&self.store.ssh_config_path());
+                                    let example = items.iter().find(|c| c.ssh_config_block().is_some()).map(|c| c.alias()).unwrap_or_else(|| "NAME".into());
+                                    section(ui, "From a terminal", &mut |ui| {
+                                        grid(ui, "ftp-term", &mut |ui| {
+                                            ui.label("Log in with ssh");
+                                            chip(ui, &format!("rivet-ftp ssh {example}"));
+                                            ui.end_row();
+                                            ui.label("Use plain ssh, scp, rsync and git");
+                                            chip(ui, &format!("Include {ssh_path}"));
+                                            ui.end_row();
+                                        });
+                                        ui.add_space(10.0);
+                                        hint(ui, "Put the Include line near the top of ~/.ssh/config, and saved connections answer to their short names. Rivet FTP rewrites that file whenever you save a connection.");
+                                    });
+                                    section(ui, "Where they're kept", &mut |ui| {
+                                        ui.label(egui::RichText::new(&store_path).monospace().size(12.5));
+                                        ui.add_space(2.0);
+                                        hint(ui, "Plain text that only you can read. Passwords are never written there: SSH logins use your keys or ssh agent.");
                                     });
                                 }
                                 Page::About => {
                                     ui.vertical_centered(|ui| {
-                                        ui.add_space(10.0);
+                                        ui.add_space(24.0);
                                         if let Some(t) = &about_icon {
-                                            ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(88.0)));
+                                            ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(96.0)));
                                         }
-                                        ui.add_space(6.0);
+                                        ui.add_space(10.0);
                                         ui.label(egui::RichText::new("Rivet FTP").size(22.0).strong());
                                         ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(weak));
-                                        ui.add_space(10.0);
+                                        ui.add_space(14.0);
                                         ui.label("Transfer files to and from your servers, side by side.");
                                         ui.label(egui::RichText::new("Built on Rivet Files. No GTK or Qt.").color(weak));
-                                        ui.add_space(10.0);
+                                        ui.add_space(14.0);
                                         ui.hyperlink_to("Source code", "https://github.com/ulinaaron/rivet-files");
                                     });
                                 }
+                            }
+                            if let Some(name) = remove
+                                && let Some(gone) = self.store.remove(&name)
+                            {
+                                self.note = Some(match self.store.save() {
+                                    Ok(()) => (format!("Removed \"{}\".", gone.name), false),
+                                    Err(e) => (format!("Couldn't save: {e}"), true),
+                                });
+                            }
+                            if let Some(name) = edit
+                                && let Some(c) = self.store.find(&name)
+                            {
+                                self.form = Some(Form::from(c));
+                            }
+                            if let Some(name) = open
+                                && let Some(c) = self.store.find(&name).cloned()
+                            {
+                                let ctx = ui.ctx().clone();
+                                self.connect(c, &ctx);
                             }
                         });
                     });
@@ -343,6 +424,21 @@ impl FtpApp {
     }
 }
 
+/// A command in a quiet box, with a Copy button beside it.
+fn chip(ui: &mut egui::Ui, text: &str) {
+    ui.horizontal(|ui| {
+        let v = ui.visuals().clone();
+        egui::Frame::NONE.fill(palette::mix(v.faint_bg_color, v.text_color(), 0.06)).corner_radius(r_sm()).inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| {
+            // Long paths are shortened (the whole line is in the tooltip and on Copy).
+            ui.set_max_width(250.0);
+            ui.add(egui::Label::new(egui::RichText::new(text).monospace().size(12.5)).truncate()).on_hover_text(text);
+        });
+        if ui.small_button("Copy").on_hover_text("Copy to the clipboard").clicked() {
+            ui.ctx().copy_text(text.to_string());
+        }
+    });
+}
+
 fn cmd_label(c: Cmd) -> &'static str {
     match c {
         Cmd::NewConnection => "New connection",
@@ -359,7 +455,10 @@ fn cmd_label(c: Cmd) -> &'static str {
         Cmd::ToggleQueue => "Show or hide transfers",
         Cmd::ToggleHidden => "Show or hide hidden files",
         Cmd::Refresh => "Refresh",
-        Cmd::Style(_) => "Style",
+        Cmd::EditConnection => "Edit the connection",
+        Cmd::CopyLocation => "Copy the location",
+        Cmd::SortBy(_) => "Sort",
+        Cmd::SortReverse => "Reverse the order",
         Cmd::Up => "Up a folder",
         Cmd::LocalHome => "Home folder",
         Cmd::ServerHome => "Server home",
