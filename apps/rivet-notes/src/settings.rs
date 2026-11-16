@@ -27,6 +27,8 @@ pub struct Settings {
     pub layout: crate::layout::Layout,
     /// Show the frontmatter as editable properties above the text.
     pub show_properties: bool,
+    /// Rivet's own icon kit, colored from the theme (else the desktop's icon theme).
+    pub builtin_icons: bool,
     /// Font families (empty: the interface follows the desktop, the editor the interface,
     /// monospace the system's).
     pub ui_font: String,
@@ -51,6 +53,7 @@ impl Default for Settings {
             show_sidebar: true,
             layout: Default::default(),
             show_properties: true,
+            builtin_icons: true,
             ui_font: String::new(),
             editor_font: String::new(),
             mono_font: String::new(),
@@ -92,6 +95,7 @@ impl Settings {
                 "browse" if v == "tags" => s.layout.show(Browse::Tags),
                 "browse" => {}
                 "show_properties" => s.show_properties = b,
+                "builtin_icons" => s.builtin_icons = b,
                 "ui_font" => s.ui_font = v.to_string(),
                 "editor_font" => s.editor_font = v.to_string(),
                 "mono_font" => s.mono_font = v.to_string(),
@@ -123,7 +127,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -131,6 +135,7 @@ impl Settings {
             self.layout.to_text(),
             self.layout.split,
             self.show_properties,
+            self.builtin_icons,
             self.ui_font.replace('\n', ""),
             self.editor_font.replace('\n', ""),
             self.mono_font.replace('\n', ""),

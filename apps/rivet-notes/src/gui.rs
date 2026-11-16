@@ -110,6 +110,10 @@ impl NotesApp {
             s.editor_font = it.next().unwrap_or_default();
             s.mono_font = it.next().unwrap_or_default();
         }
+        // Test hook: RIVET_NOTES_SYSTEM_ICONS uses the desktop's icon theme.
+        if std::env::var_os("RIVET_NOTES_SYSTEM_ICONS").is_some() {
+            s.builtin_icons = false;
+        }
         match std::env::var("RIVET_NOTES_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
             Ok("dark") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Dark, false),
@@ -666,6 +670,12 @@ impl eframe::App for NotesApp {
         // Fonts first, so the look doesn't load the default interface font as well.
         self.look.set_fonts(&ctx, &self.s.ui_font, &self.s.editor_font, &self.s.mono_font);
         self.look.frame(&ctx, &c, self.shot.is_none());
+        // Rivet's icon kit, in the theme's colors (they change with it).
+        let kit = self.s.builtin_icons.then(|| {
+            let v = ctx.global_style().visuals.clone();
+            rivet_look::builtin_icons::BuiltinColors { accent: self.look.accent(&c), bg: v.extreme_bg_color, fg: v.text_color(), dark: v.dark_mode }
+        });
+        self.icons.set_builtin(kit);
         self.shortcuts(&ctx);
         let now = ctx.input(|i| i.time);
         // Save after a pause in typing; pick up changes made elsewhere every few seconds.

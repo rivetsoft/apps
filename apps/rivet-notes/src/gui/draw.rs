@@ -948,6 +948,12 @@ impl NotesApp {
                                 });
                             });
                             ui.end_row();
+                            ui.label("Icons");
+                            ui.horizontal(|ui| {
+                                ui.selectable_value(&mut self.s.builtin_icons, true, "Rivet's own").on_hover_text("Rivet's icon kit, colored from your theme");
+                                ui.selectable_value(&mut self.s.builtin_icons, false, "Desktop icon theme");
+                            });
+                            ui.end_row();
                             ui.label("Text size");
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(self.s.text_size == 0.0, "Like the desktop").clicked() {
