@@ -26,7 +26,7 @@ pub(super) enum Cmd {
     SortBy(crate::listing::SortCol),
     SortReverse,
     EditRemote,
-    Info,
+    Properties,
     Up,
     LocalHome,
     ServerHome,
@@ -72,7 +72,7 @@ pub(super) const LIST: &[(Modifiers, Key, Cmd)] = &[
     (ALT, Key::ArrowUp, Cmd::Up),
     (Modifiers::NONE, Key::Tab, Cmd::SwitchPane),
     (Modifiers::NONE, Key::F4, Cmd::EditRemote),
-    (CTRL, Key::I, Cmd::Info),
+    (CTRL, Key::I, Cmd::Properties),
 ];
 
 /// The shortcut shown beside a command in the menus.
@@ -183,7 +183,7 @@ impl FtpApp {
                 let order = p.sort;
                 crate::listing::sort_by(&mut p.entries, order);
             }
-            Cmd::Info => {
+            Cmd::Properties => {
                 if side == Side::Local || self.browse.is_some() {
                     self.show_info(side);
                 }
@@ -316,7 +316,7 @@ impl FtpApp {
             self.item(ui, "Create New Folder", Cmd::NewFolder, can_edit);
             let one_file = focus == Side::Remote && connected && self.remote.selected_entries().first().is_some_and(|e| !e.is_dir) && sel_remote && self.remote.selected.len() == 1;
             self.item(ui, "Open in Editor", Cmd::EditRemote, one_file);
-            self.item(ui, "Info", Cmd::Info, sel_focus > 0 && (focus == Side::Local || connected));
+            self.item(ui, "Properties", Cmd::Properties, sel_focus > 0 && (focus == Side::Local || connected));
             ui.separator();
             self.item(ui, "New Connection…", Cmd::NewConnection, true);
             ui.menu_button("Connect To", |ui| {

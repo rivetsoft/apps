@@ -690,7 +690,7 @@ impl FtpApp {
         j.state = JobState::Waiting;
     }
 
-    /// Open the Info window for the selection's first item.
+    /// Open the Properties window for the selection's first item.
     pub(super) fn show_info(&mut self, side: Side) {
         let Some(e) = self.pane_ref(side).selected_entries().into_iter().next() else { return };
         let location = match side {
@@ -707,7 +707,7 @@ impl FtpApp {
         self.prompt = Some(Prompt::Info(InfoState { side, mode: e.mode & 0o777, entry: e, location, recursive: false }));
     }
 
-    /// Apply new permissions from the Info window.
+    /// Apply new permissions from the Properties window.
     pub(super) fn apply_mode(&mut self, side: Side, e: &Entry, mode: u32, recursive: bool) {
         match side {
             Side::Local => {
@@ -727,6 +727,36 @@ impl FtpApp {
                     self.pending.insert(id, format!("Changed the permissions of \"{}\"", e.name));
                 }
             }
+        }
+    }
+
+    /// Put a saved connection in a category (None: in none).
+    pub(super) fn set_category(&mut self, conn: &str, cat: Option<String>) {
+        let Some(c) = self.store.items.iter_mut().find(|c| c.name == conn) else { return };
+        c.category = cat.clone();
+        if let Some(k) = &cat {
+            // Show where it went.
+            self.s.collapsed.retain(|x| !x.eq_ignore_ascii_case(k));
+        }
+        self.save_store();
+    }
+
+    pub(super) fn rename_category(&mut self, old: &str, new: &str) {
+        self.store.rename_category(old, new);
+        let new = new.trim();
+        for x in &mut self.s.collapsed {
+            if x.eq_ignore_ascii_case(old) {
+                *x = new.to_string();
+            }
+        }
+        self.s.collapsed.retain(|x| !x.is_empty());
+        self.s.save();
+        self.save_store();
+    }
+
+    pub(super) fn save_store(&mut self) {
+        if let Err(e) = self.store.save() {
+            self.note = Some((format!("Couldn't save the connections: {e}"), true));
         }
     }
 

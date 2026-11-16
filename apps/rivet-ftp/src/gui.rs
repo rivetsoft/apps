@@ -113,6 +113,7 @@ struct Form {
     key: String,
     remote: String,
     local: String,
+    category: String,
     error: Option<String>,
     /// The name field gets the keyboard once, when the editor opens.
     focused_once: bool,
@@ -128,7 +129,7 @@ struct Form {
 
 impl Form {
     fn blank() -> Form {
-        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), error: None, focused_once: false, key_other: false, password: String::new(), has_saved: false, forget: false }
+        Form { original: None, name: String::new(), protocol: Protocol::Sftp, host: String::new(), port: String::new(), user: String::new(), key: String::new(), remote: String::new(), local: String::new(), category: String::new(), error: None, focused_once: false, key_other: false, password: String::new(), has_saved: false, forget: false }
     }
     fn from(c: &Connection) -> Form {
         Form {
@@ -141,6 +142,7 @@ impl Form {
             key: c.key.clone().unwrap_or_default(),
             remote: c.remote.clone().unwrap_or_default(),
             local: c.local.clone().unwrap_or_default(),
+            category: c.category.clone().unwrap_or_default(),
             error: None,
             focused_once: false,
             key_other: false,
@@ -171,6 +173,7 @@ impl Form {
             remote: opt(&self.remote),
             local: opt(&self.local),
             note: None,
+            category: opt(&self.category),
         })
     }
 }
@@ -207,6 +210,10 @@ enum Prompt {
     Secret(SecretAsk),
     /// Details and permissions of a file or folder.
     Info(InfoState),
+    /// Put a connection in a new category: (connection, name being typed).
+    NewCategory(String, String),
+    /// Rename a category: (old name, new name being typed).
+    RenameCategory(String, String),
 }
 
 pub(super) struct SecretAsk {

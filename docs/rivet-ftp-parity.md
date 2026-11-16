@@ -11,6 +11,7 @@ of any of them. ✅ done · 🟡 partly · ⬜ not yet.
 | SFTP | ✅ | Through OpenSSH: keys, agent, `~/.ssh/config`, known_hosts, jump hosts all apply |
 | Saved connections (bookmarks) | ✅ | Plain file, shared with the command line and `ssh` |
 | Quick connect | ✅ | |
+| Categories for saved connections, folding in the sidebar | ✅ | Also `--category` on the command line |
 | SSH keys: choose per connection, manage, make new | ✅ | Preferences → SSH Keys |
 | Passwords and key passphrases | ✅ | Asked when needed, handed to ssh privately (askpass) |
 | Remember them in the desktop keyring | ✅ | Secret Service via `secret-tool`; never in Rivet FTP's files |
@@ -29,7 +30,7 @@ of any of them. ✅ done · 🟡 partly · ⬜ not yet.
 | Sort by name, size, date | ✅ | |
 | Hidden files | ✅ | |
 | New folder, rename, delete | ✅ | Delete asks first |
-| Info: size, date, owner, permissions (chmod) | ✅ | Also for everything in a folder |
+| Properties: size, date, owner, permissions (chmod) | ✅ | Also for everything in a folder |
 | Copy address of a server file | ✅ | |
 | Search/filter in a folder | ⬜ | Rivet's type-to-match and filters can come over |
 | Quick Look–style preview of server files | ⬜ | Rivet's Peek and light box can come over |

@@ -20,7 +20,7 @@ send it across, or use Upload and Download.
 ```sh
 rivet-ftp add "Work site" sftp://me@example.com:2222/var/www --key ~/.ssh/id_ed25519 --local ~/Sites/work
 rivet-ftp add Pi pi@192.168.1.4          # user@server alone means SFTP
-rivet-ftp add Mirror ftps://files.example.org/pub
+rivet-ftp add Mirror ftps://files.example.org/pub --category Clients   # a group in the sidebar
 rivet-ftp list
 rivet-ftp show work-site                 # by name, or its short form
 rivet-ftp remove Pi

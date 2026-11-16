@@ -25,6 +25,7 @@ Usage:
                                      rivet-ftp keys (id_ed25519), or a file
       --local FOLDER                 Folder to open on this computer
       --note TEXT                    A note for yourself
+      --category NAME                A group for it in the sidebar
       --replace                      Replace a connection with the same name
   rivet-ftp remove NAME              Forget a connection
   rivet-ftp show NAME                Everything saved about a connection
@@ -163,7 +164,7 @@ fn run(args: &[String]) -> Result<(), String> {
 
 fn add(rest: &[String]) -> Result<(), String> {
     let mut pos = Vec::new();
-    let (mut key, mut local, mut note, mut replace) = (None, None, None, false);
+    let (mut key, mut local, mut note, mut category, mut replace) = (None, None, None, None, false);
     let mut it = rest.iter();
     while let Some(a) = it.next() {
         let mut value = |flag: &str| it.next().cloned().ok_or_else(|| format!("{flag} needs a value"));
@@ -171,6 +172,7 @@ fn add(rest: &[String]) -> Result<(), String> {
             "--key" => key = Some(value("--key")?),
             "--local" => local = Some(value("--local")?),
             "--note" => note = Some(value("--note")?),
+            "--category" => category = Some(value("--category")?).filter(|s: &String| !s.trim().is_empty()),
             "--replace" => replace = true,
             f if f.starts_with("--") => return Err(format!("unknown option {f}")),
             _ => pos.push(a.clone()),
@@ -197,6 +199,7 @@ fn add(rest: &[String]) -> Result<(), String> {
     c.key = key.map(|k| tilde(std::path::Path::new(&k)));
     c.local = local.map(|l| tilde(std::path::Path::new(&l)));
     c.note = note;
+    c.category = category;
     let mut store = Store::load();
     store.add(c.clone(), replace)?;
     store.save().map_err(|e| format!("couldn't save {}: {e}", store.path.display()))?;
@@ -269,6 +272,9 @@ fn show(c: &Connection) {
     }
     if let Some(l) = &c.local {
         println!("  Local:        {l}");
+    }
+    if let Some(k) = &c.category {
+        println!("  Category:     {k}");
     }
     if let Some(n) = &c.note {
         println!("  Note:         {n}");

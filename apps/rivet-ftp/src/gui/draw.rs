@@ -58,70 +58,154 @@ impl FtpApp {
         }
         let server_icon = self.named_icon(&ctx, &["network-server", "folder-remote", "network-workgroup"]);
         let items = self.store.items.clone();
+        let cats = self.store.categories();
+        // Connections without a category first, then each category under a header that folds.
+        let mut groups: Vec<(Option<String>, Vec<rivet_connections::Connection>)> = vec![(None, items.iter().filter(|c| c.category.is_none()).cloned().collect())];
+        for k in &cats {
+            groups.push((Some(k.clone()), items.iter().filter(|c| c.category.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(k))).cloned().collect()));
+        }
+        let mut move_to: Option<(String, Option<String>)> = None;
+        let mut ask_new: Option<String> = None;
+        let mut rename: Option<String> = None;
+        let mut new_in: Option<String> = None;
+        let mut fold: Option<String> = None;
         egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
-            for c in &items {
-                let current = self.conn.as_ref().is_some_and(|k| k.name == c.name);
-                // One line: the name, or user@server for a connection that wasn't given one.
-                // Everything else is in the tooltip, so the sidebar can stay narrow.
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
-                let v = ui.visuals();
-                if current {
-                    ui.painter().rect_filled(rect, r_md(), v.selection.bg_fill);
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(rect, r_md(), v.widgets.hovered.weak_bg_fill);
-                }
-                let fg = if current { v.selection.stroke.color } else { v.text_color() };
-                if let Some(t) = &server_icon {
-                    let r = Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(16.0));
-                    ui.painter().image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
-                }
-                let text_rect = Rect::from_min_max(Pos2::new(rect.left() + 32.0, rect.top()), Pos2::new(rect.right() - 8.0, rect.bottom()));
-                let title = c.title();
-                let galley = ui.painter().layout_no_wrap(title.clone(), fonts::ui_font(13.5), fg);
-                let cut = galley.size().x > text_rect.width();
-                // Too long for the sidebar: fade it out at the edge rather than spill over.
-                let galley = if cut {
-                    let mut job = egui::text::LayoutJob::single_section(title, egui::TextFormat::simple(fonts::ui_font(13.5), fg));
-                    job.wrap = egui::text::TextWrapping::truncate_at_width(text_rect.width());
-                    ui.painter().layout_job(job)
-                } else {
-                    galley
-                };
-                ui.painter().with_clip_rect(text_rect).galley(Pos2::new(text_rect.left(), rect.center().y - galley.size().y / 2.0), galley, fg);
-                let resp = resp.on_hover_ui(|ui| connection_tooltip(ui, c));
-                if resp.clicked() && !current {
-                    self.connect(c.clone(), &ctx);
-                }
-                resp.context_menu(|ui| {
-                    menu_style(ui);
-                    if ui.button("Connect").clicked() {
-                        self.connect(c.clone(), &ctx);
-                        ui.close();
+            for (cat, conns) in &groups {
+                if let Some(k) = cat {
+                    let open = !self.s.collapsed.iter().any(|x| x.eq_ignore_ascii_case(k));
+                    let here = self.conn.as_ref().is_some_and(|c| conns.iter().any(|x| x.name == c.name));
+                    let resp = category_header(ui, k, conns.len(), open, here);
+                    if resp.clicked() {
+                        fold = Some(k.clone());
                     }
-                    if ui.button("Edit…").clicked() {
-                        self.form = Some(Form::from(c));
-                        ui.close();
-                    }
-                    if c.protocol == Protocol::Sftp && ui.button("Copy ssh command").clicked() {
-                        let cmd = format!("rivet-ftp ssh {}", c.alias());
-                        ui.ctx().copy_text(cmd.clone());
-                        self.note = Some((format!("Copied: {cmd}"), false));
-                        ui.close();
-                    }
-                    ui.separator();
-                    if ui.button("Remove").clicked() {
-                        if let Some(gone) = self.store.remove(&c.name) {
-                            self.note = Some(match self.store.save() {
-                                Ok(()) => (format!("Removed \"{}\".", gone.name), false),
-                                Err(e) => (format!("Couldn't save: {e}"), true),
-                            });
+                    resp.context_menu(|ui| {
+                        menu_style(ui);
+                        if ui.button(if open { "Collapse" } else { "Expand" }).clicked() {
+                            fold = Some(k.clone());
+                            ui.close();
                         }
-                        ui.close();
+                        ui.separator();
+                        if ui.button("New Connection Here…").clicked() {
+                            new_in = Some(k.clone());
+                            ui.close();
+                        }
+                        if ui.button("Rename Category…").clicked() {
+                            rename = Some(k.clone());
+                            ui.close();
+                        }
+                    });
+                    if !open {
+                        continue;
                     }
-                });
-                ui.add_space(2.0);
+                }
+                for c in conns {
+                    let current = self.conn.as_ref().is_some_and(|k| k.name == c.name);
+                    // One line: the name, or user@server for a connection that wasn't given one.
+                    // Everything else is in the tooltip, so the sidebar can stay narrow.
+                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::click());
+                    let v = ui.visuals();
+                    if current {
+                        ui.painter().rect_filled(rect, r_md(), v.selection.bg_fill);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(rect, r_md(), v.widgets.hovered.weak_bg_fill);
+                    }
+                    let fg = if current { v.selection.stroke.color } else { v.text_color() };
+                    if let Some(t) = &server_icon {
+                        let r = Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(16.0));
+                        ui.painter().image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                    }
+                    let text_rect = Rect::from_min_max(Pos2::new(rect.left() + 32.0, rect.top()), Pos2::new(rect.right() - 8.0, rect.bottom()));
+                    let title = c.title();
+                    let galley = ui.painter().layout_no_wrap(title.clone(), fonts::ui_font(13.5), fg);
+                    let cut = galley.size().x > text_rect.width();
+                    // Too long for the sidebar: fade it out at the edge rather than spill over.
+                    let galley = if cut {
+                        let mut job = egui::text::LayoutJob::single_section(title, egui::TextFormat::simple(fonts::ui_font(13.5), fg));
+                        job.wrap = egui::text::TextWrapping::truncate_at_width(text_rect.width());
+                        ui.painter().layout_job(job)
+                    } else {
+                        galley
+                    };
+                    ui.painter().with_clip_rect(text_rect).galley(Pos2::new(text_rect.left(), rect.center().y - galley.size().y / 2.0), galley, fg);
+                    let resp = resp.on_hover_ui(|ui| connection_tooltip(ui, c));
+                    if resp.clicked() && !current {
+                        self.connect(c.clone(), &ctx);
+                    }
+                    resp.context_menu(|ui| {
+                        menu_style(ui);
+                        if ui.button("Connect").clicked() {
+                            self.connect(c.clone(), &ctx);
+                            ui.close();
+                        }
+                        if ui.button("Edit…").clicked() {
+                            self.form = Some(Form::from(c));
+                            ui.close();
+                        }
+                        if c.protocol == Protocol::Sftp && ui.button("Copy ssh command").clicked() {
+                            let cmd = format!("rivet-ftp ssh {}", c.alias());
+                            ui.ctx().copy_text(cmd.clone());
+                            self.note = Some((format!("Copied: {cmd}"), false));
+                            ui.close();
+                        }
+                        ui.menu_button("Move to Category", |ui| {
+                            menu_style(ui);
+                            if ui.selectable_label(c.category.is_none(), "None").clicked() {
+                                move_to = Some((c.name.clone(), None));
+                                ui.close();
+                            }
+                            if !cats.is_empty() {
+                                ui.separator();
+                            }
+                            for k in &cats {
+                                let on = c.category.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(k));
+                                if ui.selectable_label(on, k).clicked() {
+                                    move_to = Some((c.name.clone(), Some(k.clone())));
+                                    ui.close();
+                                }
+                            }
+                            ui.separator();
+                            if ui.button("New Category…").clicked() {
+                                ask_new = Some(c.name.clone());
+                                ui.close();
+                            }
+                        });
+                        ui.separator();
+                        if ui.button("Remove").clicked() {
+                            if let Some(gone) = self.store.remove(&c.name) {
+                                self.note = Some(match self.store.save() {
+                                    Ok(()) => (format!("Removed \"{}\".", gone.name), false),
+                                    Err(e) => (format!("Couldn't save: {e}"), true),
+                                });
+                            }
+                            ui.close();
+                        }
+                    });
+                    ui.add_space(2.0);
+                }
             }
         });
+        if let Some(k) = fold {
+            if let Some(i) = self.s.collapsed.iter().position(|x| x.eq_ignore_ascii_case(&k)) {
+                self.s.collapsed.remove(i);
+            } else {
+                self.s.collapsed.push(k);
+            }
+            self.s.save();
+        }
+        if let Some((conn, cat)) = move_to {
+            self.set_category(&conn, cat);
+        }
+        if let Some(conn) = ask_new {
+            self.prompt = Some(Prompt::NewCategory(conn, String::new()));
+        }
+        if let Some(k) = rename {
+            self.prompt = Some(Prompt::RenameCategory(k.clone(), k));
+        }
+        if let Some(k) = new_in {
+            let mut f = Form::blank();
+            f.category = k;
+            self.form = Some(f);
+        }
     }
 
     pub(super) fn draw_pane(&mut self, ui: &mut egui::Ui, side: Side, rect: Rect) {
@@ -551,7 +635,7 @@ impl FtpApp {
                 self.run(Cmd::CopyLocation, &ctx);
                 ui.close();
             }
-            if ui.add(egui::Button::new("Info…").shortcut_text("Ctrl+I")).clicked() {
+            if ui.add(egui::Button::new("Properties").shortcut_text("Ctrl+I")).clicked() {
                 self.show_info(side);
                 ui.close();
             }
@@ -694,6 +778,31 @@ impl FtpApp {
     }
 }
 
+
+/// A category's header in the sidebar, like Rivet's section headers: a triangle that points
+/// down when open, the name, and how many connections are in it (a dot when one is connected).
+fn category_header(ui: &mut egui::Ui, name: &str, count: usize, open: bool, connected: bool) -> egui::Response {
+    ui.add_space(8.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::click());
+    let v = ui.visuals();
+    let col = if resp.hovered() { v.strong_text_color() } else { v.text_color() };
+    let c = Pos2::new(rect.left() + 10.0, rect.center().y);
+    let pts = if open {
+        vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)]
+    } else {
+        vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)]
+    };
+    ui.painter().add(egui::Shape::convex_polygon(pts, col, Stroke::NONE));
+    let right = rect.right() - 8.0;
+    let n = ui.painter().text(Pos2::new(right, rect.center().y), Align2::RIGHT_CENTER, count.to_string(), fonts::ui_font(12.0), v.weak_text_color());
+    if connected && !open {
+        ui.painter().circle_filled(Pos2::new(n.left() - 10.0, rect.center().y), 3.5, status(ui.ctx()).success);
+    }
+    let text_rect = Rect::from_min_max(Pos2::new(rect.left() + 22.0, rect.top()), Pos2::new(n.left() - 18.0, rect.bottom()));
+    ui.painter().with_clip_rect(text_rect).text(Pos2::new(text_rect.left(), rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.5), col);
+    ui.add_space(1.0);
+    resp.on_hover_text(if open { "Click to fold up · right-click for more" } else { "Click to open · right-click for more" })
+}
 
 /// Everything about a saved connection, for its tooltip.
 fn connection_tooltip(ui: &mut egui::Ui, c: &rivet_connections::Connection) {

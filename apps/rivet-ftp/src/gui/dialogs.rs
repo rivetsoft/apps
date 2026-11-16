@@ -113,6 +113,7 @@ impl FtpApp {
         let mut keep = true;
         let mut save: Option<bool> = None; // Some(connect afterwards)
         let icon = self.app_icon(ctx);
+        let cats = self.store.categories();
         self.want_keys(ctx);
         let keys = self.keys.clone();
         let mut make_key = false;
@@ -161,6 +162,35 @@ impl FtpApp {
                 form.has_saved = rivet_connections::secrets::lookup(name, rivet_connections::secrets::Kind::Password).is_some();
             }
             row(ui, "Name", &mut |ui| { let w = ui.available_width(); enter |= raised(ui, "f-name", &mut form.name, "Work site", w, accent, first) });
+            row(ui, "Category", &mut |ui| {
+                // Type a new one, or pick one already in use.
+                let w = ui.available_width() - if cats.is_empty() { 0.0 } else { 40.0 };
+                enter |= raised(ui, "f-cat", &mut form.category, "None", w, accent, false);
+                if !cats.is_empty() {
+                    ui.add_space(4.0);
+                    // A drawn chevron (the same in every font).
+                    let btn = egui::Button::new("").min_size(Vec2::new(34.0, 34.0)).corner_radius(r_md());
+                    let r = egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
+                        super::menus::menu_style(ui);
+                        if ui.selectable_label(form.category.is_empty(), "None").clicked() {
+                            form.category.clear();
+                            ui.close();
+                        }
+                        ui.separator();
+                        for k in &cats {
+                            if ui.selectable_label(form.category.eq_ignore_ascii_case(k), k).clicked() {
+                                form.category = k.clone();
+                                ui.close();
+                            }
+                        }
+                    });
+                    let c = r.0.rect.center();
+                    let st = Stroke::new(1.8, ui.visuals().text_color());
+                    ui.painter().line_segment([c + Vec2::new(-4.5, -2.0), c + Vec2::new(0.0, 2.5)], st);
+                    ui.painter().line_segment([c + Vec2::new(0.0, 2.5), c + Vec2::new(4.5, -2.0)], st);
+                    r.0.on_hover_text("Categories in use");
+                }
+            });
             ui.add_space(8.0);
             heading(ui, "Server");
             row(ui, "Type", &mut |ui| {
@@ -654,6 +684,42 @@ impl FtpApp {
                         self.apply_mode(info.side, &e, info.mode, info.recursive);
                     } else if !(cancel || esc) {
                         next = Some(Prompt::Info(info));
+                    }
+                }
+                Prompt::NewCategory(conn, mut name) => {
+                    ui.heading("New Category");
+                    ui.add_space(2.0);
+                    ui.label(egui::RichText::new(format!("For {conn}")).color(ui.visuals().weak_text_color()));
+                    ui.add_space(10.0);
+                    let enter = field(ui, &mut name, "Clients, Home lab, …");
+                    ui.add_space(12.0);
+                    let (mut ok, mut cancel) = (false, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ok = primary(ui, "Create");
+                        cancel = plain(ui, "Cancel");
+                    });
+                    if (ok || enter) && !name.trim().is_empty() {
+                        self.set_category(&conn, Some(name.trim().to_string()));
+                    } else if !(cancel || esc) {
+                        next = Some(Prompt::NewCategory(conn, name));
+                    }
+                }
+                Prompt::RenameCategory(old, mut name) => {
+                    ui.heading("Rename Category");
+                    ui.add_space(10.0);
+                    let enter = field(ui, &mut name, "Category name");
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("Leave it empty to take its connections out of the category.").small().color(ui.visuals().weak_text_color()));
+                    ui.add_space(12.0);
+                    let (mut ok, mut cancel) = (false, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ok = primary(ui, "Rename");
+                        cancel = plain(ui, "Cancel");
+                    });
+                    if ok || enter {
+                        self.rename_category(&old, &name);
+                    } else if !(cancel || esc) {
+                        next = Some(Prompt::RenameCategory(old, name));
                     }
                 }
                 Prompt::EditConflict(i) => {

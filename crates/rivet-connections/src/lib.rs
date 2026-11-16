@@ -75,6 +75,8 @@ pub struct Connection {
     /// Folder to open on this computer, in the other pane.
     pub local: Option<String>,
     pub note: Option<String>,
+    /// A group in the sidebar ("Clients", "Home lab"); None: no group.
+    pub category: Option<String>,
 }
 
 impl Connection {
@@ -117,6 +119,7 @@ impl Connection {
             remote: path.map(percent_decode).filter(|p| p != "/" && !p.is_empty()),
             local: None,
             note: None,
+            category: None,
         })
     }
 
@@ -294,6 +297,29 @@ impl Store {
         Ok(())
     }
 
+    /// The categories in use, in the order they first appear.
+    pub fn categories(&self) -> Vec<String> {
+        let mut v: Vec<String> = Vec::new();
+        for c in &self.items {
+            if let Some(k) = &c.category
+                && !v.iter().any(|x| x.eq_ignore_ascii_case(k))
+            {
+                v.push(k.clone());
+            }
+        }
+        v
+    }
+
+    /// Rename a category on every connection in it (an empty name takes them out of it).
+    pub fn rename_category(&mut self, old: &str, new: &str) {
+        let new = new.trim();
+        for c in &mut self.items {
+            if c.category.as_deref().is_some_and(|k| k.eq_ignore_ascii_case(old)) {
+                c.category = (!new.is_empty()).then(|| new.to_string());
+            }
+        }
+    }
+
     /// Remove by name or alias; returns the removed connection.
     pub fn remove(&mut self, name: &str) -> Option<Connection> {
         let target = self.find(name)?.name.clone();
@@ -358,6 +384,7 @@ fn parse(text: &str) -> Vec<Connection> {
                 remote: None,
                 local: None,
                 note: None,
+                category: None,
             });
             continue;
         }
@@ -373,6 +400,7 @@ fn parse(text: &str) -> Vec<Connection> {
             "remote" => c.remote = opt(),
             "local" => c.local = opt(),
             "note" => c.note = opt(),
+            "category" => c.category = opt(),
             _ => {}
         }
     }
@@ -387,7 +415,7 @@ fn render(items: &[Connection]) -> String {
         if let Some(p) = c.port {
             let _ = writeln!(s, "port={p}");
         }
-        for (k, v) in [("user", &c.user), ("key", &c.key), ("remote", &c.remote), ("local", &c.local), ("note", &c.note)] {
+        for (k, v) in [("user", &c.user), ("key", &c.key), ("remote", &c.remote), ("local", &c.local), ("note", &c.note), ("category", &c.category)] {
             if let Some(v) = v {
                 let _ = writeln!(s, "{k}={}", v.replace('\n', " "));
             }
@@ -518,6 +546,17 @@ mod tests {
         s.save().unwrap();
         let back = Store::load_from(&path);
         assert_eq!(back.items, s.items);
+        let mut cat = back.items.clone();
+        cat[0].category = Some("Clients".into());
+        let st = Store { path: path.clone(), items: cat };
+        st.save().unwrap();
+        let mut again = Store::load_from(&path);
+        assert_eq!(again.categories(), ["Clients"]);
+        again.rename_category("clients", "Work");
+        assert_eq!(again.items[0].category.as_deref(), Some("Work"));
+        again.rename_category("Work", "");
+        assert!(again.categories().is_empty());
+        let back = Store::load_from(&path);
         assert_eq!(back.find("work-site").map(|c| c.name.as_str()), Some("Work site"));
         let cfg = std::fs::read_to_string(back.ssh_config_path()).unwrap();
         assert!(cfg.contains("Host work-site\n    HostName example.com\n    User me\n    Port 2222\n"));

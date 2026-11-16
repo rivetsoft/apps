@@ -179,10 +179,10 @@ impl FtpApp {
                     self.run(Cmd::EditRemote, ctx);
                 }
             }
-            Tool::Info => {
+            Tool::Properties => {
                 let can = !self.pane_ref(focus).selected.is_empty() && (focus == Side::Local || connected);
-                if self.tool_button(ui, t, can, false, "Info and permissions (Ctrl+I)").clicked() {
-                    self.run(Cmd::Info, ctx);
+                if self.tool_button(ui, t, can, false, "Properties (Ctrl+I)").clicked() {
+                    self.run(Cmd::Properties, ctx);
                 }
             }
             Tool::Preferences => {
