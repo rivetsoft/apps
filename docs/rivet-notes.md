@@ -31,6 +31,14 @@ the list and leaves the folder alone).
   is reloaded, or you're asked if you had unsaved changes.
 - New notes get `title`, `created` and `tags`. Delete moves notes to the desktop's Trash.
 
+## Reading view
+
+Ctrl+Space (or View → Reading View, or the eye on the toolbar) shows the open note as a
+rendered page: headings, bold and italic, lists and tasks, quotes, code blocks with colors and a
+Copy button, tables, rules, links, `#tags` and pictures stored beside the note. Links to other
+notes (`[[Name]]` or a relative `.md` path) open them in place, and Backspace goes back. Arrow
+keys, Page Up/Down, Space, Home and End scroll. Esc or Ctrl+Space closes it.
+
 ## Fonts
 
 Preferences → Fonts sets three fonts and the editor's size: **Interface** (menus, sidebar;
@@ -44,6 +52,7 @@ sample shows the editor's fonts as you choose.
 | --- | --- |
 | Ctrl+N / Shift+Ctrl+N | New note / new folder (in the current folder) |
 | Ctrl+S | Save now |
+| Ctrl+Space | Reading view (Esc closes it) |
 | Ctrl+F | Search |
 | Ctrl+T | Switch folders / tags, or fold the tags pane when it's below |
 | Ctrl+P | Show or hide properties |
@@ -59,5 +68,5 @@ rivet-notes tags ~/Documents/Notes  # the tags in a vault, most used first
 
 ## Next
 
-Rendered preview (Markdown to formatted text), links between notes (`[[Note]]`) and backlinks,
+Links between notes (`[[Note]]`) and backlinks,
 templates, and the full-text search in the shared file views.

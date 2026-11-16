@@ -40,6 +40,11 @@ pub fn editor_family() -> egui::FontFamily {
     egui::FontFamily::Name("editor".into())
 }
 
+/// The editor font's bold face (the regular one when it has none).
+pub fn editor_bold_family() -> egui::FontFamily {
+    egui::FontFamily::Name("editor-bold".into())
+}
+
 impl LiveLook {
     /// Use these fonts (family names; empty: the interface follows the desktop, the editor
     /// follows the interface, monospace follows the system's). Loaded only when they change.
@@ -80,7 +85,17 @@ impl LiveLook {
             ed.push("ui-font".into());
         }
         ed.extend(base);
+        // Its bold face, found by family name (the editor's, else the interface's).
+        let fam = if ed_ok { Some(editor_font.to_string()) } else { fonts::resolve(ui_font).map(|(f, _)| f) };
+        let bold_ok = fam.and_then(|f| fonts::file_for_style(&f, "Bold")).and_then(|p| std::fs::read(p).ok()).map(|bytes| {
+            defs.font_data.insert("editor-bold".into(), Arc::new(egui::FontData::from_owned(bytes)));
+        });
+        let mut bold = ed.clone();
+        if bold_ok.is_some() {
+            bold.insert(0, "editor-bold".into());
+        }
         defs.families.insert(editor_family(), ed);
+        defs.families.insert(editor_bold_family(), bold);
         ctx.set_fonts(defs);
     }
 

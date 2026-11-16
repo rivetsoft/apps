@@ -2,6 +2,7 @@
 
 mod gui;
 mod layout;
+mod render;
 mod settings;
 mod vault;
 

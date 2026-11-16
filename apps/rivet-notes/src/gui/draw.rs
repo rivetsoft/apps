@@ -163,6 +163,7 @@ impl NotesApp {
                 child.painter().text(c + Vec2::new(0.0, 14.0), Align2::CENTER_CENTER, "or make a new one with Ctrl+N", fonts::ui_font(12.5), weak);
             }
         });
+        self.reading_view(ctx);
         self.prompts(ctx);
         if self.prefs_open {
             self.prefs_window(ctx);
@@ -209,6 +210,15 @@ impl NotesApp {
                     };
                     if ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)").clicked() {
                         self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                    }
+                    // The rendered page.
+                    let read_icon = self.icon(&ctx, &["view-reveal-symbolic", "document-open-symbolic", "x-office-document-symbolic"], 16.0);
+                    let b = match &read_icon {
+                        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
+                        None => egui::Button::new("Read"),
+                    };
+                    if ui.add_enabled(self.doc.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Reading view (Ctrl+Space)").clicked() {
+                        self.toggle_reading(&ctx);
                     }
                     if let Some(i) = self.s.layout.tabbed() {
                         ui.add_space(4.0);

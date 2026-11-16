@@ -104,6 +104,19 @@ pub fn file_for(family: &str) -> Option<PathBuf> {
     if p.is_file() { Some(p) } else { None }
 }
 
+/// The file for a family's face in a style ("Bold"), when it has one.
+pub fn file_for_style(family: &str, style: &str) -> Option<PathBuf> {
+    let pattern = format!("{family}:style={style}");
+    let out = run("fc-match", &["-f", "%{family[0]}|%{style[0]}|%{file}", &pattern])?;
+    let mut it = out.splitn(3, '|');
+    let (got, got_style, file) = (it.next()?, it.next()?, it.next()?);
+    if !got.eq_ignore_ascii_case(family) || !got_style.to_lowercase().contains(&style.to_lowercase()) {
+        return None;
+    }
+    let p = PathBuf::from(file.trim());
+    if p.is_file() { Some(p) } else { None }
+}
+
 /// Installed monospace families (for the monospace font picker), sorted.
 pub fn mono_families() -> Vec<String> {
     let text = run("fc-list", &["--format", "%{family[0]}\n", ":spacing=mono:style=Regular"]).unwrap_or_default();

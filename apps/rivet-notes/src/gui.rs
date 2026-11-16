@@ -3,6 +3,7 @@
 //! apps' shared look: theme and desktop colors, icons, fonts, in-app windows.
 
 mod draw;
+mod read;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -81,6 +82,8 @@ pub struct NotesApp {
     title: String,
     /// Installed font families, for Preferences (listed once, when first needed).
     families: Option<(Vec<String>, Vec<String>)>,
+    /// The reading view, when open.
+    reading: Option<read::Reading>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -133,6 +136,7 @@ impl NotesApp {
             edit_cmd: None,
             title: String::new(),
             families: None,
+            reading: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -143,6 +147,10 @@ impl NotesApp {
         {
             let p = v.join(rel);
             app.open_note(&p);
+        }
+        // Test hook for checks: RIVET_NOTES_READ opens the reading view.
+        if std::env::var_os("RIVET_NOTES_READ").is_some() {
+            app.toggle_reading(&_cc.egui_ctx);
         }
         // Test hook for checks: RIVET_NOTES_EDIT=selectall|delete runs a text-menu command.
         app.edit_cmd = match std::env::var("RIVET_NOTES_EDIT").as_deref() {
@@ -367,6 +375,13 @@ impl NotesApp {
         if self.prompt.is_some() {
             return;
         }
+        // Ctrl+Space: the rendered page; while it's up, it has the keyboard.
+        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Space))) {
+            self.toggle_reading(ctx);
+        }
+        if self.reading.is_some() {
+            return;
+        }
         let cmd = Modifiers::COMMAND;
         let shift = Modifiers { shift: true, ..Modifiers::COMMAND };
         let (n, f, s, comma, m, b, t, p, find) = ctx.input_mut(|i| {
@@ -541,6 +556,11 @@ impl NotesApp {
                 self.s.save();
             }
             ui.separator();
+            if ui.add_enabled(self.doc.is_some(), egui::Button::new("Reading View").shortcut_text("Ctrl+Space")).clicked() {
+                let ctx = ui.ctx().clone();
+                self.toggle_reading(&ctx);
+                ui.close();
+            }
             if ui.add(egui::Button::new("Reload Vault").shortcut_text("F5")).clicked() {
                 self.rescan();
                 ui.close();
@@ -591,6 +611,18 @@ impl eframe::App for NotesApp {
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(shot) = &self.shot {
             rivet_kit::scripted_click("RIVET_NOTES", shot.frames(), raw);
+            // RIVET_NOTES_KEY=end presses that key once the window has settled.
+            if shot.frames() == 40
+                && let Ok(k) = std::env::var("RIVET_NOTES_KEY")
+            {
+                let (modifiers, name) = match k.strip_prefix("ctrl+") {
+                    Some(n) => (Modifiers::COMMAND, n.to_string()),
+                    None => (Modifiers::NONE, k),
+                };
+                if let Some(key) = Key::from_name(&name) {
+                    raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });
+                }
+            }
             // RIVET_NOTES_DRAG=X1,Y1>X2,Y2: press at one point, move to the other, let go.
             if let Some((a, b)) = std::env::var("RIVET_NOTES_DRAG").ok().and_then(|v| {
                 let (a, b) = v.split_once('>')?;

@@ -578,6 +578,18 @@ pub fn load_image_file(path: &Path, px: u32) -> Option<egui::ColorImage> {
     }
 }
 
+/// A picture at its own size, shrunk (never enlarged) so its longest edge is at most `max_px`.
+pub fn load_picture(path: &Path, max_px: u32) -> Option<egui::ColorImage> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    if ext == "svg" || ext == "svgz" {
+        return load_image_file(path, max_px.min(512));
+    }
+    let img = image::load_from_memory(&std::fs::read(path).ok()?).ok()?;
+    let img = if img.width().max(img.height()) > max_px { img.resize(max_px, max_px, image::imageops::FilterType::Triangle) } else { img };
+    let rgba = img.to_rgba8();
+    Some(egui::ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
+}
+
 pub fn render_svg(data: &[u8], px: u32) -> Option<egui::ColorImage> {
     let opt = resvg::usvg::Options::default();
     let tree = resvg::usvg::Tree::from_data(data, &opt).ok()?;
