@@ -141,10 +141,10 @@ pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)
         // The line being edited: plain Markdown, at the size it had (nothing re-renders while
         // typing on it).
         if editing {
-            let level = match held {
-                Some((li, h)) if li == i => h,
-                _ => heading_level(body),
-            };
+            // Headings take their size from their marks straight away (so a new heading is
+            // the right size before its text is typed); nothing else changes while typing.
+            let _ = held;
+            let level = heading_level(body);
             for s in &mut st[r.clone()] {
                 s.heading = level;
             }
@@ -394,9 +394,9 @@ mod tests {
         // …and nothing on it is styled while it's being edited.
         let l = analyze(t, Some((10, 10)), None);
         assert!(!l.st[t.find("bold").unwrap()].bold);
-        // A line made a heading while editing it keeps the size it had until the cursor leaves.
+        // A line made a heading while editing it takes the heading's size straight away.
         let t2 = "# Title\n## new\n";
-        assert_eq!(analyze(t2, Some((10, 10)), Some((1, 0))).st[10].heading, 0);
+        assert_eq!(analyze(t2, Some((10, 10)), Some((1, 0))).st[10].heading, 2);
         assert_eq!(analyze(t2, None, None).st[12].heading, 2);
         let l = analyze(t, None, None);
         assert_eq!(l.st[2].heading, 1);

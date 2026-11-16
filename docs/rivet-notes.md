@@ -74,9 +74,9 @@ or Quick Actions):
 
 - **Source**: the Markdown as written, colored.
 - **Live**: you still write Markdown, but every line except the one you're on shows rendered (the line you're on stays
-  plain Markdown, at the size it had, until you leave it):
+  plain Markdown until you leave it; a heading takes its size as soon as its `#` marks are typed):
   the marks (`**`, `#`, backticks, link addresses…) fold away, headings show at their size, lists get bullets, tasks get check boxes
-  you can click, quotes get a bar, `---` becomes a rule, and code blocks are colored for their
+  you can click to tick or untick (the cursor stays where it was), quotes get a bar, `---` becomes a rule, and code blocks are colored for their
   language with their fences tucked away until you move into the block. With the keyboard
   elsewhere, the whole note shows rendered.
 

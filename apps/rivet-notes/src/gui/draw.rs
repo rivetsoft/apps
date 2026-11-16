@@ -755,6 +755,16 @@ impl NotesApp {
             ui.add_space(pad);
           ui.vertical(|ui| {
             ui.set_width(col.width());
+            // Live mode: a press on a check box ticks it, and leaves the cursor (and the
+            // keyboard) where they were, so the line stays rendered.
+            let body_id = egui::Id::unique("note-body");
+            let tick = if live_on {
+                ctx.input(|i| if i.pointer.primary_pressed() { i.pointer.interact_pos() } else { None })
+                    .and_then(|p| d.live_boxes.iter().find(|(r, _)| r.contains(p)).map(|(_, b)| *b))
+            } else {
+                None
+            };
+            let keep = tick.map(|_| (egui::TextEdit::load_state(&ctx, body_id), ctx.memory(|m| m.has_focus(body_id))));
             let out = egui::TextEdit::multiline(&mut d.body)
                 .id(egui::Id::unique("note-body"))
                 .frame(egui::Frame::NONE)
@@ -765,12 +775,24 @@ impl NotesApp {
                 .layouter(&mut layouter)
                 .show(ui);
             // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
-            if live_on
-                && let Some(b) = super::live_edit::decorate(ui, &d.body, super::live_edit::shift_raw(&live_before, &d.body, live_raw), live_held, &out, &live_look)
-                && let Some(c) = d.body.as_bytes().get(b).copied()
-            {
-                d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });
-                changed = true;
+            if let (Some(b), Some((state, focused))) = (tick, keep) {
+                match state {
+                    Some(s) => s.store(&ctx, body_id),
+                    None => egui::TextEdit::store_state(&ctx, body_id, egui::text_edit::TextEditState::default()),
+                }
+                if !focused {
+                    ctx.memory_mut(|m| m.surrender_focus(body_id));
+                }
+                if let Some(c) = d.body.as_bytes().get(b).copied()
+                    && matches!(c, b' ' | b'x' | b'X')
+                {
+                    d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });
+                    changed = true;
+                }
+            }
+            if live_on {
+                let raw = if tick.is_some() { live_raw } else { super::live_edit::shift_raw(&live_before, &d.body, live_raw) };
+                d.live_boxes = super::live_edit::decorate(ui, &d.body, raw, live_held, &out, &live_look);
             }
             // Where a selection sits on screen, for the format bar.
             if let Some(range) = out.cursor_range

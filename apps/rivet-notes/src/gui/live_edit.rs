@@ -170,13 +170,12 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
 
 /// Draw bullets, check boxes, quote bars and rules over the laid-out text. Returns the byte of
 /// a check box's mark when one was clicked (to tick or untick it).
-pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Option<usize> {
+pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Vec<(Rect, usize)> {
     let l = live::analyze(text, raw, held);
     let p = ui.painter().with_clip_rect(out.text_clip_rect);
     let at = |c: usize| out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
-    let clicked = out.response.response.clicked();
-    let pointer = ui.ctx().pointer_interact_pos();
-    let mut toggle = None;
+    let pointer = ui.ctx().pointer_hover_pos();
+    let mut boxes = Vec::new();
     for d in &l.decos {
         match *d {
             Deco::Bullet(c) => {
@@ -198,9 +197,12 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 } else {
                     p.rect_stroke(r, 3.0, Stroke::new(1.4, look.weak), egui::StrokeKind::Inside);
                 }
-                if clicked && pointer.is_some_and(|q| r.expand(3.0).contains(q)) {
-                    toggle = Some(byte);
+                // Clickable: the editor ticks it on the next press there.
+                let hit = r.expand(3.0).intersect(out.text_clip_rect);
+                if pointer.is_some_and(|q| hit.contains(q)) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                 }
+                boxes.push((hit, byte));
             }
             Deco::Quote(c) => {
                 let a = at(c);
@@ -215,7 +217,7 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
             }
         }
     }
-    toggle
+    boxes
 }
 
 #[cfg(test)]

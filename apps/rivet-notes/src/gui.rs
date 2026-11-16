@@ -49,6 +49,8 @@ struct Doc {
     /// Live mode: the line being edited and the heading level it had when the cursor came to
     /// it (kept until the cursor leaves, so the line doesn't change under the typing).
     live_held: Option<(usize, u8)>,
+    /// Live mode: where the check boxes were drawn last frame, and the byte each ticks.
+    live_boxes: Vec<(egui::Rect, usize)>,
     /// The title while it's being edited in the heading.
     title_buf: Option<String>,
 }
@@ -360,6 +362,7 @@ impl NotesApp {
             props_open: true,
             title_buf: None,
             live_held: None,
+            live_boxes: Vec::new(),
         });
         if let (Some(v), Some(dir)) = (&self.vault, p.parent()) {
             self.current_folder = dir.strip_prefix(v).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
