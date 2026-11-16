@@ -717,6 +717,7 @@ impl NotesApp {
             }
             let mut job = highlight::layout(buf.as_str(), "note.md", &colors, font.clone());
             mono_code(&mut job, buf.as_str(), &mono);
+            super::live_edit::color_blocks(&mut job, buf.as_str(), &colors, mono.size);
             // Roomier lines than the interface's (Preferences → Editor → Line spacing).
             for sec in &mut job.sections {
                 sec.format.line_height = Some(sec.format.font_id.size * line_spacing);
@@ -786,12 +787,9 @@ impl NotesApp {
             // Live mode: a press on a check box ticks it, and leaves the cursor (and the
             // keyboard) where they were, so the line stays rendered.
             let body_id = egui::Id::unique("note-body");
-            let tick = if live_on {
-                ctx.input(|i| if i.pointer.primary_pressed() { i.pointer.interact_pos() } else { None })
-                    .and_then(|p| d.live_boxes.iter().find(|(r, _)| r.contains(p)).map(|(_, b)| b.clone()))
-            } else {
-                None
-            };
+            let tick = ctx
+                .input(|i| if i.pointer.primary_pressed() { i.pointer.interact_pos() } else { None })
+                .and_then(|p| d.live_boxes.iter().find(|(r, _)| r.contains(p)).map(|(_, b)| b.clone()));
             // Note suggestions after `[[`: keys first (before the text sees them), and a clicked
             // suggestion from last frame goes in now.
             let focused_now = ctx.memory(|m| m.has_focus(body_id));
@@ -849,6 +847,8 @@ impl NotesApp {
                 changed = true;
             }
             let keep = tick.as_ref().map(|_| (egui::TextEdit::load_state(&ctx, body_id), ctx.memory(|m| m.has_focus(body_id))));
+            // Code block panels go under the text.
+            let panels_under = ui.painter().add(egui::Shape::Noop);
             let out = egui::TextEdit::multiline(&mut d.body)
                 .id(egui::Id::unique("note-body"))
                 .frame(egui::Frame::NONE)
@@ -877,6 +877,10 @@ impl NotesApp {
                         }
                     }
                     super::live_edit::Hit::Link(t) => follow = Some(t),
+                    super::live_edit::Hit::Copy(t) => {
+                        ctx.copy_text(t);
+                        self.note_msg = None;
+                    }
                 }
             }
             // Ctrl+click on a link (in either mode) follows it; Ctrl over one shows a hand.
@@ -916,9 +920,11 @@ impl NotesApp {
                     }
                 }
             }
+            d.live_boxes = super::live_edit::code_panels(ui, &d.body, &out, &live_look, panels_under);
             if live_on {
                 let raw = if tick.is_some() { live_raw } else { super::live_edit::shift_raw(&live_before, &d.body, live_raw) };
-                d.live_boxes = super::live_edit::decorate(ui, &d.body, raw, live_held, &out, &live_look);
+                let more = super::live_edit::decorate(ui, &d.body, raw, live_held, &out, &live_look);
+                d.live_boxes.extend(more);
             }
             // Where a selection sits on screen, for the format bar.
             if let Some(range) = out.cursor_range

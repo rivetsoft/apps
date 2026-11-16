@@ -15,6 +15,8 @@ pub(super) enum Hit {
     Check(usize),
     /// A link to a note, by name.
     Link(String),
+    /// A code block's Copy button: the code.
+    Copy(String),
 }
 
 /// The colors and sizes live mode draws with.
@@ -92,6 +94,91 @@ pub(super) fn shift_raw(old: &str, new: &str, raw: Option<(usize, usize)>) -> Op
     Some((fix(a), fix(b)))
 }
 
+/// Color the code inside fences for its language (Source mode: the rest is Markdown).
+pub(super) fn color_blocks(job: &mut LayoutJob, text: &str, colors: &highlight::Colors, size: f32) {
+    let l = live::analyze(text, None, None);
+    if l.blocks.is_empty() {
+        return;
+    }
+    let mut hl: Vec<Option<Color32>> = vec![None; text.len()];
+    for b in l.blocks.iter().filter(|b| !b.inner.is_empty()) {
+        let name = if b.lang.is_empty() { "code.txt".to_string() } else { format!("code.{}", b.lang) };
+        let j = highlight::layout(&text[b.inner.clone()], &name, colors, egui::FontId::monospace(size));
+        for s in &j.sections {
+            for k in s.byte_range.start.0..s.byte_range.end.0 {
+                if let Some(h) = hl.get_mut(b.inner.start + k) {
+                    *h = Some(s.format.color);
+                }
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(job.sections.len());
+    for sec in std::mem::take(&mut job.sections) {
+        let (a, e) = (sec.byte_range.start.0, sec.byte_range.end.0);
+        let mut k = a;
+        while k < e {
+            let c = hl[k];
+            let mut m = k + 1;
+            while m < e && (hl[m] == c || !text.is_char_boundary(m)) {
+                m += 1;
+            }
+            let mut part = sec.clone();
+            part.byte_range = egui::text::ByteIndex(k)..egui::text::ByteIndex(m);
+            if k > a {
+                part.leading_space = 0.0;
+            }
+            if let Some(c) = c {
+                part.format.color = c;
+            }
+            out.push(part);
+            k = m;
+        }
+    }
+    job.sections = out;
+}
+
+/// Panels behind the code blocks (set into `under`, painted before the text), with the
+/// language at the top right, and a Copy button there while the pointer is on the block.
+pub(super) fn code_panels(ui: &egui::Ui, text: &str, out: &egui::text_edit::TextEditOutput, look: &LiveLook, under: egui::layers::ShapeIdx) -> Vec<(Rect, Hit)> {
+    let l = live::analyze(text, None, None);
+    let mut shapes = Vec::new();
+    let mut hits = Vec::new();
+    if l.blocks.is_empty() {
+        return hits;
+    }
+    let at = |b: usize| out.galley.pos_from_cursor(CCursor::new(text[..b].chars().count())).translate(out.galley_pos.to_vec2());
+    let pointer = ui.ctx().pointer_hover_pos();
+    let p = ui.painter().clone();
+    for b in &l.blocks {
+        let last = text[b.whole.clone()].trim_end_matches(['\n', '\r']).len();
+        let (top, bottom) = (at(b.whole.start), at(b.whole.start + last));
+        let left = out.galley_pos.x - 10.0;
+        let right = (out.galley_pos.x + out.galley.rect.width() + 10.0).max(out.response.response.rect.right());
+        let r = Rect::from_min_max(Pos2::new(left, top.top() - 2.0), Pos2::new(right, bottom.bottom() + 2.0));
+        let rounding = rivet_look::theme::r_md();
+        shapes.push(egui::Shape::rect_filled(r, rounding, look.code_bg));
+        shapes.push(egui::Shape::rect_stroke(r, rounding, Stroke::new(1.0, look.weak.gamma_multiply(0.18)), egui::StrokeKind::Inside));
+        let font = egui::FontId::proportional(11.0);
+        let hovered = pointer.is_some_and(|q| r.contains(q));
+        let code = text[b.inner.clone()].trim_end_matches(['\n', '\r']).to_string();
+        if hovered && !code.is_empty() {
+            let g = p.layout_no_wrap("Copy".into(), font.clone(), look.text);
+            let br = Rect::from_min_size(Pos2::new(r.right() - g.size().x - 22.0, r.top() + 3.0), g.size() + Vec2::new(14.0, 6.0));
+            let over = pointer.is_some_and(|q| br.contains(q));
+            p.rect_filled(br, rivet_look::theme::r_sm(), if over { look.weak.gamma_multiply(0.35) } else { look.weak.gamma_multiply(0.18) });
+            p.galley(br.min + Vec2::new(7.0, 3.0), g, look.text);
+            if over {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+            }
+            hits.push((br, Hit::Copy(code)));
+        } else if !b.lang.is_empty() {
+            p.text(Pos2::new(r.right() - 10.0, r.top() + 9.0), egui::Align2::RIGHT_CENTER, b.lang.to_lowercase(), font, look.weak);
+        }
+    }
+    ui.painter().set(under, egui::Shape::Vec(shapes));
+    hits
+}
+
 /// The note laid out live.
 pub(super) fn job(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, look: &LiveLook, colors: &highlight::Colors) -> LayoutJob {
     let l = live::analyze(text, raw, held);
@@ -164,12 +251,14 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
         Hide::Clear => color = Color32::TRANSPARENT,
         Hide::No => {}
     }
-    let line_height = if s.collapse { Some(3.0) } else { Some(line_size * look.line_spacing) };
+    // Folded fences leave a little room above and below the code (the label sits on top).
+    let line_height = if s.collapse { Some(if s.fence_top { 18.0 } else { 8.0 }) } else { Some(line_size * look.line_spacing) };
     TextFormat {
         font_id: egui::FontId::new(size, family),
         line_height,
         color,
-        background: if (s.code || s.block) && s.hide == Hide::No && !s.collapse { look.code_bg } else { Color32::TRANSPARENT },
+        // Inline code gets a background; blocks sit on a panel drawn behind the text.
+        background: if s.code && !s.block && s.hide == Hide::No { look.code_bg } else { Color32::TRANSPARENT },
         italics: s.italic || s.quote,
         underline: if s.link && s.hide == Hide::No { Stroke::new(1.0, look.link.gamma_multiply(0.45)) } else { Stroke::NONE },
         strikethrough: if (s.strike || s.done) && s.hide == Hide::No { Stroke::new(1.0, color) } else { Stroke::NONE },

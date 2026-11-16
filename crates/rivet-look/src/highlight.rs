@@ -29,6 +29,31 @@ enum Lang {
 fn lang_for(name: &str) -> Lang {
     let lower = name.to_lowercase();
     let ext = lower.rsplit_once('.').map(|(_, e)| e).unwrap_or(lower.as_str());
+    // Code fences name languages, not file endings.
+    let ext = match ext {
+        "rust" => "rs",
+        "python" | "python3" | "py3" => "py",
+        "javascript" | "node" => "js",
+        "typescript" => "ts",
+        "golang" => "go",
+        "csharp" | "c#" => "cs",
+        "c++" => "cpp",
+        "kotlin" => "kt",
+        "ruby" => "rb",
+        "perl" => "pl",
+        "shell" | "console" | "shellsession" | "sh-session" => "sh",
+        "powershell" | "pwsh" => "ps1",
+        "haskell" => "hs",
+        "clojure" => "clj",
+        "elixir" => "ex",
+        "julia" => "jl",
+        "terraform" => "tf",
+        "docker" => "dockerfile",
+        "make" => "makefile",
+        "jsonc" | "json5" => "json",
+        "text" | "plain" | "plaintext" => "txt",
+        e => e,
+    };
     const C: Option<(&str, &str)> = Some(("/*", "*/"));
     match ext {
         "rs" | "c" | "h" | "cc" | "cpp" | "hpp" | "cxx" | "js" | "mjs" | "cjs" | "ts" | "tsx" | "jsx" | "go" | "java" | "kt" | "kts" | "swift" | "cs"

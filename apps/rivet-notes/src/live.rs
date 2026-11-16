@@ -38,6 +38,8 @@ pub struct St {
     pub hide: Hide,
     /// The whole line folds away (a code fence off the line being edited).
     pub collapse: bool,
+    /// The collapsed opening fence (a little taller: the block's label sits on it).
+    pub fence_top: bool,
 }
 
 /// Something drawn over the text; positions are character indices.
@@ -56,6 +58,8 @@ pub enum Deco {
 /// A fenced code block's text and language, for coloring.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block {
+    /// The fences and everything between them.
+    pub whole: Range<usize>,
     pub inner: Range<usize>,
     pub lang: String,
 }
@@ -125,15 +129,14 @@ pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)
                         } else {
                             s.hide = Hide::Tiny;
                             s.collapse = true;
+                            s.fence_top = k == i;
                         }
                     }
                 }
             }
             let inner_start = lines.get(i + 1).map(|l| l.start).unwrap_or(r.end).min(lines[end].end);
             let inner_end = if j < lines.len() { lines[end].start } else { lines[end].end };
-            if inner_start < inner_end {
-                blocks.push(Block { inner: inner_start..inner_end, lang });
-            }
+            blocks.push(Block { whole: whole.clone(), inner: inner_start..inner_end.max(inner_start), lang });
             i = end + 1;
             continue;
         }
@@ -431,7 +434,7 @@ mod tests {
         let t = "a\n```rust\nlet x = 1;\n```\nb\n";
         let l = analyze(t, None, None);
         assert!(l.st[2].collapse && l.st[t.find("let").unwrap()].block);
-        assert_eq!(l.blocks, vec![Block { inner: 10..21, lang: "rust".into() }]);
+        assert_eq!(l.blocks, vec![Block { whole: 2..25, inner: 10..21, lang: "rust".into() }]);
         // Inside the block, the fences show.
         let l = analyze(t, Some((12, 12)), None);
         assert!(!l.st[2].collapse && l.st[2].marker);
