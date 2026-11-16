@@ -551,6 +551,11 @@ impl NotesApp {
         let mut fmt_pick: Option<crate::format::Fmt> = None;
         let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
         let page = self.page_rect;
+        let mut title_commit: Option<String> = None;
+        let mut crumb_pick: Option<String> = None;
+        let show_crumbs = self.s.show_breadcrumbs;
+        let vault_name = self.vault_name();
+        let vault_icon = self.icon(&ctx, &["folder-symbolic"], 13.0);
         let prop_icons = super::props::PropIcons {
             tag: self.icon(&ctx, &["tag-symbolic"], 14.0),
             link: self.icon(&ctx, &["insert-link-symbolic", "emblem-symbolic-link"], 14.0),
@@ -558,9 +563,73 @@ impl NotesApp {
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
-        ui.label(egui::RichText::new(&title).size(22.0).strong().color(v.strong_text_color()));
-        let rel = d.path.strip_prefix(&vault).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
-        ui.label(egui::RichText::new(rel.replace('/', "  ›  ")).color(weak));
+        // ---- breadcrumbs: the vault, its folders and the file; a folder shows it in the sidebar
+        if show_crumbs {
+            let rel = d.path.strip_prefix(&vault).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+            let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
+            ui.horizontal(|ui| {
+                ui.set_min_height(24.0);
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let mut crumb = |ui: &mut egui::Ui, text: &str, folder: Option<String>, last: bool| {
+                    let col = if last { v.text_color() } else { weak };
+                    let b = egui::Button::new(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).frame_when_inactive(false).min_size(Vec2::new(0.0, 22.0)).corner_radius(r_sm());
+                    match folder {
+                        Some(f) => {
+                            let tip = if f.is_empty() { "Show the top of the vault".to_string() } else { format!("Show \"{f}\" in the sidebar") };
+                            if ui.add(b).on_hover_text(tip).clicked() {
+                                crumb_pick = Some(f);
+                            }
+                        }
+                        None => {
+                            ui.add_space(5.0);
+                            ui.label(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).on_hover_text(d.path.display().to_string());
+                        }
+                    }
+                };
+                if let Some(t) = &vault_icon {
+                    ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(13.0)).tint(weak));
+                }
+                crumb(ui, &vault_name, Some(String::new()), parts.is_empty());
+                for (k, p) in parts.iter().enumerate() {
+                    ui.label(egui::RichText::new("›").font(fonts::ui_font(12.5)).color(weak.gamma_multiply(0.7)));
+                    let last = k + 1 == parts.len();
+                    let folder = (!last).then(|| parts[..=k].join("/"));
+                    crumb(ui, p, folder, last);
+                }
+            });
+            // A hairline under the bar sets it apart from the note.
+            let y = ui.cursor().top() + 3.0;
+            let r = ui.max_rect();
+            ui.painter().line_segment([Pos2::new(r.left(), y), Pos2::new(r.right(), y)], Stroke::new(1.0, palette::mix(v.extreme_bg_color, v.text_color(), 0.08)));
+            ui.add_space(14.0);
+        }
+        // The title can be edited in place: Enter (or clicking away) keeps it, Esc puts it back.
+        let title_id = egui::Id::unique("note-title");
+        let mut buf = d.title_buf.clone().unwrap_or_else(|| title.clone());
+        let tr = ui.add(
+            egui::TextEdit::singleline(&mut buf)
+                .id(title_id)
+                .frame(egui::Frame::NONE)
+                .margin(egui::Margin::ZERO)
+                .font(egui::FontId::new(22.0 * fonts::scale(), rivet_look::live::editor_bold_family()))
+                .text_color(v.strong_text_color())
+                .hint_text("Untitled")
+                .desired_width(f32::INFINITY),
+        );
+        let tr = if tr.has_focus() { tr } else { tr.on_hover_text("Click to rename the note") };
+        if tr.changed() {
+            d.title_buf = Some(buf.clone());
+        }
+        if tr.lost_focus() {
+            if ui.input(|i| i.key_pressed(Key::Escape)) {
+                d.title_buf = None;
+            } else if let Some(t) = d.title_buf.take() {
+                title_commit = Some(t);
+                if ui.input(|i| i.key_pressed(Key::Enter)) {
+                    ctx.memory_mut(|m| m.request_focus(egui::Id::unique("note-body")));
+                }
+            }
+        }
         ui.add_space(10.0);
         let mut changed = false;
         // ---- properties (the frontmatter)
@@ -737,6 +806,17 @@ impl NotesApp {
         if fmt_pick.is_some() {
             self.pending_fmt = fmt_pick;
             ctx.request_repaint();
+        }
+        if let Some(t) = title_commit {
+            self.retitle(&t);
+        }
+        if let Some(f) = crumb_pick {
+            // Show the folder: open it and its parents in the sidebar, and make it where new
+            // notes go.
+            self.s.collapsed.retain(|k| !(f == *k || f.starts_with(&format!("{k}/"))));
+            self.s.show_sidebar = true;
+            self.current_folder = f;
+            self.s.save();
         }
         if let Some(c) = edit {
             self.edit_cmd = Some(c);

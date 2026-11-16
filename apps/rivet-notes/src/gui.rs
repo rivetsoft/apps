@@ -44,6 +44,8 @@ struct Doc {
     renaming: Option<(usize, String)>,
     /// The properties block is open (not folded).
     props_open: bool,
+    /// The title while it's being edited in the heading.
+    title_buf: Option<String>,
 }
 
 /// An editing command from the text's right-click menu, carried out on the next frame (once
@@ -134,6 +136,10 @@ impl NotesApp {
             s.builtin_icons = false;
         }
         // Test hooks: RIVET_NOTES_PEEK opens Peek; RIVET_NOTES_WIDTH=centered|full.
+        // Test hook: RIVET_NOTES_NO_CRUMBS hides the breadcrumb bar.
+        if std::env::var_os("RIVET_NOTES_NO_CRUMBS").is_some() {
+            s.show_breadcrumbs = false;
+        }
         if std::env::var_os("RIVET_NOTES_PEEK").is_some() {
             s.show_peek = true;
         }
@@ -314,6 +320,7 @@ impl NotesApp {
             types: Vec::new(),
             renaming: None,
             props_open: true,
+            title_buf: None,
         });
         if let (Some(v), Some(dir)) = (&self.vault, p.parent()) {
             self.current_folder = dir.strip_prefix(v).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
@@ -347,6 +354,35 @@ impl NotesApp {
             }
             Err(e) => self.note_msg = Some((format!("Couldn't save: {e}"), true)),
         }
+    }
+
+    /// A new title typed in the note's heading. The `title` property changes when the note has
+    /// one; the file is renamed to match when its name was the title (or there's no property).
+    pub(super) fn retitle(&mut self, new: &str) {
+        let new = new.trim();
+        let Some(d) = self.doc.as_mut() else { return };
+        let stem = d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let prop = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty());
+        let old = prop.clone().unwrap_or_else(|| stem.clone());
+        if new.is_empty() || new == old {
+            return;
+        }
+        let has_prop = d.fm.as_ref().is_some_and(|f| f.get("title").is_some());
+        if let Some(fm) = d.fm.as_mut()
+            && has_prop
+        {
+            fm.set("title", Value::Text(new.to_string()));
+            d.dirty = true;
+        }
+        if !has_prop || stem == old {
+            // A file name can't hold a slash; the rest is kept as typed.
+            let file = new.replace(['/', '\\'], "-");
+            let path = d.path.clone();
+            if file != stem {
+                self.rename(&path, &file);
+            }
+        }
+        self.save_now();
     }
 
     fn new_note(&mut self, folder: &str, title: &str) {
@@ -686,6 +722,7 @@ impl NotesApp {
             c(ui, &mut self.s.show_properties, "Properties", "Ctrl+P");
             c(ui, &mut self.s.show_sidebar, "Sidebar", "F9");
             c(ui, &mut self.s.show_peek, "Peek", "F11");
+            c(ui, &mut self.s.show_breadcrumbs, "Breadcrumbs", "");
             c(ui, &mut self.s.centered, "Center Notes by Default", "");
             c(ui, &mut self.s.show_menubar, "Menubar", "Ctrl+M");
             if self.s != before {

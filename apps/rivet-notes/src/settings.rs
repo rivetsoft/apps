@@ -45,6 +45,8 @@ pub struct Settings {
     pub note_widths: Vec<(PathBuf, bool)>,
     /// Peek, the panel on the right about the open note.
     pub show_peek: bool,
+    /// The bar above a note's title showing where it is (vault › folders › file).
+    pub show_breadcrumbs: bool,
     /// The vaults, most recently used first.
     pub vaults: Vec<PathBuf>,
     /// Folders (vault-relative) and tags folded up in the sidebar.
@@ -71,6 +73,7 @@ impl Default for Settings {
             centered: false,
             note_widths: Vec::new(),
             show_peek: false,
+            show_breadcrumbs: true,
             vaults: Vec::new(),
             collapsed: Vec::new(),
         }
@@ -123,6 +126,7 @@ impl Settings {
                 "split" => s.layout.split = v.parse::<f32>().unwrap_or(0.4).clamp(0.15, 0.85),
                 "note_width" => s.centered = v == "centered",
                 "show_peek" => s.show_peek = b,
+                "show_breadcrumbs" => s.show_breadcrumbs = b,
                 "note_widths" => {
                     s.note_widths = v
                         .split(SEP)
@@ -153,7 +157,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nshow_breadcrumbs={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -169,6 +173,7 @@ impl Settings {
             self.line_spacing,
             if self.centered { "centered" } else { "full" },
             self.show_peek,
+            self.show_breadcrumbs,
             join(self.note_widths.iter().map(|(p, c)| format!("{}{}", if *c { 'c' } else { 'f' }, p.to_string_lossy())).collect()),
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),

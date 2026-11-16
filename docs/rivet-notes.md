@@ -40,6 +40,13 @@ the list and leaves the folder alone).
   folders to move it to the top of the vault.
 - New notes get `title`, `created` and `tags`. Delete moves notes to the desktop's Trash.
 
+- **The title** at the top of a note can be edited in place: Enter or clicking away keeps it,
+  Esc puts it back. It changes the `title` property when the note has one, and renames the file
+  when its name was the title (or there's no `title` property).
+- **Breadcrumbs** above the title show the vault, folders and file; clicking the vault or a
+  folder shows it in the sidebar. View → Breadcrumbs (or Preferences → Appearance → Window)
+  hides the bar.
+
 ## Formatting
 
 Keys that turn the selection (or the word under the cursor) into Markdown, and back again when

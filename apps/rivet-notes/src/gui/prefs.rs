@@ -235,6 +235,7 @@ impl NotesApp {
                                         ui.checkbox(&mut self.s.show_menubar, "Menu bar");
                                         ui.checkbox(&mut self.s.show_sidebar, "Sidebar");
                                         ui.checkbox(&mut self.s.show_peek, "Peek");
+                                        ui.checkbox(&mut self.s.show_breadcrumbs, "Breadcrumbs above the note's title");
                                     });
                                 }
                                 Page::Editor => {
