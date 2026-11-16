@@ -48,6 +48,15 @@ the list and leaves the folder alone).
 - **Breadcrumbs** above the title show the vault, folders and file. View → Breadcrumbs (or Preferences → Appearance → Window)
   hides the bar.
 
+## Modules
+
+Optional features, turned on in Preferences → Modules.
+
+- **Daily notes**: a note for each day, named by its date (`2026-11-16.md`) in a folder you
+  pick (Daily by default; it's made when first needed). Ctrl+D, File → Today's Daily Note, or
+  the + button (which then offers New Note or Today's Daily Note) opens today's note, making it
+  with a `daily` tag when it isn't there yet.
+
 ## Formatting
 
 Keys that turn the selection (or the word under the cursor) into Markdown, and back again when

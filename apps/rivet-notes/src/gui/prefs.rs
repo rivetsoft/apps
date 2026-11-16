@@ -16,18 +16,20 @@ pub(crate) enum Page {
     Editor,
     Sidebar,
     Vaults,
+    Modules,
     Keyboard,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 6] = [Page::Appearance, Page::Editor, Page::Sidebar, Page::Vaults, Page::Keyboard, Page::About];
+    const ALL: [Page; 7] = [Page::Appearance, Page::Editor, Page::Sidebar, Page::Vaults, Page::Modules, Page::Keyboard, Page::About];
     fn label(self) -> &'static str {
         match self {
             Page::Appearance => "Appearance",
             Page::Editor => "Editor",
             Page::Sidebar => "Sidebar",
             Page::Vaults => "Vaults",
+            Page::Modules => "Modules",
             Page::Keyboard => "Keyboard",
             Page::About => "About",
         }
@@ -38,6 +40,7 @@ impl Page {
             Page::Editor => &["document-edit-symbolic", "text-editor-symbolic"],
             Page::Sidebar => &["sidebar-show-symbolic", "view-sidebar-symbolic"],
             Page::Vaults => &["folder-symbolic", "folder-documents-symbolic"],
+            Page::Modules => &["view-grid-symbolic", "application-x-addon-symbolic"],
             Page::Keyboard => &["preferences-desktop-keyboard-shortcuts-symbolic", "input-keyboard-symbolic", "edit-find-symbolic"],
             Page::About => &["help-about-symbolic", "dialog-information-symbolic"],
         }
@@ -49,7 +52,7 @@ impl Page {
 
 /// The keys, for the Keyboard page.
 const KEYS: [(&str, &[(&str, &str)]); 3] = [
-    ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F")]),
+    ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Today's daily note (Daily notes module)", "Ctrl+D"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F")]),
     ("View", &[("Reading view (Esc closes it)", "Ctrl+Space"), ("Switch folders / tags", "Ctrl+T"), ("Show or hide properties", "Ctrl+P"), ("Show or hide the sidebar", "F9"), ("Show or hide Peek", "F11"), ("Show or hide the menu bar", "Ctrl+M"), ("Preferences", "Ctrl+,")]),
     ("Formatting", &[]),
 ];
@@ -74,6 +77,7 @@ impl NotesApp {
         let mut open_vault: Option<PathBuf> = None;
         let mut forget: Option<PathBuf> = None;
         let mut ask_vault = false;
+        let vault_folders = self.folders.clone();
         let fonts_lists = if page_now == Page::Editor { Some(self.families.get_or_insert_with(|| (fonts::families(), fonts::mono_families())).clone()) } else { None };
         let shown = windows::show(ctx, &mut win, &chrome, area, Vec2::new(600.0, 380.0), |ui| {
             let v = ui.visuals().clone();
@@ -300,6 +304,50 @@ impl NotesApp {
                                             if ui.selectable_label(stacked, "Stacked").on_hover_text("Tags below folders").clicked() && !stacked {
                                                 self.s.layout = Layout { split: self.s.layout.split, ..Layout::stacked() };
                                             }
+                                        });
+                                    });
+                                }
+                                Page::Modules => {
+                                    section(ui, "Daily notes", &mut |ui| {
+                                        ui.checkbox(&mut self.s.daily_notes, egui::RichText::new("Daily notes").strong());
+                                        ui.add_space(2.0);
+                                        hint(ui, "A note for each day, named by its date. Ctrl+D (or the + button) opens today's, making it if needed.");
+                                        ui.add_space(10.0);
+                                        ui.add_enabled_ui(self.s.daily_notes, |ui| {
+                                            grid(ui, "daily-grid", &mut |ui| {
+                                                ui.label("Folder");
+                                                ui.horizontal(|ui| {
+                                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                                    ui.add(egui::TextEdit::singleline(&mut self.s.daily_folder).hint_text("Top of the vault").desired_width(200.0));
+                                                    let btn = egui::Button::new("Choose…").corner_radius(rivet_look::theme::r_sm());
+                                                    egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
+                                                        ui.set_min_width(200.0);
+                                                        if ui.button("Top of the vault").clicked() {
+                                                            self.s.daily_folder.clear();
+                                                            ui.close();
+                                                        }
+                                                        if !vault_folders.is_empty() {
+                                                            ui.separator();
+                                                        }
+                                                        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                                                            for f in &vault_folders {
+                                                                if ui.button(f.as_str()).clicked() {
+                                                                    self.s.daily_folder = f.clone();
+                                                                    ui.close();
+                                                                }
+                                                            }
+                                                        });
+                                                    });
+                                                });
+                                                ui.end_row();
+                                                ui.label("");
+                                                let f = self.s.daily_folder.trim_matches('/');
+                                                let name = format!("{}.md", chrono::Local::now().format("%Y-%m-%d"));
+                                                let shown = if f.is_empty() { name } else { format!("{f}/{name}") };
+                                                let fresh = !f.is_empty() && !vault_folders.iter().any(|x| x == f);
+                                                ui.label(egui::RichText::new(format!("Today's note: {shown}{}", if fresh { " (the folder is made when needed)" } else { "" })).small().color(weak));
+                                                ui.end_row();
+                                            });
                                         });
                                     });
                                 }

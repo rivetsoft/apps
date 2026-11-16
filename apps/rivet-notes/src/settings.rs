@@ -47,6 +47,10 @@ pub struct Settings {
     pub show_peek: bool,
     /// The bar above a note's title showing where it is (vault › folders › file).
     pub show_breadcrumbs: bool,
+    /// Module: daily notes (Ctrl+D makes or opens today's note).
+    pub daily_notes: bool,
+    /// Where daily notes live, inside the vault (empty: the top of the vault).
+    pub daily_folder: String,
     /// The vaults, most recently used first.
     pub vaults: Vec<PathBuf>,
     /// Folders (vault-relative) and tags folded up in the sidebar.
@@ -72,6 +76,8 @@ impl Default for Settings {
             line_spacing: 1.6,
             centered: false,
             note_widths: Vec::new(),
+            daily_notes: false,
+            daily_folder: "Daily".into(),
             show_peek: false,
             show_breadcrumbs: true,
             vaults: Vec::new(),
@@ -127,6 +133,8 @@ impl Settings {
                 "note_width" => s.centered = v == "centered",
                 "show_peek" => s.show_peek = b,
                 "show_breadcrumbs" => s.show_breadcrumbs = b,
+                "daily_notes" => s.daily_notes = b,
+                "daily_folder" => s.daily_folder = v.trim_matches('/').to_string(),
                 "note_widths" => {
                     s.note_widths = v
                         .split(SEP)
@@ -157,7 +165,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nshow_breadcrumbs={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nshow_breadcrumbs={}\ndaily_notes={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -174,6 +182,8 @@ impl Settings {
             if self.centered { "centered" } else { "full" },
             self.show_peek,
             self.show_breadcrumbs,
+            self.daily_notes,
+            self.daily_folder.replace('\n', ""),
             join(self.note_widths.iter().map(|(p, c)| format!("{}{}", if *c { 'c' } else { 'f' }, p.to_string_lossy())).collect()),
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),

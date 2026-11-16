@@ -140,6 +140,10 @@ impl NotesApp {
         if std::env::var_os("RIVET_NOTES_NO_CRUMBS").is_some() {
             s.show_breadcrumbs = false;
         }
+        // Test hook: RIVET_NOTES_DAILY turns the daily notes module on.
+        if std::env::var_os("RIVET_NOTES_DAILY").is_some() {
+            s.daily_notes = true;
+        }
         if std::env::var_os("RIVET_NOTES_PEEK").is_some() {
             s.show_peek = true;
         }
@@ -400,6 +404,42 @@ impl NotesApp {
         self.save_now();
     }
 
+    /// Today's daily note: opened when it's there, else made in the daily notes folder.
+    pub(super) fn daily_note(&mut self) {
+        let Some(v) = self.vault.clone() else { return };
+        let folder = self.s.daily_folder.trim_matches('/').to_string();
+        let dir = v.join(&folder);
+        let today = chrono::Local::now();
+        let path = dir.join(format!("{}.md", today.format("%Y-%m-%d")));
+        if path.exists() {
+            self.open_note(&path);
+            self.reveal_folder(&folder);
+            return;
+        }
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            self.note_msg = Some((format!("Couldn't make the daily notes folder: {e}"), true));
+            return;
+        }
+        let mut fm = Frontmatter::default();
+        fm.set("created", Value::Text(today.format("%Y-%m-%d %H:%M").to_string()));
+        fm.set("tags", Value::List(vec!["daily".into()]));
+        match std::fs::write(&path, vault::join(Some(&fm), "\n")) {
+            Ok(()) => {
+                self.rescan();
+                self.open_note(&path);
+                self.reveal_folder(&folder);
+                self.note_msg = Some((format!("Made today's note, {}.", today.format("%A %-d %B")), false));
+            }
+            Err(e) => self.note_msg = Some((format!("Couldn't make today's note: {e}"), true)),
+        }
+    }
+
+    /// Open a folder and its parents in the sidebar, and make it where new notes go.
+    fn reveal_folder(&mut self, folder: &str) {
+        self.s.collapsed.retain(|k| !(folder == k || folder.starts_with(&format!("{k}/"))));
+        self.current_folder = folder.to_string();
+    }
+
     fn new_note(&mut self, folder: &str, title: &str) {
         let Some(v) = self.vault.clone() else { return };
         let dir = v.join(folder);
@@ -559,7 +599,8 @@ impl NotesApp {
         }
         let cmd = Modifiers::COMMAND;
         let shift = Modifiers { shift: true, ..Modifiers::COMMAND };
-        let (f, n, s, comma, m, b, t, p, find, pk) = ctx.input_mut(|i| {
+        let daily_on = self.s.daily_notes;
+        let (f, n, s, comma, m, b, t, p, find, pk, day) = ctx.input_mut(|i| {
             (
                 // Shift first: a plain Ctrl+N pattern also matches with Shift held.
                 i.consume_shortcut(&KeyboardShortcut::new(shift, Key::N)),
@@ -572,8 +613,12 @@ impl NotesApp {
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::P)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::F)),
                 i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::F11)),
+                daily_on && i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::D)),
             )
         });
+        if day && self.vault.is_some() {
+            self.daily_note();
+        }
         if n && self.vault.is_some() {
             self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
         }
@@ -648,6 +693,10 @@ impl NotesApp {
             style(ui);
             if ui.add_enabled(has_vault, egui::Button::new("New Note…").shortcut_text("Ctrl+N")).clicked() {
                 self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                ui.close();
+            }
+            if self.s.daily_notes && ui.add_enabled(has_vault, egui::Button::new("Today's Daily Note").shortcut_text("Ctrl+D")).clicked() {
+                self.daily_note();
                 ui.close();
             }
             if ui.add_enabled(has_vault, egui::Button::new("Create New Folder…").shortcut_text("Shift+Ctrl+N")).clicked() {

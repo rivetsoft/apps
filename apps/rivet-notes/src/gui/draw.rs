@@ -231,10 +231,27 @@ impl NotesApp {
                     Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
                     None => egui::Button::new(egui::RichText::new("+").size(18.0)),
                 };
-                let r = ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)");
-                if r.clicked() {
-                    self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
-                }
+                let b = b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm());
+                let r = if self.s.daily_notes && self.vault.is_some() {
+                    // With daily notes on, the plus offers both.
+                    let (r, _) = egui::containers::menu::MenuButton::from_button(b).ui(ui, |ui| {
+                        menu_style(ui);
+                        ui.set_min_width(210.0);
+                        if item(ui, "New Note", "Ctrl+N") {
+                            self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                        }
+                        if item(ui, "Today's Daily Note", "Ctrl+D") {
+                            self.daily_note();
+                        }
+                    });
+                    r.on_hover_text("New note (Ctrl+N) or today's daily note (Ctrl+D)")
+                } else {
+                    let r = ui.add_enabled(self.vault.is_some(), b).on_hover_text("New note (Ctrl+N)");
+                    if r.clicked() {
+                        self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                    }
+                    r
+                };
                 left_end = r.rect.right();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Peek, at the far right.
