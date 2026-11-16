@@ -46,6 +46,9 @@ struct Doc {
     renaming: Option<(usize, String)>,
     /// The properties block is open (not folded).
     props_open: bool,
+    /// Live mode: the line being edited and the heading level it had when the cursor came to
+    /// it (kept until the cursor leaves, so the line doesn't change under the typing).
+    live_held: Option<(usize, u8)>,
     /// The title while it's being edited in the heading.
     title_buf: Option<String>,
 }
@@ -356,6 +359,7 @@ impl NotesApp {
             renaming: None,
             props_open: true,
             title_buf: None,
+            live_held: None,
         });
         if let (Some(v), Some(dir)) = (&self.vault, p.parent()) {
             self.current_folder = dir.strip_prefix(v).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
@@ -397,7 +401,7 @@ impl NotesApp {
         let new = new.trim();
         let Some(d) = self.doc.as_mut() else { return };
         let stem = d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        let (old, from) = vault::note_title(d.fm.as_ref(), &d.body, &d.path);
+        let (old, from) = vault::note_title(d.fm.as_ref(), &d.path);
         // A file name can't hold a slash; the rest is kept as typed.
         let file = new.replace(['/', '\\'], "-");
         if new.is_empty() || (new == old && file == stem) {
@@ -409,10 +413,6 @@ impl NotesApp {
                 if let Some(fm) = d.fm.as_mut() {
                     fm.set("title", Value::Text(new.to_string()));
                 }
-                d.dirty = true;
-            }
-            vault::TitleFrom::Heading => {
-                d.body = vault::set_first_heading(&d.body, new);
                 d.dirty = true;
             }
             vault::TitleFrom::File => {}

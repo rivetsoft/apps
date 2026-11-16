@@ -587,7 +587,7 @@ impl NotesApp {
         };
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
-        let (title, _) = vault::note_title(d.fm.as_ref(), &d.body, &d.path);
+        let (title, _) = vault::note_title(d.fm.as_ref(), &d.path);
         // ---- breadcrumbs: where the note is (vault › folders › file), just to read
         if show_crumbs {
             let rel = d.path.strip_prefix(&vault).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
@@ -654,6 +654,18 @@ impl NotesApp {
         let mono = egui::FontId::monospace(editor_size * 0.92 * fonts::scale());
         // Live mode: rendered except on the line being edited.
         let live_raw = if live_on { super::live_edit::raw_range(&ctx, egui::Id::unique("note-body"), &d.body) } else { None };
+        // The line being edited keeps the look it had when the cursor came to it.
+        match live_raw {
+            Some((a, _)) => {
+                let line = d.body[..a].matches('\n').count();
+                if d.live_held.map(|h| h.0) != Some(line) {
+                    let start = d.body[..a].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                    d.live_held = Some((line, crate::live::heading_level(d.body[start..].lines().next().unwrap_or(""))));
+                }
+            }
+            None => d.live_held = None,
+        }
+        let live_held = d.live_held;
         let live_look = super::live_edit::LiveLook {
             size: editor_size * fonts::scale(),
             line_spacing,
@@ -668,7 +680,7 @@ impl NotesApp {
         };
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
             if live_on {
-                let mut job = super::live_edit::job(buf.as_str(), live_raw, &live_look, &colors);
+                let mut job = super::live_edit::job(buf.as_str(), live_raw, live_held, &live_look, &colors);
                 job.wrap.max_width = wrap;
                 return ui.fonts_mut(|f| f.layout_job(job));
             }
@@ -751,7 +763,7 @@ impl NotesApp {
                 .show(ui);
             // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
             if live_on
-                && let Some(b) = super::live_edit::decorate(ui, &d.body, live_raw, &out, &live_look)
+                && let Some(b) = super::live_edit::decorate(ui, &d.body, live_raw, live_held, &out, &live_look)
                 && let Some(c) = d.body.as_bytes().get(b).copied()
             {
                 d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });

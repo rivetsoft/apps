@@ -45,8 +45,8 @@ pub(super) fn raw_range(ctx: &egui::Context, id: egui::Id, text: &str) -> Option
 }
 
 /// The note laid out live.
-pub(super) fn job(text: &str, raw: Option<(usize, usize)>, look: &LiveLook, colors: &highlight::Colors) -> LayoutJob {
-    let l = live::analyze(text, raw);
+pub(super) fn job(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, look: &LiveLook, colors: &highlight::Colors) -> LayoutJob {
+    let l = live::analyze(text, raw, held);
     let mono_size = look.size * 0.92;
     // Code blocks colored for their language.
     let mut hl: Vec<Option<Color32>> = vec![None; text.len()];
@@ -131,8 +131,8 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
 
 /// Draw bullets, check boxes, quote bars and rules over the laid-out text. Returns the byte of
 /// a check box's mark when one was clicked (to tick or untick it).
-pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Option<usize> {
-    let l = live::analyze(text, raw);
+pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Option<usize> {
+    let l = live::analyze(text, raw, held);
     let p = ui.painter().with_clip_rect(out.text_clip_rect);
     let at = |c: usize| out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
     let clicked = out.response.response.clicked();

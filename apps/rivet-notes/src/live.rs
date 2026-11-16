@@ -69,7 +69,16 @@ pub struct Live {
 /// Work out how `text` looks. `raw` is the bytes being edited (the cursor or selection): the
 /// lines it touches keep their marks (shown faintly), and a code block it touches keeps its
 /// fences.
-pub fn analyze(text: &str, raw: Option<(usize, usize)>) -> Live {
+/// A line's heading level (1-6), or 0.
+pub fn heading_level(line: &str) -> u8 {
+    let t = line.trim_start();
+    let n = t.bytes().take_while(|b| *b == b'#').count();
+    if (1..=6).contains(&n) && t[n..].starts_with(' ') { n as u8 } else { 0 }
+}
+
+/// `held` is the line being edited (by index) and the heading level it had when the cursor came
+/// to it: that line shows as plain Markdown at that size until the cursor leaves it.
+pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>) -> Live {
     let mut st = vec![St::default(); text.len()];
     let mut decos = Vec::new();
     let mut blocks = Vec::new();
@@ -124,6 +133,19 @@ pub fn analyze(text: &str, raw: Option<(usize, usize)>) -> Live {
             continue;
         }
         let editing = touches(&r);
+        // The line being edited: plain Markdown, at the size it had (nothing re-renders while
+        // typing on it).
+        if editing {
+            let level = match held {
+                Some((li, h)) if li == i => h,
+                _ => heading_level(body),
+            };
+            for s in &mut st[r.clone()] {
+                s.heading = level;
+            }
+            i += 1;
+            continue;
+        }
         let at = r.start + indent;
         let mark = |st: &mut [St], range: Range<usize>, hide: Hide| {
             for s in &mut st[range] {
@@ -354,7 +376,7 @@ mod tests {
     use super::*;
 
     fn shown(text: &str, raw: Option<(usize, usize)>) -> String {
-        let l = analyze(text, raw);
+        let l = analyze(text, raw, None);
         text.char_indices().filter(|(i, _)| l.st[*i].hide == Hide::No).map(|(_, c)| c).collect()
     }
 
@@ -364,7 +386,14 @@ mod tests {
         assert_eq!(shown(t, None), "Title\nSome bold and it and code.\n");
         // Editing the second line: its marks stay (the heading's still hidden).
         assert_eq!(shown(t, Some((10, 10))), "Title\nSome **bold** and *it* and `code`.\n");
-        let l = analyze(t, None);
+        // …and nothing on it is styled while it's being edited.
+        let l = analyze(t, Some((10, 10)), None);
+        assert!(!l.st[t.find("bold").unwrap()].bold);
+        // A line made a heading while editing it keeps the size it had until the cursor leaves.
+        let t2 = "# Title\n## new\n";
+        assert_eq!(analyze(t2, Some((10, 10)), Some((1, 0))).st[10].heading, 0);
+        assert_eq!(analyze(t2, None, None).st[12].heading, 2);
+        let l = analyze(t, None, None);
         assert_eq!(l.st[2].heading, 1);
         assert!(l.st[t.find("bold").unwrap()].bold);
         assert!(l.st[t.find("it*").unwrap()].italic);
@@ -375,7 +404,7 @@ mod tests {
     fn links_lists_tasks_and_rules() {
         let t = "See [docs](https://x.org) and [[Note]].\n- item\n- [x] done\n---\n> quote\n";
         assert_eq!(shown(t, None), "See docs and Note.\n item\n done\n quote\n");
-        let l = analyze(t, None);
+        let l = analyze(t, None, None);
         assert!(l.decos.contains(&Deco::Bullet(40)));
         assert!(l.decos.iter().any(|d| matches!(d, Deco::Check { done: true, .. })));
         assert!(l.decos.iter().any(|d| matches!(d, Deco::Rule(_))));
@@ -385,13 +414,13 @@ mod tests {
     #[test]
     fn code_blocks_fold_their_fences() {
         let t = "a\n```rust\nlet x = 1;\n```\nb\n";
-        let l = analyze(t, None);
+        let l = analyze(t, None, None);
         assert!(l.st[2].collapse && l.st[t.find("let").unwrap()].block);
         assert_eq!(l.blocks, vec![Block { inner: 10..21, lang: "rust".into() }]);
         // Inside the block, the fences show.
-        let l = analyze(t, Some((12, 12)));
+        let l = analyze(t, Some((12, 12)), None);
         assert!(!l.st[2].collapse && l.st[2].marker);
         // snake_case isn't italic.
-        assert!(!analyze("a_b_c\n", None).st[2].italic);
+        assert!(!analyze("a_b_c\n", None, None).st[2].italic);
     }
 }
