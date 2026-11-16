@@ -56,3 +56,21 @@ impl Shot {
         }
     }
 }
+
+/// For checks: `{PREFIX}_RIGHTCLICK=X,Y` (or `{PREFIX}_CLICK=X,Y` for the left button) clicks
+/// there once the window has settled (frame 30). Call from `raw_input_hook` in screenshot runs.
+pub fn scripted_click(prefix: &str, frame: u32, raw: &mut egui::RawInput) {
+    let (var, button) = if std::env::var_os(format!("{prefix}_CLICK")).is_some() { (format!("{prefix}_CLICK"), egui::PointerButton::Primary) } else { (format!("{prefix}_RIGHTCLICK"), egui::PointerButton::Secondary) };
+    let Some(pos) = std::env::var(var).ok().and_then(|v| {
+        let (a, b) = v.split_once(',')?;
+        Some(egui::Pos2::new(a.trim().parse().ok()?, b.trim().parse().ok()?))
+    }) else {
+        return;
+    };
+    match frame {
+        30 => raw.events.push(egui::Event::PointerMoved(pos)),
+        31 => raw.events.push(egui::Event::PointerButton { pos, button, pressed: true, modifiers: Default::default() }),
+        32 => raw.events.push(egui::Event::PointerButton { pos, button, pressed: false, modifiers: Default::default() }),
+        _ => {}
+    }
+}

@@ -12,11 +12,108 @@ use super::*;
 
 const ROW_H: f32 = 28.0;
 
-/// What a sidebar row does when clicked.
+/// What a sidebar row (or its right-click menu) asks for.
 enum Pick {
     Note(PathBuf),
     Fold(String),
     Folder(String),
+    NewNote(String),
+    NewFolder(String),
+    Rename(PathBuf),
+    Duplicate(PathBuf),
+    Trash(PathBuf),
+    CopyPath(PathBuf),
+    ShowInFiles(PathBuf),
+    /// Show only notes with this tag (in the search field).
+    OnlyTag(String),
+    FoldAll(bool),
+    Reload,
+}
+
+/// Comfortable menu rows, like Rivet's right-click menus.
+fn menu_style(ui: &mut egui::Ui) {
+    ui.set_min_width(220.0);
+    ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
+    ui.spacing_mut().item_spacing.y = 3.0;
+}
+
+fn item(ui: &mut egui::Ui, label: &str, shortcut: &str) -> bool {
+    let b = egui::Button::new(label);
+    let b = if shortcut.is_empty() { b } else { b.shortcut_text(shortcut) };
+    let r = ui.add(b).clicked();
+    if r {
+        ui.close();
+    }
+    r
+}
+
+/// The vault-relative folder a note or folder is in (for "here").
+fn rel_folder(root: &Path, p: &Path, is_dir: bool) -> String {
+    let dir = if is_dir { p } else { p.parent().unwrap_or(root) };
+    dir.strip_prefix(root).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default()
+}
+
+/// Right-click on a note.
+fn note_menu(ui: &mut egui::Ui, root: &Path, n: &Note, pick: &mut Option<Pick>) {
+    menu_style(ui);
+    if item(ui, "Open", "") {
+        *pick = Some(Pick::Note(n.path.clone()));
+    }
+    ui.separator();
+    let here = rel_folder(root, &n.path, false);
+    if item(ui, "New Note…", "Ctrl+N") {
+        *pick = Some(Pick::NewNote(here.clone()));
+    }
+    if item(ui, "Create New Folder…", "Shift+Ctrl+N") {
+        *pick = Some(Pick::NewFolder(here));
+    }
+    ui.separator();
+    if item(ui, "Rename…", "F2") {
+        *pick = Some(Pick::Rename(n.path.clone()));
+    }
+    if item(ui, "Duplicate", "") {
+        *pick = Some(Pick::Duplicate(n.path.clone()));
+    }
+    if item(ui, "Move to Trash…", "Delete") {
+        *pick = Some(Pick::Trash(n.path.clone()));
+    }
+    ui.separator();
+    if item(ui, "Copy Location", "") {
+        *pick = Some(Pick::CopyPath(n.path.clone()));
+    }
+    if item(ui, "Show in Folder", "") {
+        *pick = Some(Pick::ShowInFiles(n.path.clone()));
+    }
+}
+
+/// Right-click on a folder.
+fn folder_menu(ui: &mut egui::Ui, root: &Path, rel: &str, open: bool, pick: &mut Option<Pick>) {
+    menu_style(ui);
+    let path = root.join(rel);
+    if item(ui, if open { "Collapse" } else { "Expand" }, "") {
+        *pick = Some(Pick::Fold(rel.to_string()));
+    }
+    ui.separator();
+    if item(ui, "New Note…", "Ctrl+N") {
+        *pick = Some(Pick::NewNote(rel.to_string()));
+    }
+    if item(ui, "Create New Folder…", "Shift+Ctrl+N") {
+        *pick = Some(Pick::NewFolder(rel.to_string()));
+    }
+    ui.separator();
+    if item(ui, "Rename…", "") {
+        *pick = Some(Pick::Rename(path.clone()));
+    }
+    if item(ui, "Move to Trash…", "") {
+        *pick = Some(Pick::Trash(path.clone()));
+    }
+    ui.separator();
+    if item(ui, "Copy Location", "") {
+        *pick = Some(Pick::CopyPath(path.clone()));
+    }
+    if item(ui, "Open in File Manager", "") {
+        *pick = Some(Pick::ShowInFiles(path));
+    }
 }
 
 impl NotesApp {
@@ -171,25 +268,49 @@ impl NotesApp {
         let tag_icon = self.icon(&ctx, &["tag-symbolic", "bookmark-new-symbolic", "starred-symbolic"], 14.0);
         let open = self.doc.as_ref().map(|d| d.path.clone());
         let mut pick: Option<Pick> = None;
-        let mut menu_for: Option<(PathBuf, bool)> = None;
+        let root = self.vault.clone().unwrap_or_default();
         let notes: Vec<Note> = self.notes.iter().filter(|n| self.matches(n)).cloned().collect();
         let searching = !self.search.trim().is_empty();
         let collapsed: BTreeSet<String> = self.s.collapsed.iter().cloned().collect();
         ui.add_space(2.0);
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            // Right-click empty space: the vault's own menu.
+            let bg = ui.interact(ui.max_rect(), egui::Id::unique("notes-side-bg"), Sense::click());
+            bg.context_menu(|ui| {
+                menu_style(ui);
+                if item(ui, "New Note…", "Ctrl+N") {
+                    pick = Some(Pick::NewNote(String::new()));
+                }
+                if item(ui, "Create New Folder…", "Shift+Ctrl+N") {
+                    pick = Some(Pick::NewFolder(String::new()));
+                }
+                ui.separator();
+                if item(ui, "Collapse All", "") {
+                    pick = Some(Pick::FoldAll(true));
+                }
+                if item(ui, "Expand All", "") {
+                    pick = Some(Pick::FoldAll(false));
+                }
+                ui.separator();
+                if item(ui, "Reload Vault", "F5") {
+                    pick = Some(Pick::Reload);
+                }
+                if item(ui, "Open in File Manager", "") {
+                    pick = Some(Pick::ShowInFiles(root.clone()));
+                }
+            });
             if searching {
                 ui.label(egui::RichText::new(format!("{} found", notes.len())).small().weak());
                 ui.add_space(4.0);
                 for n in &notes {
-                    note_row(ui, n, 0, open.as_ref() == Some(&n.path), &note_icon, true, &mut pick, &mut menu_for);
+                    note_row(ui, n, 0, open.as_ref() == Some(&n.path), &note_icon, true, &mut pick, &root);
                 }
                 return;
             }
             match self.s.browse {
                 Browse::Folders => {
                     let folders = self.folders.clone();
-                    let root = self.vault.clone().unwrap_or_default();
-                    folder_tree(ui, "", 0, &folders, &notes, &collapsed, open.as_ref(), &folder_icon, &note_icon, &mut pick, &mut menu_for, &self.current_folder, &root);
+                    folder_tree(ui, "", 0, &folders, &notes, &collapsed, open.as_ref(), &folder_icon, &note_icon, &mut pick, &self.current_folder, &root);
                 }
                 Browse::Tags => {
                     let tags = self.tag_counts();
@@ -200,12 +321,29 @@ impl NotesApp {
                     let key = |t: &str| format!("#{}", t.to_lowercase());
                     for (t, count) in &tags {
                         let folded = collapsed.contains(&key(t));
-                        if group_header(ui, &format!("#{t}"), *count, !folded, &tag_icon).clicked() {
+                        let h = group_header(ui, &format!("#{t}"), *count, !folded, &tag_icon);
+                        if h.clicked() {
                             pick = Some(Pick::Fold(key(t)));
                         }
+                        h.context_menu(|ui| {
+                            menu_style(ui);
+                            if item(ui, if folded { "Expand" } else { "Collapse" }, "") {
+                                pick = Some(Pick::Fold(key(t)));
+                            }
+                            if item(ui, &format!("Show Only #{t}"), "") {
+                                pick = Some(Pick::OnlyTag(t.clone()));
+                            }
+                            ui.separator();
+                            if item(ui, "Collapse All", "") {
+                                pick = Some(Pick::FoldAll(true));
+                            }
+                            if item(ui, "Expand All", "") {
+                                pick = Some(Pick::FoldAll(false));
+                            }
+                        });
                         if !folded {
                             for n in notes.iter().filter(|n| n.tags.iter().any(|x| x.eq_ignore_ascii_case(t))) {
-                                note_row(ui, n, 1, open.as_ref() == Some(&n.path), &note_icon, false, &mut pick, &mut menu_for);
+                                note_row(ui, n, 1, open.as_ref() == Some(&n.path), &note_icon, false, &mut pick, &root);
                             }
                         }
                     }
@@ -217,7 +355,7 @@ impl NotesApp {
                         }
                         if !folded {
                             for n in untagged {
-                                note_row(ui, n, 1, open.as_ref() == Some(&n.path), &note_icon, false, &mut pick, &mut menu_for);
+                                note_row(ui, n, 1, open.as_ref() == Some(&n.path), &note_icon, false, &mut pick, &root);
                             }
                         }
                     }
@@ -235,59 +373,38 @@ impl NotesApp {
                 self.s.save();
             }
             Some(Pick::Folder(f)) => self.current_folder = f,
+            Some(Pick::NewNote(f)) => self.prompt = Some(Prompt::NewNote { folder: f, title: String::new() }),
+            Some(Pick::NewFolder(f)) => self.prompt = Some(Prompt::NewFolder { parent: f, name: String::new() }),
+            Some(Pick::Rename(p)) => {
+                let name = if p.is_dir() { p.file_name() } else { p.file_stem() }.map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                self.prompt = Some(Prompt::Rename { path: p, name });
+            }
+            Some(Pick::Duplicate(p)) => self.duplicate(&p),
+            Some(Pick::Trash(p)) => self.prompt = Some(Prompt::Delete(p)),
+            Some(Pick::CopyPath(p)) => {
+                ctx.copy_text(p.display().to_string());
+                self.note_msg = Some(("Location copied".into(), false));
+            }
+            Some(Pick::ShowInFiles(p)) => {
+                let dir = if p.is_dir() { p } else { p.parent().map(Path::to_path_buf).unwrap_or(p) };
+                if let Err(e) = rivet_xdg::launch::open_url(&dir.to_string_lossy()) {
+                    self.note_msg = Some((format!("Couldn't open the folder: {e}"), true));
+                }
+            }
+            Some(Pick::OnlyTag(t)) => self.search = format!("#{t}"),
+            Some(Pick::FoldAll(fold)) => {
+                self.s.collapsed = if fold {
+                    match self.s.browse {
+                        Browse::Folders => self.folders.clone(),
+                        Browse::Tags => self.tag_counts().into_iter().map(|(t, _)| format!("#{}", t.to_lowercase())).chain(["#".to_string()]).collect(),
+                    }
+                } else {
+                    Vec::new()
+                };
+                self.s.save();
+            }
+            Some(Pick::Reload) => self.rescan(),
             None => {}
-        }
-        if let Some((p, is_dir)) = menu_for {
-            // Right-click actions, through the questions.
-            let rel_dir = |app: &NotesApp, p: &Path| app.vault.as_ref().and_then(|v| p.strip_prefix(v).ok()).map(|r| r.to_string_lossy().replace('\\', "/")).unwrap_or_default();
-            let folder = if is_dir { rel_dir(self, &p) } else { p.parent().map(|d| rel_dir(self, d)).unwrap_or_default() };
-            ctx.data_mut(|d| d.insert_temp(egui::Id::unique("notes-menu"), (p, is_dir, folder)));
-        }
-        self.row_menu(&ctx);
-    }
-
-    /// The right-click menu for the row last right-clicked.
-    fn row_menu(&mut self, ctx: &egui::Context) {
-        let Some((p, is_dir, folder)) = ctx.data(|d| d.get_temp::<(PathBuf, bool, String)>(egui::Id::unique("notes-menu"))) else { return };
-        let id = egui::Id::unique("notes-row-menu");
-        let pos = ctx.data(|d| d.get_temp::<Pos2>(egui::Id::unique("notes-menu-pos"))).unwrap_or_default();
-        let mut close = false;
-        egui::Area::new(id).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
-            egui::Frame::menu(ui.style()).show(ui, |ui| {
-                ui.set_min_width(210.0);
-                ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
-                if !is_dir && ui.button("Open").clicked() {
-                    self.open_note(&p);
-                    close = true;
-                }
-                if ui.button("New Note Here…").clicked() {
-                    self.prompt = Some(Prompt::NewNote { folder: folder.clone(), title: String::new() });
-                    close = true;
-                }
-                if ui.button("New Folder Here…").clicked() {
-                    self.prompt = Some(Prompt::NewFolder { parent: folder.clone(), name: String::new() });
-                    close = true;
-                }
-                ui.separator();
-                if ui.button("Rename…").clicked() {
-                    let name = if is_dir { p.file_name() } else { p.file_stem() }.map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-                    self.prompt = Some(Prompt::Rename { path: p.clone(), name });
-                    close = true;
-                }
-                if ui.button("Copy Location").clicked() {
-                    ui.ctx().copy_text(p.display().to_string());
-                    close = true;
-                }
-                ui.separator();
-                if ui.button("Move to Trash…").clicked() {
-                    self.prompt = Some(Prompt::Delete(p.clone()));
-                    close = true;
-                }
-            });
-        });
-        let clicked_away = ctx.input(|i| i.pointer.any_pressed()) && !ctx.pointer_hover_pos().is_some_and(|q| ctx.layer_id_at(q).is_some_and(|l| l.id == id));
-        if close || clicked_away || ctx.input(|i| i.key_pressed(Key::Escape)) {
-            ctx.data_mut(|d| d.remove::<(PathBuf, bool, String)>(egui::Id::unique("notes-menu")));
         }
     }
 
@@ -305,6 +422,7 @@ impl NotesApp {
         let colors = highlight::colors(v.text_color(), v.extreme_bg_color, accent_p, accent_s, accent_t);
         let show_props = self.s.show_properties;
         let now = ctx.input(|i| i.time);
+        let mut edit: Option<EditCmd> = None;
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let title = d.fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| d.path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());
@@ -442,10 +560,47 @@ impl NotesApp {
             if r.changed() {
                 changed = true;
             }
+            // The standard editing menu. The command runs next frame, with the keyboard back
+            // in the text (so the selection is kept).
+            let has_sel = egui::TextEdit::load_state(ui.ctx(), r.id).and_then(|s| s.cursor.char_range()).is_some_and(|c| !c.is_empty());
+            r.context_menu(|ui| {
+                menu_style(ui);
+                for (label, sc, c, on) in [
+                    ("Undo", "Ctrl+Z", EditCmd::Undo, true),
+                    ("Redo", "Shift+Ctrl+Z", EditCmd::Redo, true),
+                ] {
+                    if ui.add_enabled(on, egui::Button::new(label).shortcut_text(sc)).clicked() {
+                        edit = Some(c);
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                for (label, sc, c, on) in [
+                    ("Cut", "Ctrl+X", EditCmd::Cut, has_sel),
+                    ("Copy", "Ctrl+C", EditCmd::Copy, has_sel),
+                    ("Paste", "Ctrl+V", EditCmd::Paste, true),
+                    ("Delete", "", EditCmd::Delete, has_sel),
+                ] {
+                    if ui.add_enabled(on, egui::Button::new(label).shortcut_text(sc)).clicked() {
+                        edit = Some(c);
+                        ui.close();
+                    }
+                }
+                ui.separator();
+                if ui.add(egui::Button::new("Select All").shortcut_text("Ctrl+A")).clicked() {
+                    edit = Some(EditCmd::SelectAll);
+                    ui.close();
+                }
+            });
         });
         if changed {
             d.dirty = true;
             d.edited_at = now;
+        }
+        if let Some(c) = edit {
+            self.edit_cmd = Some(c);
+            ctx.memory_mut(|m| m.request_focus(egui::Id::unique("note-body")));
+            ctx.request_repaint();
         }
     }
 
@@ -786,7 +941,6 @@ fn folder_tree(
     folder_icon: &Option<egui::TextureHandle>,
     note_icon: &Option<egui::TextureHandle>,
     pick: &mut Option<Pick>,
-    menu_for: &mut Option<(PathBuf, bool)>,
     current: &str,
     root: &Path,
 ) {
@@ -821,23 +975,18 @@ fn folder_tree(
         if resp.clicked() {
             *pick = Some(if *current == **sub || on_triangle { Pick::Fold(sub.clone()) } else { Pick::Folder(sub.clone()) });
         }
-        if resp.secondary_clicked() {
-            *menu_for = Some((root.join(sub), true));
-            if let Some(p) = ui.ctx().pointer_interact_pos() {
-                ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("notes-menu-pos"), p));
-            }
-        }
+        resp.context_menu(|ui| folder_menu(ui, root, sub, open_f, pick));
         if open_f {
-            folder_tree(ui, sub, depth + 1, folders, notes, collapsed, open, folder_icon, note_icon, pick, menu_for, current, root);
+            folder_tree(ui, sub, depth + 1, folders, notes, collapsed, open, folder_icon, note_icon, pick, current, root);
         }
     }
     for n in notes.iter().filter(|n| n.folder() == folder) {
-        note_row(ui, n, depth, open == Some(&n.path), note_icon, false, pick, menu_for);
+        note_row(ui, n, depth, open == Some(&n.path), note_icon, false, pick, root);
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-fn note_row(ui: &mut egui::Ui, n: &Note, depth: usize, open: bool, icon: &Option<egui::TextureHandle>, show_folder: bool, pick: &mut Option<Pick>, menu_for: &mut Option<(PathBuf, bool)>) {
+fn note_row(ui: &mut egui::Ui, n: &Note, depth: usize, open: bool, icon: &Option<egui::TextureHandle>, show_folder: bool, pick: &mut Option<Pick>, root: &Path) {
     let h = if show_folder { 40.0 } else { ROW_H };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
     let v = ui.visuals();
@@ -879,12 +1028,7 @@ fn note_row(ui: &mut egui::Ui, n: &Note, depth: usize, open: bool, icon: &Option
     if resp.clicked() {
         *pick = Some(Pick::Note(n.path.clone()));
     }
-    if resp.secondary_clicked() {
-        *menu_for = Some((n.path.clone(), false));
-        if let Some(p) = ui.ctx().pointer_interact_pos() {
-            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("notes-menu-pos"), p));
-        }
-    }
+    resp.context_menu(|ui| note_menu(ui, root, n, pick));
 }
 
 /// A tag's header: triangle, name, count (like Rivet's sidebar sections).

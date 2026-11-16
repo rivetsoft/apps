@@ -33,6 +33,19 @@ struct Doc {
     new_tag: String,
 }
 
+/// An editing command from the text's right-click menu, carried out on the next frame (once
+/// the text has the keyboard again).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum EditCmd {
+    Undo,
+    Redo,
+    Cut,
+    Copy,
+    Paste,
+    Delete,
+    SelectAll,
+}
+
 enum Prompt {
     NewNote { folder: String, title: String },
     NewFolder { parent: String, name: String },
@@ -63,6 +76,7 @@ pub struct NotesApp {
     prefs_win: windows::WinState,
     about_open: bool,
     shot: Option<rivet_kit::Shot>,
+    edit_cmd: Option<EditCmd>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -101,6 +115,7 @@ impl NotesApp {
             prefs_win: windows::WinState::new(20, Vec2::new(720.0, 540.0)),
             about_open: false,
             shot: screenshot.map(rivet_kit::Shot::new),
+            edit_cmd: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -111,6 +126,15 @@ impl NotesApp {
         {
             let p = v.join(rel);
             app.open_note(&p);
+        }
+        // Test hook for checks: RIVET_NOTES_EDIT=selectall|delete runs a text-menu command.
+        app.edit_cmd = match std::env::var("RIVET_NOTES_EDIT").as_deref() {
+            Ok("selectall") => Some(EditCmd::SelectAll),
+            Ok("delete") => Some(EditCmd::Delete),
+            _ => None,
+        };
+        if app.edit_cmd.is_some() {
+            _cc.egui_ctx.memory_mut(|m| m.request_focus(egui::Id::unique("note-body")));
         }
         // Test hook for checks: RIVET_NOTES_APPEND adds text to the open note and, with
         // RIVET_NOTES_WRITE, saves it (only on a throwaway vault).
@@ -266,6 +290,21 @@ impl NotesApp {
         }
     }
 
+    /// A copy of a note beside it ("Plans copy.md"), opened.
+    fn duplicate(&mut self, path: &Path) {
+        self.save_now();
+        let Some(dir) = path.parent() else { return };
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let to = vault::note_file(dir, &format!("{stem} copy"));
+        match std::fs::copy(path, &to) {
+            Ok(_) => {
+                self.rescan();
+                self.open_note(&to);
+            }
+            Err(e) => self.note_msg = Some((format!("Couldn't duplicate: {e}"), true)),
+        }
+    }
+
     /// Move to the desktop's Trash (through gio, like the desktop does).
     fn trash(&mut self, path: &Path) {
         if self.doc.as_ref().is_some_and(|d| d.path == path || d.path.starts_with(path)) {
@@ -356,6 +395,20 @@ impl NotesApp {
         }
         if find {
             ctx.memory_mut(|m| m.request_focus(egui::Id::unique("notes-search")));
+        }
+        // F2 renames the open note; Delete (when not typing) moves it to the Trash.
+        let typing = ctx.memory(|m| m.focused().is_some());
+        let (f2, del) = ctx.input_mut(|i| {
+            (i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::F2)), !typing && i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::Delete)))
+        });
+        if let Some(p) = self.doc.as_ref().map(|d| d.path.clone()) {
+            if f2 {
+                let name = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+                self.prompt = Some(Prompt::Rename { path: p.clone(), name });
+            }
+            if del {
+                self.prompt = Some(Prompt::Delete(p));
+            }
         }
     }
 
@@ -504,6 +557,27 @@ fn mtime(p: &Path) -> Option<std::time::SystemTime> {
 }
 
 impl eframe::App for NotesApp {
+    /// Carries out the text menu's command (as the keys or clipboard events it stands for), and
+    /// the scripted clicks of checks.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if let Some(shot) = &self.shot {
+            rivet_kit::scripted_click("RIVET_NOTES", shot.frames(), raw);
+        }
+        let Some(cmd) = self.edit_cmd.take() else { return };
+        let key = |key: Key, modifiers: Modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        let shift_cmd = Modifiers { shift: true, ..Modifiers::COMMAND };
+        match cmd {
+            EditCmd::Undo => raw.events.push(key(Key::Z, Modifiers::COMMAND)),
+            EditCmd::Redo => raw.events.push(key(Key::Z, shift_cmd)),
+            EditCmd::Cut => raw.events.push(egui::Event::Cut),
+            EditCmd::Copy => raw.events.push(egui::Event::Copy),
+            // The desktop's clipboard is read by the window, which then sends the paste.
+            EditCmd::Paste => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+            EditCmd::Delete => raw.events.push(key(Key::Delete, Modifiers::NONE)),
+            EditCmd::SelectAll => raw.events.push(key(Key::A, Modifiers::COMMAND)),
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let c = self.choice();
