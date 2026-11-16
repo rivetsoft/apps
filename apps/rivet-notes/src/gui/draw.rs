@@ -245,7 +245,6 @@ impl NotesApp {
                     }
                     let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
                     ui.painter().line_segment([sep.center_top(), sep.center_bottom()], Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.4)));
-                    // The sidebar's tabs.
                     // The rendered page.
                     let read_icon = self.icon(&ctx, &["view-reveal-symbolic", "document-open-symbolic", "x-office-document-symbolic"], 16.0);
                     let b = match &read_icon {
@@ -254,16 +253,6 @@ impl NotesApp {
                     };
                     if ui.add_enabled(self.doc.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Reading view (Ctrl+Space)").clicked() {
                         self.toggle_reading(&ctx);
-                    }
-                    if let Some(i) = self.s.layout.tabbed() {
-                        ui.add_space(4.0);
-                        let slot = self.s.layout.slots[i].clone();
-                        for (k, p) in slot.panels.iter().enumerate().rev() {
-                            if ui.selectable_label(k == slot.active, crate::layout::title(*p)).on_hover_text("Ctrl+T switches").clicked() {
-                                self.s.layout.show(*p);
-                                self.s.save();
-                            }
-                        }
                     }
                     right_start = ui.min_rect().left();
                 });
