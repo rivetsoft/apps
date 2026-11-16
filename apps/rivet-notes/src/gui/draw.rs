@@ -216,8 +216,18 @@ impl NotesApp {
                     for dy in [-4.5f32, 0.0, 4.5] {
                         ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, fg));
                     }
-                    left_end = r.0.rect.right();
                 }
+                // New note: a plus, right after the menu.
+                let add_icon = self.icon(&ctx, &["list-add-symbolic", "tab-new-symbolic"], 16.0);
+                let b = match &add_icon {
+                    Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
+                    None => egui::Button::new(egui::RichText::new("+").size(18.0)),
+                };
+                let r = ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)");
+                if r.clicked() {
+                    self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                }
+                left_end = r.rect.right();
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Peek, at the far right.
                     let peek_icon = self.icon(&ctx, &["dialog-information-symbolic", "document-properties-symbolic", "help-about-symbolic"], 16.0);
@@ -233,15 +243,7 @@ impl NotesApp {
                     }
                     let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
                     ui.painter().line_segment([sep.center_top(), sep.center_bottom()], Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.4)));
-                    // New note, and the sidebar's tabs.
-                    let new_icon = self.icon(&ctx, &["document-new-symbolic", "list-add-symbolic"], 16.0);
-                    let b = match &new_icon {
-                        Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
-                        None => egui::Button::new("New"),
-                    };
-                    if ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("New note (Ctrl+N)").clicked() {
-                        self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
-                    }
+                    // The sidebar's tabs.
                     // The rendered page.
                     let read_icon = self.icon(&ctx, &["view-reveal-symbolic", "document-open-symbolic", "x-office-document-symbolic"], 16.0);
                     let b = match &read_icon {
