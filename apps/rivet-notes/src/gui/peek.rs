@@ -17,18 +17,7 @@ impl NotesApp {
     pub(super) fn peek(&mut self, ui: &mut egui::Ui) {
         let v = ui.visuals().clone();
         let weak = v.weak_text_color();
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.set_min_height(28.0);
-            ui.label(egui::RichText::new("Peek").font(fonts::ui_font(14.0)).strong().color(v.strong_text_color()));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add(egui::Button::new("×").frame_when_inactive(false).min_size(Vec2::splat(24.0))).on_hover_text("Close Peek (F11)").clicked() {
-                    self.s.show_peek = false;
-                    self.s.save();
-                }
-            });
-        });
-        ui.add_space(6.0);
+        // No title or close button: the toolbar's Peek button and F11 open and close it.
         egui::ScrollArea::vertical().id_salt("notes-peek").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 6.0;
             // ---- how the note is shown
