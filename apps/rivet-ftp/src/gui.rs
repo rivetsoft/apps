@@ -301,6 +301,25 @@ pub struct FtpApp {
 }
 
 impl eframe::App for FtpApp {
+    /// Test hook for checks: RIVET_FTP_RIGHTCLICK=X,Y right-clicks there once the window has
+    /// settled (screenshot runs only).
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let Some(shot) = &self.shot else { return };
+        let Some((x, y)) = std::env::var("RIVET_FTP_RIGHTCLICK").ok().and_then(|v| {
+            let (a, b) = v.split_once(',')?;
+            Some((a.trim().parse::<f32>().ok()?, b.trim().parse::<f32>().ok()?))
+        }) else {
+            return;
+        };
+        let pos = Pos2::new(x, y);
+        match shot.frames() {
+            30 => raw.events.push(egui::Event::PointerMoved(pos)),
+            31 => raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed: true, modifiers: Default::default() }),
+            32 => raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Secondary, pressed: false, modifiers: Default::default() }),
+            _ => {}
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.watch_palette(&ctx);

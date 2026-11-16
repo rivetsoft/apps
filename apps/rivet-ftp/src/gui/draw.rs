@@ -306,6 +306,10 @@ impl FtpApp {
             self.focus = side;
             self.pane(side).selected.clear();
         }
+        if bg.secondary_clicked() {
+            self.focus = side;
+            self.pane(side).selected.clear();
+        }
         bg.context_menu(|ui| self.pane_menu(ui, side));
         if let Some((m, c)) = message {
             ui.painter().text(list_rect.center(), Align2::CENTER_CENTER, m, fonts::ui_font(13.0), c);
@@ -468,7 +472,6 @@ impl FtpApp {
         let mut clicked: Option<(usize, egui::Modifiers)> = None;
         let mut activated: Option<usize> = None;
         let mut drag_start: Option<usize> = None;
-        let mut menu = false;
         egui::ScrollArea::vertical().id_salt(("rows", side as u8)).auto_shrink([false, false]).show_rows(&mut lui, ROW_H, entries.len(), |ui, range| {
             for i in range {
                 let e = &entries[i];
@@ -501,14 +504,20 @@ impl FtpApp {
                 } else if resp.clicked() {
                     clicked = Some((i, ui.input(|inp| inp.modifiers)));
                 } else if resp.secondary_clicked() {
+                    // Right-click acts on the selection; a row outside it becomes the selection
+                    // first (right away, so the menu below already names it).
+                    self.focus = side;
                     if !selected {
-                        clicked = Some((i, egui::Modifiers::NONE));
+                        let p = self.pane(side);
+                        p.selected = [e.name.clone()].into();
+                        p.anchor = Some(i);
+                        p.cursor = Some(i);
                     }
-                    menu = true;
                 }
                 if resp.drag_started() {
                     drag_start = Some(i);
                 }
+                resp.context_menu(|ui| self.pane_menu(ui, side));
             }
         });
         if let Some((i, m)) = clicked {
@@ -528,9 +537,6 @@ impl FtpApp {
                 p.anchor = Some(i);
             }
             p.cursor = Some(i);
-        }
-        if menu {
-            self.focus = side;
         }
         if let Some(i) = activated {
             self.focus = side;
@@ -561,31 +567,31 @@ impl FtpApp {
         }
     }
 
+    /// The right-click menu: on the selection when there is one, else on the folder.
     pub(super) fn pane_menu(&mut self, ui: &mut egui::Ui, side: Side) {
+        use super::menus::Cmd;
         menu_style(ui);
+        let ctx = ui.ctx().clone();
         let sel = self.pane_ref(side).selected_entries();
         let connected = self.transfer.is_some();
+        let one_file = sel.len() == 1 && !sel[0].is_dir;
+        let can = side == Side::Local || connected;
         if !sel.is_empty() {
-            let label = match (side, sel.len()) {
-                (Side::Local, 1) => format!("Upload \"{}\"", sel[0].name),
-                (Side::Local, n) => format!("Upload {n} items"),
-                (Side::Remote, 1) => format!("Download \"{}\"", sel[0].name),
-                (Side::Remote, n) => format!("Download {n} items"),
-            };
-            if ui.add_enabled(connected, egui::Button::new(label)).clicked() {
-                self.transfer_items(side, sel.clone());
+            // ---- open
+            if sel.len() == 1 && sel[0].is_dir && ui.button("Open").clicked() {
+                self.activate(side, &sel[0]);
                 ui.close();
             }
-            ui.separator();
-            if ui.add(egui::Button::new("Info…").shortcut_text("Ctrl+I")).clicked() {
-                self.show_info(side);
+            if side == Side::Local && one_file && ui.button("Open").clicked() {
+                let path = std::path::Path::new(&self.local.path).join(&sel[0].name);
+                let mime = self.mime.guess_by_name(&path).unwrap_or_else(|| "application/octet-stream".into());
+                let apps = self.apps().to_vec();
+                if let Err(e) = rivet_xdg::launch::open_default(&apps, &mime, &path) {
+                    self.note = Some((format!("Couldn't open it: {e}"), true));
+                }
                 ui.close();
             }
-            if sel.len() == 1 && ui.button("Rename…").clicked() {
-                self.prompt = Some(Prompt::Rename(side, sel[0].name.clone(), sel[0].name.clone()));
-                ui.close();
-            }
-            if side == Side::Remote && sel.len() == 1 && !sel[0].is_dir && connected {
+            if side == Side::Remote && one_file && connected {
                 if ui.add(egui::Button::new("Open in Editor").shortcut_text("F4")).on_hover_text("Saves go straight back to the server").clicked() {
                     self.edit_remote(&sel[0], None);
                     ui.close();
@@ -603,34 +609,59 @@ impl FtpApp {
                         }
                     }
                 });
-                ui.separator();
             }
-            if side == Side::Remote && ui.button("Delete…").clicked() {
-                let ctx = ui.ctx().clone();
-                self.run(super::menus::Cmd::Delete, &ctx);
+            ui.separator();
+            // ---- send across
+            let label = match (side, sel.len()) {
+                (Side::Local, 1) => format!("Upload \"{}\"", sel[0].name),
+                (Side::Local, n) => format!("Upload {n} Items"),
+                (Side::Remote, 1) => format!("Download \"{}\"", sel[0].name),
+                (Side::Remote, n) => format!("Download {n} Items"),
+            };
+            let sc = if side == Side::Local { "Ctrl+U" } else { "Ctrl+D" };
+            if ui.add_enabled(connected, egui::Button::new(label).shortcut_text(sc)).on_disabled_hover_text("Connect to a server first").clicked() {
+                self.transfer_items(side, sel.clone());
                 ui.close();
             }
-            if side == Side::Remote && sel.len() == 1 && ui.button("Copy address").clicked() {
-                if let Some(c) = &self.conn {
-                    let mut c2 = c.clone();
-                    c2.remote = Some(sftp::join(&self.remote.path, &sel[0].name));
-                    ui.ctx().copy_text(c2.url());
-                }
+            ui.separator();
+            // ---- about it
+            if ui.button("Copy Location").clicked() {
+                self.run(Cmd::CopyLocation, &ctx);
+                ui.close();
+            }
+            if ui.add(egui::Button::new("Info…").shortcut_text("Ctrl+I")).clicked() {
+                self.show_info(side);
+                ui.close();
+            }
+            ui.separator();
+            // ---- change it
+            if ui.add_enabled(sel.len() == 1 && can, egui::Button::new("Rename…").shortcut_text("F2")).clicked() {
+                self.run(Cmd::Rename, &ctx);
+                ui.close();
+            }
+            if side == Side::Remote && ui.add_enabled(connected, egui::Button::new("Delete from Server…").shortcut_text("Delete")).clicked() {
+                self.run(Cmd::Delete, &ctx);
                 ui.close();
             }
             ui.separator();
         }
-        let can = side == Side::Local || connected;
-        if ui.add_enabled(can, egui::Button::new("New folder…")).clicked() {
+        // ---- the folder
+        if ui.add_enabled(can, egui::Button::new("Create New Folder…").shortcut_text("Shift+Ctrl+N")).clicked() {
             self.prompt = Some(Prompt::NewFolder(side, String::new()));
             ui.close();
         }
-        if ui.add_enabled(can, egui::Button::new("Refresh")).clicked() {
+        if ui.add_enabled(can, egui::Button::new("Reload").shortcut_text("F5")).clicked() {
             self.reload(side);
             ui.close();
         }
+        if sel.is_empty() && ui.add_enabled(can, egui::Button::new("Select All").shortcut_text("Ctrl+A")).clicked() {
+            self.focus = side;
+            self.run(Cmd::SelectAll, &ctx);
+            ui.close();
+        }
+        ui.separator();
         let mut hidden = self.s.show_hidden;
-        if ui.checkbox(&mut hidden, "Show hidden files").clicked() {
+        if ui.checkbox(&mut hidden, "Show Hidden Files").clicked() {
             self.toggle_hidden();
             ui.close();
         }
