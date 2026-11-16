@@ -7,6 +7,7 @@ use rivet_xdg::places;
 pub mod builtin_icons;
 pub mod fonts;
 pub mod highlight;
+pub mod live;
 pub mod icons;
 pub mod nerd;
 pub mod palette;

@@ -287,6 +287,12 @@ one side, the server on the other, and a transfer queue. It lives in this reposi
 [`apps/rivet-ftp`](apps/rivet-ftp). The first window works over SFTP, and saved connections work
 from the command line and from plain `ssh` too. See [Rivet FTP](docs/rivet-ftp.md) for the plan.
 
+## 📝 Rivet Notes (in development)
+
+Markdown notes in plain folders, also built on Rivet's core. A vault is any folder of `.md`
+files; frontmatter shows as editable properties, and notes can be browsed by folder or by tag.
+It lives in [`apps/rivet-notes`](apps/rivet-notes); see [Rivet Notes](docs/rivet-notes.md).
+
 ## 🗺️ Roadmap
 
 - Tagging and pinning files
@@ -341,6 +347,7 @@ before. Code the apps share lives in `crates/`, and the other apps live in `apps
 | `crates/rivet-kit` | Shared: in-memory screenshots for checks |
 | `crates/rivet-connections` | Shared: saved server connections (Rivet FTP's window, its command line, and `ssh`) |
 | `apps/rivet-ftp` | Rivet FTP |
+| `apps/rivet-notes` | Rivet Notes |
 | `docs/` | Documentation, written as wiki pages ([index](docs/README.md)) |
 
 `cargo build` builds Rivet. `cargo build --workspace` builds everything, and so does CI.

@@ -2329,6 +2329,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivet-notes"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "eframe",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-xdg",
+]
+
+[[package]]
 name = "rivet-xdg"
 version = "0.1.0"
 dependencies = [

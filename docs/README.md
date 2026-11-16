@@ -16,6 +16,10 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 - [Feature checklist](rivet-ftp-parity.md): what a mature transfer client has, and what's done
 - [Command line](../apps/rivet-ftp/README.md): saved connections, `ssh` and `sftp`
 
-## Both apps
+## Rivet Notes
+
+- [Rivet Notes](rivet-notes.md): vaults, frontmatter, folders and tags
+
+## All the apps
 
 - [Shared crates](shared-crates.md): which code the apps share, and the order of the move
