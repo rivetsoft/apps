@@ -99,6 +99,8 @@ struct Pending {
     from_dir: String,
     to_dir: String,
     clashes: Vec<String>,
+    /// What's already there under those names (to compare).
+    existing: Vec<Entry>,
 }
 
 /// The connection editor.

@@ -525,6 +525,7 @@ impl FtpApp {
             items,
             from_dir: self.pane_ref(from).path.clone(),
             to_dir: to_pane.path.clone(),
+            existing: to_pane.entries.iter().filter(|e| clashes.contains(&e.name)).cloned().collect(),
             clashes,
         };
         match (pending.clashes.is_empty(), self.s.on_exists) {

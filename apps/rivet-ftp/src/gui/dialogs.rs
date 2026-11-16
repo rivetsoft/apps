@@ -52,6 +52,33 @@ fn raised(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32
     resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
 }
 
+/// Which is newer: the one being sent (Greater) or the one already there (Less). Server
+/// listings give the time to the minute (or only the day for old files), so both are compared
+/// at that resolution.
+fn compare_times(src: &crate::listing::Entry, dst: &crate::listing::Entry) -> std::cmp::Ordering {
+    let day_only = |e: &crate::listing::Entry| !e.modified.contains(':');
+    let step = if day_only(src) || day_only(dst) { 86_400 } else { 60 };
+    (src.mtime.div_euclid(step)).cmp(&dst.mtime.div_euclid(step))
+}
+
+/// "16 Nov 2026, 08:43" (or just the day when that's all the server says).
+fn full_date(e: &crate::listing::Entry) -> String {
+    use chrono::TimeZone;
+    match chrono::Local.timestamp_opt(e.mtime, 0).single() {
+        Some(t) if e.mtime > 0 => {
+            if e.modified.contains(':') { t.format("%-d %b %Y, %H:%M").to_string() } else { t.format("%-d %b %Y").to_string() }
+        }
+        _ => e.modified.clone(),
+    }
+}
+
+/// A small colored tag ("Newer").
+fn tag(ui: &mut egui::Ui, text: &str, color: Color32) {
+    egui::Frame::NONE.fill(color.gamma_multiply(0.22)).corner_radius(rivet_look::theme::r_xs()).inner_margin(egui::Margin::symmetric(6, 1)).show(ui, |ui| {
+        ui.label(egui::RichText::new(text).size(11.0).color(ui.visuals().strong_text_color()));
+    });
+}
+
 /// `secret` that can take the keyboard (`focus`).
 fn secret_focused(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32, accent: Color32, focus: bool) -> bool {
     let enter = secret(ui, id, text, hint, width, accent);
@@ -744,23 +771,81 @@ impl FtpApp {
                         next = Some(Prompt::EditConflict(i));
                     }
                 }
-                Prompt::Replace(p) => {
+                Prompt::Replace(mut p) => {
+                    let v = ui.visuals().clone();
+                    let weak = v.weak_text_color();
                     let n = p.clashes.len();
-                    let place = if p.dir == Dir::Up { "on the server" } else { "on this computer" };
+                    let (place, from, there) = if p.dir == Dir::Up { ("on the server", "From this computer", "On the server") } else { ("on this computer", "From the server", "On this computer") };
+                    ui.set_width(460.0);
                     ui.heading(if n == 1 { format!("\"{}\" is already {place}", p.clashes[0]) } else { format!("{n} items are already {place}") });
-                    ui.add_space(6.0);
-                    ui.label("Replace them with the ones you're sending?");
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("Compare them, then choose what to do.").color(weak));
                     ui.add_space(10.0);
-                    let (mut replace, mut skip, mut cancel) = (false, false, false);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        replace = primary(ui, "Replace");
-                        if p.items.len() > n {
-                            skip = plain(ui, "Skip those");
+                    let mut older = 0;
+                    egui::ScrollArea::vertical().max_height(300.0).auto_shrink([false, true]).show(ui, |ui| {
+                        for name in &p.clashes {
+                            let Some(src) = p.items.iter().find(|e| e.name == *name) else { continue };
+                            let Some(dst) = p.existing.iter().find(|e| e.name == *name) else { continue };
+                            let newer = compare_times(src, dst);
+                            if newer == std::cmp::Ordering::Less || newer == std::cmp::Ordering::Equal {
+                                older += 1;
+                            }
+                            egui::Frame::NONE.fill(v.faint_bg_color).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(14, 10)).show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.add(egui::Label::new(egui::RichText::new(name).strong()).truncate());
+                                ui.add_space(4.0);
+                                egui::Grid::new(("clash", name.as_str())).num_columns(3).spacing([16.0, 4.0]).show(ui, |ui| {
+                                    for (label, e, is_newer) in [(from, src, newer == std::cmp::Ordering::Greater), (there, dst, newer == std::cmp::Ordering::Less)] {
+                                        ui.label(egui::RichText::new(label).color(weak));
+                                        ui.label(if e.is_dir { "Folder".to_string() } else { crate::listing::human_size(e.size) });
+                                        ui.horizontal(|ui| {
+                                            ui.label(full_date(e));
+                                            if is_newer {
+                                                tag(ui, "Newer", status(ctx).success);
+                                            }
+                                        });
+                                        ui.end_row();
+                                    }
+                                });
+                                let note = match (newer, src.size == dst.size && !src.is_dir) {
+                                    (std::cmp::Ordering::Equal, true) => Some("Same size and time: probably the same file."),
+                                    (std::cmp::Ordering::Equal, false) => Some("Same time, different size."),
+                                    _ => None,
+                                };
+                                if let Some(t) = note {
+                                    ui.add_space(2.0);
+                                    ui.label(egui::RichText::new(t).small().color(weak));
+                                }
+                            });
+                            ui.add_space(6.0);
                         }
+                    });
+                    ui.add_space(8.0);
+                    let (mut replace, mut newer_only, mut skip, mut cancel) = (false, false, false, false);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        replace = primary(ui, if n == 1 { "Replace" } else { "Replace All" });
+                        // Only worth offering when it would leave some out and send others.
+                        if older > 0 && older < n {
+                            newer_only = ui.add(egui::Button::new("Replace Older").corner_radius(r_sm())).on_hover_text("Replace only what's older than what you're sending").clicked();
+                        }
+                        skip = plain(ui, if p.items.len() > n { "Skip These" } else { "Keep Theirs" });
                         cancel = plain(ui, "Cancel");
                     });
-                    if replace || skip {
-                        self.enqueue(p, replace);
+                    if replace {
+                        self.enqueue(p, true);
+                    } else if newer_only {
+                        // Keep the ones that are as new or newer there; replace the rest.
+                        let keep: Vec<String> = p.clashes.iter().filter(|name| {
+                            let src = p.items.iter().find(|e| &e.name == *name);
+                            let dst = p.existing.iter().find(|e| &e.name == *name);
+                            matches!((src, dst), (Some(s), Some(d)) if compare_times(s, d) != std::cmp::Ordering::Greater)
+                        }).cloned().collect();
+                        p.clashes = keep;
+                        self.enqueue(p, false);
+                    } else if skip {
+                        if p.items.len() > n {
+                            self.enqueue(p, false);
+                        }
                     } else if !(cancel || esc) {
                         next = Some(Prompt::Replace(p));
                     }
