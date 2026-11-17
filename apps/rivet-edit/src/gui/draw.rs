@@ -673,7 +673,7 @@ impl EditApp {
         let weak = v.weak_text_color();
         let ws_icon = self.icon(&ctx, &["folder-symbolic"], 14.0);
         let bar = ui.max_rect();
-        let cmdline_open = self.s.vim_keys && self.vim.cmdline.is_some();
+        let cmdline_open = self.vim_center_busy();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             if let Some(w) = self.workspace_name() {

@@ -164,8 +164,7 @@ impl EditApp {
         }
     }
 
-    /// The status bar's Vim part, on the right: the mode as a coloured tag, and keys typed
-    /// toward a command just before it.
+    /// The status bar's Vim part, on the right: the mode as a coloured tag.
     pub(crate) fn vim_mode_tag(&self, ui: &mut egui::Ui) {
         if !self.s.vim_keys || self.tabs.is_empty() {
             return;
@@ -189,43 +188,75 @@ impl EditApp {
         ui.painter().galley(pos, g.clone(), fg);
         ui.painter().galley(pos + egui::Vec2::new(0.45, 0.0), g, fg);
         resp.on_hover_text("Vim keys: Esc for Normal, i for Insert, v or V to select, : for commands");
-        let typed = self.vim.typed();
-        if !typed.is_empty() {
-            ui.label(egui::RichText::new(typed).monospace().color(v.text_color()));
-        }
     }
 
-    /// The `:` / `/` line, in the middle of the status bar while it's being typed.
+    /// Whether something shows in the middle of the status bar (the `:` / `/` line, or a
+    /// Normal-mode command being typed).
+    pub(crate) fn vim_center_busy(&self) -> bool {
+        self.s.vim_keys && (self.vim.cmdline.is_some() || !self.vim.typed().is_empty())
+    }
+
+    /// The middle of the status bar: the `:` / `/` line while it's typed, or the keys of a
+    /// Normal-mode command not finished yet ("2d", "ci") with what it's waiting for.
     pub(crate) fn vim_cmdline(&self, ui: &egui::Ui, bar: egui::Rect) {
-        let Some((k, line)) = &self.vim.cmdline else { return };
         if !self.s.vim_keys {
             return;
         }
+        let typed = self.vim.typed();
+        let (prompt, line, hint, editing) = match &self.vim.cmdline {
+            Some((k, line)) => (k.to_string(), line.clone(), if *k == ':' { "Enter runs it · Esc cancels" } else { "Enter searches · Esc cancels" }, true),
+            None if !typed.is_empty() => (String::new(), typed.clone(), pending_hint(&typed), false),
+            None => return,
+        };
         let v = ui.visuals().clone();
         let accent = self.accent();
         let font = egui::FontId::monospace(12.5);
-        let gk = ui.painter().layout_no_wrap(k.to_string(), font.clone(), accent);
-        let gl = ui.painter().layout_no_wrap(line.clone(), font.clone(), v.strong_text_color());
-        let w = (gk.size().x + gl.size().x + 34.0).max(280.0).min(bar.width() * 0.5);
+        let gk = ui.painter().layout_no_wrap(prompt, font.clone(), accent);
+        let gl = ui.painter().layout_no_wrap(line.clone(), font, v.strong_text_color());
+        let gh = ui.painter().layout_no_wrap(hint.to_string(), egui::FontId::proportional(11.5), v.weak_text_color());
+        // Room for the hint as well when it shows.
+        let show_hint = line.is_empty() || !editing;
+        let need = gk.size().x + gl.size().x + 34.0 + if show_hint { gh.size().x + 14.0 } else { 0.0 };
+        let w = need.max(280.0).min(bar.width() * 0.6);
         let r = egui::Rect::from_center_size(bar.center(), egui::Vec2::new(w, 22.0));
         let p = ui.painter().with_clip_rect(bar.expand(4.0));
         p.rect_filled(r, rivet_look::theme::r_md(), rivet_look::palette::mix(v.panel_fill, v.text_color(), 0.07));
-        p.rect_stroke(r, rivet_look::theme::r_md(), egui::Stroke::new(1.0, accent.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+        let edge = if editing { accent.gamma_multiply(0.7) } else { accent.gamma_multiply(0.35) };
+        p.rect_stroke(r, rivet_look::theme::r_md(), egui::Stroke::new(1.0, edge), egui::StrokeKind::Inside);
         let x = r.left() + 12.0;
         let y = r.center().y;
-        p.galley(egui::Pos2::new(x, y - gk.size().y / 2.0), gk.clone(), accent);
-        let tx = x + gk.size().x + 4.0;
+        let kw = gk.size().x;
+        p.galley(egui::Pos2::new(x, y - gk.size().y / 2.0), gk, accent);
+        let tx = x + kw + if kw > 0.0 { 4.0 } else { 0.0 };
         let lw = gl.size().x;
         p.with_clip_rect(r.shrink(2.0)).galley(egui::Pos2::new(tx, y - gl.size().y / 2.0), gl, v.strong_text_color());
         // The caret.
         let cx = (tx + lw + 1.0).min(r.right() - 8.0);
         p.line_segment([egui::Pos2::new(cx, y - 7.0), egui::Pos2::new(cx, y + 7.0)], egui::Stroke::new(1.5, accent));
-        let hint = match k {
-            ':' => "Enter runs it · Esc cancels",
-            _ => "Enter searches · Esc cancels",
-        };
-        if line.is_empty() {
-            p.text(egui::Pos2::new(cx + 8.0, y), egui::Align2::LEFT_CENTER, hint, egui::FontId::proportional(11.5), v.weak_text_color());
+        if show_hint {
+            p.with_clip_rect(r.shrink(2.0)).galley(egui::Pos2::new(cx + 8.0, y - gh.size().y / 2.0), gh, v.weak_text_color());
         }
+    }
+}
+
+/// What a half-typed Normal-mode command is waiting for.
+fn pending_hint(typed: &str) -> &'static str {
+    let op = typed.trim_start_matches(|c: char| c.is_ascii_digit());
+    let mut cs = op.chars();
+    match (cs.next(), cs.next()) {
+        (None, _) => "a count: now a motion or command",
+        (Some('d'), None) => "delete: a motion (w, $, j…), iw, i( …, or d for the line",
+        (Some('c'), None) => "change: a motion, iw, i\" …, or c for the line",
+        (Some('y'), None) => "copy: a motion, iw, i( …, or y for the line",
+        (Some('>'), None) => "indent: a motion, or > for the line",
+        (Some('<'), None) => "outdent: a motion, or < for the line",
+        (Some(_), Some('i')) => "inside: w, \", ', (, {, [, <",
+        (Some(_), Some('a')) => "around: w, \", ', (, {, [, <",
+        (Some('g'), _) => "g: g for the top, J to join without a space",
+        (Some('f' | 't' | 'F' | 'T'), _) => "to the next character you type",
+        (Some('r'), _) => "replace with the character you type",
+        (Some('z'), _) => "z: z to bring the line into view",
+        (Some(_), Some('f' | 't' | 'F' | 'T')) => "to the character you type",
+        _ => "Esc cancels",
     }
 }
