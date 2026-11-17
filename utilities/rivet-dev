@@ -40,6 +40,7 @@ Using your build
 
 Docs and checks
   screenshots                      Regenerate the README screenshots (sample home folder)
+  notes-screenshots                Regenerate Rivet Notes' screenshots (demo vault)
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
   qa                               Open every dialog and mode looking for crashes, then run the
                                    common file workflows (all in a throwaway home folder)
@@ -62,6 +63,7 @@ case "$cmd" in
     install)       exec sh "$LIB/install.sh" "$@" ;;
     link)          exec sh "$LIB/link.sh" "$@" ;;
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;
+    notes-screenshots) exec sh "$LIB/notes-screenshots.sh" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
     qa)            exec sh "$LIB/qa.sh" "$@" ;;
     help|-h|--help) usage ;;

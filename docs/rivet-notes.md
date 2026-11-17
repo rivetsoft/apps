@@ -7,7 +7,7 @@ Markdown notes kept in plain folders, built on the same shared parts as Rivet Fi
 (theme and desktop colors, icons, fonts, in-app windows, Markdown coloring). It's an original app
 in the same family as other folder-based note apps.
 
-**Status:** first version. Open the window with `rivet-notes` (or `rivet-notes FOLDER`).
+**Status:** getting ready for a first version (0.1.0). Screenshots: `utilities/rivet-dev notes-screenshots`. Open the window with `rivet-notes` (or `rivet-notes FOLDER`).
 
 ## Vaults
 

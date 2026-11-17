@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Notes
+GenericName=Notes
+Comment=Markdown notes in plain folders, with tags, links and todos
+Exec=rivet-notes %F
+Icon=rivet-notes
+Terminal=false
+Categories=Office;TextEditor;
+Keywords=notes;markdown;vault;todo;wiki;
+MimeType=text/markdown;
+StartupWMClass=rivet-notes

@@ -22,6 +22,8 @@ const HELP: &str = "Rivet Notes: Markdown notes in plain folders, with frontmatt
 Usage:
   rivet-notes [FOLDER]        Open the window (on FOLDER as the vault, or the last one)
   rivet-notes tags [FOLDER]   List the tags in a vault, with how many notes have each
+  rivet-notes --install-desktop-entry
+                              Add Rivet Notes to the app launcher (for this user)
   rivet-notes -h, --help      This help
   rivet-notes -V, --version   The version
 
@@ -30,7 +32,8 @@ Folders and files starting with a dot (.git, .obsidian) are left out.";
 
 /// Sample notes for screenshot runs (checks never show the person's own vaults).
 fn sample_vault() -> Option<PathBuf> {
-    let root = std::env::temp_dir().join(format!("rivet-notes-sample-{}", std::process::id()));
+    // A plain vault name ("Notes") for the window's title, status bar and breadcrumbs.
+    let root = std::env::temp_dir().join(format!("rivet-notes-sample-{}", std::process::id())).join("Notes");
     let files: [(&str, &str); 6] = [
         ("Welcome.md", "---\ntitle: Welcome\ntags: [start]\ncreated: 2026-11-16 09:00\n---\n# Welcome\n\nThis vault is just a folder of **Markdown** files. Properties live in each note's *frontmatter*.\n\n## Getting started\n\n- Browse by folder or by tag\n- Search with Ctrl+F, or jump with `Ctrl+P`\n- [x] Open the vault\n- [ ] Write a [[Inbox]] note\n\n> Notes are plain files, so any app can read them.\n\n---\n\nMore at [the docs](https://example.org/rivet). #start\n"),
         ("Inbox.md", "Ideas to sort later. #todo\n\n- Look at sync options\n- Try the light theme\n\n- [ ] Plain todo, not a super one\n- [ ] Back up the vault #task #chores priority:high\n- [/] Reply to Sam #task #people due:2026-11-17\n- [x] Pick a theme #task\n"),
@@ -45,6 +48,23 @@ fn sample_vault() -> Option<PathBuf> {
         std::fs::write(&p, text).ok()?;
     }
     Some(root)
+}
+
+/// The launcher entry and icon, in the user's data folder, running this program.
+fn install_desktop_entry() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("couldn't find this program: {e}"))?;
+    let data = rivet_xdg::places::data_home();
+    let entry = data.join("applications/rivet-notes.desktop");
+    let icon = data.join("icons/hicolor/scalable/apps/rivet-notes.svg");
+    let text = include_str!("../data/rivet-notes.desktop").replace("Exec=rivet-notes", &format!("Exec=\"{}\"", exe.display()));
+    for (p, body) in [(&entry, text.as_str()), (&icon, gui::ICON_SVG)] {
+        if let Some(d) = p.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(p, body).map_err(|e| format!("couldn't write {}: {e}", p.display()))?;
+    }
+    let _ = std::process::Command::new("update-desktop-database").arg(data.join("applications")).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    Ok(entry)
 }
 
 fn main() -> ExitCode {
@@ -64,6 +84,18 @@ fn main() -> ExitCode {
         Some("-V" | "--version" | "version") => {
             println!("rivet-notes {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
+        }
+        Some("--install-desktop-entry") => {
+            return match install_desktop_entry() {
+                Ok(p) => {
+                    println!("Added {}", p.display());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("rivet-notes: {e}");
+                    ExitCode::FAILURE
+                }
+            };
         }
         Some("tags") => {
             let dir = args.get(1).map(PathBuf::from).or_else(|| settings::Settings::load().vaults.into_iter().next());
@@ -94,7 +126,12 @@ fn main() -> ExitCode {
         if open.is_none() && std::env::var_os("RIVET_NOTES_EMPTY").is_none() {
             open = sample_vault();
         }
-        rivet_kit::headless::run([1100.0, 700.0], move |cc| Box::new(gui::NotesApp::new(cc, open, screenshot)));
+        // RIVET_SHOT_SIZE=WxH for documentation pictures (1100x700 by default).
+        let size = std::env::var("RIVET_SHOT_SIZE").ok().and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some([w.parse().ok()?, h.parse().ok()?])
+        });
+        rivet_kit::headless::run(size.unwrap_or([1100.0, 700.0]), move |cc| Box::new(gui::NotesApp::new(cc, open, screenshot)));
         return ExitCode::SUCCESS;
     }
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet Notes").with_app_id("rivet-notes").with_inner_size([1100.0, 720.0]).with_min_inner_size([620.0, 400.0]);

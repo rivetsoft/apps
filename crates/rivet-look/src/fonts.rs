@@ -175,7 +175,11 @@ pub fn resolve(choice: &str) -> Option<(String, PathBuf)> {
             return Some((fam, p));
         }
     if let Some(p) = file_for("sans-serif").or_else(common_sans) {
-        let name = p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Sans".into());
+        // Its family name (as fontconfig knows it), so its bold face can be found too.
+        let name = run("fc-scan", &["-f", "%{family[0]}", &p.to_string_lossy()])
+            .map(|n| n.trim().to_string())
+            .filter(|n| !n.is_empty())
+            .unwrap_or_else(|| p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Sans".into()));
         return Some((name, p));
     }
     None

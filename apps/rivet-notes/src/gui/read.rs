@@ -45,6 +45,8 @@ struct Pen<'a> {
     dir: PathBuf,
     images: &'a mut HashMap<PathBuf, Option<egui::TextureHandle>>,
     act: Option<Act>,
+    /// The todo tags (super todos module on): their tasks show a due pill and flag, not text.
+    todo_tags: Vec<String>,
 }
 
 impl Pen<'_> {
@@ -255,6 +257,9 @@ impl Pen<'_> {
                                     let s = Stroke::new(1.6, Color32::WHITE);
                                     ui.painter().line_segment([c + Vec2::new(-3.5, 0.0), c + Vec2::new(-1.0, 2.8)], s);
                                     ui.painter().line_segment([c + Vec2::new(-1.0, 2.8), c + Vec2::new(3.8, -2.8)], s);
+                                } else if it.doing {
+                                    ui.painter().rect_stroke(b, 3.0, Stroke::new(1.3, self.accent), egui::StrokeKind::Inside);
+                                    ui.painter().rect_filled(Rect::from_min_max(b.min, Pos2::new(b.center().x, b.max.y)).shrink(2.5), 1.5, self.accent);
                                 } else {
                                     ui.painter().rect_stroke(b, 3.0, Stroke::new(1.2, self.weak), egui::StrokeKind::Inside);
                                 }
@@ -272,16 +277,37 @@ impl Pen<'_> {
                             }
                         }
                         ui.add_space(4.0);
-                        ui.vertical(|ui| {
-                            let done = it.task == Some(true);
+                        // A super todo: its words and other tags, then its due date and flag.
+                        let sup = it.task.and_then(|_| crate::tasks::parse_line(0, &format!("- [ ] {}", it.text))).filter(|t| !self.todo_tags.is_empty() && t.is_super(&self.todo_tags));
+                        let words = match &sup {
+                            Some(t) => {
+                                let extra: Vec<String> = t.tags.iter().filter(|g| !self.todo_tags.contains(&g.to_lowercase())).map(|g| format!("#{g}")).collect();
+                                if extra.is_empty() { t.title.clone() } else { format!("{} {}", t.title, extra.join(" ")) }
+                            }
+                            None => it.text.clone(),
+                        };
+                        let done = it.task == Some(true);
+                        let pills_w = sup.as_ref().map(|t| if t.due.is_some() { 120.0 } else { 0.0 } + if t.priority != crate::tasks::Priority::None { 24.0 } else { 0.0 }).unwrap_or(0.0);
+                        let r = ui.vertical(|ui| {
+                            ui.set_max_width((ui.available_width() - pills_w).max(80.0));
                             let fg = self.fg;
                             if done {
                                 self.fg = self.weak;
                             }
-                            let text = if done { format!("~~{}~~", it.text) } else { it.text.clone() };
+                            let text = if done { format!("~~{words}~~") } else { words.clone() };
                             self.line(ui, &text, 1.0);
                             self.fg = fg;
                         });
+                        if let Some(t) = sup {
+                            let y = r.response.rect.top() + h / 2.0 + 2.0;
+                            let mut x = r.response.rect.right() + 10.0;
+                            if let Some(d) = t.due {
+                                x = super::todos::due_pill(ui.painter(), Pos2::new(x, y), d, done, self.size).right() + 8.0;
+                            }
+                            if t.priority != crate::tasks::Priority::None {
+                                super::todos::flag(ui.painter(), Pos2::new(x + 4.0, y), super::todos::priority_color(ui.ctx(), t.priority, self.weak));
+                            }
+                        }
                     });
                     ui.add_space(2.0);
                 }
@@ -393,6 +419,7 @@ impl NotesApp {
         let v = ctx.global_style().visuals.clone();
         let accent = self.look.accent(&self.choice());
         let code_bg = palette::mix(v.extreme_bg_color, v.text_color(), 0.06);
+        let todo_tags = if self.s.super_todos { self.todo_tags() } else { Vec::new() };
         let mut pen = Pen {
             size: self.s.editor_size * fonts::scale(),
             gap: (self.s.editor_size * fonts::scale() * (self.s.line_spacing - 1.2)).max(2.0),
@@ -405,6 +432,7 @@ impl NotesApp {
             dir: path.parent().map(Path::to_path_buf).unwrap_or_default(),
             images: &mut rd.images,
             act: None,
+            todo_tags,
         };
         let blocks = render::parse(&body);
         let title = fm.as_ref().and_then(|f| f.get("title")).map(|x| x.as_text()).filter(|t| !t.is_empty()).unwrap_or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default());

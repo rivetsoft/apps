@@ -139,7 +139,14 @@ impl NotesApp {
                     ("Characters", format!("{chars}")),
                     ("Lines", format!("{lines}")),
                     ("Reading time", format!("About {minutes} min")),
-                    ("Location", d.path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
+                    ("Location", d.path.parent().map(|p| {
+                        // The home folder as ~.
+                        let home = rivet_xdg::places::home();
+                        match p.strip_prefix(&home) {
+                            Ok(rest) if !home.as_os_str().is_empty() => format!("~/{}", rest.display()),
+                            _ => p.display().to_string(),
+                        }
+                    }).unwrap_or_default()),
                 ]);
             });
             // ---- dates

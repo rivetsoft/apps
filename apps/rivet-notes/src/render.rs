@@ -21,6 +21,8 @@ pub struct Item {
     pub number: Option<u32>,
     /// `[ ]` / `[x]` tasks.
     pub task: Option<bool>,
+    /// A started task (`[/]`).
+    pub doing: bool,
     pub text: String,
 }
 
@@ -155,9 +157,11 @@ pub fn parse(text: &str) -> Vec<Block> {
                     let (task, text) = match rest.get(..4) {
                         Some("[ ] ") => (Some(false), &rest[4..]),
                         Some("[x] " | "[X] ") => (Some(true), &rest[4..]),
+                        Some("[/] ") => (Some(false), &rest[4..]),
                         _ => (None, rest),
                     };
-                    items.push(Item { depth: indent.saturating_sub(base) / 2, number, task, text: text.trim().to_string() });
+                    let doing = rest.starts_with("[/] ");
+                    items.push(Item { depth: indent.saturating_sub(base) / 2, number, task, doing, text: text.trim().to_string() });
                 } else if !l.trim().is_empty() && l.starts_with([' ', '\t']) && let Some(last) = items.last_mut() {
                     // A continuation line of the item above.
                     last.text.push(' ');
