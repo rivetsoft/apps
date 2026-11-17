@@ -275,6 +275,7 @@ impl NotesApp {
         let weak = v.weak_text_color();
         let mut change: Option<TaskChange> = None;
         let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
+        let mut edit_text = false;
         let screen = ctx.content_rect();
         let w = 288.0;
         // Below the task, or above it when there's no room below (its height from last frame).
@@ -394,6 +395,32 @@ impl NotesApp {
                         r.request_focus();
                     }
                 });
+                // ---- footer: edit the words, or make it a plain todo again
+                ui.add_space(6.0);
+                let (sep, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
+                ui.painter().hline(sep.x_range(), sep.center().y, Stroke::new(1.0, weak.gamma_multiply(0.25)));
+                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let down = ui.add(egui::Button::new("     Plain todo").frame_when_inactive(false).corner_radius(r_sm()).min_size(Vec2::new(0.0, 26.0)));
+                    // A down arrow.
+                    let c = Pos2::new(down.rect.left() + 13.0, down.rect.center().y);
+                    let st = Stroke::new(1.4, weak);
+                    ui.painter().line_segment([c + Vec2::new(0.0, -5.0), c + Vec2::new(0.0, 5.0)], st);
+                    ui.painter().line_segment([c + Vec2::new(-4.0, 1.0), c + Vec2::new(0.0, 5.0)], st);
+                    ui.painter().line_segment([c + Vec2::new(4.0, 1.0), c + Vec2::new(0.0, 5.0)], st);
+                    if down.on_hover_text("Make it a plain todo again: drops its todo tag, due date and priority").clicked() {
+                        let triggers = triggers.clone();
+                        change = Some(Box::new(move |i: &mut Item| tasks::downgrade(i, &triggers)));
+                        close = true;
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(egui::Button::new("Edit text").corner_radius(r_sm()).min_size(Vec2::new(0.0, 26.0))).on_hover_text("Put the cursor at the end of the task's line").clicked() {
+                            edit_text = true;
+                            close = true;
+                        }
+                    });
+                });
             });
         });
         ctx.data_mut(|m| m.insert_temp(egui::Id::unique("task-popover-h"), r.response.rect.height()));
@@ -404,6 +431,16 @@ impl NotesApp {
         }
         if let Some(f) = change {
             self.edit_task(pop.line, f);
+        }
+        if edit_text && let Some(d) = self.doc.as_ref() {
+            // The cursor at the end of the task's line, in the text.
+            let id = egui::Id::unique("note-body");
+            let before: usize = d.body.split_inclusive('\n').take(pop.line).map(|l| l.chars().count()).sum();
+            let line_end = before + tasks::line_of(&d.body, pop.line).map(|l| l.trim_end_matches('\r').chars().count()).unwrap_or(0);
+            let mut st = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+            st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(line_end))));
+            st.store(ctx, id);
+            ctx.memory_mut(|m| m.request_focus(id));
         }
         pop.fresh = false;
         if !close {

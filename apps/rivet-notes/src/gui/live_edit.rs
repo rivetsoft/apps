@@ -285,6 +285,17 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 let y = a.center().y;
                 p.circle_filled(Pos2::new((a.left() + b.left()) / 2.0, y), (look.size * 0.17).max(2.2), look.accent);
             }
+            Deco::Super { line, from, to } => {
+                // The task's words and details: a click opens its panel (the line stays rendered).
+                let (a, b) = (at(from), at(to));
+                let right = (b.right() + 150.0).min(out.response.response.rect.right() - 40.0);
+                let r = Rect::from_min_max(Pos2::new(a.left() - 2.0, a.top()), Pos2::new(right.max(a.left() + 40.0), b.bottom()));
+                if pointer.is_some_and(|q| r.contains(q)) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    p.rect_filled(r.expand2(Vec2::new(4.0, 0.0)), rivet_look::theme::r_sm(), look.weak.gamma_multiply(0.08));
+                }
+                boxes.push((r, Hit::Task(line, Pos2::new(a.left() - 2.0, b.bottom() + 6.0))));
+            }
             Deco::Todo { at: c, due, priority, done } => {
                 let a = at(c);
                 let mut x = a.left() + 10.0;

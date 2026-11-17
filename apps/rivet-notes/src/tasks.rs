@@ -161,6 +161,13 @@ pub fn write_line(line: &str, mark: char, tags: &[String], due: Option<NaiveDate
     s
 }
 
+/// Back to a plain todo: no todo tags, due date or priority (its words, other tags and box stay).
+pub fn downgrade(it: &mut Item, triggers: &[String]) {
+    it.tags.retain(|t| !triggers.iter().any(|g| g.eq_ignore_ascii_case(t)));
+    it.due = None;
+    it.priority = Priority::None;
+}
+
 /// `body` with line `n` replaced (keeping its line ending).
 pub fn replace_line(body: &str, n: usize, new: &str) -> Option<String> {
     let mut out = String::with_capacity(body.len() + new.len());
@@ -201,6 +208,13 @@ mod tests {
         assert!(parse_line(0, "- not a task").is_none());
         let it = parse_line(0, "- [/] half way #task").unwrap();
         assert!(it.doing && !it.done && it.mark() == '/');
+    }
+
+    #[test]
+    fn downgrades_to_a_plain_todo() {
+        let mut it = parse_line(0, "- [/] Ship it #task #work due:2026-12-01 priority:high").unwrap();
+        downgrade(&mut it, &["task".into()]);
+        assert_eq!(write_line(&it.raw, it.mark(), &it.tags, it.due, it.priority), "- [/] Ship it #work");
     }
 
     #[test]

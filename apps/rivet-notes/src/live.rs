@@ -51,6 +51,8 @@ pub enum Deco {
     Check { at: usize, done: bool, doing: bool, byte: usize },
     /// A super todo's details, drawn after its text (at this character).
     Todo { at: usize, due: Option<chrono::NaiveDate>, priority: crate::tasks::Priority, done: bool },
+    /// A super todo's text (characters `from..to` on line `line`): clicking it opens its panel.
+    Super { line: usize, from: usize, to: usize },
     /// A quote bar at this character (the `>`).
     Quote(usize),
     /// A horizontal rule on the line starting at this character.
@@ -260,6 +262,7 @@ pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize
             while last > rest && (st[last - 1].hide != Hide::No || text.as_bytes()[last - 1].is_ascii_whitespace()) {
                 last -= 1;
             }
+            decos.push(Deco::Super { line: i, from: char_at(rest), to: char_at(last) });
             if it.due.is_some() || it.priority != crate::tasks::Priority::None {
                 decos.push(Deco::Todo { at: char_at(last), due: it.due, priority: it.priority, done: it.done });
             }
