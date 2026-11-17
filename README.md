@@ -1,4 +1,10 @@
-<img src="apps/rivet-files/data/rivet-files.svg" width="96" alt="Rivet icon">
+<p>
+  <img src="apps/rivet-files/data/rivet-files.svg" width="88" alt="Rivet Files icon">
+  &nbsp;
+  <img src="apps/rivet-ftp/data/rivet-ftp.svg" width="88" alt="Rivet FTP icon">
+  &nbsp;
+  <img src="apps/rivet-notes/data/rivet-notes.svg" width="88" alt="Rivet Notes icon">
+</p>
 
 # Rivet Apps
 
