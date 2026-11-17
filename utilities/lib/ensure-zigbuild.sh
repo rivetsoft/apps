@@ -1,8 +1,10 @@
 # Pinned Zig and cargo-zigbuild, downloaded once into the Rivet build cache.
-# Source this from a script that has set ROOT to the repository root.
+# Source this from a script; ROOT is the repository root (worked out here when not set).
 # The linker is Zig's, so the host glibc (Fedora 44's 2.43, say) is not what
 # the release binary records for atan2f / acosf.
-: "${ROOT:?ROOT must be set to the repository root}"
+if [ -z "${ROOT:-}" ]; then
+    ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+fi
 
 ZIG_VERSION=0.15.1
 # https://ziglang.org/download/index.json → 0.15.1 x86_64-linux shasum

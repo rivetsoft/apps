@@ -43,6 +43,7 @@ done
 
 RIVET_PKG=$PKG ./utilities/lib/portable-build.sh
 BIN_PATH=$(RIVET_PKG=$PKG ./utilities/lib/portable-bin.sh)
+ROOT=$(pwd)
 # shellcheck disable=SC1091
 . ./utilities/lib/ensure-zigbuild.sh
 mkdir -p dist
