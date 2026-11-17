@@ -101,48 +101,58 @@ fn readable(c: Color32, bg: Color32) -> Color32 {
 }
 
 impl TermColors {
-    /// From the app's theme: its background and text, Rivet's sixteen leaning toward the accent.
+    /// From the app's theme, the way Rivet Edit colours code by default: Rivet's default code
+    /// palette tinted toward the accent (`rivet_look::highlight::colors`, shared by every Rivet
+    /// app that shows code), so the terminal's colours match the editor's.
     pub fn from_theme(bg: Color32, fg: Color32, accent: Color32) -> TermColors {
+        use rivet_look::builtin_icons::{derive_secondary, derive_tertiary};
+        let code = rivet_look::highlight::colors(fg, bg, accent, derive_secondary(accent), derive_tertiary(accent));
         let dark = luminance(bg) < 0.5;
-        let base = if dark { BASE_DARK } else { BASE_LIGHT };
-        let mut ansi = base;
-        for (i, c) in ansi.iter_mut().enumerate() {
-            *c = match i {
-                // Black and white follow the background and the text.
-                0 => mix(bg, fg, if dark { 0.12 } else { 0.85 }),
-                8 => mix(bg, fg, 0.42),
-                7 => mix(fg, bg, if dark { 0.12 } else { 0.45 }),
-                15 => if dark { fg } else { mix(bg, fg, 0.18) },
-                _ => readable(mix(*c, accent, 0.14), bg),
-            };
-        }
-        TermColors { bg, fg, cursor: accent, selection: mix(bg, accent, if dark { 0.38 } else { 0.3 }), ansi }
+        let mut t = Self::from_code(bg, fg, dark, &code);
+        t.cursor = accent;
+        t.selection = mix(bg, accent, if dark { 0.38 } else { 0.3 });
+        t
     }
 
-    /// From a colour scheme: its background, text and syntax colours; the hues it lacks come
-    /// from Rivet's sixteen, leaning toward it.
+    /// From a colour scheme: its background, text and syntax colours.
     pub fn from_scheme(s: &Scheme) -> TermColors {
-        let (bg, fg) = (s.bg(), s.fg());
-        let dark = s.dark;
-        let c = s.colors();
+        Self::from_code(s.bg(), s.fg(), s.dark, &s.colors())
+    }
+
+    /// The sixteen from a set of code colours: each ANSI hue takes the code colour nearest it
+    /// (keywords, strings, numbers, functions, types); the hues it lacks come from Rivet's
+    /// sixteen, leaning toward the code colours.
+    fn from_code(bg: Color32, fg: Color32, dark: bool, c: &rivet_look::highlight::Colors) -> TermColors {
         let own = [c.keyword, c.string, c.number, c.function, c.type_];
         let base = if dark { BASE_DARK } else { BASE_LIGHT };
         // The scheme's average colour, to tint what it doesn't have.
         let avg = own.iter().fold((0u32, 0u32, 0u32), |a, c| (a.0 + c.r() as u32, a.1 + c.g() as u32, a.2 + c.b() as u32));
         let avg = Color32::from_rgb((avg.0 / 5) as u8, (avg.1 / 5) as u8, (avg.2 / 5) as u8);
         let mut ansi = base;
-        let mut used = [false; 5];
-        // Red, yellow, green, cyan, blue, magenta: the scheme's closest colour when near enough.
-        for (i, want) in [(1, 0.0), (3, 55.0), (2, 115.0), (6, 180.0), (4, 220.0), (5, 290.0)] {
-            let best = own.iter().enumerate().filter(|(k, _)| !used[*k]).filter_map(|(k, c)| hue_of(*c).map(|h| (k, *c, hue_gap(h, want)))).min_by(|a, b| a.2.total_cmp(&b.2));
-            ansi[i] = match best {
-                Some((k, col, gap)) if gap <= 32.0 => {
-                    used[k] = true;
-                    col
+        // Red, yellow, green, cyan, blue, magenta: each takes the nearest code colour, the
+        // closest pairs first (so a yellowish green still goes to green when yellow has gold).
+        let slots = [(1usize, 0.0f32), (3, 55.0), (2, 115.0), (6, 180.0), (4, 220.0), (5, 290.0)];
+        let mut pairs: Vec<(usize, usize, f32)> = Vec::new();
+        for (si, (_, want)) in slots.iter().enumerate() {
+            for (k, c) in own.iter().enumerate() {
+                if let Some(h) = hue_of(*c) {
+                    pairs.push((si, k, hue_gap(h, *want)));
                 }
-                _ => readable(mix(base[i], avg, 0.22), bg),
-            };
-            ansi[i + 8] = mix(ansi[i], if dark { Color32::WHITE } else { Color32::BLACK }, 0.18);
+            }
+        }
+        pairs.sort_by(|a, b| a.2.total_cmp(&b.2));
+        let (mut slot_got, mut colour_used) = ([None; 6], [false; 5]);
+        for (si, k, gap) in pairs {
+            // Red must stay red (errors), so only a near red takes its place.
+            let limit = if si == 0 { 18.0 } else { 40.0 };
+            if gap <= limit && slot_got[si].is_none() && !colour_used[k] {
+                slot_got[si] = Some(own[k]);
+                colour_used[k] = true;
+            }
+        }
+        for (si, (i, _)) in slots.iter().enumerate() {
+            ansi[*i] = slot_got[si].unwrap_or_else(|| readable(mix(base[*i], avg, 0.22), bg));
+            ansi[i + 8] = mix(ansi[*i], if dark { Color32::WHITE } else { Color32::BLACK }, 0.18);
         }
         ansi[0] = mix(bg, fg, if dark { 0.14 } else { 0.85 });
         ansi[8] = c.comment;
@@ -205,6 +215,15 @@ mod tests {
         let t = TermColors::from_theme(rgb(0x1e1e1e), rgb(0xeeeeee), rgb(0xe66100));
         // Red stays red, green stays green.
         assert!(t.ansi[1].r() > t.ansi[1].g() && t.ansi[2].g() > t.ansi[2].r());
+        // Green is the editor's string colour, blue its function colour (the same defaults).
+        let a = rgb(0xe66100);
+        let code = rivet_look::highlight::colors(rgb(0xeeeeee), rgb(0x1e1e1e), a, rivet_look::builtin_icons::derive_secondary(a), rivet_look::builtin_icons::derive_tertiary(a));
+        assert_eq!(t.ansi[2], code.string);
+        // Red stays a true red even when the theme's orange numbers are near it.
+        assert!(t.ansi[1].r() > 180 && t.ansi[1].g() < 140, "{:?}", t.ansi[1]);
+        for c in [code.keyword, code.function] {
+            assert!(t.ansi[..8].contains(&c), "{c:?}");
+        }
         assert_eq!(t.indexed(16), Color32::from_rgb(0, 0, 0));
         assert_eq!(t.indexed(231), Color32::from_rgb(255, 255, 255));
         assert_eq!(t.indexed(232), Color32::from_rgb(8, 8, 8));
