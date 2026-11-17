@@ -51,7 +51,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
             d.new_prop = Some(String::new());
             changed = true;
         }
-        ui.add_space(8.0);
+        ui.add_space(18.0);
         return changed;
     };
     let mut acts: Vec<Act> = Vec::new();
@@ -264,7 +264,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
             _ => {}
         }
     }
-    ui.add_space(12.0);
+    ui.add_space(24.0);
     changed
 }
 
