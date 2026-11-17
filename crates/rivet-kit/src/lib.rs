@@ -1,6 +1,7 @@
 //! Tools shared by the Rivet apps for checks and screenshots.
 
 pub mod headless;
+pub mod soft;
 pub mod wldrop;
 
 use std::path::PathBuf;

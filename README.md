@@ -8,6 +8,8 @@
   <img src="apps/rivet-edit/data/rivet-edit.svg" width="88" alt="Rivet Edit icon">
   &nbsp;
   <img src="apps/rivet-terminal/data/rivet-terminal.svg" width="88" alt="Rivet Terminal icon">
+  &nbsp;
+  <img src="apps/rivet-shell/data/rivet-shell.svg" width="88" alt="Rivet Shell icon">
 </p>
 
 # Rivet Apps
@@ -75,6 +77,16 @@ Ctrl+letters reach your programs.
 
 ![Rivet Terminal with three panes](docs/screenshots/terminal-wide.png)
 
+### <img src="apps/rivet-shell/data/rivet-shell.svg" width="32" alt=""> Rivet Shell
+
+A desktop shell for Wayland compositors with the layer-shell protocol (niri, Hyprland, Sway and
+others): a panel, a dock, an app launcher, desktop widgets and the wallpaper, which it gives to
+matugen so every app's colors follow it. Settings in the Rivet look.
+**Just started:** not released yet; build it from source.
+[More about Rivet Shell](apps/rivet-shell/README.md)
+
+![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.png)
+
 > **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
@@ -112,6 +124,7 @@ cargo build --release -p rivet-ftp       # Rivet FTP
 cargo build --release -p rivet-notes     # Rivet Notes
 cargo build --release -p rivet-edit      # Rivet Edit
 cargo build --release -p rivet-terminal  # Rivet Terminal
+cargo build --release -p rivet-shell     # Rivet Shell
 cargo build --release --workspace        # everything
 
 ./target/release/rivet [FOLDER]
@@ -139,10 +152,11 @@ it shows what changed, skips apps with nothing new, and asks release, skip or st
 | `apps/rivet-notes` | Rivet Notes (early alpha): code, data, changelog |
 | `apps/rivet-edit` | Rivet Edit (just started): code, data, changelog |
 | `apps/rivet-terminal` | Rivet Terminal (just started): code, data, changelog |
+| `apps/rivet-shell` | Rivet Shell (just started): the panel, dock, widgets and wallpaper, and its settings |
 | `crates/rivet-term` | Shared: the terminal (a shell in a pseudo-terminal, drawn as a widget); Rivet Terminal's, and later Rivet Edit's panel |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
 | `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |
-| `crates/rivet-kit` | Shared: in-memory screenshots for checks |
+| `crates/rivet-kit` | Shared: a software renderer for egui (screenshots, and Rivet Shell's surfaces) |
 | `crates/rivet-media` | Shared: previews, thumbnails and the light box |
 | `crates/rivet-connections` | Shared: saved server connections (Rivet FTP's window, its command line, and `ssh`) |
 | `utilities/` | Developer and release scripts (`utilities/rivet-dev`) |

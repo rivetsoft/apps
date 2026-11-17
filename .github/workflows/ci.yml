@@ -19,9 +19,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The tests read the desktop's file-type database (shared-mime-info).
-      - name: Install file-type database
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shared-mime-info
+      # The tests read the desktop's file-type database (shared-mime-info); Rivet Shell's keyboard
+      # handling links libxkbcommon.
+      - name: Install file-type database and keyboard library
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends shared-mime-info libxkbcommon-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Shell Settings
+GenericName=Desktop Settings
+Comment=Wallpaper, panel, dock and widgets for Rivet Shell
+Exec=rivet-shell settings
+Icon=rivet-shell
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=wallpaper;panel;dock;widgets;shell;desktop;matugen;
+StartupWMClass=rivet-shell-settings

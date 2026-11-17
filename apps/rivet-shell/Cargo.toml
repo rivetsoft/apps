@@ -1,0 +1,28 @@
+[package]
+name = "rivet-shell"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A desktop shell for Wayland compositors (niri, Hyprland, Sway and others with the layer-shell protocol): panel, dock, desktop widgets, wallpaper with matugen colours, and settings, in the Rivet apps' look"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/ulinaaron/rivet-apps"
+publish = false
+
+[[bin]]
+name = "rivet-shell"
+path = "src/main.rs"
+
+[dependencies]
+rivet-kit = { path = "../../crates/rivet-kit" }
+rivet-look = { path = "../../crates/rivet-look" }
+rivet-xdg = { path = "../../crates/rivet-xdg" }
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+# The shell's surfaces: wlr layer shell over Wayland, drawn in software into shared memory.
+smithay-client-toolkit = "0.20"
+wayland-client = "0.31"
+calloop = "0.14"
+calloop-wayland-source = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+chrono = "0.4.45"
+serde_json = "1"
+libc = "0.2.191"
