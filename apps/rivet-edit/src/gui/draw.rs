@@ -57,20 +57,28 @@ impl EditApp {
         let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: if side { 0 } else { 12 }, right: 12, top: 0, bottom: if self.s.show_statusbar { 0 } else { 12 } });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();
-            ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
-            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::top_down(egui::Align::Min)));
             if self.tabs.is_empty() {
+                ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::top_down(egui::Align::Min)));
                 self.welcome(&mut child);
             } else {
-                // The tabs are part of the window (the app's look); the code below them takes
-                // the color scheme's.
+                // The tabs sit on the window, like the sidebar (the app's look); the code card
+                // below them takes the color scheme's.
+                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::top_down(egui::Align::Min)));
                 self.tab_strip(&mut child);
                 let rest = Rect::from_min_max(Pos2::new(r.left(), child.cursor().top()), r.max);
                 let mut code = ui.new_child(egui::UiBuilder::new().max_rect(rest).layout(egui::Layout::top_down(egui::Align::Min)));
-                if let Some(sv) = self.scheme().map(|s| s.visuals(&v)) {
-                    ui.painter().rect_filled(rest, egui::CornerRadius { nw: 0, ne: 0, sw: r_lg(), se: r_lg() }, sv.extreme_bg_color);
-                    code.style_mut().visuals = sv;
-                }
+                let fill = match self.scheme().map(|s| s.visuals(&v)) {
+                    Some(sv) => {
+                        let f = sv.extreme_bg_color;
+                        code.style_mut().visuals = sv;
+                        f
+                    }
+                    None => v.extreme_bg_color,
+                };
+                ui.painter().rect_filled(rest, r_lg(), fill);
+                // The scroll fades would take the window's color, not the code's.
+                code.spacing_mut().scroll.fade.strength = 0.0;
                 self.editor(&mut code);
             }
         });
@@ -324,15 +332,14 @@ impl EditApp {
         let mut close = None;
         let mut keep = None;
         let icons: Vec<Option<egui::TextureHandle>> = (0..self.tabs.len()).map(|i| self.file_icon(&ctx, &self.tabs[i].name(), 14.0)).collect();
-        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 40.0));
-        ui.painter().line_segment([strip.left_bottom() + Vec2::new(12.0, 0.0), strip.right_bottom() - Vec2::new(12.0, 0.0)], Stroke::new(1.0, palette::mix(v.extreme_bg_color, v.text_color(), 0.08)));
+        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 36.0));
         // Too many tabs to fit: they scroll sideways with no scroll bar over them; < and >
         // buttons at the end, the mouse wheel, and a newly chosen tab is brought into view.
         let over_id = egui::Id::unique("edit-tabs-overflow");
         let overflow = ctx.data(|d| d.get_temp::<bool>(over_id)).unwrap_or(false);
         let arrows_w = if overflow { 62.0 } else { 0.0 };
-        // 2 points under the tabs, above the line.
-        let tabs_rect = Rect::from_min_max(strip.min + Vec2::new(8.0, 0.0), strip.max - Vec2::new(8.0 + arrows_w, 2.0));
+        // 4 points under the tabs, above the code.
+        let tabs_rect = Rect::from_min_max(strip.min, strip.max - Vec2::new(arrows_w, 4.0));
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Max)));
         let wheel = if ui.rect_contains_pointer(tabs_rect) { ctx.input(|i| i.smooth_scroll_delta.y + i.smooth_scroll_delta.x) } else { 0.0 };
         let shown_id = egui::Id::unique("edit-tabs-shown");
@@ -357,15 +364,16 @@ impl EditApp {
                     let fmt = egui::TextFormat { font_id: fonts::ui_font(13.0), color: v.text_color(), italics: t.preview, ..Default::default() };
                     let g = ui.painter().layout_job(egui::text::LayoutJob::single_section(name.clone(), fmt));
                     let w = g.size().x + 64.0;
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click());
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
                     if bring && i == active {
                         ui.scroll_to_rect(r, None);
                     }
                     if on {
-                        ui.painter().rect_filled(r, egui::CornerRadius { nw: r_md(), ne: r_md(), sw: 0, se: 0 }, palette::mix(v.extreme_bg_color, v.text_color(), 0.06));
-                        ui.painter().line_segment([r.left_bottom() + Vec2::new(4.0, -1.0), r.right_bottom() + Vec2::new(-4.0, -1.0)], Stroke::new(2.0, v.selection.bg_fill));
+                        // Raised off the window, like a chosen item in the sidebar.
+                        ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.09 } else { 0.07 }));
+                        ui.painter().line_segment([r.left_bottom() + Vec2::new(10.0, -1.0), r.right_bottom() + Vec2::new(-10.0, -1.0)], Stroke::new(2.0, v.selection.bg_fill));
                     } else if resp.hovered() {
-                        ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill.gamma_multiply(0.5));
+                        ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.05));
                     }
                     if let Some(tex) = &icons[i] {
                         paint_tex(ui.painter(), tex, Rect::from_center_size(Pos2::new(r.left() + 16.0, r.center().y), Vec2::splat(14.0)), Color32::WHITE);
@@ -412,7 +420,7 @@ impl EditApp {
         if overflow {
             // < and >: a step of tabs each way.
             let arrow = |x: f32, left: bool, on: bool| -> bool {
-                let r = Rect::from_center_size(Pos2::new(x, strip.center().y + 1.0), Vec2::new(26.0, 26.0));
+                let r = Rect::from_center_size(Pos2::new(x, tabs_rect.center().y), Vec2::new(26.0, 26.0));
                 let resp = ui.interact(r, egui::Id::unique(("tab-arrow", left)), Sense::click());
                 if on && resp.hovered() {
                     ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
@@ -424,7 +432,7 @@ impl EditApp {
                 ui.painter().line_segment([c + Vec2::new(2.5 * d, 0.0), c + Vec2::new(-2.5 * d, 5.0)], Stroke::new(1.6, col));
                 on && resp.on_hover_text(if left { "Scroll the tabs left" } else { "Scroll the tabs right" }).clicked()
             };
-            let x = strip.right() - 8.0;
+            let x = strip.right();
             if arrow(x - 44.0, true, off > 0.5) {
                 step -= tabs_rect.width() * 0.6;
             }
@@ -441,9 +449,9 @@ impl EditApp {
             ctx.request_repaint();
         }
         // Faded edges where more tabs are hidden.
-        let bg = v.extreme_bg_color;
+        let bg = v.panel_fill;
         let fade = |x_edge: f32, inward: f32| {
-            let r = Rect::from_x_y_ranges(x_edge.min(x_edge + inward)..=x_edge.max(x_edge + inward), strip.top()..=strip.bottom() - 1.0);
+            let r = Rect::from_x_y_ranges(x_edge.min(x_edge + inward)..=x_edge.max(x_edge + inward), tabs_rect.top()..=tabs_rect.bottom());
             let (a, b) = if inward > 0.0 { (bg, Color32::TRANSPARENT) } else { (Color32::TRANSPARENT, bg) };
             let mut mesh = egui::Mesh::default();
             mesh.colored_vertex(r.left_top(), a);
