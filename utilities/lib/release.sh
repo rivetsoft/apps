@@ -28,23 +28,25 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 # Publishing: take in GitHub's commits first (e.g. the automatic "aur: X.Y.Z" one), so the
 # tag goes on a commit that GitHub will accept.
-if [ "$1" = "--publish" ] && git remote get-url origin >/dev/null 2>&1; then
-    git pull --rebase origin main
+. ./utilities/lib/publish.sh
+if [ "$1" = "--publish" ]; then
+    sync_with_github
 fi
 grep -q "^## $VERSION" "$APP/CHANGELOG.md" || { echo "CHANGELOG.md has no section for $VERSION." >&2; exit 1; }
 
-# A published version never moves to a different commit: ask for a new version instead.
+# A published version never moves to a different commit; a release whose tag is on an earlier
+# commit of this branch (publishing cut short) is finished instead of rebuilt.
 HEAD_COMMIT=$(git rev-parse HEAD)
-LOCAL_TAG=$(git rev-parse -q --verify "refs/tags/$TAG^{}" || true)
-REMOTE_TAG=$(git ls-remote origin "refs/tags/$TAG^{}" 2>/dev/null | cut -f1)
-for T in "$LOCAL_TAG" "$REMOTE_TAG"; do
-    if [ -n "$T" ] && [ "$T" != "$HEAD_COMMIT" ]; then
-        echo "$TAG already exists for an earlier commit (it may already be published)." >&2
-        echo "Bump 'version' in Cargo.toml, add a CHANGELOG section for it, commit, and run this again." >&2
+check_tag || { echo "Run utilities/rivet-dev bump, then this again." >&2; exit 1; }
+APPIMAGE="dist/Rivet_Files-$VERSION-$ARCH.AppImage"
+if [ -n "$RESUME" ]; then
+    if [ ! -f "$APPIMAGE" ] || [ ! -f "dist/$NAME.tar.gz" ] || [ ! -f "dist/notes-$VERSION.md" ]; then
+        echo "$TAG is already made, but its files aren't in dist/ any more." >&2
+        echo "Rebuild them from the tag (git checkout $TAG; utilities/rivet-dev release; git checkout main), then run this again." >&2
         exit 1
     fi
-done
-
+    echo "$TAG was made earlier; finishing it (nothing is rebuilt)."
+else
 ./utilities/lib/portable-build.sh
 RIVET_BIN=$(./utilities/lib/portable-bin.sh)
 mkdir -p dist
@@ -96,10 +98,15 @@ EOF
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "Rivet Files $VERSION"
 echo "Built $APPIMAGE and dist/$NAME.tar.gz, tagged $TAG."
+fi
 
 if [ "$1" = "--publish" ]; then
-    git push origin main "$TAG"
-    gh release create "$TAG" "$APPIMAGE" "$APPIMAGE.sha256" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
-        --title "Rivet Files $VERSION" --notes-file "dist/notes-$VERSION.md"
+    push_release
+    if github_release_exists; then
+        echo "GitHub already has the $TAG release."
+    else
+        gh release create "$TAG" "$APPIMAGE" "$APPIMAGE.sha256" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
+            --title "Rivet Files $VERSION" --notes-file "dist/notes-$VERSION.md"
+    fi
     gh release view "$TAG" --json url -q .url
 fi

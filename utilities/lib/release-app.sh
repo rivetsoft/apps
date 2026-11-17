@@ -24,23 +24,26 @@ if [ -n "$(git status --porcelain)" ]; then
     echo "Commit your changes first (the release is built from the current commit)." >&2
     exit 1
 fi
-if [ "$1" = "--publish" ] && git remote get-url origin >/dev/null 2>&1; then
-    git pull --rebase origin main
+. ./utilities/lib/publish.sh
+# Publishing: take in GitHub's newer commits first (merged, never rebased: see publish.sh).
+if [ "$1" = "--publish" ]; then
+    sync_with_github
 fi
 grep -q "^## $VERSION" "$APP/CHANGELOG.md" || { echo "$APP/CHANGELOG.md has no section for $VERSION (run utilities/rivet-dev bump $APP_ID)." >&2; exit 1; }
 
-# A published version never moves to a different commit: ask for a new version instead.
+# A published version never moves to a different commit; a release whose tag is on an earlier
+# commit of this branch (publishing cut short) is finished instead of rebuilt.
 HEAD_COMMIT=$(git rev-parse HEAD)
-LOCAL_TAG=$(git rev-parse -q --verify "refs/tags/$TAG^{}" || true)
-REMOTE_TAG=$(git ls-remote origin "refs/tags/$TAG^{}" 2>/dev/null | cut -f1)
-for T in "$LOCAL_TAG" "$REMOTE_TAG"; do
-    if [ -n "$T" ] && [ "$T" != "$HEAD_COMMIT" ]; then
-        echo "$TAG already exists for an earlier commit (it may already be published)." >&2
-        echo "Run utilities/rivet-dev bump $APP_ID, then this again." >&2
+check_tag || { echo "Run utilities/rivet-dev bump $APP_ID, then this again." >&2; exit 1; }
+NOTES="dist/notes-$DIST_NAME-$VERSION.md"
+if [ -n "$RESUME" ]; then
+    if [ ! -f "dist/$NAME.tar.gz" ] || [ ! -f "$NOTES" ]; then
+        echo "$TAG is already made, but its files aren't in dist/ any more." >&2
+        echo "Rebuild them from the tag (git checkout $TAG; utilities/rivet-dev release $APP_ID; git checkout main), then run this again." >&2
         exit 1
     fi
-done
-
+    echo "$TAG was made earlier; finishing it (nothing is rebuilt)."
+else
 RIVET_PKG=$PKG ./utilities/lib/portable-build.sh
 BIN_PATH=$(RIVET_PKG=$PKG ./utilities/lib/portable-bin.sh)
 ROOT=$(pwd)
@@ -59,7 +62,6 @@ tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
 rm -rf "$STAGE"
 (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
 
-NOTES="dist/notes-$DIST_NAME-$VERSION.md"
 awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "$NOTES"
 cat >> "$NOTES" <<EOF
 
@@ -78,10 +80,15 @@ EOF
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$TITLE $VERSION"
 echo "Built dist/$NAME.tar.gz, tagged $TAG."
+fi
 
 if [ "$1" = "--publish" ]; then
-    git push origin main "$TAG"
-    gh release create "$TAG" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
-        --title "$TITLE $VERSION" --notes-file "$NOTES" --prerelease --latest=false
+    push_release
+    if github_release_exists; then
+        echo "GitHub already has the $TAG release."
+    else
+        gh release create "$TAG" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
+            --title "$TITLE $VERSION" --notes-file "$NOTES" --prerelease --latest=false
+    fi
     gh release view "$TAG" --json url -q .url
 fi

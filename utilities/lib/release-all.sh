@@ -102,7 +102,9 @@ for a in $APPS; do
     version=$(app_version)
     last=$(git describe --tags --abbrev=0 --match "$TAG_PREFIX[0-9]*" 2>/dev/null || true)
     if [ -n "$last" ]; then
-        changes=$(git rev-list --count "$last..HEAD" -- "$APP" crates Cargo.lock)
+        # The app's own code and the shared crates; not the AUR workflow's packaging updates or
+        # Cargo.lock (another app's version bump touches it).
+        changes=$(git rev-list --count --no-merges "$last..HEAD" -- "$APP" crates ":(exclude)$APP/packaging/aur")
     else
         changes=$(git rev-list --count HEAD -- "$APP")
     fi
@@ -110,6 +112,35 @@ for a in $APPS; do
 
     bold "$TITLE"
     say "  version $version · last release ${last:-none yet} · $changes change(s) since"
+    # Made here but publishing was cut short (e.g. GitHub turned main away): offer to finish it.
+    if [ -n "$PUBLISH" ] && [ "$last" = "$TAG_PREFIX$version" ] && command -v gh >/dev/null && ! gh release view "$last" >/dev/null 2>&1; then
+        say "  $last is made, but GitHub has no release for it yet."
+        if [ -n "$DRY" ]; then
+            say "  Would finish publishing $TITLE $version."
+            say
+            continue
+        fi
+        choice=f
+        if [ -z "$YES" ]; then
+            ask "  Finish publishing $TITLE $version? [Enter: yes · s: skip · q: stop]"
+            choice=$REPLY
+        fi
+        case "$choice" in
+            "" | f | y | yes)
+                RIVET_APP=$APP_ID sh ./utilities/lib/release.sh --publish
+                released="$released $APP_ID@$version"
+                say
+                continue ;;
+            q | quit | stop)
+                say "  Stopped."
+                break ;;
+            *)
+                say "  Skipped."
+                skipped="$skipped $APP_ID"
+                say
+                continue ;;
+        esac
+    fi
     if [ -n "$last" ] && [ "$changes" = 0 ]; then
         say "  Nothing new since $last: skipped."
         skipped="$skipped $APP_ID"
