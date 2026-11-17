@@ -769,7 +769,7 @@ impl TermApp {
             ui.spacing_mut().item_spacing.y = 3.0;
         };
         let has_sel = self.focused().and_then(view::selection_text).is_some();
-        ui.menu_button("Terminal", |ui| {
+        ui.menu_button("File", |ui| {
             style(ui);
             if item(ui, "New Tab", "Ctrl+Shift+T", true) {
                 let h = self.here();
@@ -790,9 +790,6 @@ impl TermApp {
                 self.close_tab(self.active, false);
             }
             ui.separator();
-            if item(ui, "Preferences", "Ctrl+,", true) {
-                self.prefs_open = true;
-            }
             if item(ui, "Quit", "", true) {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -814,6 +811,10 @@ impl TermApp {
             }
             if item(ui, "Clear Scrollback", "Ctrl+Shift+K", true) {
                 self.clear_scrollback();
+            }
+            ui.separator();
+            if item(ui, "Preferences", "Ctrl+,", true) {
+                self.prefs_open = true;
             }
         });
         ui.menu_button("View", |ui| {

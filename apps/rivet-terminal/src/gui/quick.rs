@@ -60,11 +60,11 @@ impl TermApp {
         let layout = self.tabs.get(self.active).map(|t| t.layout).unwrap_or_default();
         let mut out = Vec::new();
         let mut add = |group, label: &str, keys, state, cmd| out.push(Action { group, label: label.to_string(), keys, state, cmd });
-        add("Terminal", "New Tab", "Ctrl+Shift+T", None, Cmd::NewTab);
-        add("Terminal", "New Pane", "Ctrl+Shift+Enter", None, Cmd::NewPane);
-        add("Terminal", "New Window", "Ctrl+Shift+N", None, Cmd::NewWindow);
-        add("Terminal", "Close Pane", "Ctrl+Shift+W", None, Cmd::ClosePane);
-        add("Terminal", "Close Tab", "Ctrl+Shift+Q", None, Cmd::CloseTab);
+        add("File", "New Tab", "Ctrl+Shift+T", None, Cmd::NewTab);
+        add("File", "New Pane", "Ctrl+Shift+Enter", None, Cmd::NewPane);
+        add("File", "New Window", "Ctrl+Shift+N", None, Cmd::NewWindow);
+        add("File", "Close Pane", "Ctrl+Shift+W", None, Cmd::ClosePane);
+        add("File", "Close Tab", "Ctrl+Shift+Q", None, Cmd::CloseTab);
         add("Go", "Next Tab", "Ctrl+Shift+Right", None, Cmd::NextTab);
         add("Go", "Previous Tab", "Ctrl+Shift+Left", None, Cmd::PrevTab);
         add("Go", "Next Pane", "Ctrl+Shift+]", None, Cmd::NextPane);
@@ -88,7 +88,7 @@ impl TermApp {
         add("Theme", "Follow System", "", Some(self.s.theme == Mode::System && !self.s.follow_desktop_colors), Cmd::Theme(Mode::System));
         add("Theme", "Light", "", Some(self.s.theme == Mode::Light && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Light));
         add("Theme", "Dark", "", Some(self.s.theme == Mode::Dark && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Dark));
-        add("App", "Preferences", "Ctrl+,", None, Cmd::Preferences);
+        add("Edit", "Preferences", "Ctrl+,", None, Cmd::Preferences);
         add("App", "Keyboard Shortcuts", "", None, Cmd::Keyboard);
         out
     }
