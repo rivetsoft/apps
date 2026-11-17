@@ -165,27 +165,6 @@ pub fn svg(path: &str, color: Color32) -> String {
     format!(r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="{path}" fill="#{:02x}{:02x}{:02x}"/></svg>"##, color.r(), color.g(), color.b())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn kinds_by_name() {
-        assert_eq!(for_file("main.rs").key, "rust");
-        assert_eq!(for_file("Cargo.lock").key, "lock");
-        assert_eq!(for_file("README.md").key, "readme");
-        assert_eq!(for_file("Dockerfile").key, "docker");
-        assert_eq!(for_file("app.TSX").key, "react");
-        assert_eq!(for_file("release").key, "file");
-        assert_eq!(for_folder(".github", false, Color32::RED).path, FOLDER_COG);
-        assert_eq!(for_folder("src", true, Color32::RED).path, FOLDER_OPEN);
-        // Nudged, not replaced.
-        let t = tint(colors::PYTHON, Color32::from_rgb(0xe6, 0x61, 0x00), true);
-        assert!(t.b() > t.r());
-        assert!(crate::icons::render_svg(svg(LANGUAGE_RUST, t).as_bytes(), 32).is_some());
-    }
-}
-
 // ---------------------------------------------------------------- shapes (Material Design Icons)
 
 pub const FOLDER: &str = "M10,4H4C2.89,4 2,4.89 2,6V18A2,2 0 0,0 4,20H20A2,2 0 0,0 22,18V8C22,6.89 21.1,6 20,6H12L10,4Z";
@@ -237,3 +216,24 @@ pub const VUEJS: &str = "M2,3H5.5L12,15L18.5,3H22L12,21L2,3M6.5,3H9.5L12,7.58L14
 pub const HAMMER_WRENCH: &str = "M13.78 15.3L19.78 21.3L21.89 19.14L15.89 13.14L13.78 15.3M17.5 10.1C17.11 10.1 16.69 10.05 16.36 9.91L4.97 21.25L2.86 19.14L10.27 11.74L8.5 9.96L7.78 10.66L6.33 9.25V12.11L5.63 12.81L2.11 9.25L2.81 8.55H5.62L4.22 7.14L7.78 3.58C8.95 2.41 10.83 2.41 12 3.58L9.89 5.74L11.3 7.14L10.59 7.85L12.38 9.63L14.2 7.75C14.06 7.42 14 7 14 6.63C14 4.66 15.56 3.11 17.5 3.11C18.09 3.11 18.61 3.25 19.08 3.53L16.41 6.2L17.91 7.7L20.58 5.03C20.86 5.5 21 6 21 6.63C21 8.55 19.45 10.1 17.5 10.1Z";
 pub const NPM: &str = "M4,10V14H6V11H7V14H8V10H4M9,10V15H11V14H13V10H9M12,11V13H11V11H12M14,10V14H16V11H17V14H18V11H19V14H20V10H14M3,9H21V15H12V16H8V15H3V9Z";
 pub const KEY_VARIANT: &str = "M22,18V22H18V19H15V16H12L9.74,13.74C9.19,13.91 8.61,14 8,14A6,6 0 0,1 2,8A6,6 0 0,1 8,2A6,6 0 0,1 14,8C14,8.61 13.91,9.19 13.74,9.74L22,18M7,5A2,2 0 0,0 5,7A2,2 0 0,0 7,9A2,2 0 0,0 9,7A2,2 0 0,0 7,5Z";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kinds_by_name() {
+        assert_eq!(for_file("main.rs").key, "rust");
+        assert_eq!(for_file("Cargo.lock").key, "lock");
+        assert_eq!(for_file("README.md").key, "readme");
+        assert_eq!(for_file("Dockerfile").key, "docker");
+        assert_eq!(for_file("app.TSX").key, "react");
+        assert_eq!(for_file("release").key, "file");
+        assert_eq!(for_folder(".github", false, Color32::RED).path, FOLDER_COG);
+        assert_eq!(for_folder("src", true, Color32::RED).path, FOLDER_OPEN);
+        // Nudged, not replaced.
+        let t = tint(colors::PYTHON, Color32::from_rgb(0xe6, 0x61, 0x00), true);
+        assert!(t.b() > t.r());
+        assert!(crate::icons::render_svg(svg(LANGUAGE_RUST, t).as_bytes(), 32).is_some());
+    }
+}

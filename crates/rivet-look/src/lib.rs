@@ -13,6 +13,7 @@ pub mod mdi;
 pub mod nerd;
 pub mod palette;
 pub mod quick;
+pub mod schemes;
 pub mod theme;
 pub mod widgets;
 pub mod windows;

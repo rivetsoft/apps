@@ -6,6 +6,8 @@
   <img src="apps/rivet-notes/data/rivet-notes.svg" width="88" alt="Rivet Notes icon">
   &nbsp;
   <img src="apps/rivet-edit/data/rivet-edit.svg" width="88" alt="Rivet Edit icon">
+  &nbsp;
+  <img src="apps/rivet-terminal/data/rivet-terminal.svg" width="88" alt="Rivet Terminal icon">
 </p>
 
 # Rivet Apps
@@ -63,6 +65,16 @@ apps.
 
 ![Rivet Edit with a Rust project open](docs/screenshots/edit-editor-wide.png)
 
+### <img src="apps/rivet-terminal/data/rivet-terminal.svg" width="32" alt=""> Rivet Terminal
+
+A terminal with tabs and split panes in layouts (Tall, Fat, Grid, Side by Side, Stacked), in
+your desktop's colors or any of Rivet Edit's color themes. Its keys use Ctrl+Shift, so plain
+Ctrl+letters reach your programs.
+**Just started:** not released yet; build it from source.
+[More about Rivet Terminal](apps/rivet-terminal/README.md)
+
+![Rivet Terminal with three panes](docs/screenshots/terminal-wide.png)
+
 > **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
@@ -77,6 +89,7 @@ told apart by name and tag:
 | Rivet FTP | `rivet-ftp-v0.1.0` | An archive (pre-release) |
 | Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
 | Rivet Edit | `rivet-edit-v…` | Not released yet: build from source |
+| Rivet Terminal | `rivet-terminal-v…` | Not released yet: build from source |
 
 For Rivet FTP or Rivet Notes, unpack the archive and run its installer, which puts the program in
 `~/.local/bin` and adds it to your app launcher:
@@ -98,12 +111,14 @@ cargo build --release                    # Rivet Files (the default)
 cargo build --release -p rivet-ftp       # Rivet FTP
 cargo build --release -p rivet-notes     # Rivet Notes
 cargo build --release -p rivet-edit      # Rivet Edit
+cargo build --release -p rivet-terminal  # Rivet Terminal
 cargo build --release --workspace        # everything
 
 ./target/release/rivet [FOLDER]
 ./target/release/rivet-ftp
 ./target/release/rivet-notes [VAULT]
 ./target/release/rivet-edit [FOLDER] [FILE...]
+./target/release/rivet-terminal [-d FOLDER] [-e PROGRAM ARGS...]
 ```
 
 `utilities/rivet-dev help` lists the developer tasks: QA, screenshots, packaging and releases.
@@ -120,8 +135,10 @@ one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the def
 | `apps/rivet-ftp` | Rivet FTP (early alpha): code, data, changelog |
 | `apps/rivet-notes` | Rivet Notes (early alpha): code, data, changelog |
 | `apps/rivet-edit` | Rivet Edit (just started): code, data, changelog |
+| `apps/rivet-terminal` | Rivet Terminal (just started): code, data, changelog |
+| `crates/rivet-term` | Shared: the terminal (a shell in a pseudo-terminal, drawn as a widget); Rivet Terminal's, and later Rivet Edit's panel |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
-| `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, in-app windows |
+| `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |
 | `crates/rivet-kit` | Shared: in-memory screenshots for checks |
 | `crates/rivet-media` | Shared: previews, thumbnails and the light box |
 | `crates/rivet-connections` | Shared: saved server connections (Rivet FTP's window, its command line, and `ssh`) |
@@ -136,3 +153,4 @@ The top of the repository is only the Cargo workspace. CI builds, tests and lint
 
 Rivet Edit's file and folder icons are from [Material Design Icons](https://pictogrammers.com/library/mdi/)
 by Pictogrammers, under the Apache License 2.0.
+Rivet Terminal's terminal emulation is [alacritty_terminal](https://github.com/alacritty/alacritty) (Apache License 2.0).

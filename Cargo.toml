@@ -2,6 +2,8 @@
 #   apps/rivet-files   Rivet Files, the file manager (the `rivet` program)
 #   apps/rivet-ftp     Rivet FTP (early alpha)
 #   apps/rivet-notes   Rivet Notes (early alpha)
+#   apps/rivet-edit    Rivet Edit, the code editor
+#   apps/rivet-terminal  Rivet Terminal (tabs and split panes; the terminal is crates/rivet-term)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.

@@ -2,7 +2,7 @@
 # Which app a command works on. Sourced by the other scripts:
 #
 #   . utilities/lib/apps.sh
-#   app_select "$RIVET_APP"     # files (the default), ftp, notes or edit
+#   app_select "$RIVET_APP"     # files (the default), ftp, notes, edit or terminal
 #
 # sets APP_ID, APP (its folder), PKG (the cargo package), BIN (the program), TITLE,
 # TAG_PREFIX (release tags are "$TAG_PREFIX$VERSION") and DIST_NAME (archive names).
@@ -18,8 +18,10 @@ app_select() {
             APP_ID=notes APP=apps/rivet-notes PKG=rivet-notes BIN=rivet-notes TITLE="Rivet Notes" TAG_PREFIX=rivet-notes-v DIST_NAME=rivet-notes ;;
         edit | rivet-edit)
             APP_ID=edit APP=apps/rivet-edit PKG=rivet-edit BIN=rivet-edit TITLE="Rivet Edit" TAG_PREFIX=rivet-edit-v DIST_NAME=rivet-edit ;;
+        terminal | term | rivet-terminal)
+            APP_ID=terminal APP=apps/rivet-terminal PKG=rivet-terminal BIN=rivet-terminal TITLE="Rivet Terminal" TAG_PREFIX=rivet-terminal-v DIST_NAME=rivet-terminal ;;
         *)
-            echo "Unknown app: $1 (files, ftp, notes or edit)" >&2
+            echo "Unknown app: $1 (files, ftp, notes, edit or terminal)" >&2
             return 1 ;;
     esac
 }
@@ -32,7 +34,7 @@ app_version() {
 # Is this word an app name? (For commands that take one first.)
 is_app() {
     case "$1" in
-        files | rivet-files | rivet | ftp | rivet-ftp | notes | rivet-notes | edit | rivet-edit) return 0 ;;
+        files | rivet-files | rivet | ftp | rivet-ftp | notes | rivet-notes | edit | rivet-edit | terminal | term | rivet-terminal) return 0 ;;
         *) return 1 ;;
     esac
 }
