@@ -235,9 +235,53 @@ fn dropdown<T: PartialEq + Copy>(ui: &mut egui::Ui, id: &str, value: &mut T, opt
 }
 
 /// A section title in the popover.
-fn caption(ui: &mut egui::Ui, text: &str) {
+fn caption(ui: &mut egui::Ui, icon: Caption, text: &str) {
     ui.add_space(4.0);
-    ui.label(egui::RichText::new(text).font(fonts::ui_font(11.0)).color(ui.visuals().weak_text_color()));
+    let weak = ui.visuals().weak_text_color();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 5.0;
+        let (r, _) = ui.allocate_exact_size(Vec2::splat(13.0), Sense::hover());
+        let p = ui.painter();
+        let c = r.center();
+        match icon {
+            Caption::Progress => mini_state(p, r, 1, weak, weak),
+            Caption::Due => calendar_glyph(p, c, 11.0, weak),
+            Caption::Priority => flag(p, c + Vec2::new(0.0, 0.5), weak),
+            Caption::Tags => {
+                p.text(c, egui::Align2::CENTER_CENTER, "#", fonts::ui_font(12.5), weak);
+            }
+        }
+        ui.label(egui::RichText::new(text).font(fonts::ui_font(11.0)).color(weak));
+    });
+}
+
+#[derive(Clone, Copy)]
+enum Caption {
+    Progress,
+    Due,
+    Priority,
+    Tags,
+}
+
+/// A small box for a progress state (0 to do, 1 in progress, 2 done).
+fn mini_state(p: &egui::Painter, r: Rect, k: usize, col: Color32, fill: Color32) {
+    let r = r.shrink(0.5);
+    match k {
+        2 => {
+            p.rect_filled(r, 2.5, fill);
+            let c = r.center();
+            let s = Stroke::new(1.4, Color32::WHITE);
+            p.line_segment([c + Vec2::new(-3.0, 0.0), c + Vec2::new(-0.8, 2.4)], s);
+            p.line_segment([c + Vec2::new(-0.8, 2.4), c + Vec2::new(3.2, -2.4)], s);
+        }
+        1 => {
+            p.rect_stroke(r, 2.5, Stroke::new(1.2, col), egui::StrokeKind::Inside);
+            p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.center().x, r.max.y)).shrink(2.0), 1.0, col);
+        }
+        _ => {
+            p.rect_stroke(r, 2.5, Stroke::new(1.2, col), egui::StrokeKind::Inside);
+        }
+    }
 }
 
 impl NotesApp {
@@ -381,12 +425,16 @@ impl NotesApp {
                 });
                 ui.add_space(2.0);
                 // ---- progress
-                caption(ui, "PROGRESS");
+                caption(ui, Caption::Progress, "PROGRESS");
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let cur = if it.done { 2 } else if it.doing { 1 } else { 0 };
                     for (k, label) in ["To do", "In progress", "Done"].into_iter().enumerate() {
-                        if ui.selectable_label(cur == k, label).clicked() && cur != k {
+                        let resp = ui.add(egui::Button::new(format!("       {label}")).selected(cur == k).corner_radius(r_sm()).min_size(Vec2::new(0.0, 26.0)));
+                        let col = if cur == k { v.selection.stroke.color } else { v.text_color() };
+                        let fill = if cur == k { v.selection.stroke.color.gamma_multiply(0.85) } else { v.selection.bg_fill };
+                        mini_state(ui.painter(), Rect::from_center_size(Pos2::new(resp.rect.left() + 14.0, resp.rect.center().y), Vec2::splat(12.0)), k, col, fill);
+                        if resp.clicked() && cur != k {
                             change = Some(Box::new(move |i: &mut Item| {
                                 i.done = k == 2;
                                 i.doing = k == 1;
@@ -395,7 +443,7 @@ impl NotesApp {
                     }
                 });
                 // ---- due date
-                caption(ui, "DUE");
+                caption(ui, Caption::Due, "DUE");
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
                     if let Some(d) = it.due {
@@ -424,7 +472,7 @@ impl NotesApp {
                     calendar_glyph(ui.painter(), Pos2::new(resp.rect.left() + 13.0, resp.rect.center().y), 10.0, v.text_color());
                 });
                 // ---- priority: flags
-                caption(ui, "PRIORITY");
+                caption(ui, Caption::Priority, "PRIORITY");
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     for p in Priority::ALL {
@@ -442,7 +490,7 @@ impl NotesApp {
                     }
                 });
                 // ---- tags (the todo tag itself stays out of sight)
-                caption(ui, "TAGS");
+                caption(ui, Caption::Tags, "TAGS");
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
                     for t in it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())) {

@@ -285,14 +285,25 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 let y = a.center().y;
                 p.circle_filled(Pos2::new((a.left() + b.left()) / 2.0, y), (look.size * 0.17).max(2.2), look.accent);
             }
-            Deco::Super { line, from, to } => {
-                // The task's words and details: a click opens its panel (the line stays rendered).
-                let (a, b) = (at(from), at(to));
-                let right = (b.right() + 150.0).min(out.response.response.rect.right() - 40.0);
-                let r = Rect::from_min_max(Pos2::new(a.left() - 2.0, a.top()), Pos2::new(right.max(a.left() + 40.0), b.bottom()));
+            Deco::Super { line, start, from, to, due, priority, done } => {
+                // The whole task, box to flag: a click opens its panel (the line stays rendered);
+                // the box itself still ticks.
+                let (s0, a, b) = (at(start), at(from), at(to));
+                let mut right = b.right();
+                if due.is_some() || priority != crate::tasks::Priority::None {
+                    right += 10.0;
+                    if let Some(d) = due {
+                        right += super::todos::due_pill(&p.with_clip_rect(Rect::NOTHING), Pos2::ZERO, d, done, look.size).width() + 6.0;
+                    }
+                    if priority != crate::tasks::Priority::None {
+                        right += 12.0;
+                    }
+                }
+                let right = (right + 6.0).min(out.response.response.rect.right() - 36.0);
+                let r = Rect::from_min_max(Pos2::new(s0.left() - 4.0, a.top()), Pos2::new(right.max(a.left() + 40.0), b.bottom()));
                 if pointer.is_some_and(|q| r.contains(q)) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    p.rect_filled(r.expand2(Vec2::new(4.0, 0.0)), rivet_look::theme::r_sm(), look.weak.gamma_multiply(0.08));
+                    p.rect_filled(r, rivet_look::theme::r_sm(), look.weak.gamma_multiply(0.08));
                 }
                 boxes.push((r, Hit::Task(line, Pos2::new(a.left() - 2.0, b.bottom() + 6.0))));
             }
