@@ -312,18 +312,19 @@ fn search_box(ui: &mut egui::Ui, query: &mut String) {
     let v = ui.visuals().clone();
     let id = egui::Id::unique("todo-search");
     let focused = ui.ctx().memory(|m| m.has_focus(id));
-    let fill = palette::mix(v.extreme_bg_color, v.text_color(), 0.05);
-    let frame = egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin { left: 28, right: 10, top: 5, bottom: 5 });
-    let r = frame
-        .show(ui, |ui| {
-            ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).hint_text("Search todos").font(fonts::ui_font(13.0)).desired_width(170.0));
-        })
-        .response
-        .rect;
-    let c = Pos2::new(r.left() + 15.0, r.center().y - 1.0);
+    // The same height as the view switch beside it; icon, hint and text on one centered line.
+    let (r, _) = ui.allocate_exact_size(Vec2::new(210.0, 32.0), Sense::hover());
+    ui.painter().rect_filled(r, r_md(), palette::mix(v.extreme_bg_color, v.text_color(), 0.05));
+    let c = Pos2::new(r.left() + 15.0, r.center().y - 0.5);
     let st = Stroke::new(1.4, v.weak_text_color());
     ui.painter().circle_stroke(c, 4.5, st);
     ui.painter().line_segment([c + Vec2::new(3.3, 3.3), c + Vec2::new(6.5, 6.5)], st);
+    let field = Rect::from_min_max(Pos2::new(r.left() + 28.0, r.top()), Pos2::new(r.right() - 10.0, r.bottom()));
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    child.add_sized(
+        field.size(),
+        egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).hint_text("Search todos").font(fonts::ui_font(13.0)).align(egui::Align2::LEFT_CENTER),
+    );
     if focused {
         ui.painter().rect_stroke(r, r_md(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Outside);
     }
