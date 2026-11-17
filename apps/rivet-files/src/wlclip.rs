@@ -413,7 +413,8 @@ impl Dispatch<WlDataDevice, ()> for State {
                 state.selection = id;
                 state.repaint.request_repaint();
             }
-            // Drags passing over the window are winit's business; just tidy up our copy.
+            // Drags passing over the window: winit only reports dropped files on X11; taking them
+            // on Wayland is rivet_kit::wldrop's job (this copy is just tidied up).
             wl_data_device::Event::Enter { id, .. } => {
                 if let Some(old) = std::mem::replace(&mut state.dnd_offer, id) {
                     old.destroy();

@@ -213,6 +213,8 @@ impl super::NotesApp {
     /// linked at the cursor (or the end of the note).
     pub(super) fn take_drops(&mut self, ctx: &egui::Context) {
         let mut dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        // On Wayland the toolkit doesn't report drops; the shared listener does.
+        dropped.extend(rivet_kit::wldrop::take_dropped());
         // Checks: RIVET_NOTES_DROP=file[,file] drops those (on the sample vault only).
         if self.shot.is_some()
             && !self.drop_done
@@ -221,7 +223,7 @@ impl super::NotesApp {
             self.drop_done = true;
             dropped.extend(v.split(',').map(std::path::PathBuf::from));
         }
-        let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty()) || rivet_kit::wldrop::hovering();
         if hovering && self.doc.is_some() {
             let v = ctx.global_style().visuals.clone();
             let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("drop-files")));

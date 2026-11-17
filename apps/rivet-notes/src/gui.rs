@@ -146,6 +146,8 @@ pub struct NotesApp {
     note_images: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
     /// The check's test drop happened.
     drop_done: bool,
+    /// The Wayland drop listener was started.
+    wl_drops_started: bool,
     /// The open note's backlinks: for which note and list, and the notes with their lines.
     backlinks: Option<(PathBuf, u64, Vec<Backlink>)>,
 }
@@ -255,6 +257,7 @@ impl NotesApp {
             caret_state: None,
             note_images: Default::default(),
             drop_done: false,
+            wl_drops_started: false,
             backlinks: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
@@ -1079,8 +1082,14 @@ impl eframe::App for NotesApp {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // Files dragged in from other apps: the toolkit only reports them on X11, so listen on
+        // Wayland too (rivet_kit::wldrop).
+        if !self.wl_drops_started && self.shot.is_none() {
+            self.wl_drops_started = true;
+            rivet_kit::wldrop::start_for(frame, &ctx);
+        }
         let c = self.choice();
         // Fonts first, so the look doesn't load the default interface font as well.
         self.look.set_fonts(&ctx, &self.s.ui_font, &self.s.editor_font, &self.s.mono_font);

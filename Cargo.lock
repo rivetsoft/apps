@@ -2304,6 +2304,10 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "image",
+ "libc",
+ "raw-window-handle",
+ "wayland-backend",
+ "wayland-client",
 ]
 
 [[package]]
