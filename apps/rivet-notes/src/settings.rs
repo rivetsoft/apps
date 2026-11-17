@@ -60,6 +60,8 @@ pub struct Settings {
     pub super_todos: bool,
     /// The tags that make a task a super todo (without `#`).
     pub todo_tags: Vec<String>,
+    /// The Todos page as a board (columns by progress) rather than a list.
+    pub todo_board: bool,
     /// The vaults, most recently used first.
     pub vaults: Vec<PathBuf>,
     /// Folders (vault-relative) and tags folded up in the sidebar.
@@ -91,6 +93,7 @@ impl Default for Settings {
             daily_folder: "Daily".into(),
             super_todos: false,
             todo_tags: vec!["task".into()],
+            todo_board: false,
             show_peek: false,
             show_breadcrumbs: true,
             vaults: Vec::new(),
@@ -150,6 +153,7 @@ impl Settings {
                 "show_breadcrumbs" => s.show_breadcrumbs = b,
                 "daily_notes" => s.daily_notes = b,
                 "super_todos" => s.super_todos = b,
+                "todo_view" => s.todo_board = v == "board",
                 "todo_tags" => s.todo_tags = v.split(',').map(|t| t.trim().trim_start_matches('#').to_string()).filter(|t| !t.is_empty()).collect(),
                 "daily_folder" => s.daily_folder = v.trim_matches('/').to_string(),
                 "note_widths" => {
@@ -182,7 +186,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nedit_mode={}\nshow_breadcrumbs={}\ndaily_notes={}\nsuper_todos={}\ntodo_tags={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nedit_mode={}\nshow_breadcrumbs={}\ndaily_notes={}\nsuper_todos={}\ntodo_view={}\ntodo_tags={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -203,6 +207,7 @@ impl Settings {
             self.show_breadcrumbs,
             self.daily_notes,
             self.super_todos,
+            if self.todo_board { "board" } else { "list" },
             self.todo_tags.join(",").replace('\n', ""),
             self.daily_folder.replace('\n', ""),
             join(self.note_widths.iter().map(|(p, c)| format!("{}{}", if *c { 'c' } else { 'f' }, p.to_string_lossy())).collect()),

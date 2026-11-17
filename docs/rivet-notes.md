@@ -117,6 +117,10 @@ makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
   7 days, no date) and tag; sort by due date, priority or note, which also groups the list (Overdue,
   Today, Next 7 days… or by priority or note). Tick a box to finish a task (its
   note changes on disk); click a row to open its note. Overdue dates are red.
+- The Todos page has two views (the List / Board switch at its top right, remembered): the
+  list above, or a **board** with To do, In progress and Done columns of cards. Drag a card to
+  another column to change its progress (its note's `[ ]`, `[/]` or `[x]` changes); click a card
+  to open its note. Search, when and tag filters apply to both.
 
 ## Formatting
 

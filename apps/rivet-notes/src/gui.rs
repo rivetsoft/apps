@@ -320,8 +320,11 @@ impl NotesApp {
                 p.query = query.to_string();
             }
         }
-        if std::env::var("RIVET_NOTES_TODOS").as_deref() == Ok("page") {
+        if let Ok(k) = std::env::var("RIVET_NOTES_TODOS")
+            && (k == "page" || k == "board")
+        {
             app.todo_page = true;
+            app.s.todo_board = k == "board";
         }
         // Test hook for checks: RIVET_NOTES_RETITLE with RIVET_NOTES_WRITE renames the open note
         // as if its title had been typed in the heading (only on a throwaway vault).

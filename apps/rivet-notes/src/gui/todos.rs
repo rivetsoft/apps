@@ -163,6 +163,150 @@ fn state_box(p: &egui::Painter, r: Rect, it: &Item, v: &egui::Visuals, hot: bool
     }
 }
 
+/// List or board, as two icons in one rounded control.
+fn view_switch(ui: &mut egui::Ui, board: &mut bool, list_icon: &Option<egui::TextureHandle>, board_icon: &Option<egui::TextureHandle>) {
+    let v = ui.visuals().clone();
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(2.0 * 32.0 + 6.0, 32.0), Sense::hover());
+    ui.painter().rect_filled(rect, r_md(), palette::mix(v.extreme_bg_color, v.text_color(), 0.06));
+    // Right to left: board is drawn second, on the right.
+    for (k, (icon, name, is_board)) in [(list_icon, "List", false), (board_icon, "Board", true)].into_iter().enumerate() {
+        let r = Rect::from_min_size(Pos2::new(rect.left() + 3.0 + k as f32 * 32.0, rect.top() + 3.0), Vec2::new(32.0, 26.0));
+        let resp = ui.interact(r, egui::Id::unique(("todo-view", k)), Sense::click());
+        let on = *board == is_board;
+        if on {
+            ui.painter().rect_filled(r, r_sm(), v.window_fill);
+            ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color), egui::StrokeKind::Inside);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill.gamma_multiply(0.5));
+        }
+        let fg = if on { v.strong_text_color() } else { v.weak_text_color() };
+        match icon {
+            Some(t) => rivet_look::theme::paint_tex(ui.painter(), t, Rect::from_center_size(r.center(), Vec2::splat(15.0)), fg),
+            None => {
+                ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, &name[..1], fonts::ui_font(12.0), fg);
+            }
+        }
+        if resp.on_hover_text(name).clicked() {
+            *board = is_board;
+        }
+    }
+}
+
+/// A task card being dragged on the board.
+#[derive(Clone)]
+struct CardDrag(PathBuf, Item);
+
+/// What happened on the board.
+enum BoardAct {
+    Open(PathBuf),
+    /// A card dropped in another column: its note, task, and new box mark.
+    Move(PathBuf, Item, char),
+}
+
+/// The board: To do, In progress and Done columns of cards; drag a card to another column to
+/// change its progress, click it to open its note.
+fn board_view(ui: &mut egui::Ui, rows: &[&(PathBuf, String, Item)], triggers: &[String], none_at_all: bool) -> Option<BoardAct> {
+    let ctx = ui.ctx().clone();
+    let v = ui.visuals().clone();
+    let weak = v.weak_text_color();
+    let mut act = None;
+    let dragging = egui::DragAndDrop::payload::<CardDrag>(&ctx);
+    let released = ui.input(|i| i.pointer.any_released());
+    let pointer = ctx.pointer_hover_pos();
+    let col_of = |it: &Item| if it.done { 2 } else if it.doing { 1 } else { 0 };
+    ui.add_space(10.0);
+    if none_at_all {
+        ui.add_space(20.0);
+        ui.vertical_centered(|ui| ui.label(egui::RichText::new(format!("No todos yet. Tag a task with #{} to add it here", triggers.first().cloned().unwrap_or_else(|| "task".into()))).color(weak)));
+        return None;
+    }
+    let col_bg = palette::mix(v.extreme_bg_color, v.text_color(), 0.035);
+    let card_bg = if v.dark_mode { palette::mix(v.extreme_bg_color, v.text_color(), 0.08) } else { v.extreme_bg_color };
+    let height = ui.available_height();
+    ui.columns(3, |cols| {
+        for (k, col) in cols.iter_mut().enumerate() {
+            let items: Vec<&&(PathBuf, String, Item)> = rows.iter().filter(|r| col_of(&r.2) == k).collect();
+            let area = Rect::from_min_size(col.cursor().min, Vec2::new(col.available_width(), height));
+            let over = dragging.is_some() && pointer.is_some_and(|p| area.contains(p));
+            col.painter().rect_filled(area, r_md(), col_bg);
+            if over && dragging.as_ref().is_some_and(|d| col_of(&d.1) != k) {
+                col.painter().rect_stroke(area, r_md(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Inside);
+                if released && let Some(d) = &dragging {
+                    act = Some(BoardAct::Move(d.0.clone(), d.1.clone(), [' ', '/', 'x'][k]));
+                }
+            }
+            let mut inner = col.new_child(egui::UiBuilder::new().max_rect(area.shrink(8.0)).layout(egui::Layout::top_down(egui::Align::Min)));
+            // Column header: its box, name and count.
+            inner.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let (r, _) = ui.allocate_exact_size(Vec2::splat(13.0), Sense::hover());
+                mini_state(ui.painter(), r, k, weak, v.selection.bg_fill);
+                ui.label(egui::RichText::new(["To do", "In progress", "Done"][k]).font(fonts::ui_font(13.0)).strong().color(v.text_color()));
+                ui.label(egui::RichText::new(items.len().to_string()).font(fonts::ui_font(12.0)).color(weak));
+            });
+            inner.add_space(6.0);
+            egui::ScrollArea::vertical().id_salt(("board-col", k)).auto_shrink([false, false]).show(&mut inner, |ui| {
+                ui.spacing_mut().item_spacing.y = 6.0;
+                for r in &items {
+                    let (path, note, it) = (&r.0, &r.1, &r.2);
+                    let me = dragging.as_ref().is_some_and(|d| d.0 == *path && d.1.line == it.line);
+                    let fill = if me { card_bg.gamma_multiply(0.5) } else { card_bg };
+                    let fr = egui::Frame::NONE.fill(fill).corner_radius(r_md()).stroke(Stroke::new(1.0, weak.gamma_multiply(0.18))).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                        let fg = if it.done { weak } else { v.text_color() };
+                        let mut t = egui::RichText::new(if it.title.is_empty() { "(no text)".to_string() } else { it.title.clone() }).font(fonts::ui_font(13.5)).color(fg);
+                        if it.done {
+                            t = t.strikethrough();
+                        }
+                        ui.add(egui::Label::new(t).wrap());
+                        let extra: Vec<String> = it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())).map(|t| format!("#{t}")).collect();
+                        let sub = if extra.is_empty() { note.clone() } else { format!("{note}  ·  {}", extra.join(" ")) };
+                        ui.add(egui::Label::new(egui::RichText::new(sub).font(fonts::ui_font(11.5)).color(weak)).truncate());
+                        if it.due.is_some() || it.priority != Priority::None {
+                            let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::hover());
+                            let mut x = row.left();
+                            if let Some(d) = it.due {
+                                x = due_pill(ui.painter(), Pos2::new(x, row.center().y), d, it.done, 13.0).right() + 8.0;
+                            }
+                            if it.priority != Priority::None {
+                                flag(ui.painter(), Pos2::new(x + 4.0, row.center().y), priority_color(&ctx, it.priority, weak));
+                            }
+                        }
+                    });
+                    let resp = ui.interact(fr.response.rect, egui::Id::unique(("card", path.to_string_lossy().into_owned(), it.line)), Sense::click_and_drag());
+                    if resp.hovered() && dragging.is_none() {
+                        ui.painter().rect_stroke(fr.response.rect, r_md(), Stroke::new(1.0, v.selection.bg_fill.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+                    }
+                    if resp.drag_started() {
+                        egui::DragAndDrop::set_payload(&ctx, CardDrag(path.clone(), it.clone()));
+                    }
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text("Click to open its note · drag to another column");
+                    if resp.clicked() {
+                        act = Some(BoardAct::Open(path.clone()));
+                    }
+                }
+                if items.is_empty() {
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new("Nothing here").font(fonts::ui_font(12.0)).color(weak.gamma_multiply(0.7)));
+                }
+            });
+        }
+    });
+    // The card being dragged follows the pointer.
+    if let (Some(d), Some(p)) = (&dragging, pointer) {
+        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Tooltip, egui::Id::unique("card-drag")));
+        let g = painter.layout_no_wrap(d.1.title.clone(), fonts::ui_font(13.0), v.text_color());
+        let r = Rect::from_min_size(p + Vec2::new(12.0, 8.0), g.size() + Vec2::new(20.0, 14.0));
+        painter.add(egui::epaint::Shadow { offset: [0, 4], blur: 12, spread: 0, color: Color32::from_black_alpha(80) }.as_shape(r, r_md()));
+        painter.rect_filled(r, r_md(), card_bg);
+        painter.rect_stroke(r, r_md(), Stroke::new(1.0, v.selection.bg_fill), egui::StrokeKind::Inside);
+        painter.galley(r.min + Vec2::new(10.0, 7.0), g, v.text_color());
+        ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    act
+}
+
 /// The page's search box: a rounded field with a magnifier.
 fn search_box(ui: &mut egui::Ui, query: &mut String) {
     let v = ui.visuals().clone();
@@ -572,10 +716,15 @@ impl NotesApp {
 
     /// Tick or untick a task in any note (the open one is changed in place).
     fn toggle_task(&mut self, path: &Path, it: &Item) {
+        self.set_task_mark(path, it, if it.done { ' ' } else { 'x' });
+    }
+
+    /// Set a task's progress in any note: ` ` to do, `/` in progress, `x` done.
+    fn set_task_mark(&mut self, path: &Path, it: &Item, mark: char) {
         if self.doc.as_ref().is_some_and(|d| d.path == path) {
             self.edit_task(it.line, |i| {
-                i.done = !i.done;
-                i.doing = false;
+                i.done = mark == 'x';
+                i.doing = mark == '/';
             });
             self.save_now();
             return;
@@ -591,7 +740,7 @@ impl NotesApp {
             self.rescan();
             return;
         }
-        let new = tasks::write_line(&it.raw, if it.done { ' ' } else { 'x' }, &it.tags, it.due, it.priority);
+        let new = tasks::write_line(&it.raw, mark, &it.tags, it.due, it.priority);
         if let Some(t) = tasks::replace_line(&text, it.line, &new) {
             let tmp = path.with_extension("md.rivet-tmp");
             if std::fs::write(&tmp, t).and_then(|_| std::fs::rename(&tmp, path)).is_ok()
@@ -627,7 +776,11 @@ impl NotesApp {
             }
         }
         tags.sort_by_key(|t| t.to_lowercase());
-        // ---- header: title and count, search on the right
+        let list_icon = self.icon(&ctx, &["view-list-symbolic"], 16.0);
+        let board_icon = self.icon(&ctx, &["rivet-board-symbolic", "view-columns-symbolic", "view-grid-symbolic"], 16.0);
+        let self_board = self.s.todo_board;
+        let mut board = self_board;
+        // ---- header: title and count, search and view on the right
         let open_n = all.iter().filter(|(_, _, i)| !i.done).count();
         let tv = &mut self.todo_view;
         ui.horizontal(|ui| {
@@ -635,13 +788,18 @@ impl NotesApp {
             ui.add_space(4.0);
             ui.label(egui::RichText::new(format!("{open_n} open")).color(weak));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                view_switch(ui, &mut board, &list_icon, &board_icon);
+                ui.add_space(8.0);
                 search_box(ui, &mut tv.query);
             });
         });
         ui.add_space(12.0);
         // ---- status, then when and sort
         ui.horizontal(|ui| {
-            segmented(ui, &mut tv.show, &[(Show::Open, "Open"), (Show::Doing, "In progress"), (Show::Done, "Done"), (Show::All, "All")]);
+            // On the board, progress is the columns.
+            if !board {
+                segmented(ui, &mut tv.show, &[(Show::Open, "Open"), (Show::Doing, "In progress"), (Show::Done, "Done"), (Show::All, "All")]);
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 dropdown(ui, "todo-sort", &mut tv.sort, &[(Sort::Due, "By due date"), (Sort::Priority, "By priority"), (Sort::Note, "By note")]);
@@ -668,7 +826,7 @@ impl NotesApp {
         let q = tv.query.trim().to_lowercase();
         let mut rows: Vec<&(PathBuf, String, Item)> = all
             .iter()
-            .filter(|(_, _, i)| match tv.show {
+            .filter(|(_, _, i)| board || match tv.show {
                 Show::Open => !i.done,
                 Show::Doing => i.doing && !i.done,
                 Show::Done => i.done,
@@ -689,6 +847,24 @@ impl NotesApp {
             Sort::Due => rows.sort_by(|a, b| a.2.done.cmp(&b.2.done).then(a.2.due.unwrap_or(far).cmp(&b.2.due.unwrap_or(far))).then(b.2.priority.cmp(&a.2.priority))),
             Sort::Priority => rows.sort_by(|a, b| a.2.done.cmp(&b.2.done).then(b.2.priority.cmp(&a.2.priority)).then(a.2.due.unwrap_or(far).cmp(&b.2.due.unwrap_or(far)))),
             Sort::Note => rows.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()).then(a.2.line.cmp(&b.2.line))),
+        }
+        // ---- the board
+        if board {
+            let act = board_view(ui, &rows, &triggers, all.is_empty());
+            self.s.todo_board = true;
+            if self_board != board {
+                self.s.save();
+            }
+            match act {
+                Some(BoardAct::Open(p)) => self.open_note(&p),
+                Some(BoardAct::Move(p, it, mark)) => self.set_task_mark(&p, &it, mark),
+                None => {}
+            }
+            return;
+        }
+        if self_board {
+            self.s.todo_board = false;
+            self.s.save();
         }
         // ---- the list
         let mut toggle: Option<(PathBuf, Item)> = None;

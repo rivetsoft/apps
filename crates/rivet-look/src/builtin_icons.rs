@@ -126,6 +126,7 @@ pub fn lookup(name: &str) -> Option<(&'static str, bool)> {
             "insert-link" | "link" => "s:link",
             "sidebar-show-right" | "view-right-pane" => "s:sidebar-right",
             "vault" => "s:vault",
+            "rivet-board" | "view-columns" => "s:board",
             "rivet-full-width" | "format-justify-fill" => "s:width-full",
             "rivet-centered" | "format-justify-center" => "s:width-center",
             "rivet-live" | "live-mode" => "s:bolt",
@@ -340,6 +341,7 @@ fn symbolic(key: &str) -> String {
         "s:code" => r##"<path d="M8.5 6.5L3 12l5.5 5.5M15.5 6.5L21 12l-5.5 5.5"/>"##,
         "s:width-full" => r##"<path d="M3 5v14M21 5v14M6.5 12h11M6.5 12l3-3M6.5 12l3 3M17.5 12l-3-3M17.5 12l-3 3"/>"##,
         "s:width-center" => r##"<path d="M5 6h14M8.5 10h7M5 14h14M8.5 18h7"/>"##,
+        "s:board" => r##"<rect x="3.5" y="4" width="4.5" height="15" rx="1.3"/><rect x="9.75" y="4" width="4.5" height="10" rx="1.3"/><rect x="16" y="4" width="4.5" height="12.5" rx="1.3"/>"##,
         "s:vault" => r##"<rect x="3" y="4" width="18" height="15" rx="2.5"/><circle cx="12" cy="11.5" r="3.6"/><path d="M12 7.9v1.4M12 13.7v1.4M8.4 11.5h1.4M14.2 11.5h1.4M6.5 19v1.5M17.5 19v1.5"/>"##,
         "s:sidebar-right" => r##"<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M14.5 4v16"/>"##,
         "s:link" => r##"<path d="M10 14a4 4 0 0 0 5.7 0l3.6-3.6a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3.6 3.6a4 4 0 0 0 5.7 5.7l1.2-1.2"/>"##,
@@ -374,7 +376,7 @@ mod tests {
             "sidebar-show-symbolic", "view-list-tree-symbolic", "media-eject-symbolic", "window-minimize-symbolic",
             "window-maximize-symbolic", "window-restore-symbolic", "window-close-symbolic", "open-menu-symbolic",
             "tag-symbolic", "preferences-system-symbolic", "document-new-symbolic", "insert-link-symbolic",
-            "sidebar-show-right-symbolic", "vault-symbolic", "rivet-full-width-symbolic", "rivet-centered-symbolic", "rivet-live-symbolic", "rivet-source-symbolic",
+            "sidebar-show-right-symbolic", "vault-symbolic", "rivet-board-symbolic", "rivet-full-width-symbolic", "rivet-centered-symbolic", "rivet-live-symbolic", "rivet-source-symbolic",
         ];
         for n in names {
             let (k, _) = lookup(n).unwrap_or_else(|| panic!("no built-in icon for {n}"));
