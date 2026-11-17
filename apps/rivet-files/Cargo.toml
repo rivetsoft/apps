@@ -6,7 +6,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "A classic Linux file manager, like Nemo, Thunar and Caja, written in Rust/egui — no GTK or Qt"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ulinaaron/rivet-files"
+repository = "https://github.com/ulinaaron/rivet-apps"
 
 [dependencies]
 rivet-xdg = { path = "../../crates/rivet-xdg" }

@@ -458,7 +458,7 @@ impl NotesApp {
                                         ui.label("Markdown notes in plain folders, with frontmatter and tags.");
                                         ui.label(egui::RichText::new("Built on Rivet Files. No GTK or Qt.").color(weak));
                                         ui.add_space(14.0);
-                                        ui.hyperlink_to("Source code", "https://github.com/ulinaaron/rivet-files");
+                                        ui.hyperlink_to("Source code", "https://github.com/ulinaaron/rivet-apps");
                                     });
                                 }
                             }

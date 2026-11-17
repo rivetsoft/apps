@@ -2,8 +2,8 @@
 
 # Rivet Apps
 
-[![CI](https://github.com/ulinaaron/rivet-files/actions/workflows/ci.yml/badge.svg)](https://github.com/ulinaaron/rivet-files/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ulinaaron/rivet-files?label=release)](https://github.com/ulinaaron/rivet-files/releases/latest)
+[![CI](https://github.com/ulinaaron/rivet-apps/actions/workflows/ci.yml/badge.svg)](https://github.com/ulinaaron/rivet-apps/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/ulinaaron/rivet-apps?label=release)](https://github.com/ulinaaron/rivet-apps/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-informational)](#the-apps)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20egui-orange)](https://github.com/emilk/egui)
@@ -29,7 +29,7 @@ Preferences.
 
 ## Install
 
-**Rivet Files**: grab it from the [Releases page](https://github.com/ulinaaron/rivet-files/releases)
+**Rivet Files**: grab it from the [Releases page](https://github.com/ulinaaron/rivet-apps/releases)
 (AppImage, archive or Flatpak bundle). The [Rivet Files README](apps/rivet-files/README.md#-install)
 has the details and the libraries the window needs.
 
