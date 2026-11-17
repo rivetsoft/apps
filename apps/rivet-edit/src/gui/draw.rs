@@ -649,56 +649,165 @@ impl EditApp {
     fn welcome(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
+        let weak = v.weak_text_color();
         let icon = self.app_icon(&ctx);
-        let r = ui.max_rect();
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_center_size(r.center(), Vec2::new(380.0, 420.0).min(r.size()))).layout(egui::Layout::top_down(egui::Align::Center)));
-        let ui = &mut child;
-        if let Some(t) = &icon {
-            ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(72.0)));
+        let named = |app: &mut Self, names: &[&str]| app.icon(&ctx, names, 16.0);
+        // What to start with: (icon, label, keys, action).
+        #[derive(Clone, Copy)]
+        enum Go {
+            Files,
+            Folder,
+            File,
+            New,
+            Commands,
+            Prefs,
         }
-        ui.add_space(8.0);
-        ui.label(egui::RichText::new("Rivet Edit").size(22.0).strong().color(v.strong_text_color()));
-        ui.add_space(14.0);
-        let row = |ui: &mut egui::Ui, label: &str, keys: &str| -> bool {
-            let (rr, resp) = ui.allocate_exact_size(Vec2::new(300.0, 34.0), Sense::click());
-            if resp.hovered() {
-                ui.painter().rect_filled(rr, r_sm(), v.widgets.hovered.weak_bg_fill);
+        let mut start: Vec<(Option<egui::TextureHandle>, &str, &str, Go)> = Vec::new();
+        if self.root.is_some() {
+            start.push((named(self, &["edit-find-symbolic"]), "Go to a file", "Ctrl+P", Go::Files));
+        }
+        start.push((named(self, &["folder-symbolic"]), if self.root.is_some() { "Open another folder" } else { "Open a folder" }, "Ctrl+O", Go::Folder));
+        start.push((named(self, &["document-edit-symbolic"]), "Open a file", "", Go::File));
+        start.push((named(self, &["document-new-symbolic"]), "New file", "Ctrl+N", Go::New));
+        start.push((named(self, &["utilities-terminal-symbolic"]), "Run a command", "Shift+Ctrl+P", Go::Commands));
+        start.push((named(self, &["preferences-system-symbolic"]), "Preferences", "Ctrl+,", Go::Prefs));
+        let home = rivet_xdg::places::home();
+        let recent: Vec<(PathBuf, String, String, bool)> = self
+            .s
+            .recent
+            .iter()
+            .filter(|p| Some(*p) != self.root.as_ref() && p.exists())
+            .take(6)
+            .map(|p| {
+                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                // Where it is: within the open folder, from home (~), or the whole path.
+                let dir = p.parent().map(|d| match (self.root.as_ref().and_then(|r| d.strip_prefix(r).ok()), d.strip_prefix(&home)) {
+                    (Some(rest), _) if rest.as_os_str().is_empty() => self.workspace_name().unwrap_or_default(),
+                    (Some(rest), _) => rest.display().to_string(),
+                    (None, Ok(rest)) if rest.as_os_str().is_empty() => "~".to_string(),
+                    (None, Ok(rest)) => format!("~/{}", rest.display()),
+                    (None, Err(_)) => d.display().to_string(),
+                });
+                (p.clone(), name, dir.unwrap_or_default(), p.is_dir())
+            })
+            .collect();
+        let folder_icon = named(self, &["folder-symbolic"]);
+        let recent_icons: Vec<Option<egui::TextureHandle>> = recent.iter().map(|(_, name, _, dir)| if *dir { folder_icon.clone() } else { self.file_icon(&ctx, name, 16.0) }).collect();
+        let subtitle = match self.workspace_name() {
+            Some(ws) => format!("{ws} · {} file{}", self.files.len(), if self.files.len() == 1 { "" } else { "s" }),
+            None => "A lightweight code editor".to_string(),
+        };
+
+        let r = ui.max_rect();
+        let two = r.width() >= 640.0 && !recent.is_empty();
+        let col_w: f32 = 280.0;
+        let width = if two { col_w * 2.0 + 40.0 } else { col_w.min(r.width() - 32.0) };
+        let rows = start.len().max(if two { recent.len() } else { 0 }) + if two { 0 } else { recent.len() + 2 };
+        let height = 120.0 + rows as f32 * 34.0 + 40.0;
+        let top = (r.center().y - height / 2.0).max(r.top() + 24.0);
+        let area = Rect::from_min_size(Pos2::new(r.center().x - width / 2.0, top), Vec2::new(width, r.bottom() - top));
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Min)));
+        let ui = &mut child;
+
+        // The app: its icon, name, and the folder open.
+        ui.horizontal(|ui| {
+            if let Some(t) = &icon {
+                ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(52.0)));
             }
-            ui.painter().text(rr.left_center() + Vec2::new(12.0, 0.0), Align2::LEFT_CENTER, label, fonts::ui_font(14.0), v.hyperlink_color);
-            ui.painter().text(rr.right_center() - Vec2::new(12.0, 0.0), Align2::RIGHT_CENTER, keys, fonts::ui_font(12.0), v.weak_text_color());
+            ui.add_space(6.0);
+            ui.vertical(|ui| {
+                ui.add_space(4.0);
+                ui.spacing_mut().item_spacing.y = 2.0;
+                ui.label(egui::RichText::new("Rivet Edit").size(22.0).strong().color(v.strong_text_color()));
+                ui.label(egui::RichText::new(subtitle).color(weak));
+            });
+        });
+        ui.add_space(26.0);
+
+        let heading = |ui: &mut egui::Ui, t: &str| {
+            ui.label(egui::RichText::new(t).font(fonts::ui_font(11.5)).strong().color(weak));
+            ui.add_space(2.0);
+        };
+        // One row: an icon, the label, and a weak note or keys on the right.
+        let row = |ui: &mut egui::Ui, tex: &Option<egui::TextureHandle>, tint: bool, label: &str, note: &str, keys: &str| -> bool {
+            let (rr, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+            if resp.hovered() {
+                ui.painter().rect_filled(rr, r_md(), v.widgets.hovered.weak_bg_fill);
+            }
+            if let Some(t) = tex {
+                paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(rr.left() + 18.0, rr.center().y), Vec2::splat(16.0)), if tint { v.text_color() } else { Color32::WHITE });
+            }
+            let g = ui.painter().layout_no_wrap(label.to_string(), fonts::ui_font(13.5), v.text_color());
+            let gw = g.size().x;
+            ui.painter().galley(Pos2::new(rr.left() + 38.0, rr.center().y - g.size().y / 2.0), g, v.text_color());
+            let mut right = rr.right() - 10.0;
+            if !keys.is_empty() {
+                let kg = ui.painter().layout_no_wrap(keys.to_string(), fonts::ui_font(11.5), weak);
+                let kr = Rect::from_min_size(Pos2::new(right - kg.size().x - 14.0, rr.center().y - 10.0), Vec2::new(kg.size().x + 14.0, 20.0));
+                ui.painter().rect_filled(kr, rivet_look::theme::r_xs(), palette::mix(v.extreme_bg_color, v.text_color(), 0.07));
+                ui.painter().galley(Pos2::new(kr.left() + 7.0, kr.center().y - kg.size().y / 2.0), kg, weak);
+                right = kr.left() - 8.0;
+            }
+            if !note.is_empty() {
+                let x = rr.left() + 46.0 + gw;
+                let mut job = egui::text::LayoutJob::single_section(note.to_string(), egui::TextFormat { font_id: fonts::ui_font(12.0), color: weak, ..Default::default() });
+                job.wrap = egui::text::TextWrapping::truncate_at_width((right - x).max(0.0));
+                let ng = ui.painter().layout_job(job);
+                ui.painter().galley(Pos2::new(x, rr.center().y - ng.size().y / 2.0), ng, weak);
+            }
             resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
         };
-        if self.root.is_some() {
-            if row(ui, "Go to a file…", "Ctrl+P") {
-                self.open_quick(quick::QuickKind::Files);
-            }
-        } else if row(ui, "Open a folder…", "Ctrl+O") {
-            self.open_quick(quick::QuickKind::Browse { files: false });
-        }
-        if row(ui, "Open a file…", "") {
-            self.open_quick(quick::QuickKind::Browse { files: true });
-        }
-        if row(ui, "New file", "Ctrl+N") {
-            self.new_tab();
-        }
-        if row(ui, "Commands", "Shift+Ctrl+P") {
-            self.open_quick(quick::QuickKind::Commands);
-        }
-        let recent: Vec<PathBuf> = self.s.recent.iter().filter(|p| Some(*p) != self.root.as_ref()).take(5).cloned().collect();
-        if !recent.is_empty() {
-            ui.add_space(18.0);
-            ui.label(egui::RichText::new("RECENT").font(fonts::ui_font(11.0)).color(v.weak_text_color()));
-            ui.add_space(4.0);
-            for p in recent {
-                let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                if row(ui, &name, if p.is_dir() { "folder" } else { "" }) {
-                    if p.is_dir() {
-                        self.open_folder(p);
-                    } else {
-                        self.open_file(&p);
-                    }
+        let mut go: Option<Go> = None;
+        let mut open: Option<(PathBuf, bool)> = None;
+        let mut start_col = |ui: &mut egui::Ui| {
+            heading(ui, "START");
+            for (tex, label, keys, g) in &start {
+                if row(ui, tex, true, label, "", keys) {
+                    go = Some(*g);
                 }
             }
+        };
+        let mut recent_col = |ui: &mut egui::Ui| {
+            heading(ui, "RECENT");
+            for (k, (p, name, dir, is_dir)) in recent.iter().enumerate() {
+                if row(ui, &recent_icons[k], *is_dir, name, dir, "") {
+                    open = Some((p.clone(), *is_dir));
+                }
+            }
+        };
+        if two {
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 40.0;
+                ui.allocate_ui_with_layout(Vec2::new(col_w, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    start_col(ui)
+                });
+                ui.allocate_ui_with_layout(Vec2::new(col_w, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    recent_col(ui)
+                });
+            });
+        } else {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            start_col(ui);
+            if !recent.is_empty() {
+                ui.add_space(22.0);
+                recent_col(ui);
+            }
+        }
+        match go {
+            Some(Go::Files) => self.open_quick(quick::QuickKind::Files),
+            Some(Go::Folder) => self.open_quick(quick::QuickKind::Browse { files: false }),
+            Some(Go::File) => self.open_quick(quick::QuickKind::Browse { files: true }),
+            Some(Go::New) => self.new_tab(),
+            Some(Go::Commands) => self.open_quick(quick::QuickKind::Commands),
+            Some(Go::Prefs) => self.prefs_open = true,
+            None => {}
+        }
+        match open {
+            Some((p, true)) => self.open_folder(p),
+            Some((p, false)) => self.open_file(&p),
+            None => {}
         }
     }
 

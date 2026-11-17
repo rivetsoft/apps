@@ -90,6 +90,7 @@ pub struct EditApp {
     pub(crate) prompt: Option<Prompt>,
     pub(crate) prefs_open: bool,
     prefs_win: windows::WinState,
+    pub(crate) prefs_page: prefs::Page,
     families: Option<Vec<String>>,
     /// The message in the status bar: what happened, or what went wrong.
     pub(crate) note: Option<(String, bool)>,
@@ -142,6 +143,11 @@ impl EditApp {
             // Checks look the same everywhere: Rivet's own icons, the default fonts.
             s.builtin_icons = true;
             s.code_font.clear();
+            // Never the person's own recent folders: the sample's files instead.
+            s.recent = match &start.folder {
+                Some(root) => ["src/main.rs", "README.md", "web/app.js"].iter().map(|r| root.join(r)).collect(),
+                None => Vec::new(),
+            };
         }
         // Test hooks for checks.
         match std::env::var("RIVET_EDIT_THEME").as_deref() {
@@ -172,7 +178,8 @@ impl EditApp {
             quick: None,
             prompt: None,
             prefs_open: std::env::var_os("RIVET_EDIT_PREFS").is_some(),
-            prefs_win: windows::WinState::new(1, egui::Vec2::new(620.0, 560.0)),
+            prefs_win: windows::WinState::new(1, egui::Vec2::new(720.0, 540.0)),
+            prefs_page: std::env::var("RIVET_EDIT_PREFS").map(|p| prefs::Page::from_name(&p)).unwrap_or_default(),
             families: None,
             note: None,
             shot: screenshot.map(rivet_kit::Shot::new),
