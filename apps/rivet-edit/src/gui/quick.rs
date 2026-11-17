@@ -39,8 +39,9 @@ pub(crate) enum QuickKind {
     Language,
     /// The open tab's indentation: tabs or spaces, how many, convert, detect.
     Indent,
-    /// Type a path; `files` also lists (and opens) files, else only folders.
-    Browse { files: bool },
+    /// Type a path; `files` also lists (and opens) files, else only folders; `window` opens the
+    /// folder chosen in a new window.
+    Browse { files: bool, window: bool },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -48,6 +49,8 @@ enum Cmd {
     NewFile,
     NewFileHere,
     OpenFolder,
+    NewWindow,
+    OpenFolderNewWindow,
     OpenFile,
     Save,
     SaveAll,
@@ -176,6 +179,8 @@ impl EditApp {
         add("File", "New File", "Ctrl+N", None, Cmd::NewFile, true);
         add("File", "New File in the Workspace…", "", None, Cmd::NewFileHere, has_root);
         add("File", "Open Folder…", "Ctrl+O", None, Cmd::OpenFolder, true);
+        add("File", "New Window", "Shift+Ctrl+N", None, Cmd::NewWindow, true);
+        add("File", "Open Folder in New Window…", "", None, Cmd::OpenFolderNewWindow, true);
         add("File", "Open File…", "", None, Cmd::OpenFile, true);
         add("File", "Save", "Ctrl+S", None, Cmd::Save, has_tab);
         add("File", "Save All", "Shift+Ctrl+S", None, Cmd::SaveAll, has_tab);
@@ -219,8 +224,10 @@ impl EditApp {
         match cmd {
             Cmd::NewFile => self.new_tab(),
             Cmd::NewFileHere => self.prompt = Some(Prompt::NewFile { folder: String::new(), name: String::new() }),
-            Cmd::OpenFolder => self.open_quick(QuickKind::Browse { files: false }),
-            Cmd::OpenFile => self.open_quick(QuickKind::Browse { files: true }),
+            Cmd::OpenFolder => self.open_quick(QuickKind::Browse { files: false, window: false }),
+            Cmd::NewWindow => self.new_window(None),
+            Cmd::OpenFolderNewWindow => self.open_quick(QuickKind::Browse { files: false, window: true }),
+            Cmd::OpenFile => self.open_quick(QuickKind::Browse { files: true, window: false }),
             Cmd::Save => {
                 self.save(self.active);
             }
@@ -525,7 +532,7 @@ impl EditApp {
                     None => {}
                 }
             }
-            QuickKind::Browse { files } => {
+            QuickKind::Browse { files, window } => {
                 // The folder typed so far, and the word after it.
                 let (dir_s, word) = match q.rfind('/') {
                     Some(i) => (q[..=i].to_string(), q[i + 1..].to_string()),
@@ -561,18 +568,28 @@ impl EditApp {
                     ctx.request_repaint();
                 }
                 if open_here {
-                    rows.push(QuickRow::Item { icon: self.folder_icon(ctx, "", true, 24.0), name: format!("Open {}", dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir_s.clone())), sub: "As the workspace".into() });
+                    rows.push(QuickRow::Item { icon: self.folder_icon(ctx, "", true, 24.0), name: format!("Open {}", dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir_s.clone())), sub: if window { "As the workspace of a new window".into() } else { "As the workspace".into() } });
                 }
                 for (_, (is_dir, name)) in &scored {
                     let icon = if *is_dir { folder_icon.clone() } else { self.file_icon(ctx, name, 24.0) };
                     rows.push(QuickRow::Item { icon, name: if *is_dir { format!("{name}/") } else { name.clone() }, sub: dir_s.trim_end_matches('/').to_string() });
                 }
-                let hint = if files { "A file to open… (type a path)" } else { "A folder to open… (type a path)" };
+                let hint = if files {
+                    "A file to open… (type a path)"
+                } else if window {
+                    "A folder to open in a new window… (type a path)"
+                } else {
+                    "A folder to open… (type a path)"
+                };
                 let text = QuickText { hint, empty: "Nothing here matches", legend: "Up/Down choose   ·   Tab fill in   ·   Enter open or go in   ·   Esc close" };
                 match panel.show(ctx, "edit-quick-browse", &rows, &text, search.as_ref()) {
                     Some(QuickEvent::Pick(i)) => {
                         if open_here && i == 0 {
-                            self.open_folder(dir.clone());
+                            if window {
+                                self.new_window(Some(dir.clone()));
+                            } else {
+                                self.open_folder(dir.clone());
+                            }
                             keep = false;
                         } else if let Some((_, (is_dir, name))) = scored.get(i - usize::from(open_here)) {
                             if *is_dir {

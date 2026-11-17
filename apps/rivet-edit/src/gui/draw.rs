@@ -96,11 +96,17 @@ impl EditApp {
             if item(ui, "New File", "Ctrl+N", true) {
                 self.new_tab();
             }
+            if item(ui, "New Window", "Shift+Ctrl+N", self.shot.is_none()) {
+                self.new_window(None);
+            }
             if item(ui, "Open Folder…", "Ctrl+O", true) {
-                self.open_quick(quick::QuickKind::Browse { files: false });
+                self.open_quick(quick::QuickKind::Browse { files: false, window: false });
+            }
+            if item(ui, "Open Folder in New Window…", "", true) {
+                self.open_quick(quick::QuickKind::Browse { files: false, window: true });
             }
             if item(ui, "Open File…", "", true) {
-                self.open_quick(quick::QuickKind::Browse { files: true });
+                self.open_quick(quick::QuickKind::Browse { files: true, window: false });
             }
             ui.menu_button("Open Recent", |ui| {
                 menu_style(ui);
@@ -946,8 +952,8 @@ impl EditApp {
         }
         match go {
             Some(Go::Files) => self.open_quick(quick::QuickKind::Files),
-            Some(Go::Folder) => self.open_quick(quick::QuickKind::Browse { files: false }),
-            Some(Go::File) => self.open_quick(quick::QuickKind::Browse { files: true }),
+            Some(Go::Folder) => self.open_quick(quick::QuickKind::Browse { files: false, window: false }),
+            Some(Go::File) => self.open_quick(quick::QuickKind::Browse { files: true, window: false }),
             Some(Go::New) => self.new_tab(),
             Some(Go::Commands) => self.open_quick(quick::QuickKind::Commands),
             Some(Go::Prefs) => self.prefs_open = true,

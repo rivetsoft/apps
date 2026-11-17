@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Several windows, each its own workspace: New Window (Shift+Ctrl+N), Open Folder in New Window,
+  and Open in New Window on a folder in the sidebar; also from the app launcher.
+
 ## 0.1.0
 
 The first version.

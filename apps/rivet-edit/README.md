@@ -60,6 +60,7 @@ fonts and icons, the same menus, Preferences and quick panel.
 | F9 / Alt+Z / Ctrl+M | Sidebar / word wrap / menu bar |
 | Ctrl+= / Ctrl+- | Bigger / smaller code |
 | Ctrl+, | Preferences |
+| Shift+Ctrl+N | A new window, for another workspace (File, Open Folder in New Window, or a folder's right-click menu, opens one on a folder) |
 | F12 or Ctrl+click, Shift+F12 | Go to Definition, Find References (a list when there are several) |
 | Alt+Left / Alt+Right | Back / forward through the places you jumped from |
 | Ctrl+Space | Suggestions (they also open as you type; Enter or Tab puts one in) |

@@ -18,6 +18,7 @@ const HELP: &str = "Rivet Edit: a lightweight code editor
 Usage:
   rivet-edit [FOLDER] [FILE...]     Open the window: FOLDER as the workspace, FILEs in tabs
                                     (with nothing given, the last folder)
+  rivet-edit --new-window           An empty window (not the last folder)
   rivet-edit --install-desktop-entry
                                     Add Rivet Edit to the app launcher (for this user)
   rivet-edit -h, --help             This help
@@ -80,6 +81,7 @@ fn main() -> ExitCode {
             screenshot = Some(PathBuf::from(args.remove(i)));
         }
     }
+    let mut new_window = false;
     match args.first().map(String::as_str) {
         Some("-h" | "--help" | "help") => {
             println!("{HELP}");
@@ -88,6 +90,11 @@ fn main() -> ExitCode {
         Some("-V" | "--version" | "version") => {
             println!("rivet-edit {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
+        }
+        Some("--new-window") => {
+            // An empty window (not the last folder): File, New Window.
+            args.remove(0);
+            new_window = true;
         }
         Some("--install-desktop-entry") => {
             return match install_desktop_entry() {
@@ -128,7 +135,7 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     // With nothing given, the last folder.
-    if start.folder.is_none() && start.files.is_empty() {
+    if start.folder.is_none() && start.files.is_empty() && !new_window {
         start.folder = settings::Settings::load().recent.into_iter().find(|p| p.is_dir());
     }
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet Edit").with_app_id("rivet-edit").with_inner_size([1180.0, 760.0]).with_min_inner_size([620.0, 400.0]);

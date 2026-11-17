@@ -312,7 +312,7 @@ impl EditApp {
                 "themes" => quick::QuickKind::Themes,
                 "language" => quick::QuickKind::Language,
                 "indent" => quick::QuickKind::Indent,
-                "folder" => quick::QuickKind::Browse { files: false },
+                "folder" => quick::QuickKind::Browse { files: false, window: false },
                 _ => quick::QuickKind::Files,
             };
             app.open_quick(kind);
@@ -608,6 +608,23 @@ impl EditApp {
         }
     }
 
+    /// Another Rivet Edit window (its own copy of the program), on `folder` or empty. Each window
+    /// is a workspace of its own: its tabs, language servers and history.
+    pub(crate) fn new_window(&mut self, folder: Option<PathBuf>) {
+        if self.shot.is_some() {
+            return;
+        }
+        let Ok(exe) = std::env::current_exe() else { return };
+        let mut cmd = std::process::Command::new(exe);
+        match folder {
+            Some(f) => cmd.arg(f),
+            None => cmd.arg("--new-window"),
+        };
+        if let Err(e) = cmd.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn() {
+            self.note = Some((format!("Couldn't open a window: {e}"), true));
+        }
+    }
+
     pub(crate) fn workspace_name(&self) -> Option<String> {
         self.root.as_ref().and_then(|r| r.file_name()).map(|n| n.to_string_lossy().into_owned())
     }
@@ -641,6 +658,7 @@ impl EditApp {
         let alt = Modifiers::ALT;
         let k = |m: Modifiers, key: Key| KeyboardShortcut::new(m, key);
         // Shifted ones first: a plain Ctrl+P pattern also matches with Shift held.
+        let new_window = ctx.input_mut(|i| i.consume_shortcut(&k(shift, Key::N)));
         let (cmds, files, save_all, save, new, open, close, goto, sidebar, wrap, prefs, menubar, next, bigger, smaller) = ctx.input_mut(|i| {
             (
                 i.consume_shortcut(&k(shift, Key::P)),
@@ -691,11 +709,13 @@ impl EditApp {
         } else if save {
             self.save(self.active);
         }
-        if new {
+        if new_window {
+            self.new_window(None);
+        } else if new {
             self.new_tab();
         }
         if open {
-            self.open_quick(quick::QuickKind::Browse { files: false });
+            self.open_quick(quick::QuickKind::Browse { files: false, window: false });
         }
         if close {
             self.close_tab(self.active, false);

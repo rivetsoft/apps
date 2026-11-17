@@ -22,6 +22,8 @@ pub(crate) enum TreeAct {
     Reveal(String),
     Terminal(String),
     Search(String),
+    /// A folder as the workspace of a new window.
+    NewWindow(String),
     CollapseAll,
     Refresh,
 }
@@ -59,6 +61,9 @@ pub(crate) fn tree_menu(ui: &mut egui::Ui, rel: &str, is_dir: bool, out: &mut Op
     }
     pick(ui, if is_dir || whole { "Open in File Manager" } else { "Show in File Manager" }, "", TreeAct::Reveal(if is_dir || whole { r.clone() } else { here.clone() }));
     pick(ui, "Open Terminal Here", "", TreeAct::Terminal(here));
+    if is_dir && !whole {
+        pick(ui, "Open in New Window", "", TreeAct::NewWindow(r.clone()));
+    }
     if whole {
         ui.separator();
         pick(ui, "Collapse All Folders", "", TreeAct::CollapseAll);
@@ -126,6 +131,11 @@ impl EditApp {
                     && let Err(e) = rivet_xdg::launch::open_terminal(&p)
                 {
                     self.note = Some((format!("Couldn't open a terminal: {e}"), true));
+                }
+            }
+            TreeAct::NewWindow(rel) => {
+                if let Some(p) = self.abs(&rel) {
+                    self.new_window(Some(p));
                 }
             }
             TreeAct::CollapseAll => self.open_dirs.clear(),
