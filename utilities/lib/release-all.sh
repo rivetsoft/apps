@@ -193,6 +193,18 @@ for a in $APPS; do
 
     say "  Setting the version to $next…"
     RIVET_APP=$APP_ID sh ./utilities/lib/bump.sh "$next"
+    # The release notes, from the changelog, before anything is built or sent.
+    say "  Release notes ($APP/CHANGELOG.md):"
+    awk -v v="## $next" '$0 ~ "^## " { p = (index($0, v) == 1); next } p' "$APP/CHANGELOG.md" | sed '/^$/d; s/^/    /'
+    if [ -z "$YES" ]; then
+        ask "  Go ahead with these notes? [Enter: yes · e: stop here to edit them]"
+        case "$REPLY" in
+            e | edit | q | n | no | stop)
+                say "  Stopped. Edit $APP/CHANGELOG.md, then: git commit --amend -a --no-edit,"
+                say "  utilities/rivet-dev release $APP_ID${PUBLISH:+ --publish}, and release-all again for the rest."
+                break ;;
+        esac
+    fi
     say "  Building and tagging…"
     RIVET_APP=$APP_ID sh ./utilities/lib/release.sh $PUBLISH
     released="$released $APP_ID@$next"

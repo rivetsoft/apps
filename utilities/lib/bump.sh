@@ -52,7 +52,15 @@ else
     # The app's own last release (other apps' tags don't count).
     LAST=$(git describe --tags --abbrev=0 --match "$TAG_PREFIX[0-9]*" 2>/dev/null || true)
     RANGE=${LAST:+$LAST..}HEAD
-    NOTES=$(git log --no-merges --format='- %s' $RANGE)
+    # Only this app's changes: commits that touched its folder or the shared crates, without
+    # release and AUR-workflow commits, and without the ones named for another app ("Rivet Edit:
+    # …", "Rivet Terminal, and …") even when they touched a shared crate.
+    OTHERS=$(for a in files ftp notes edit terminal; do (app_select "$a"; [ "$APP_ID" = "${RIVET_APP:-files}" ] || printf '%s|' "$TITLE"); done)
+    OTHERS=${OTHERS%|}
+    NOTES=$(git log --no-merges --format='%s' $RANGE -- "$APP" crates ":(exclude)$APP/packaging/aur" \
+        | grep -vE '^(Release |aur: )' \
+        | grep -vE "^($OTHERS)([^A-Za-z]|$)" \
+        | sed 's/^/- /' || true)
     [ -n "$NOTES" ] || NOTES="- Maintenance release"
     {
         sed -n '1,2p' "$APP/CHANGELOG.md"
