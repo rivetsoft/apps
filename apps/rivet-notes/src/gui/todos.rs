@@ -260,17 +260,38 @@ fn board_view(ui: &mut egui::Ui, rows: &[&(PathBuf, String, Item)], triggers: &[
                             t = t.strikethrough();
                         }
                         ui.add(egui::Label::new(t).wrap());
-                        let extra: Vec<String> = it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())).map(|t| format!("#{t}")).collect();
-                        let sub = if extra.is_empty() { note.clone() } else { format!("{note}  ·  {}", extra.join(" ")) };
-                        ui.add(egui::Label::new(egui::RichText::new(sub).font(fonts::ui_font(11.5)).color(weak)).truncate());
+                        // Where it is.
+                        ui.add(egui::Label::new(egui::RichText::new(note.as_str()).font(fonts::ui_font(11.5)).color(weak)).truncate());
+                        // Tags as chips.
+                        let extra: Vec<&String> = it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())).collect();
+                        if !extra.is_empty() {
+                            ui.add_space(2.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                                for t in extra {
+                                    let g = ui.painter().layout_no_wrap(format!("#{t}"), fonts::ui_font(11.5), v.text_color());
+                                    let (r, _) = ui.allocate_exact_size(g.size() + Vec2::new(12.0, 6.0), Sense::hover());
+                                    ui.painter().rect_filled(r, r.height() / 2.0, palette::mix(card_bg, v.selection.bg_fill, 0.22));
+                                    ui.painter().galley(r.min + Vec2::new(6.0, 3.0), g, v.text_color());
+                                }
+                            });
+                        }
+                        // Due date and priority.
                         if it.due.is_some() || it.priority != Priority::None {
-                            let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::hover());
+                            ui.add_space(2.0);
+                            let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::hover());
                             let mut x = row.left();
                             if let Some(d) = it.due {
-                                x = due_pill(ui.painter(), Pos2::new(x, row.center().y), d, it.done, 13.0).right() + 8.0;
+                                x = due_pill(ui.painter(), Pos2::new(x, row.center().y), d, it.done, 13.0).right() + 6.0;
                             }
                             if it.priority != Priority::None {
-                                flag(ui.painter(), Pos2::new(x + 4.0, row.center().y), priority_color(&ctx, it.priority, weak));
+                                let col = priority_color(&ctx, it.priority, weak);
+                                let g = ui.painter().layout_no_wrap(it.priority.label().to_string(), egui::FontId::proportional(11.5), col);
+                                let h = g.size().y + 6.0;
+                                let pr = Rect::from_min_size(Pos2::new(x, row.center().y - h / 2.0), Vec2::new(g.size().x + 30.0, h));
+                                ui.painter().rect_filled(pr, h / 2.0, col.gamma_multiply(0.14));
+                                flag(ui.painter(), Pos2::new(pr.left() + 13.0, pr.center().y), col);
+                                ui.painter().galley(Pos2::new(pr.left() + 22.0, pr.center().y - g.size().y / 2.0), g, col);
                             }
                         }
                     });
