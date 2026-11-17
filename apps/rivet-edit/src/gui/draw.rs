@@ -28,6 +28,8 @@ fn item(ui: &mut egui::Ui, label: &str, shortcut: &str, on: bool) -> bool {
 /// What the sidebar asked for.
 enum Pick {
     File(String),
+    /// Open it to keep (not as a preview).
+    Keep(String),
     Fold(String),
     NewHere(String),
 }
@@ -55,18 +57,21 @@ impl EditApp {
         let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: if side { 0 } else { 12 }, right: 12, top: 0, bottom: if self.s.show_statusbar { 0 } else { 12 } });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();
-            // The editor's area takes the color scheme's look (the window keeps the app's).
-            let scheme_v = self.scheme().map(|s| s.visuals(&v));
-            ui.painter().rect_filled(r, r_lg(), scheme_v.as_ref().map(|s| s.extreme_bg_color).unwrap_or(v.extreme_bg_color));
+            ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::top_down(egui::Align::Min)));
-            if let Some(sv) = scheme_v {
-                child.style_mut().visuals = sv;
-            }
             if self.tabs.is_empty() {
                 self.welcome(&mut child);
             } else {
+                // The tabs are part of the window (the app's look); the code below them takes
+                // the color scheme's.
                 self.tab_strip(&mut child);
-                self.editor(&mut child);
+                let rest = Rect::from_min_max(Pos2::new(r.left(), child.cursor().top()), r.max);
+                let mut code = ui.new_child(egui::UiBuilder::new().max_rect(rest).layout(egui::Layout::top_down(egui::Align::Min)));
+                if let Some(sv) = self.scheme().map(|s| s.visuals(&v)) {
+                    ui.painter().rect_filled(rest, egui::CornerRadius { nw: 0, ne: 0, sw: r_lg(), se: r_lg() }, sv.extreme_bg_color);
+                    code.style_mut().visuals = sv;
+                }
+                self.editor(&mut code);
             }
         });
         self.quick_panel(ctx);
@@ -209,22 +214,7 @@ impl EditApp {
                     self.s.show_sidebar = !self.s.show_sidebar;
                     self.s.save();
                 }
-                let add_icon = self.icon(&ctx, &["list-add-symbolic", "tab-new-symbolic"], 16.0);
-                let r = flat(ui, &add_icon, "+", "New file (Ctrl+N)", true);
-                if r.clicked() {
-                    self.new_tab();
-                }
-                left_end = r.rect.right();
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let cmd_icon = self.icon(&ctx, &["open-menu-symbolic", "view-more-symbolic"], 16.0);
-                    if flat(ui, &cmd_icon, "⋯", "Commands (Shift+Ctrl+P)", true).clicked() {
-                        self.open_quick(quick::QuickKind::Commands);
-                    }
-                    let folder_icon = self.icon(&ctx, &["folder-open-symbolic", "document-open-symbolic", "folder-symbolic"], 16.0);
-                    if flat(ui, &folder_icon, "Open", "Open a folder (Ctrl+O)", true).clicked() {
-                        self.open_quick(quick::QuickKind::Browse { files: false });
-                    }
-                });
+                left_end = ui.min_rect().right();
             })
             .response
             .rect;
@@ -290,6 +280,11 @@ impl EditApp {
         match pick {
             Some(Pick::File(rel)) => {
                 if let Some(r) = self.root.clone() {
+                    self.preview_file(&r.join(rel));
+                }
+            }
+            Some(Pick::Keep(rel)) => {
+                if let Some(r) = self.root.clone() {
                     self.open_file(&r.join(rel));
                 }
             }
@@ -310,6 +305,7 @@ impl EditApp {
         let v = ui.visuals().clone();
         let mut select = None;
         let mut close = None;
+        let mut keep = None;
         let icons: Vec<Option<egui::TextureHandle>> = (0..self.tabs.len()).map(|i| self.file_icon(&ctx, &self.tabs[i].name(), 14.0)).collect();
         let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 38.0));
         ui.painter().line_segment([strip.left_bottom() + Vec2::new(12.0, 0.0), strip.right_bottom() - Vec2::new(12.0, 0.0)], Stroke::new(1.0, palette::mix(v.extreme_bg_color, v.text_color(), 0.08)));
@@ -340,7 +336,8 @@ impl EditApp {
                 for (i, t) in self.tabs.iter().enumerate() {
                     let on = i == self.active;
                     let name = t.name();
-                    let g = ui.painter().layout_no_wrap(name.clone(), fonts::ui_font(13.0), v.text_color());
+                    let fmt = egui::TextFormat { font_id: fonts::ui_font(13.0), color: v.text_color(), italics: t.preview, ..Default::default() };
+                    let g = ui.painter().layout_job(egui::text::LayoutJob::single_section(name.clone(), fmt));
                     let w = g.size().x + 64.0;
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click());
                     if bring && i == active {
@@ -368,7 +365,13 @@ impl EditApp {
                         }
                         ui.painter().text(xr.center(), Align2::CENTER_CENTER, "×", fonts::ui_font(15.0), fg);
                     }
-                    let tip = t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "Not saved yet".into());
+                    let mut tip = t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "Not saved yet".into());
+                    if t.preview {
+                        tip.push_str("\nA preview: double-click to keep it open");
+                    }
+                    if resp.double_clicked() {
+                        keep = Some(i);
+                    }
                     let resp = resp.on_hover_text(tip);
                     if resp.clicked() {
                         if over_x { close = Some(i) } else { select = Some(i) }
@@ -442,6 +445,9 @@ impl EditApp {
         ui.advance_cursor_after_rect(strip);
         if let Some(i) = select {
             self.active = i;
+        }
+        if let Some(t) = keep.and_then(|i| self.tabs.get_mut(i)) {
+            t.preview = false;
         }
         if let Some(i) = close {
             self.close_tab(i, false);
@@ -889,7 +895,10 @@ fn tree(
         }
         let fg = if on { v.strong_text_color() } else { v.text_color() };
         ui.painter().with_clip_rect(rect).text(Pos2::new(x + 22.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), fg);
-        if resp.on_hover_text(f.as_str()).clicked() {
+        let resp = resp.on_hover_text(format!("{f}\nClick to preview · double-click or Ctrl+click to keep open"));
+        if resp.double_clicked() || (resp.clicked() && ui.input(|i| i.modifiers.command)) {
+            *pick = Some(Pick::Keep(f.clone()));
+        } else if resp.clicked() {
             *pick = Some(Pick::File(f.clone()));
         }
     }

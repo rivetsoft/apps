@@ -16,6 +16,9 @@ fonts and icons, the same menus, Preferences and quick panel.
 
 - **Folders and files**: open a folder as the workspace (its files in a tree, skipping `.git`,
   `target` and `node_modules`), or single files, each in a tab.
+- **Preview tabs**: a single click in the tree (or Go to File) opens a file as a preview, in
+  italics, which the next preview replaces. Double-click or Ctrl+click it in the tree, double-click
+  its tab, or edit it, and it stays.
 - **Tree-sitter colors** for Rust, Python, JavaScript, TypeScript and TSX, JSON, shell, C, Go,
   HTML, CSS, TOML and YAML; other files get the colors Rivet Files' Peek uses. Colors follow your
   theme and accent.

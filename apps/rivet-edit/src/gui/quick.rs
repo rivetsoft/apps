@@ -269,7 +269,7 @@ impl EditApp {
                 };
                 self.file_rank = Some(rank);
                 if let Some(p) = picked {
-                    self.open_file(&p);
+                    self.preview_file(&p);
                 }
             }
             QuickKind::Commands => {

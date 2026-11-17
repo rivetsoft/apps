@@ -36,6 +36,9 @@ pub(crate) struct Tab {
     pub cache: syntax::Cache,
     /// Line and column of the cursor (from 1), for the status bar.
     pub line_col: (usize, usize),
+    /// A preview: opened with a single click, and replaced by the next one until it's kept
+    /// (double-click or Ctrl+click it, double-click its tab, or edit it).
+    pub preview: bool,
 }
 
 impl Tab {
@@ -180,6 +183,12 @@ impl EditApp {
                 app.open_file(&root.join(rel));
             }
         }
+        // RIVET_EDIT_PREVIEW=a,b previews these one after the other (like single clicks).
+        if let (Ok(list), Some(root)) = (std::env::var("RIVET_EDIT_PREVIEW"), app.root.clone()) {
+            for rel in list.split(',').filter(|r| !r.is_empty()) {
+                app.preview_file(&root.join(rel));
+            }
+        }
         if let Some(n) = std::env::var("RIVET_EDIT_LINE").ok().and_then(|v| v.parse().ok()) {
             app.goto = Some(n);
         }
@@ -320,11 +329,24 @@ impl EditApp {
         }
     }
 
-    /// Open a file in a tab (or show its tab when it's open already).
+    /// Open a file in a tab to keep (or show its tab when it's open already).
     pub(crate) fn open_file(&mut self, p: &Path) {
+        self.open_file_as(p, false);
+    }
+
+    /// Open a file as a preview (single click, Go to File): it takes the place of the last
+    /// preview until it's kept.
+    pub(crate) fn preview_file(&mut self, p: &Path) {
+        self.open_file_as(p, true);
+    }
+
+    fn open_file_as(&mut self, p: &Path, preview: bool) {
         let p = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
         if let Some(i) = self.tabs.iter().position(|t| t.path.as_deref() == Some(p.as_path())) {
             self.active = i;
+            if !preview {
+                self.tabs[i].preview = false;
+            }
             return;
         }
         if p.is_dir() {
@@ -333,15 +355,25 @@ impl EditApp {
         }
         match workspace::read_text(&p) {
             Ok(text) => {
-                self.tabs.push(Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1) });
-                self.active = self.tabs.len() - 1;
+                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview };
+                // A new preview takes the old one's place (when it wasn't changed).
+                match self.tabs.iter().position(|t| t.preview && !t.dirty()).filter(|_| preview) {
+                    Some(i) => {
+                        self.tabs[i] = tab;
+                        self.active = i;
+                    }
+                    None => {
+                        self.tabs.push(tab);
+                        self.active = self.tabs.len() - 1;
+                    }
+                }
                 // A file from outside the workspace is remembered for itself.
                 if !self.root.as_ref().is_some_and(|r| p.starts_with(r)) {
                     self.s.remember(p);
                     self.s.save();
                 }
                 // Show it in the tree.
-                if let (Some(root), Some(path)) = (self.root.clone(), self.tabs.last().and_then(|t| t.path.clone()))
+                if let (Some(root), Some(path)) = (self.root.clone(), self.tabs.get(self.active).and_then(|t| t.path.clone()))
                     && let Ok(rel) = path.strip_prefix(&root)
                 {
                     let mut dir = rel.parent();
@@ -356,7 +388,7 @@ impl EditApp {
     }
 
     pub(crate) fn new_tab(&mut self) {
-        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1) });
+        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false });
         self.active = self.tabs.len() - 1;
     }
 
@@ -554,6 +586,10 @@ impl eframe::App for EditApp {
             self.prompt = Some(Prompt::Quit);
         }
         self.shortcuts(&ctx);
+        // A preview that's been edited is kept.
+        for t in self.tabs.iter_mut().filter(|t| t.preview && t.dirty()) {
+            t.preview = false;
+        }
         let now = ctx.input(|i| i.time);
         self.take_scan(&ctx);
         if self.shot.is_none() && now - self.checked_at > 2.0 {
