@@ -167,7 +167,10 @@ impl NotesApp {
             let top = if self.s.show_breadcrumbs && self.doc.is_some() { 10.0 } else { 18.0 };
             let page = Rect::from_min_max(r.min + Vec2::new(28.0, top), r.max - Vec2::new(28.0, 18.0));
             self.page_rect = page;
-            let col = if self.doc.as_ref().is_some_and(|d| self.s.centered_for(&d.path)) {
+            // The Todos page has its own width; a note its own or the default.
+            let todos_shown = self.todo_page && self.s.super_todos;
+            let centered = if todos_shown { self.s.todo_centered } else { self.doc.as_ref().is_some_and(|d| self.s.centered_for(&d.path)) };
+            let col = if centered {
                 let w = page.width().min(super::peek::CENTERED_WIDTH * fonts::scale().max(1.0));
                 Rect::from_min_max(Pos2::new(page.center().x - w / 2.0, page.top()), Pos2::new(page.center().x + w / 2.0, page.bottom()))
             } else {
@@ -386,8 +389,9 @@ impl NotesApp {
                 ui.add_space(10.0);
                 ui.label(egui::RichText::new(m).color(status(&ctx).danger));
             }
+            let todos_shown = self.todo_page && self.s.super_todos;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if let Some(d) = &self.doc {
+                if let Some(d) = self.doc.as_ref().filter(|_| !todos_shown) {
                     let words = d.body.split_whitespace().count();
                     ui.label(egui::RichText::new(format!("{words} word{}", if words == 1 { "" } else { "s" })).color(v.weak_text_color()));
                 }

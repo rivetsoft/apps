@@ -29,6 +29,11 @@ impl NotesApp {
     }
 
     pub(super) fn peek(&mut self, ui: &mut egui::Ui) {
+        // The Todos page has its own, simpler Peek (it isn't the note that was open).
+        if self.todo_page && self.s.super_todos {
+            self.todo_peek(ui);
+            return;
+        }
         let back = self.backlinks_now();
         let full_icon = self.icon(ui.ctx(), &["rivet-full-width-symbolic", "format-justify-fill-symbolic"], 16.0);
         let center_icon = self.icon(ui.ctx(), &["rivet-centered-symbolic", "format-justify-center-symbolic"], 16.0);
@@ -195,6 +200,73 @@ fn link_row(ui: &mut egui::Ui, name: &str, exists: bool) -> egui::Response {
     let text = name.to_string();
     let r = ui.add(egui::Label::new(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).truncate().sense(Sense::click()));
     r.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+impl NotesApp {
+    /// Peek for the Todos page: how it's shown, and a count of the vault's super todos.
+    fn todo_peek(&mut self, ui: &mut egui::Ui) {
+        let ctx = ui.ctx().clone();
+        let full_icon = self.icon(&ctx, &["rivet-full-width-symbolic", "format-justify-fill-symbolic"], 16.0);
+        let center_icon = self.icon(&ctx, &["rivet-centered-symbolic", "format-justify-center-symbolic"], 16.0);
+        let list_icon = self.icon(&ctx, &["view-list-symbolic"], 16.0);
+        let board_icon = self.icon(&ctx, &["rivet-board-symbolic", "view-columns-symbolic", "view-grid-symbolic"], 16.0);
+        let triggers = self.todo_tags();
+        let t0 = chrono::Local::now().date_naive();
+        let (mut todo, mut doing, mut done, mut late, mut today, mut week) = (0, 0, 0, 0, 0, 0);
+        let mut notes = 0;
+        for n in &self.notes {
+            let mut any = false;
+            for it in n.tasks.iter().filter(|i| i.is_super(&triggers)) {
+                any = true;
+                if it.done {
+                    done += 1;
+                    continue;
+                }
+                if it.doing { doing += 1 } else { todo += 1 }
+                match it.due {
+                    Some(d) if d < t0 => late += 1,
+                    Some(d) if d == t0 => today += 1,
+                    Some(d) if d <= t0 + chrono::Days::new(7) => week += 1,
+                    _ => {}
+                }
+            }
+            if any {
+                notes += 1;
+            }
+        }
+        egui::ScrollArea::vertical().id_salt("todo-peek").auto_shrink([false, false]).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            card(ui, "Display", |ui| {
+                let before = self.s.clone();
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    icon_segment(ui, &mut self.s.todo_board, false, &list_icon, "List");
+                    icon_segment(ui, &mut self.s.todo_board, true, &board_icon, "Board");
+                    ui.add_space(8.0);
+                    icon_segment(ui, &mut self.s.todo_centered, false, &full_icon, "Full width");
+                    icon_segment(ui, &mut self.s.todo_centered, true, &center_icon, "Centered");
+                });
+                if self.s != before {
+                    self.s.save();
+                }
+            });
+            card(ui, "Todos", |ui| {
+                rows(ui, &[("To do", todo.to_string()), ("In progress", doing.to_string()), ("Done", done.to_string())]);
+            });
+            card(ui, "Due", |ui| {
+                let danger = rivet_look::theme::status(&ctx).danger;
+                ui.horizontal_top(|ui| {
+                    let (lr, _) = ui.allocate_exact_size(Vec2::new(92.0, 18.0), Sense::hover());
+                    ui.painter().text(lr.left_center(), Align2::LEFT_CENTER, "Overdue", fonts::ui_font(12.5), ui.visuals().weak_text_color());
+                    ui.label(egui::RichText::new(late.to_string()).font(fonts::ui_font(12.5)).color(if late > 0 { danger } else { ui.visuals().text_color() }));
+                });
+                rows(ui, &[("Today", today.to_string()), ("Next 7 days", week.to_string())]);
+            });
+            card(ui, "Where", |ui| {
+                rows(ui, &[("Notes", notes.to_string()), ("Todo tags", triggers.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(" "))]);
+            });
+        });
+    }
 }
 
 /// A rounded section with a small heading.
