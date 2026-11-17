@@ -88,6 +88,23 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("Suggestions", "Ctrl+Space"),
         ],
     ),
+    (
+        "Vim keys (when on)",
+        &[
+            ("Insert / append / new line", "i a I A o O"),
+            ("Back to Normal", "Esc  or  Ctrl+["),
+            ("Move", "h j k l  w b e  0 ^ $  gg G  { }  %"),
+            ("To a character", "f t F T  ; ,"),
+            ("Delete / change / copy", "d c y + a motion, or dd cc yy"),
+            ("Inside / around", "iw aw  i\" a\"  i( a(  i{ a{"),
+            ("Put / undo / redo", "p P  u  Ctrl+R"),
+            ("Repeat the last change", "."),
+            ("Select", "v  V"),
+            ("Search", "/ ?  n N  * #"),
+            ("Save, close, a line", ":w  :q  :wq  :42"),
+            ("Replace", ":s/old/new/g  :%s/old/new/g"),
+        ],
+    ),
 ];
 
 impl EditApp {
@@ -340,6 +357,10 @@ impl EditApp {
                                         ui.add_space(8.0);
                                         ui.checkbox(&mut self.s.lsp, "Use the language's server");
                                         hint(ui, "Smarter suggestions, and errors underlined as you go, from the server installed for each language: rust-analyzer, clangd, pyright, typescript-language-server, gopls and others. Without one, suggestions come from the file's own words.");
+                                    });
+                                    section(ui, "Keys", &mut |ui| {
+                                        ui.checkbox(&mut self.s.vim_keys, "Vim keys");
+                                        hint(ui, "Normal, Insert and Visual modes: counts, d c y with motions and text objects (ciw, di( …), p, u, Ctrl+R, the . repeat, / ? n N * search, and :w :q :wq :s. The status bar shows the mode.");
                                     });
                                     section(ui, "Layout", &mut |ui| {
                                         ui.checkbox(&mut self.s.word_wrap, "Wrap long lines");

@@ -71,6 +71,14 @@ fonts and icons, the same menus, Preferences and quick panel.
 | Ctrl+/ , Ctrl+] / Ctrl+[ | Comment the lines out (or back in), indent / outdent |
 | Ctrl+Enter / Shift+Ctrl+Enter | A new line below / above |
 
+### Vim keys
+
+Switch them on in Preferences > Editor (or Vim Keys in the command list). Normal, Insert, Visual
+and Visual Line modes; counts; `d` `c` `y` `>` `<` with motions (`w b e 0 ^ $ gg G { } % f t ; ,`)
+and text objects (`iw aw i" a" i( a( i{ a{ i[ a[`); `x X s S C D Y J r ~ p P`; `u` and Ctrl+R;
+`.` to repeat; `/ ? n N * #` to search; and `:w :q :wq :x :qa :42 :s/old/new/g :%s/old/new/g`.
+The status bar shows the mode and the `:` line. Copies go to the clipboard too.
+
 ## Build and run
 
 ```sh

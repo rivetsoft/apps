@@ -88,7 +88,10 @@ pub(crate) fn set_primary(ctx: &egui::Context, id: egui::Id, s: Sel) {
     let mut st = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
     st.cursor.set_char_range(Some(egui::text::CCursorRange::two(egui::text::CCursor::new(s.anchor), egui::text::CCursor::new(s.head))));
     st.store(ctx, id);
-    ctx.memory_mut(|m| m.request_focus(id));
+    // Asking again would reset what the text box keeps (Esc and Tab) for a frame.
+    if !ctx.memory(|m| m.has_focus(id)) {
+        ctx.memory_mut(|m| m.request_focus(id));
+    }
 }
 
 /// A small toggle with a short label ("Aa", "ab", ".*").

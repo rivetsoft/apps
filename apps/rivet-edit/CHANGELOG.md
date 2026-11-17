@@ -12,6 +12,10 @@ The first version.
 - Safe saving, reloading files changed elsewhere, and questions before losing changes.
 - 39 editor color themes (One Dark, Dracula, Catppuccin, Gruvbox, Solarized, Tokyo Night, GitHub,
   Rosé Pine…), previewed live from Commands → Color Theme, or the app's own colors.
+- Vim keys (Preferences > Editor): Normal, Insert, Visual and Visual Line modes, counts,
+  operators with motions and text objects, registers, `.` repeat, search, and `:` commands
+  (w, q, wq, x, a line number, s///). A block cursor, and the mode in the status bar.
+- Esc no longer takes the keyboard away from the editor.
 - File and folder icons by type (Material Design Icons), each kind in its own colour leaning a
   little toward the accent; Preferences > Appearance > Icons can switch back to the icon theme.
 - Suggestions as you type (Ctrl+Space any time) and errors underlined, from the language's

@@ -67,6 +67,7 @@ enum Cmd {
     Themes,
     Language,
     Indentation,
+    VimKeys,
     ConvertIndent(bool),
     Reload,
     Recent(PathBuf),
@@ -192,6 +193,7 @@ impl EditApp {
         add("Theme", "Dark", "", Some(self.s.theme == Mode::Dark && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Dark), true);
         add("Editor", "Color Theme…", "", None, Cmd::Themes, true);
         add("Editor", "Change Language…", "", None, Cmd::Language, has_tab);
+        add("Editor", "Vim Keys", "", Some(self.s.vim_keys), Cmd::VimKeys, true);
         add("Editor", "Indentation…", "", None, Cmd::Indentation, has_tab);
         add("Editor", "Convert Indentation to Spaces", "", None, Cmd::ConvertIndent(false), has_tab);
         add("Editor", "Convert Indentation to Tabs", "", None, Cmd::ConvertIndent(true), has_tab);
@@ -235,6 +237,10 @@ impl EditApp {
             Cmd::Preferences => self.prefs_open = true,
             Cmd::Themes => self.open_quick(QuickKind::Themes),
             Cmd::Language => self.open_quick(QuickKind::Language),
+            Cmd::VimKeys => {
+                self.s.vim_keys = !self.s.vim_keys;
+                self.vim = Default::default();
+            }
             Cmd::Indentation => self.open_quick(QuickKind::Indent),
             Cmd::ConvertIndent(tabs) => self.convert_indent(tabs),
             Cmd::Reload => self.rescan(),

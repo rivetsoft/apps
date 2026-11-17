@@ -8,6 +8,7 @@ mod draw;
 mod editing;
 mod prefs;
 mod quick;
+mod vimkeys;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -144,6 +145,8 @@ pub struct EditApp {
     pub(crate) complete: Option<complete::Complete>,
     complete_seq: u64,
     pub(crate) lsp_status: Option<complete::LspStatus>,
+    /// Vim keys' state (when they're on).
+    pub(crate) vim: crate::vim::Vim,
     /// Quitting is fine (changes saved or let go).
     allow_close: bool,
     /// A scheme shown while the theme list is open (before it's chosen).
@@ -170,6 +173,7 @@ impl EditApp {
             s.code_font.clear();
             // No language servers in checks unless asked for (they're slow to start).
             s.lsp = std::env::var_os("RIVET_EDIT_LSP").is_some();
+            s.vim_keys = std::env::var_os("RIVET_EDIT_VIM").is_some();
             // Never the person's own recent folders: the sample's files instead.
             s.recent = match &start.folder {
                 Some(root) => ["src/main.rs", "README.md", "web/app.js"].iter().map(|r| root.join(r)).collect(),
@@ -231,6 +235,7 @@ impl EditApp {
             complete: None,
             complete_seq: 0,
             lsp_status: None,
+            vim: Default::default(),
             allow_close: false,
             scheme_preview: None,
         };

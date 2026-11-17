@@ -7,6 +7,7 @@ mod ops;
 mod schemes;
 mod settings;
 mod syntax;
+mod vim;
 mod workspace;
 
 use std::path::PathBuf;

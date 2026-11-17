@@ -516,6 +516,13 @@ impl EditApp {
         } else {
             self.complete_keys(&ctx, id)
         };
+        // Vim keys take what they need before anything else edits.
+        if !quick_open {
+            self.vim_keys(&ctx, id);
+        }
+        let vim_visual = matches!(self.vim.mode, crate::vim::Mode::Visual | crate::vim::Mode::VisualLine);
+        let vim_head = self.vim.head;
+        let vim_block = self.s.vim_keys && self.vim.mode != crate::vim::Mode::Insert && ctx.memory(|m| m.has_focus(id));
         // What was typed this frame (to open or narrow the suggestions).
         let typed: Option<char> = if quick_open { None } else { ctx.input(|i| i.events.iter().rev().find_map(|e| if let egui::Event::Text(t) = e { t.chars().last() } else { None })) };
         if !quick_open {
@@ -591,11 +598,13 @@ impl EditApp {
                     .margin(egui::Margin { left: 4, right: 16, top: 6, bottom: 6 })
                     .desired_width(if wrap { ui.available_width() } else { f32::INFINITY })
                     .desired_rows(40)
-                    .lock_focus(true)
+                    // Tab indents, and Esc stays in the text (Vim's Normal mode, closing
+                    // suggestions) rather than taking the keyboard away.
+                    .event_filter(egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true })
                     .layouter(&mut layouter)
                     .show(ui);
                 // The cursor's line and column, for the status bar and the gutter.
-                let cur = out.cursor_range.map(|r| r.primary.index.0);
+                let cur = if vim_block && vim_visual { Some(vim_head) } else { out.cursor_range.map(|r| r.primary.index.0) };
                 if let Some(c) = cur {
                     let before: String = text.chars().take(c).collect();
                     let line = before.matches('\n').count() + 1;
@@ -623,6 +632,14 @@ impl EditApp {
                             n += 1;
                         }
                     }
+                }
+                // Vim's Normal and Visual modes: a block cursor on the character.
+                if vim_block && let Some(r) = out.cursor_range {
+                    let at = if vim_visual { egui::text::CCursor::new(vim_head) } else { r.primary };
+                    let cr = out.galley.pos_from_cursor(at).translate(out.galley_pos.to_vec2());
+                    let w = ui.fonts_mut(|f| f.glyph_width(&font, 'M'));
+                    let block = Rect::from_min_size(cr.min, Vec2::new(w, cr.height()));
+                    ui.painter().rect_filled(block, 1.0, mark_color.gamma_multiply(0.55));
                 }
                 // The server's problems, with wavy lines.
                 complete::draw_diags(ui, &out, text, &diags);
@@ -670,6 +687,11 @@ impl EditApp {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
                 let diags = self.diag_ranges();
+                // Vim: the : line (or the mode, and keys typed so far).
+                if let Some((words, line)) = self.vim_status() {
+                    let col = if line { v.strong_text_color() } else { weak };
+                    ui.label(egui::RichText::new(words).monospace().color(col));
+                }
                 if let Some(t) = self.tabs.get(self.active) {
                     // The language server, and the problems it found.
                     if let Some((words, tip, trouble)) = &self.lsp_status {
