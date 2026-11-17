@@ -13,15 +13,22 @@ usage() {
     cat <<'EOF'
 Rivet developer utilities
 
-Usage: utilities/rivet-dev <command> [options]
+Usage: utilities/rivet-dev <command> [APP] [options]
+
+APP is files (the default), ftp or notes, for the commands marked [APP]. Each app has its own
+version, changelog and release tags: vX.Y.Z (Rivet Files), rivet-ftp-vX.Y.Z, rivet-notes-vX.Y.Z.
 
 Releasing
-  bump [patch|minor|major|X.Y.Z]   Set the next version; "## Unreleased" in CHANGELOG.md
-                                   becomes its section; commits "Release X.Y.Z"
-  release                          Build the tarball + AppImage in dist/ and tag vX.Y.Z —
-                                   on this computer only, nothing goes online
-  release --publish                The same, then send code + tag to GitHub and create the
-                                   GitHub release with the files (what users download)
+  apps                             Each app's version, last release tag and unreleased changes
+  bump [APP] [patch|minor|major|X.Y.Z]
+                                   Set the app's next version; "## Unreleased" in its
+                                   CHANGELOG.md becomes its section; commits the release
+  release [APP]                    Build the app's downloads in dist/ and tag it — on this
+                                   computer only, nothing goes online (Rivet Files: tarball +
+                                   AppImage; FTP and Notes: a tarball)
+  release [APP] --publish          The same, then send code + tag to GitHub and create the
+                                   GitHub release with the files (FTP and Notes as pre-releases,
+                                   so "latest release" stays Rivet Files')
   push                             Send your latest commits to GitHub — no release
                                    (creates the GitHub repo the first time)
   aur-bump X.Y.Z                   Update the AUR PKGBUILDs for a published release
@@ -33,8 +40,8 @@ Building
   check-glibc --max V FILE…        Fail if FILE needs a GLIBC symbol newer than V
 
 Using your build
-  install [--default]              Install for this user (~/.local/bin + app launcher);
-                                   --default also makes Rivet the default file manager
+  install [APP] [--default]        Install for this user (~/.local/bin + app launcher);
+                                   --default also makes Rivet Files the default file manager
   link [--user] [--remove]         A `rivet` command that always runs this build
                                    (/usr/bin, or ~/.local/bin with --user)
 
@@ -52,7 +59,16 @@ EOF
 
 cmd=${1:-help}
 [ $# -gt 0 ] && shift
+# An app name after the command (bump notes, release ftp --publish, install notes).
+. "$LIB/apps.sh"
+if [ $# -gt 0 ] && is_app "$1"; then
+    app_select "$1"
+    RIVET_APP=$APP_ID
+    export RIVET_APP
+    shift
+fi
 case "$cmd" in
+    apps)          exec sh "$LIB/apps-status.sh" "$@" ;;
     bump)          exec sh "$LIB/bump.sh" "$@" ;;
     release)       exec sh "$LIB/release.sh" "$@" ;;
     push|publish)  exec sh "$LIB/push.sh" "$@" ;;   # "publish" was its old name
@@ -61,7 +77,11 @@ case "$cmd" in
     portable)      exec sh "$LIB/portable-build.sh" "$@" ;;
     portable-bin)  exec sh "$LIB/portable-bin.sh" "$@" ;;
     check-glibc)   exec sh "$LIB/check-glibc.sh" "$@" ;;
-    install)       exec sh "$LIB/install.sh" "$@" ;;
+    install)
+        case "${RIVET_APP:-files}" in
+            files) exec sh "$LIB/install.sh" "$@" ;;
+            *) app_select "$RIVET_APP"; RIVET_INSTALL_BIN=$BIN exec sh "$LIB/install-app.sh" "$@" ;;
+        esac ;;
     link)          exec sh "$LIB/link.sh" "$@" ;;
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;
     notes-screenshots) exec sh "$LIB/notes-screenshots.sh" "$@" ;;

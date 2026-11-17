@@ -10,6 +10,11 @@
 # For a new release: run utilities/rivet-dev bump first (sets the version, changelog section, commits), then this.
 set -e
 cd "$(dirname "$0")/../.."
+# Rivet FTP and Rivet Notes have their own (simpler) release.
+case "${RIVET_APP:-files}" in
+    files | rivet-files | rivet) ;;
+    *) exec sh ./utilities/lib/release-app.sh "$@" ;;
+esac
 APP=apps/rivet-files   # Rivet Files: its version, changelog, desktop file and icons
 
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' $APP/Cargo.toml | head -1)

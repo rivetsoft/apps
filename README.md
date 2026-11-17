@@ -78,8 +78,11 @@ cargo build --release --workspace        # everything
 ./target/release/rivet-notes [VAULT]
 ```
 
-`utilities/rivet-dev help` lists the developer tasks (QA, screenshots, releases, packaging);
-they are for Rivet Files.
+`utilities/rivet-dev help` lists the developer tasks: QA, screenshots, packaging and releases.
+Each app is released on its own, with its own version, changelog and tags (`v0.7.0` for Rivet
+Files, `rivet-notes-v0.1.0`, `rivet-ftp-v0.1.0`). `utilities/rivet-dev apps` shows where each
+one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the default).
+`utilities/rivet-dev install notes` installs one for you from source.
 
 ## Repository layout
 

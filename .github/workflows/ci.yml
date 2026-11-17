@@ -92,7 +92,8 @@ jobs:
   # bundle is attached next to the AppImage and the tarball.
   flatpak:
     name: Flatpak
-    if: github.event_name == 'pull_request' || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
+    # The Flatpak is Rivet Files': not built for Rivet FTP or Rivet Notes releases.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && startsWith(github.event.release.tag_name, 'v'))
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48

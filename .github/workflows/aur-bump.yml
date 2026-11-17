@@ -10,6 +10,8 @@ permissions:
 jobs:
   bump:
     name: Bump PKGBUILD checksums
+    # Only Rivet Files' releases (tags vX.Y.Z); rivet-ftp-v… and rivet-notes-v… aren't on the AUR.
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

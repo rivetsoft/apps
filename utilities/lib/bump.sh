@@ -1,25 +1,28 @@
 #!/bin/sh
 # Bump the version for a new release.
 #
-#   utilities/rivet-dev bump            patch: 0.1.1 -> 0.1.2
-#   utilities/rivet-dev bump minor      0.1.1 -> 0.2.0
-#   utilities/rivet-dev bump major      0.1.1 -> 1.0.0
-#   utilities/rivet-dev bump 0.3.0      an exact version
+#   utilities/rivet-dev bump [APP]            patch: 0.1.1 -> 0.1.2
+#   utilities/rivet-dev bump [APP] minor      0.1.1 -> 0.2.0
+#   utilities/rivet-dev bump [APP] major      0.1.1 -> 1.0.0
+#   utilities/rivet-dev bump [APP] 0.3.0      an exact version
 #
-# Updates apps/rivet-files/Cargo.toml and Cargo.lock, adds the release to the app metadata, starts an apps/rivet-files/CHANGELOG.md section from the commit
-# messages since the last release tag, and commits it all as "Release X.Y.Z".
+# APP is files (the default), ftp or notes (rivet-dev passes it as RIVET_APP).
+# Updates the app's Cargo.toml and Cargo.lock, adds the release to the app metadata (Rivet
+# Files), starts a CHANGELOG.md section from the commit messages since the app's last release
+# tag, and commits it all as "Release <App> X.Y.Z".
 # Edit the changelog afterwards if you like (then `git commit --amend -a --no-edit`),
 # and publish with utilities/rivet-dev release --publish
 set -e
 cd "$(dirname "$0")/../.."
-APP=apps/rivet-files   # Rivet Files: its version, changelog and app metadata
+. ./utilities/lib/apps.sh
+app_select "${RIVET_APP:-files}"
 
 if [ -n "$(git status --porcelain)" ]; then
     echo "Commit your changes first." >&2
     exit 1
 fi
 
-OLD=$(sed -n 's/^version = "\(.*\)"/\1/p' $APP/Cargo.toml | head -1)
+OLD=$(app_version)
 MAJOR=$(echo "$OLD" | cut -d. -f1)
 MINOR=$(echo "$OLD" | cut -d. -f2)
 PATCH=$(echo "$OLD" | cut -d. -f3)
@@ -28,10 +31,11 @@ case "${1:-patch}" in
     minor) NEW="$MAJOR.$((MINOR + 1)).0" ;;
     major) NEW="$((MAJOR + 1)).0.0" ;;
     [0-9]*.[0-9]*.[0-9]*) NEW="$1" ;;
-    *) echo "Usage: utilities/rivet-dev bump [patch|minor|major|X.Y.Z]" >&2; exit 1 ;;
+    *) echo "Usage: utilities/rivet-dev bump [files|ftp|notes] [patch|minor|major|X.Y.Z]" >&2; exit 1 ;;
 esac
-if git rev-parse -q --verify "refs/tags/v$NEW" >/dev/null; then
-    echo "v$NEW already exists." >&2
+TAG="$TAG_PREFIX$NEW"
+if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    echo "$TAG already exists." >&2
     exit 1
 fi
 
@@ -45,7 +49,8 @@ cargo update --workspace --offline >/dev/null 2>&1 || cargo update --workspace >
 if grep -q '^## Unreleased' "$APP/CHANGELOG.md"; then
     sed -i "0,/^## Unreleased.*/s//## $NEW/" "$APP/CHANGELOG.md"
 else
-    LAST=$(git describe --tags --abbrev=0 2>/dev/null || true)
+    # The app's own last release (other apps' tags don't count).
+    LAST=$(git describe --tags --abbrev=0 --match "$TAG_PREFIX[0-9]*" 2>/dev/null || true)
     RANGE=${LAST:+$LAST..}HEAD
     NOTES=$(git log --no-merges --format='- %s' $RANGE)
     [ -n "$NOTES" ] || NOTES="- Maintenance release"
@@ -63,6 +68,11 @@ if [ -f "$META" ] && ! grep -q "<release version=\"$NEW\"" "$META"; then
     sed -i "0,/<releases>/s//<releases>\n    <release version=\"$NEW\" date=\"$(date +%Y-%m-%d)\"\/>/" "$META"
 fi
 
-git add "$APP/Cargo.toml" Cargo.lock "$APP/CHANGELOG.md" "$META"
-git commit -q -m "Release $NEW"
-echo "Bumped $OLD -> $NEW and committed. Review CHANGELOG.md, then run utilities/rivet-dev release --publish"
+git add "$APP/Cargo.toml" Cargo.lock "$APP/CHANGELOG.md"
+[ -f "$META" ] && git add "$META"
+if [ "$APP_ID" = files ]; then
+    git commit -q -m "Release $NEW"
+else
+    git commit -q -m "Release $TITLE $NEW"
+fi
+echo "Bumped $TITLE $OLD -> $NEW and committed. Review $APP/CHANGELOG.md, then run utilities/rivet-dev release $APP_ID --publish"

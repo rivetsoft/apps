@@ -96,7 +96,12 @@ Rivet Files (the workspace's default member), so its scripts and packaging only 
 paths updated. Before that, Rivet Files sat at the top of the repository with a short section
 for Rivet FTP in its README. Rivet FTP gets its own README in
 `apps/rivet-ftp`, and the longer pages live in `docs/` as wiki pages. Releases are told apart by
-tag (`v0.7.0` for Rivet as today, `rivet-ftp-v0.1.0` for Rivet FTP).
+tag (`v0.7.0` for Rivet Files as today, `rivet-ftp-v0.1.0`, `rivet-notes-v0.1.0`).
+`utilities/rivet-dev` takes the app after the command (`bump notes`, `release ftp`,
+`install notes`; Rivet Files is the default) and `apps` shows each one's version and last
+release. FTP and Notes go out as GitHub pre-releases with a portable tarball, so the repository's
+"latest release" (and its badge) stays Rivet Files', and the Flatpak and AUR workflows only act
+on `v…` tags.
 
 If Rivet FTP later needs its own GitHub page for marketing, the shared crates can move to a
 third repository. Each app would then point at a tagged version of it, with nothing else
