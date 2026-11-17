@@ -19,19 +19,41 @@ A family of Linux desktop apps written in Rust, with no GTK or Qt. They share on
 desktop's colors, fonts and icon theme, light or dark, and the same menus, toolbars and
 Preferences.
 
-![Rivet Files showing a home folder](docs/screenshots/icons-wide.png)
-
 ## The apps
 
-| App | What it is | Status |
-| --- | --- | --- |
-| [**Rivet Files**](apps/rivet-files/README.md) | A file manager in the same vein as Dolphin, Nemo, Thunar and Caja. Minimal or packed with panels, your choice. | **Stable.** Released, with AppImage, archive, Flatpak and AUR packaging. |
-| [**Rivet FTP**](apps/rivet-ftp/README.md) | A dual-pane file-transfer client: this computer on one side, the server on the other, and a transfer queue. Saved connections also work from the command line and `ssh`. | **Early alpha.** Not ready for daily use. |
-| [**Rivet Notes**](apps/rivet-notes/README.md) | Markdown notes in plain folders. Vaults, frontmatter as properties, notes by folder or by tag. | **Early alpha.** Not ready for daily use. |
+### <img src="apps/rivet-files/data/rivet-files.svg" width="32" alt=""> Rivet Files
 
-> **About the alphas.** Rivet FTP and Rivet Notes are as early as it gets: features are missing,
-> things change without notice, and there are no releases or packages yet. Build them from
-> source to try them, on servers and notes you have backups of.
+A file manager in the same vein as Dolphin, Nemo, Thunar and Caja. Minimal or packed with
+panels, your choice: Peek previews, split view, filters, bulk rename, Quick Open, and it can be
+your other apps' file picker.
+**Stable:** released, with AppImage, archive, Flatpak and AUR packaging.
+[More about Rivet Files](apps/rivet-files/README.md)
+
+![Rivet Files showing a home folder](docs/screenshots/icons-wide.png)
+
+### <img src="apps/rivet-ftp/data/rivet-ftp.svg" width="32" alt=""> Rivet FTP
+
+A dual-pane file-transfer client: this computer on one side, the server on the other, and a
+transfer queue. Saved connections in groups, tabs, editing server files in place, SSH keys, and
+saved connections that also work from the command line and plain `ssh`.
+**Early alpha:** SFTP works; FTP and FTPS aren't built yet.
+[More about Rivet FTP](apps/rivet-ftp/README.md)
+
+![Rivet FTP connected to a server, with finished transfers](docs/screenshots/ftp-connected-wide.png)
+
+### <img src="apps/rivet-notes/data/rivet-notes.svg" width="32" alt=""> Rivet Notes
+
+Markdown notes in plain folders. Live editing, properties from the frontmatter, links between
+notes with backlinks, folders and tags, a slash menu, and modules for daily notes and super
+todos with a list or board.
+**Early alpha:** usable, but young.
+[More about Rivet Notes](apps/rivet-notes/README.md)
+
+![Rivet Notes in live mode, with Peek open](docs/screenshots/notes-live-wide.png)
+
+> **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break,
+> and there are no releases or packages yet. Build them from source to try them, on servers
+> and notes you have backups of.
 
 ## Install
 
