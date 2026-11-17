@@ -229,19 +229,11 @@ impl Shell {
                 layer.set_size(0, 0);
             }
             Kind::Panel => {
-                let edge = if s.panel_edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM };
-                layer.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-                let h = ui::panel_height(s) as u32;
-                layer.set_size(0, h);
-                layer.set_exclusive_zone(h as i32);
+                shape_panel(&layer, s);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Dock => {
-                let n = s.dock_apps.iter().filter(|id| ui::find_app(&self.apps, id).is_some()).count();
-                let (size, room) = ui::dock_size(s, n);
-                layer.set_anchor(Anchor::BOTTOM);
-                layer.set_size(size.x as u32, size.y as u32);
-                layer.set_exclusive_zone(if s.dock_reserve { room as i32 } else { 0 });
+                shape_dock(&layer, s, &self.apps);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Popup => {
@@ -288,13 +280,22 @@ impl Shell {
         }
     }
 
-    /// Settings changed: the panels and docks again.
-    fn rebuild_bars(&mut self) {
-        self.surfs.retain(|s| matches!(s.kind, Kind::Background | Kind::Popup));
-        for o in self.output_state.outputs().collect::<Vec<_>>() {
-            self.bars_for(&o);
+    /// Panels (or docks) on every screen, or none: only those surfaces come or go.
+    fn set_bars(&mut self, kind: Kind, on: bool) {
+        let have = self.surfs.iter().any(|s| s.kind == kind);
+        if on && !have {
+            for o in self.output_state.outputs().collect::<Vec<_>>() {
+                let s = self.new_surf(kind, Some(&o));
+                self.surfs.push(s);
+            }
+        } else if !on {
+            self.surfs.retain(|s| s.kind != kind);
         }
-        for s in &mut self.surfs {
+    }
+
+    /// Mark the surfaces of these kinds to be drawn again (and only those).
+    fn redraw_kinds(&mut self, kinds: &[Kind]) {
+        for s in self.surfs.iter_mut().filter(|s| kinds.contains(&s.kind)) {
             s.dirty = true;
         }
     }
@@ -412,10 +413,53 @@ impl Shell {
         if new == self.s && !force {
             return;
         }
-        let wall_changed = new.wallpaper != self.s.wallpaper || new.color_mode != self.s.color_mode || new.scheme_type != self.s.scheme_type;
-        self.s = new;
-        self.apps = load_apps();
-        self.rebuild_bars();
+        let old = std::mem::replace(&mut self.s, new);
+        let s = self.s.clone();
+        // Only what changed changes: surfaces are reshaped in place (never torn down and made
+        // again, which makes them flash and moves the windows twice), and only the surfaces that
+        // show a setting are drawn again.
+        let look = old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size;
+        let wall_changed = old.wallpaper != s.wallpaper || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type;
+        let panel_shape = old.panel_edge != s.panel_edge || old.panel_floating != s.panel_floating;
+        let panel_content = old.clock_format != s.clock_format || old.show_workspaces != s.show_workspaces || old.show_volume != s.show_volume || old.show_network != s.show_network || old.show_battery != s.show_battery;
+        let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve;
+        let widgets = old.widget_clock != s.widget_clock || old.widget_system != s.widget_system || old.widget_side != s.widget_side;
+        if old.dock_apps != s.dock_apps && s.dock_apps.iter().any(|id| ui::find_app(&self.apps, id).is_none()) {
+            // A newly pinned app this list doesn't know yet.
+            self.apps = load_apps();
+        }
+        if look || force {
+            self.redraw_kinds(&[Kind::Background, Kind::Panel, Kind::Dock, Kind::Popup]);
+        }
+        // The panel: on or off, moved or reshaped, or just drawn again.
+        if old.panel != s.panel {
+            self.set_bars(Kind::Panel, s.panel);
+        } else if panel_shape {
+            for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Panel) {
+                shape_panel(&sf.layer, &s);
+                sf.layer.commit();
+                sf.dirty = true;
+            }
+        } else if panel_content {
+            self.redraw_kinds(&[Kind::Panel]);
+        }
+        // The dock likewise.
+        if old.dock != s.dock {
+            self.set_bars(Kind::Dock, s.dock);
+        } else if dock_shape {
+            let apps = self.apps.clone();
+            for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Dock) {
+                shape_dock(&sf.layer, &s, &apps);
+                sf.layer.commit();
+                sf.dirty = true;
+            }
+        } else if old.dock_running != s.dock_running {
+            self.redraw_kinds(&[Kind::Dock]);
+        }
+        // The wallpaper's widgets sit below the panel: they move with it.
+        if widgets || panel_shape || old.panel != s.panel {
+            self.redraw_kinds(&[Kind::Background]);
+        }
         if wall_changed {
             self.wallpaper_changed(true);
         }
@@ -584,9 +628,8 @@ impl Shell {
             }
             Act::Settings => open_settings(),
         }
-        for s in &mut self.surfs {
-            s.dirty = true;
-        }
+        // The surface clicked draws itself again from the input; a popup that opens draws when
+        // it's configured; status changes (volume, workspace) redraw the panel when they arrive.
     }
 }
 
@@ -796,3 +839,21 @@ delegate_keyboard!(Shell);
 delegate_pointer!(Shell);
 delegate_layer!(Shell);
 delegate_registry!(Shell);
+
+/// The panel's place and size: along the top or bottom edge, keeping windows clear of it.
+fn shape_panel(layer: &LayerSurface, s: &Settings) {
+    let edge = if s.panel_edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM };
+    layer.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+    let h = ui::panel_height(s) as u32;
+    layer.set_size(0, h);
+    layer.set_exclusive_zone(h as i32);
+}
+
+/// The dock's size for its pinned apps, at the bottom, keeping windows clear of it when asked.
+fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::DesktopApp]) {
+    let n = s.dock_apps.iter().filter(|id| ui::find_app(apps, id).is_some()).count();
+    let (size, room) = ui::dock_size(s, n);
+    layer.set_anchor(Anchor::BOTTOM);
+    layer.set_size(size.x as u32, size.y as u32);
+    layer.set_exclusive_zone(if s.dock_reserve { room as i32 } else { 0 });
+}
