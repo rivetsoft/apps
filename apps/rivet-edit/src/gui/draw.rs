@@ -259,6 +259,9 @@ impl EditApp {
             ui.set_min_height(26.0);
             ui.label(egui::RichText::new(self.workspace_name().unwrap_or_default().to_uppercase()).font(fonts::ui_font(11.5)).strong().color(v.weak_text_color()));
         });
+        if self.scan_running() && self.files.is_empty() {
+            ui.label(egui::RichText::new("Listing files…").small().color(v.weak_text_color()));
+        }
         if self.files_cut {
             ui.label(egui::RichText::new(format!("Showing the first {} files", workspace::MAX_FILES)).small().color(v.weak_text_color()));
         }

@@ -99,6 +99,11 @@ impl QuickPanel {
                 let o = edit.show(ui);
                 if self.focus {
                     o.response.request_focus();
+                    // The cursor at the end (after text was filled in, e.g. by Tab).
+                    let mut st = o.state.clone();
+                    let end = egui::text::CCursor::new(self.query.chars().count());
+                    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
+                    st.store(ui.ctx(), o.response.id);
                     self.focus = false;
                 }
             });

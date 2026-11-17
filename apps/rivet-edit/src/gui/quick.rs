@@ -10,6 +10,22 @@ use rivet_look::theme::Mode;
 
 use super::*;
 
+/// At most this many files are listed in Go to File (the best matches).
+const SHOWN: usize = 100;
+
+/// Go to File's candidates and their ranking for a query, kept until the query, the file list
+/// or the open tabs change.
+#[derive(Default)]
+pub(crate) struct FileRank {
+    query: String,
+    files_gen: u64,
+    tabs: Vec<Option<PathBuf>>,
+    /// Every file: its path and its path inside the workspace.
+    pub cands: Vec<(PathBuf, String)>,
+    /// Indexes into `cands`, best first.
+    pub ranked: Vec<usize>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum QuickKind {
     Files,
@@ -76,6 +92,58 @@ impl EditApp {
             p.query = tilde(self.root.as_deref().and_then(Path::parent).unwrap_or(&rivet_xdg::places::home()));
         }
         self.quick = Some((kind, p));
+    }
+
+    /// Rank the files for `q`, reusing the last ranking when nothing changed, and narrowing it
+    /// when the query only grew (what didn't match "mai" won't match "main").
+    pub(crate) fn rank_files(&mut self, q: &str) {
+        let tabs: Vec<Option<PathBuf>> = self.tabs.iter().map(|t| t.path.clone()).collect();
+        let mut rank = self.file_rank.take().unwrap_or_default();
+        let same_files = rank.files_gen == self.files_gen && rank.tabs == tabs && !rank.cands.is_empty();
+        if same_files && rank.query == q {
+            self.file_rank = Some(rank);
+            return;
+        }
+        if !same_files {
+            let mut cands: Vec<(PathBuf, String)> = Vec::new();
+            for p in tabs.iter().flatten() {
+                cands.push((p.clone(), self.rel(p)));
+            }
+            if let Some(r) = &self.root {
+                let open: std::collections::HashSet<&PathBuf> = tabs.iter().flatten().collect();
+                for f in &self.files {
+                    let p = r.join(f);
+                    if !open.contains(&p) {
+                        cands.push((p, f.clone()));
+                    }
+                }
+            }
+            rank.cands = cands;
+            rank.ranked.clear();
+            rank.query.clear();
+        }
+        // Narrow the last matches when the query grew; else look at every file.
+        let pool: Vec<usize> = if same_files && !rank.query.is_empty() && q.starts_with(rank.query.as_str()) {
+            std::mem::take(&mut rank.ranked)
+        } else {
+            (0..rank.cands.len()).collect()
+        };
+        let mut scored: Vec<(i32, usize)> = pool
+            .into_iter()
+            .filter_map(|i| {
+                let rel = &rank.cands[i].1;
+                let name = rel.rsplit('/').next().unwrap_or(rel);
+                fuzzy_score(name, q).max(fuzzy_score(rel, q).map(|s| s - 150)).map(|s| (s, i))
+            })
+            .collect();
+        if !q.is_empty() {
+            scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| rank.cands[a.1].1.len().cmp(&rank.cands[b.1].1.len())));
+        }
+        rank.ranked = scored.into_iter().map(|(_, i)| i).collect();
+        rank.query = q.to_string();
+        rank.files_gen = self.files_gen;
+        rank.tabs = tabs;
+        self.file_rank = Some(rank);
     }
 
     fn actions(&self) -> Vec<Action> {
@@ -161,55 +229,42 @@ impl EditApp {
         let mut keep = true;
         match kind {
             QuickKind::Files => {
-                // Workspace files by name, then by path; open tabs (and files outside the
-                // workspace) too. With nothing typed: the open tabs first, then the files.
-                let root = self.root.clone();
-                let mut cands: Vec<(PathBuf, String)> = Vec::new();
-                for t in &self.tabs {
-                    if let Some(p) = &t.path {
-                        cands.push((p.clone(), self.rel(p)));
-                    }
-                }
-                if let Some(r) = &root {
-                    for f in &self.files {
-                        let p = r.join(f);
-                        if !cands.iter().any(|(c, _)| *c == p) {
-                            cands.push((p, f.clone()));
-                        }
-                    }
-                }
-                let mut scored: Vec<(i32, usize)> = cands
+                self.rank_files(&q);
+                let rank = self.file_rank.take().unwrap_or_default();
+                // Only the rows shown are drawn (icons are cached per kind of file).
+                let rows: Vec<QuickRow> = rank
+                    .ranked
                     .iter()
-                    .enumerate()
-                    .filter_map(|(i, (_, rel))| {
-                        let name = rel.rsplit('/').next().unwrap_or(rel);
-                        fuzzy_score(name, &q).max(fuzzy_score(rel, &q).map(|s| s - 150)).map(|s| (s, i))
-                    })
-                    .collect();
-                if !q.is_empty() {
-                    scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| cands[a.1].1.len().cmp(&cands[b.1].1.len())));
-                }
-                scored.truncate(200);
-                let rows: Vec<QuickRow> = scored
-                    .iter()
-                    .map(|(_, i)| {
-                        let rel = &cands[*i].1;
+                    .take(SHOWN)
+                    .map(|i| {
+                        let rel = &rank.cands[*i].1;
                         let (dir, name) = rel.rsplit_once('/').unwrap_or(("", rel));
                         let icon = self.file_icon(ctx, name, 24.0);
                         QuickRow::Item { icon, name: name.to_string(), sub: if dir.is_empty() { self.workspace_name().unwrap_or_default() } else { dir.replace('/', " › ") } }
                     })
                     .collect();
-                let empty = if self.root.is_none() && self.tabs.is_empty() { "Open a folder first (Ctrl+O)" } else { "No matching files" };
+                let empty = if self.root.is_none() && self.tabs.is_empty() {
+                    "Open a folder first (Ctrl+O)"
+                } else if self.scan_running() && self.files.is_empty() {
+                    "Listing the folder's files…"
+                } else {
+                    "No matching files"
+                };
                 let text = QuickText { hint: "Go to a file…", empty, legend: "Up/Down choose   ·   Enter open   ·   Esc close" };
-                match panel.show(ctx, "edit-quick-files", &rows, &text, search.as_ref()) {
+                let picked = match panel.show(ctx, "edit-quick-files", &rows, &text, search.as_ref()) {
                     Some(QuickEvent::Pick(i)) => {
-                        if let Some(p) = scored.get(i).map(|(_, c)| cands[*c].0.clone()) {
-                            self.open_file(&p);
-                        }
                         keep = false;
+                        rank.ranked.get(i).map(|c| rank.cands[*c].0.clone())
                     }
-                    Some(QuickEvent::Close) => keep = false,
-                    None => {}
+                    Some(QuickEvent::Close) => {
+                        keep = false;
+                        None
+                    }
+                    None => None,
+                };
+                self.file_rank = Some(rank);
+                if let Some(p) = picked {
+                    self.open_file(&p);
                 }
             }
             QuickKind::Commands => {
@@ -290,6 +345,16 @@ impl EditApp {
                 let folder_icon = self.icon(ctx, &["folder"], 24.0);
                 let mut rows: Vec<QuickRow> = Vec::new();
                 let open_here = !files && word.is_empty() && dir.is_dir();
+                // Tab fills in the highlighted folder or file (the best match when the
+                // "Open" row is highlighted), to keep typing below it.
+                if !scored.is_empty() && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab)) {
+                    let k = if open_here { panel.sel.saturating_sub(1) } else { panel.sel }.min(scored.len() - 1);
+                    let (is_dir, name) = &scored[k].1;
+                    panel.query = if *is_dir { format!("{dir_s}{name}/") } else { format!("{dir_s}{name}") };
+                    panel.sel = 0;
+                    panel.focus = true;
+                    ctx.request_repaint();
+                }
                 if open_here {
                     rows.push(QuickRow::Item { icon: self.icon(ctx, &["folder-open", "folder"], 24.0), name: format!("Open {}", dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir_s.clone())), sub: "As the workspace".into() });
                 }
@@ -298,7 +363,7 @@ impl EditApp {
                     rows.push(QuickRow::Item { icon, name: if *is_dir { format!("{name}/") } else { name.clone() }, sub: dir_s.trim_end_matches('/').to_string() });
                 }
                 let hint = if files { "A file to open… (type a path)" } else { "A folder to open… (type a path)" };
-                let text = QuickText { hint, empty: "Nothing here matches", legend: "Up/Down choose   ·   Enter open or go in   ·   Esc close" };
+                let text = QuickText { hint, empty: "Nothing here matches", legend: "Up/Down choose   ·   Tab fill in   ·   Enter open or go in   ·   Esc close" };
                 match panel.show(ctx, "edit-quick-browse", &rows, &text, search.as_ref()) {
                     Some(QuickEvent::Pick(i)) => {
                         if open_here && i == 0 {

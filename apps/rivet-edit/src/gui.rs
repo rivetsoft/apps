@@ -19,6 +19,9 @@ use rivet_look::windows;
 use crate::settings::Settings;
 use crate::{syntax, workspace};
 
+/// A finished workspace scan: its files, and whether the list was cut short.
+type ScanResult = (Vec<String>, bool);
+
 pub const ICON_SVG: &str = include_str!("../data/rivet-edit.svg");
 
 /// An open file.
@@ -84,6 +87,15 @@ pub struct EditApp {
     shot: Option<rivet_kit::Shot>,
     title: String,
     checked_at: f64,
+    scanned_at: f64,
+    /// A workspace scan running on its own thread: its folder and the answer to come.
+    scan_rx: Option<(PathBuf, std::sync::mpsc::Receiver<ScanResult>)>,
+    /// Bumped whenever the file list changes (Go to File re-ranks only then).
+    pub(crate) files_gen: u64,
+    /// Go to File's ranking, kept between frames.
+    pub(crate) file_rank: Option<quick::FileRank>,
+    /// File icons by kind of file and size.
+    ext_icons: HashMap<(String, u32), Option<egui::TextureHandle>>,
     /// A line to put the cursor on and show (from Go to Line or Quick Open).
     pub(crate) goto: Option<usize>,
     /// Quitting is fine (changes saved or let go).
@@ -141,6 +153,11 @@ impl EditApp {
             shot: screenshot.map(rivet_kit::Shot::new),
             title: String::new(),
             checked_at: 0.0,
+            scanned_at: 0.0,
+            scan_rx: None,
+            files_gen: 0,
+            file_rank: None,
+            ext_icons: HashMap::new(),
             goto: None,
             allow_close: false,
         };
@@ -212,9 +229,15 @@ impl EditApp {
             names.push("text-x-generic".into());
             self.icon_names.insert(ext.clone(), names);
         }
+        let key = (ext.clone(), (px * ctx.pixels_per_point()).round() as u32);
+        if let Some(t) = self.ext_icons.get(&key) {
+            return t.clone();
+        }
         let names: Vec<String> = self.icon_names.get(&ext).cloned().unwrap_or_default();
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-        self.icon(ctx, &refs, px)
+        let t = self.icon(ctx, &refs, px);
+        self.ext_icons.insert(key, t.clone());
+        t
     }
 
     // ---------------------------------------------------------------- workspace and files
@@ -227,17 +250,61 @@ impl EditApp {
         }
         self.root = Some(p.clone());
         self.open_dirs.clear();
+        self.files.clear();
+        self.folders.clear();
+        self.files_gen += 1;
         self.rescan();
         self.s.remember(p);
         self.s.save();
     }
 
+    /// List the workspace's files again, on a thread of its own (a big folder takes seconds);
+    /// the answer is taken in by `take_scan`. Checks scan right away, to draw the result.
     pub(crate) fn rescan(&mut self) {
-        let Some(root) = &self.root else { return };
-        let (files, cut) = workspace::scan(root);
-        self.folders = workspace::folders(&files);
-        self.files = files;
+        let Some(root) = self.root.clone() else { return };
+        if self.shot.is_some() {
+            let (files, cut) = workspace::scan(&root);
+            self.set_files(files, cut);
+            return;
+        }
+        if self.scan_rx.as_ref().is_some_and(|(r, _)| *r == root) {
+            return; // one is running already
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(workspace::scan(&root));
+        });
+        self.scan_rx = Some((self.root.clone().unwrap_or_default(), rx));
+    }
+
+    fn set_files(&mut self, files: Vec<String>, cut: bool) {
+        if files != self.files {
+            self.folders = workspace::folders(&files);
+            self.files = files;
+            self.files_gen += 1;
+        }
         self.files_cut = cut;
+    }
+
+    pub(crate) fn scan_running(&self) -> bool {
+        self.scan_rx.is_some()
+    }
+
+    /// A finished scan, when it's for the workspace still open.
+    fn take_scan(&mut self, ctx: &egui::Context) {
+        let Some((root, rx)) = &self.scan_rx else { return };
+        match rx.try_recv() {
+            Ok((files, cut)) => {
+                let current = self.root.as_ref() == Some(root);
+                self.scan_rx = None;
+                if current {
+                    self.set_files(files, cut);
+                    ctx.request_repaint();
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => ctx.request_repaint_after(std::time::Duration::from_millis(100)),
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.scan_rx = None,
+        }
     }
 
     /// Open a file in a tab (or show its tab when it's open already).
@@ -443,6 +510,12 @@ impl eframe::App for EditApp {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(shot) = &self.shot {
             rivet_kit::scripted_click("RIVET_EDIT", shot.frames(), raw);
+            // Checks: RIVET_EDIT_KEY=tab (a key name) presses that key once things settle.
+            if shot.frames() == 40
+                && let Some(key) = std::env::var("RIVET_EDIT_KEY").ok().and_then(|k| Key::from_name(&k))
+            {
+                raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+            }
         }
     }
 
@@ -469,13 +542,17 @@ impl eframe::App for EditApp {
         }
         self.shortcuts(&ctx);
         let now = ctx.input(|i| i.time);
+        self.take_scan(&ctx);
         if self.shot.is_none() && now - self.checked_at > 2.0 {
             self.checked_at = now;
             self.check_disk();
-            if self.root.is_some() && !self.files_cut {
-                self.rescan();
-            }
             ctx.request_repaint_after(std::time::Duration::from_secs(2));
+        }
+        // The file list again every few seconds, in the background (not for huge folders).
+        if self.shot.is_none() && self.root.is_some() && !self.files_cut && now - self.scanned_at > 5.0 {
+            self.scanned_at = now;
+            self.rescan();
+            ctx.request_repaint_after(std::time::Duration::from_secs(5));
         }
         let title = match (self.tabs.get(self.active), self.workspace_name()) {
             (Some(t), Some(w)) => format!("{}{} – {w} – Rivet Edit", if t.dirty() { "● " } else { "" }, t.name()),
