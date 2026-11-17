@@ -48,7 +48,9 @@ pub enum Deco {
     /// A bullet in place of the list mark at this character.
     Bullet(usize),
     /// A check box over `[ ]` starting at this character; `byte` is the space or x inside.
-    Check { at: usize, done: bool, byte: usize },
+    Check { at: usize, done: bool, doing: bool, byte: usize },
+    /// A super todo's details, drawn after its text (at this character).
+    Todo { at: usize, due: Option<chrono::NaiveDate>, priority: crate::tasks::Priority, done: bool },
     /// A quote bar at this character (the `>`).
     Quote(usize),
     /// A horizontal rule on the line starting at this character.
@@ -83,6 +85,12 @@ pub fn heading_level(line: &str) -> u8 {
 /// `held` is the line being edited (by index) and the heading level it had when the cursor came
 /// to it: that line shows as plain Markdown at that size until the cursor leaves it.
 pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>) -> Live {
+    analyze_with(text, raw, held, &[])
+}
+
+/// [`analyze`], with the todo tags that make a task a super todo (its tag and details fold away
+/// into a due date and a flag).
+pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, triggers: &[String]) -> Live {
     let mut st = vec![St::default(); text.len()];
     let mut decos = Vec::new();
     let mut blocks = Vec::new();
@@ -200,13 +208,14 @@ pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)
         } else if t.len() >= 2 && matches!(t.as_bytes()[0], b'-' | b'*' | b'+') && t.as_bytes()[1] == b' ' {
             // ---- list item, maybe a task
             let after = &t[2..];
-            let task = after.len() >= 3 && after.starts_with('[') && matches!(after.as_bytes()[1], b' ' | b'x' | b'X') && after.as_bytes()[2] == b']' && (after.len() == 3 || after.as_bytes()[3] == b' ');
+            let task = after.len() >= 3 && after.starts_with('[') && matches!(after.as_bytes()[1], b' ' | b'x' | b'X' | b'/') && after.as_bytes()[2] == b']' && (after.len() == 3 || after.as_bytes()[3] == b' ');
             if task {
-                let done = after.as_bytes()[1] != b' ';
+                let done = matches!(after.as_bytes()[1], b'x' | b'X');
+                let doing = after.as_bytes()[1] == b'/';
                 mark(&mut st, at..at + 2, Hide::Tiny);
                 mark(&mut st, at + 2..at + 5, Hide::Clear);
                 if !editing {
-                    decos.push(Deco::Check { at: char_at(at + 2), done, byte: at + 3 });
+                    decos.push(Deco::Check { at: char_at(at + 2), done, doing, byte: at + 3 });
                 }
                 rest = (at + 6).min(r.start + body.len());
                 if done {
@@ -223,6 +232,38 @@ pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)
             }
         }
         inline(text, &mut st, rest..r.start + body.len(), editing);
+        // A super todo: its todo tag and details fold away; a due date and flag show instead.
+        if !editing
+            && !triggers.is_empty()
+            && let Some(it) = crate::tasks::parse_line(i, body)
+            && it.is_super(triggers)
+        {
+            let end = r.start + body.len();
+            let mut p = rest;
+            while p < end {
+                let ws = text[p..end].find(|c: char| !c.is_whitespace()).map(|o| p + o).unwrap_or(end);
+                if ws >= end {
+                    break;
+                }
+                let we = text[ws..end].find(char::is_whitespace).map(|o| ws + o).unwrap_or(end);
+                let w = &text[ws..we];
+                let meta = w.strip_prefix('#').is_some_and(|t| triggers.iter().any(|g| g.eq_ignore_ascii_case(t))) || w.starts_with("due:") || w.starts_with("priority:");
+                if meta {
+                    for s in &mut st[p..we] {
+                        s.hide = Hide::Tiny;
+                    }
+                }
+                p = we;
+            }
+            // After the last thing still shown.
+            let mut last = end;
+            while last > rest && (st[last - 1].hide != Hide::No || text.as_bytes()[last - 1].is_ascii_whitespace()) {
+                last -= 1;
+            }
+            if it.due.is_some() || it.priority != crate::tasks::Priority::None {
+                decos.push(Deco::Todo { at: char_at(last), due: it.due, priority: it.priority, done: it.done });
+            }
+        }
         i += 1;
     }
     Live { st, decos, blocks }
@@ -441,6 +482,18 @@ mod tests {
         assert_eq!(shown(t, Some((t.len(), t.len()))), t);
         // The start of the next line doesn't make the line above edited.
         assert_eq!(shown("**a**\nb", Some((6, 6))), "a\nb");
+    }
+
+    #[test]
+    fn super_todos_fold_their_details() {
+        let t = "- [ ] Ship it #task #work due:2026-12-01 priority:high\n- [ ] plain #work\n";
+        let tags = vec!["task".to_string()];
+        let l = analyze_with(t, None, None, &tags);
+        let shown: String = t.char_indices().filter(|(i, _)| l.st[*i].hide == Hide::No).map(|(_, c)| c).collect();
+        assert!(shown.starts_with(" Ship it #work\n"), "{shown:?}");
+        assert!(l.decos.iter().any(|d| matches!(d, Deco::Todo { priority: crate::tasks::Priority::High, due: Some(_), .. })));
+        // Without the module (no todo tags) nothing folds.
+        assert!(analyze(t, None, None).decos.iter().all(|d| !matches!(d, Deco::Todo { .. })));
     }
 
     #[test]

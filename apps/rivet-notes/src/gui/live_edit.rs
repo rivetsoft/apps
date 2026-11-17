@@ -33,6 +33,8 @@ pub(super) struct LiveLook {
     pub accent: Color32,
     pub code_bg: Color32,
     pub code: Color32,
+    /// The tags that make a task a super todo.
+    pub todo_tags: Vec<String>,
 }
 
 /// How much bigger each heading level is.
@@ -183,7 +185,7 @@ pub(super) fn code_panels(ui: &egui::Ui, text: &str, out: &egui::text_edit::Text
 
 /// The note laid out live.
 pub(super) fn job(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, look: &LiveLook, colors: &highlight::Colors) -> LayoutJob {
-    let l = live::analyze(text, raw, held);
+    let l = live::analyze_with(text, raw, held, &look.todo_tags);
     let mono_size = look.size * 0.92;
     // Code blocks colored for their language.
     let mut hl: Vec<Option<Color32>> = vec![None; text.len()];
@@ -271,8 +273,8 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
 /// Draw bullets, check boxes, quote bars and rules over the laid-out text. Returns the byte of
 /// a check box's mark when one was clicked (to tick or untick it).
 pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Vec<(Rect, Hit)> {
-    let l = live::analyze(text, raw, held);
-    let p = ui.painter().with_clip_rect(out.text_clip_rect);
+    let l = live::analyze_with(text, raw, held, &look.todo_tags);
+    let p = ui.painter().with_clip_rect(ui.clip_rect());
     let at = |c: usize| out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
     let pointer = ui.ctx().pointer_hover_pos();
     let mut boxes = Vec::new();
@@ -283,7 +285,18 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 let y = a.center().y;
                 p.circle_filled(Pos2::new((a.left() + b.left()) / 2.0, y), (look.size * 0.17).max(2.2), look.accent);
             }
-            Deco::Check { at: c, done, byte } => {
+            Deco::Todo { at: c, due, priority, done } => {
+                let a = at(c);
+                let mut x = a.left() + 10.0;
+                let y = a.center().y;
+                if let Some(d) = due {
+                    x = super::todos::due_pill(&p, Pos2::new(x, y), d, done, look.size).right() + 6.0;
+                }
+                if priority != crate::tasks::Priority::None {
+                    super::todos::flag(&p, Pos2::new(x + 5.0, y), super::todos::priority_color(ui.ctx(), priority, look.weak));
+                }
+            }
+            Deco::Check { at: c, done, doing, byte } => {
                 let (a, b) = (at(c), at(c + 3));
                 let side = (look.size * 0.95).min(b.left() - a.left()).max(10.0);
                 let r = Rect::from_center_size(Pos2::new((a.left() + b.left()) / 2.0, a.center().y), Vec2::splat(side));
@@ -294,6 +307,9 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                     let k = side / 14.0;
                     p.line_segment([cc + Vec2::new(-3.5, 0.0) * k, cc + Vec2::new(-1.0, 2.8) * k], s);
                     p.line_segment([cc + Vec2::new(-1.0, 2.8) * k, cc + Vec2::new(3.8, -2.8) * k], s);
+                } else if doing {
+                    p.rect_stroke(r, 3.0, Stroke::new(1.4, look.accent), egui::StrokeKind::Inside);
+                    p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.center().x, r.max.y)).shrink(2.5), 1.5, look.accent);
                 } else {
                     p.rect_stroke(r, 3.0, Stroke::new(1.4, look.weak), egui::StrokeKind::Inside);
                 }

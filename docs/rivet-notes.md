@@ -103,10 +103,14 @@ Turned on in Preferences → Modules, where the todo tags are set (`#task` by de
 makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
 
 - Its details are plain text in the line: `- [ ] Send the invoice #task #work due:2026-12-01 priority:high`.
-- On a super todo's line (cursor or pointer) a ⋯ button opens a popover for its due date
-  (Today, Tomorrow, Next week or a calendar), priority, tags, and Done.
+  Progress is the box: `[ ]` to do, `[/]` in progress, `[x]` done.
+- In live mode the details don't show as text: the todo tag folds away, the due date becomes a
+  pill (Today, Tomorrow, Friday, 3 days late… colored for how soon it is) and the priority a
+  colored flag; an in-progress task's box is half filled.
+- On a super todo's line (cursor or pointer) a ⋯ button opens a popover for its progress (To do, In
+  progress, Done), due date (Today, Tomorrow, Next week or a calendar), priority (flags) and tags.
 - **Todos page** (the check box button at the top right, File → Todos, or Quick Actions): every
-  super todo in the vault. Filter by text, Open / Done / All, when it's due (overdue, today, next
+  super todo in the vault. Filter by text, Open / In progress / Done / All, when it's due (overdue, today, next
   7 days, no date) and tag; sort by due date, priority or note. Tick a box to finish a task (its
   note changes on disk); click a row to open its note. Overdue dates are red.
 

@@ -3,7 +3,7 @@
 //! the vault is rolled up on the Todos page, which can be sorted and filtered.
 
 use chrono::{Datelike, NaiveDate};
-use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use eframe::egui::text::CCursor;
 use rivet_look::theme::{r_md, r_sm, r_xs, status};
 use rivet_look::{fonts, palette};
@@ -29,6 +29,7 @@ pub(super) struct TaskPop {
 pub(super) enum Show {
     #[default]
     Open,
+    Doing,
     Done,
     All,
 }
@@ -65,19 +66,64 @@ fn today() -> NaiveDate {
     chrono::Local::now().date_naive()
 }
 
-fn due_label(d: NaiveDate) -> String {
+/// A due date in words: Today, Tomorrow, Friday, 3 days late, 20 Nov…
+pub(super) fn due_label(d: NaiveDate) -> String {
     let t = today();
     match (d - t).num_days() {
         0 => "Today".into(),
         1 => "Tomorrow".into(),
         -1 => "Yesterday".into(),
+        n if n < -1 => format!("{} days late", -n),
         n if (2..7).contains(&n) => d.format("%A").to_string(),
         _ if d.year() == t.year() => d.format("%-d %b").to_string(),
         _ => d.format("%-d %b %Y").to_string(),
     }
 }
 
-fn priority_color(ctx: &egui::Context, p: Priority, weak: Color32) -> Color32 {
+/// How a due date is colored: late, today, soon, later (or done).
+fn due_color(ctx: &egui::Context, d: NaiveDate, done: bool) -> Color32 {
+    let v = ctx.global_style().visuals.clone();
+    let n = (d - today()).num_days();
+    if done {
+        v.weak_text_color()
+    } else if n < 0 {
+        status(ctx).danger
+    } else if n == 0 {
+        v.selection.bg_fill
+    } else if n <= 2 {
+        status(ctx).warning
+    } else {
+        v.text_color()
+    }
+}
+
+/// A small calendar.
+fn calendar_glyph(p: &egui::Painter, c: Pos2, s: f32, col: Color32) {
+    let st = Stroke::new(1.2, col);
+    let r = Rect::from_center_size(c + Vec2::new(0.0, s * 0.06), Vec2::new(s, s * 0.85));
+    p.rect_stroke(r, 2.0, st, egui::StrokeKind::Inside);
+    p.line_segment([Pos2::new(r.left(), r.top() + s * 0.28), Pos2::new(r.right(), r.top() + s * 0.28)], st);
+    for x in [r.left() + s * 0.28, r.right() - s * 0.28] {
+        p.line_segment([Pos2::new(x, r.top() - s * 0.14), Pos2::new(x, r.top() + s * 0.12)], st);
+    }
+}
+
+/// A due date as a pill (calendar and words), its left edge's middle at `left`. Returns its
+/// rectangle.
+pub(super) fn due_pill(p: &egui::Painter, left: Pos2, d: NaiveDate, done: bool, size: f32) -> Rect {
+    let ctx = p.ctx().clone();
+    let col = due_color(&ctx, d, done);
+    let font = egui::FontId::proportional((size * 0.8).clamp(11.0, 14.0));
+    let g = p.layout_no_wrap(due_label(d), font, col);
+    let h = g.size().y + 6.0;
+    let r = Rect::from_min_size(Pos2::new(left.x, left.y - h / 2.0), Vec2::new(g.size().x + 30.0, h));
+    p.rect_filled(r, h / 2.0, col.gamma_multiply(0.14));
+    calendar_glyph(p, Pos2::new(r.left() + 13.0, r.center().y), 10.0, col);
+    p.galley(Pos2::new(r.left() + 22.0, r.center().y - g.size().y / 2.0), g, col);
+    r
+}
+
+pub(super) fn priority_color(ctx: &egui::Context, p: Priority, weak: Color32) -> Color32 {
     let s = status(ctx);
     match p {
         Priority::High => s.danger,
@@ -87,11 +133,40 @@ fn priority_color(ctx: &egui::Context, p: Priority, weak: Color32) -> Color32 {
     }
 }
 
-/// A small flag for a priority.
-fn flag(p: &egui::Painter, c: Pos2, col: Color32) {
+/// A small flag (a hollow one for no priority).
+pub(super) fn flag(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.4, col);
-    p.line_segment([c + Vec2::new(-3.5, -5.5), c + Vec2::new(-3.5, 6.0)], s);
-    p.add(egui::Shape::convex_polygon(vec![c + Vec2::new(-3.5, -5.5), c + Vec2::new(4.5, -3.0), c + Vec2::new(-3.5, -0.5)], col, Stroke::NONE));
+    p.line_segment([c + Vec2::new(-3.5, -6.0), c + Vec2::new(-3.5, 6.5)], s);
+    let pts = vec![c + Vec2::new(-3.5, -6.0), c + Vec2::new(5.0, -3.3), c + Vec2::new(-3.5, -0.6)];
+    p.add(egui::Shape::convex_polygon(pts, col, Stroke::NONE));
+}
+
+fn hollow_flag(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.2, col);
+    p.line_segment([c + Vec2::new(-3.5, -6.0), c + Vec2::new(-3.5, 6.5)], s);
+    p.add(egui::Shape::closed_line(vec![c + Vec2::new(-3.5, -6.0), c + Vec2::new(5.0, -3.3), c + Vec2::new(-3.5, -0.6)], s));
+}
+
+/// A task's box: empty, half (in progress) or ticked.
+fn state_box(p: &egui::Painter, r: Rect, it: &Item, v: &egui::Visuals, hot: bool) {
+    if it.done {
+        p.rect_filled(r, 3.5, v.selection.bg_fill);
+        let c = r.center();
+        let s = Stroke::new(1.8, v.selection.stroke.color);
+        p.line_segment([c + Vec2::new(-4.0, 0.0), c + Vec2::new(-1.2, 3.2)], s);
+        p.line_segment([c + Vec2::new(-1.2, 3.2), c + Vec2::new(4.2, -3.2)], s);
+    } else if it.doing {
+        p.rect_stroke(r, 3.5, Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Inside);
+        p.rect_filled(Rect::from_min_max(r.min, Pos2::new(r.center().x, r.max.y)).shrink(3.0), 1.5, v.selection.bg_fill);
+    } else {
+        p.rect_stroke(r, 3.5, Stroke::new(if hot { 1.8 } else { 1.3 }, if hot { v.selection.bg_fill } else { v.weak_text_color() }), egui::StrokeKind::Inside);
+    }
+}
+
+/// A section title in the popover.
+fn caption(ui: &mut egui::Ui, text: &str) {
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(text).font(fonts::ui_font(11.0)).color(ui.visuals().weak_text_color()));
 }
 
 impl NotesApp {
@@ -110,7 +185,7 @@ impl NotesApp {
                 if !it.tags.iter().any(|t| t.eq_ignore_ascii_case(&tag)) {
                     it.tags.insert(0, tag.clone());
                 }
-                tasks::write_line(&line, it.done, &it.tags, it.due, it.priority)
+                tasks::write_line(&line, it.mark(), &it.tags, it.due, it.priority)
             }
             None => {
                 let indent = &line[..line.len() - line.trim_start().len()];
@@ -181,7 +256,7 @@ impl NotesApp {
         let Some(line) = tasks::line_of(&d.body, n) else { return };
         let Some(mut it) = tasks::parse_line(n, line) else { return };
         f(&mut it);
-        let new = tasks::write_line(line, it.done, &it.tags, it.due, it.priority);
+        let new = tasks::write_line(line, it.mark(), &it.tags, it.due, it.priority);
         if let Some(b) = tasks::replace_line(&d.body, n, &new)
             && b != d.body
         {
@@ -201,67 +276,111 @@ impl NotesApp {
         let mut change: Option<TaskChange> = None;
         let mut close = ctx.input(|i| i.key_pressed(Key::Escape));
         let screen = ctx.content_rect();
-        let pos = Pos2::new(pop.at.x.clamp(screen.left() + 8.0, (screen.right() - 300.0).max(screen.left())), pop.at.y);
+        let w = 288.0;
+        // Below the task, or above it when there's no room below (its height from last frame).
+        let h = ctx.data(|m| m.get_temp::<f32>(egui::Id::unique("task-popover-h"))).unwrap_or(330.0);
+        let y = if pop.at.y + h > screen.bottom() - 8.0 { (pop.at.y - h - 34.0).max(screen.top() + 8.0) } else { pop.at.y };
+        let pos = Pos2::new(pop.at.x.clamp(screen.left() + 8.0, (screen.right() - w - 36.0).max(screen.left())), y);
         let r = egui::Area::new(egui::Id::unique("task-popover")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
-            egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::same(12)).show(ui, |ui| {
-                ui.set_width(268.0);
+            egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::same(14)).show(ui, |ui| {
+                ui.set_width(w);
                 ui.spacing_mut().item_spacing.y = 6.0;
-                let title = if it.title.is_empty() { "Task".to_string() } else { it.title.clone() };
-                ui.add(egui::Label::new(egui::RichText::new(title).strong().color(v.strong_text_color())).truncate());
+                // ---- the task: its box (click to finish) and its words
+                ui.horizontal(|ui| {
+                    let (br, bresp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
+                    state_box(ui.painter(), br, &it, &v, bresp.hovered());
+                    if bresp.on_hover_text(if it.done { "Mark not done" } else { "Mark done" }).clicked() {
+                        change = Some(Box::new(|i: &mut Item| {
+                            i.done = !i.done;
+                            i.doing = false;
+                        }));
+                    }
+                    ui.add_space(4.0);
+                    let title = if it.title.is_empty() { "Task".to_string() } else { it.title.clone() };
+                    let tw = ui.available_width() - 26.0;
+                    ui.allocate_ui(Vec2::new(tw, 20.0), |ui| {
+                        ui.add(egui::Label::new(egui::RichText::new(title).font(fonts::ui_font(14.5)).strong().color(v.strong_text_color())).truncate());
+                    });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(egui::Button::new(egui::RichText::new("×").size(15.0).color(weak)).frame_when_inactive(false).min_size(Vec2::splat(22.0))).on_hover_text("Close (Esc)").clicked() {
+                            close = true;
+                        }
+                    });
+                });
                 ui.add_space(2.0);
-                // ---- due date
-                ui.label(egui::RichText::new("DUE").font(fonts::ui_font(11.0)).color(weak));
-                ui.horizontal_wrapped(|ui| {
+                // ---- progress
+                caption(ui, "PROGRESS");
+                ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
+                    let cur = if it.done { 2 } else if it.doing { 1 } else { 0 };
+                    for (k, label) in ["To do", "In progress", "Done"].into_iter().enumerate() {
+                        if ui.selectable_label(cur == k, label).clicked() && cur != k {
+                            change = Some(Box::new(move |i: &mut Item| {
+                                i.done = k == 2;
+                                i.doing = k == 1;
+                            }));
+                        }
+                    }
+                });
+                // ---- due date
+                caption(ui, "DUE");
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+                    if let Some(d) = it.due {
+                        let (pr, _) = ui.allocate_exact_size(Vec2::new(0.0, 24.0), Sense::hover());
+                        let pill = due_pill(ui.painter(), Pos2::new(pr.left(), pr.center().y), d, it.done, 14.0);
+                        ui.allocate_exact_size(Vec2::new(pill.width(), 24.0), Sense::hover()).1.on_hover_text(d.format("%A %-d %B %Y").to_string());
+                        if ui.add(egui::Button::new(egui::RichText::new("×").color(weak)).frame_when_inactive(false).min_size(Vec2::splat(22.0))).on_hover_text("No due date").clicked() {
+                            change = Some(Box::new(|i: &mut Item| i.due = None));
+                        }
+                        ui.end_row();
+                    }
                     let t = today();
                     for (label, d) in [("Today", t), ("Tomorrow", t + chrono::Days::new(1)), ("Next week", t + chrono::Days::new(7))] {
-                        if ui.selectable_label(it.due == Some(d), label).clicked() {
+                        if ui.add(egui::Button::new(label).selected(it.due == Some(d)).corner_radius(r_sm())).clicked() {
                             change = Some(Box::new(move |i: &mut Item| i.due = Some(d)));
                         }
                     }
                     let shown = it.due.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default();
-                    let btn = egui::Button::new(if shown.is_empty() { "Pick…".to_string() } else { shown.clone() }).corner_radius(r_sm());
-                    egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
+                    let btn = egui::Button::new("    Date…").corner_radius(r_sm());
+                    let (resp, _) = egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
                         if let Some(day) = super::props::calendar(ui, &shown) {
                             change = Some(Box::new(move |i: &mut Item| i.due = Some(day)));
                             ui.close();
                         }
                     });
-                    if it.due.is_some() && ui.small_button("×").on_hover_text("No due date").clicked() {
-                        change = Some(Box::new(|i: &mut Item| i.due = None));
-                    }
+                    calendar_glyph(ui.painter(), Pos2::new(resp.rect.left() + 13.0, resp.rect.center().y), 10.0, v.text_color());
                 });
-                // ---- priority
-                ui.add_space(2.0);
-                ui.label(egui::RichText::new("PRIORITY").font(fonts::ui_font(11.0)).color(weak));
+                // ---- priority: flags
+                caption(ui, "PRIORITY");
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
                     for p in Priority::ALL {
-                        let r = ui.selectable_label(it.priority == p, p.label());
-                        if p != Priority::None {
-                            flag(ui.painter(), Pos2::new(r.rect.left() - 1.0, r.rect.center().y), Color32::TRANSPARENT);
+                        let on = it.priority == p;
+                        let resp = ui.add(egui::Button::new(format!("     {}", p.label())).selected(on).corner_radius(r_sm()).min_size(Vec2::new(0.0, 26.0)));
+                        let c = Pos2::new(resp.rect.left() + 13.0, resp.rect.center().y);
+                        if p == Priority::None {
+                            hollow_flag(ui.painter(), c, weak);
+                        } else {
+                            flag(ui.painter(), c, priority_color(ctx, p, weak));
                         }
-                        if r.clicked() {
+                        if resp.clicked() && !on {
                             change = Some(Box::new(move |i: &mut Item| i.priority = p));
                         }
                     }
                 });
-                // ---- tags (the todo tags stay; they make it a super todo)
-                ui.add_space(2.0);
-                ui.label(egui::RichText::new("TAGS").font(fonts::ui_font(11.0)).color(weak));
+                // ---- tags (the todo tag itself stays out of sight)
+                caption(ui, "TAGS");
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
-                    for t in &it.tags {
-                        let keep = triggers.contains(&t.to_lowercase());
-                        let label = if keep { format!("#{t}") } else { format!("#{t}  ×") };
-                        let b = egui::Button::new(egui::RichText::new(label).size(12.5)).fill(palette::mix(v.faint_bg_color, v.selection.bg_fill, 0.35)).corner_radius(r_xs());
-                        let r = ui.add_enabled(!keep, b);
-                        if !keep && r.on_hover_text("Remove this tag").clicked() {
+                    for t in it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())) {
+                        let b = egui::Button::new(egui::RichText::new(format!("#{t}  ×")).size(12.5)).fill(palette::mix(v.faint_bg_color, v.selection.bg_fill, 0.35)).corner_radius(r_xs());
+                        if ui.add(b).on_hover_text("Remove this tag").clicked() {
                             let t = t.clone();
                             change = Some(Box::new(move |i: &mut Item| i.tags.retain(|x| *x != t)));
                         }
                     }
-                    let r = ui.add(egui::TextEdit::singleline(&mut pop.tag_input).hint_text("add tag").desired_width(90.0));
+                    let r = ui.add(egui::TextEdit::singleline(&mut pop.tag_input).hint_text("add tag").desired_width(100.0));
                     if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                         let add: Vec<String> = pop.tag_input.split([',', ' ']).map(|t| t.trim().trim_start_matches('#').to_string()).filter(|t| !t.is_empty()).collect();
                         pop.tag_input.clear();
@@ -275,19 +394,9 @@ impl NotesApp {
                         r.request_focus();
                     }
                 });
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    if ui.checkbox(&mut it.done.clone(), "Done").clicked() {
-                        change = Some(Box::new(|i: &mut Item| i.done = !i.done));
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Close").clicked() {
-                            close = true;
-                        }
-                    });
-                });
             });
         });
+        ctx.data_mut(|m| m.insert_temp(egui::Id::unique("task-popover-h"), r.response.rect.height()));
         // A click outside closes it.
         let outside = ctx.input(|i| i.pointer.any_pressed()) && ctx.pointer_interact_pos().is_some_and(|p| !r.response.rect.contains(p)) && !egui::Popup::is_any_open(ctx);
         if outside && !pop.fresh {
@@ -305,7 +414,10 @@ impl NotesApp {
     /// Tick or untick a task in any note (the open one is changed in place).
     fn toggle_task(&mut self, path: &Path, it: &Item) {
         if self.doc.as_ref().is_some_and(|d| d.path == path) {
-            self.edit_task(it.line, |i| i.done = !i.done);
+            self.edit_task(it.line, |i| {
+                i.done = !i.done;
+                i.doing = false;
+            });
             self.save_now();
             return;
         }
@@ -320,7 +432,7 @@ impl NotesApp {
             self.rescan();
             return;
         }
-        let new = tasks::write_line(&it.raw, !it.done, &it.tags, it.due, it.priority);
+        let new = tasks::write_line(&it.raw, if it.done { ' ' } else { 'x' }, &it.tags, it.due, it.priority);
         if let Some(t) = tasks::replace_line(&text, it.line, &new) {
             let tmp = path.with_extension("md.rivet-tmp");
             if std::fs::write(&tmp, t).and_then(|_| std::fs::rename(&tmp, path)).is_ok()
@@ -369,7 +481,7 @@ impl NotesApp {
             ui.spacing_mut().item_spacing = Vec2::new(4.0, 6.0);
             ui.add(egui::TextEdit::singleline(&mut tv.query).hint_text("Filter").desired_width(160.0));
             ui.add_space(8.0);
-            for (s, l) in [(Show::Open, "Open"), (Show::Done, "Done"), (Show::All, "All")] {
+            for (s, l) in [(Show::Open, "Open"), (Show::Doing, "In progress"), (Show::Done, "Done"), (Show::All, "All")] {
                 ui.selectable_value(&mut tv.show, s, l);
             }
             ui.add_space(8.0);
@@ -417,6 +529,7 @@ impl NotesApp {
             .iter()
             .filter(|(_, _, i)| match tv.show {
                 Show::Open => !i.done,
+                Show::Doing => i.doing && !i.done,
                 Show::Done => i.done,
                 Show::All => true,
             })
@@ -457,15 +570,7 @@ impl NotesApp {
                 // Check box.
                 let b = Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), Vec2::splat(16.0));
                 let on_box = ctx.pointer_hover_pos().is_some_and(|q| b.expand(4.0).contains(q));
-                if it.done {
-                    p.rect_filled(b, 3.5, v.selection.bg_fill);
-                    let c = b.center();
-                    let s = Stroke::new(1.8, v.selection.stroke.color);
-                    p.line_segment([c + Vec2::new(-4.0, 0.0), c + Vec2::new(-1.2, 3.2)], s);
-                    p.line_segment([c + Vec2::new(-1.2, 3.2), c + Vec2::new(4.2, -3.2)], s);
-                } else {
-                    p.rect_stroke(b, 3.5, Stroke::new(if on_box { 1.8 } else { 1.3 }, if on_box { v.selection.bg_fill } else { weak }), egui::StrokeKind::Inside);
-                }
+                state_box(p, b, it, &v, on_box);
                 // Title, then the note and tags.
                 let x = rect.left() + 38.0;
                 let right_w = 150.0;
@@ -493,16 +598,15 @@ impl NotesApp {
                     rx -= 22.0;
                 }
                 if let Some(d) = it.due {
-                    let col = if it.done {
-                        weak
-                    } else if d < t0 {
-                        status(&ctx).danger
-                    } else if d == t0 {
-                        v.selection.bg_fill
-                    } else {
-                        weak
-                    };
-                    p.text(Pos2::new(rx, rect.center().y), Align2::RIGHT_CENTER, due_label(d), fonts::ui_font(12.5), col);
+                    let probe = due_pill(&p.with_clip_rect(Rect::NOTHING), Pos2::ZERO, d, it.done, 14.0);
+                    due_pill(p, Pos2::new(rx - probe.width(), rect.center().y), d, it.done, 14.0);
+                    rx -= probe.width() + 8.0;
+                }
+                if it.doing && !it.done {
+                    let g = p.layout_no_wrap("In progress".into(), fonts::ui_font(11.5), v.selection.bg_fill);
+                    let pr = Rect::from_min_size(Pos2::new(rx - g.size().x - 14.0, rect.center().y - g.size().y / 2.0 - 3.0), g.size() + Vec2::new(14.0, 6.0));
+                    p.rect_filled(pr, pr.height() / 2.0, v.selection.bg_fill.gamma_multiply(0.15));
+                    p.galley(pr.min + Vec2::new(7.0, 3.0), g, v.selection.bg_fill);
                 }
                 let resp = resp.on_hover_text(format!("{}\nIn {note}{}", it.title, if it.priority != Priority::None { format!(" · {} priority", it.priority.label()) } else { String::new() }));
                 if resp.clicked() {
@@ -520,6 +624,5 @@ impl NotesApp {
         if let Some(p) = open {
             self.open_note(&p);
         }
-        let _ = palette::mix;
     }
 }

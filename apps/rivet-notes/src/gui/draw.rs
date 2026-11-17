@@ -725,6 +725,7 @@ impl NotesApp {
             accent: accent_p,
             code_bg: palette::mix(v.extreme_bg_color, v.text_color(), 0.06),
             code: colors.string,
+            todo_tags: if todos_on { todo_tags.clone() } else { Vec::new() },
         };
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
             if live_on {
@@ -888,9 +889,9 @@ impl NotesApp {
                 match hit {
                     super::live_edit::Hit::Check(b) => {
                         if let Some(c) = d.body.as_bytes().get(b).copied()
-                            && matches!(c, b' ' | b'x' | b'X')
+                            && matches!(c, b' ' | b'x' | b'X' | b'/')
                         {
-                            d.body.replace_range(b..b + 1, if c == b' ' { "x" } else { " " });
+                            d.body.replace_range(b..b + 1, if matches!(c, b'x' | b'X') { " " } else { "x" });
                             changed = true;
                         }
                     }
