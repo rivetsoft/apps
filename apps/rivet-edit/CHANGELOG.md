@@ -12,4 +12,8 @@ The first version.
 - Safe saving, reloading files changed elsewhere, and questions before losing changes.
 - 39 editor color themes (One Dark, Dracula, Catppuccin, Gruvbox, Solarized, Tokyo Night, GitHub,
   Rosé Pine…), previewed live from Commands → Color Theme, or the app's own colors.
+- Find and replace (Ctrl+F, Ctrl+H; case, whole words, regular expressions), and search and
+  replace across the folder (Shift+Ctrl+F) in the sidebar.
+- Multiple cursors (Ctrl+D, Shift+Ctrl+L, Alt+click, Ctrl+Alt+Up/Down) and VS Code's line keys:
+  move, copy, delete, comment, indent, new line above/below, select line.
 - Preferences for the look, the editor and the window; `--install-desktop-entry`.

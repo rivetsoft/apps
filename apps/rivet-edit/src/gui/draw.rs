@@ -252,8 +252,25 @@ impl EditApp {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             ui.set_min_height(26.0);
-            ui.label(egui::RichText::new(self.workspace_name().unwrap_or_default().to_uppercase()).font(fonts::ui_font(11.5)).strong().color(v.weak_text_color()));
+            ui.spacing_mut().item_spacing.x = 2.0;
+            for (side, label, tip) in [(editing::Side::Files, "FILES", "The folder's files"), (editing::Side::Search, "SEARCH", "Search the folder (Shift+Ctrl+F)")] {
+                let on = self.side == side;
+                let col = if on { v.text_color() } else { v.weak_text_color() };
+                let b = egui::Button::new(egui::RichText::new(label).font(fonts::ui_font(11.5)).strong().color(col)).frame_when_inactive(false).corner_radius(r_sm());
+                let b = if on { b.fill(selected_tile(&v, v.panel_fill).0) } else { b };
+                if ui.add(b).on_hover_text(tip).clicked() {
+                    self.side = side;
+                    if side == editing::Side::Search {
+                        self.search.focus = true;
+                    }
+                }
+            }
         });
+        if self.side == editing::Side::Search {
+            ui.add_space(4.0);
+            self.search_panel(ui);
+            return;
+        }
         if self.scan_running() && self.files.is_empty() {
             ui.label(egui::RichText::new("Listing files…").small().color(v.weak_text_color()));
         }
@@ -307,14 +324,15 @@ impl EditApp {
         let mut close = None;
         let mut keep = None;
         let icons: Vec<Option<egui::TextureHandle>> = (0..self.tabs.len()).map(|i| self.file_icon(&ctx, &self.tabs[i].name(), 14.0)).collect();
-        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 38.0));
+        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 40.0));
         ui.painter().line_segment([strip.left_bottom() + Vec2::new(12.0, 0.0), strip.right_bottom() - Vec2::new(12.0, 0.0)], Stroke::new(1.0, palette::mix(v.extreme_bg_color, v.text_color(), 0.08)));
         // Too many tabs to fit: they scroll sideways with no scroll bar over them; < and >
         // buttons at the end, the mouse wheel, and a newly chosen tab is brought into view.
         let over_id = egui::Id::unique("edit-tabs-overflow");
         let overflow = ctx.data(|d| d.get_temp::<bool>(over_id)).unwrap_or(false);
         let arrows_w = if overflow { 62.0 } else { 0.0 };
-        let tabs_rect = Rect::from_min_max(strip.min + Vec2::new(8.0, 0.0), strip.max - Vec2::new(8.0 + arrows_w, 0.0));
+        // 2 points under the tabs, above the line.
+        let tabs_rect = Rect::from_min_max(strip.min + Vec2::new(8.0, 0.0), strip.max - Vec2::new(8.0 + arrows_w, 2.0));
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Max)));
         let wheel = if ui.rect_contains_pointer(tabs_rect) { ctx.input(|i| i.smooth_scroll_delta.y + i.smooth_scroll_delta.x) } else { 0.0 };
         let shown_id = egui::Id::unique("edit-tabs-shown");
@@ -467,11 +485,31 @@ impl EditApp {
         let (wrap, numbers, tab_width) = (self.s.word_wrap, self.s.line_numbers, self.s.tab_width);
         let goto = self.goto.take();
         let quick_open = self.quick.is_some() || self.prompt.is_some() || self.prefs_open;
+        if self.find.is_some() {
+            self.find_bar(ui);
+        }
+        let Some(id) = self.tabs.get(self.active).map(|t| egui::Id::unique(("edit-body", t.path.clone()))) else { return };
+        if !quick_open {
+            self.editor_keys(&ctx, id);
+        }
+        // A found match or search result: select it and show it.
+        let select = self.select_after.take();
+        if let Some((a, b)) = select {
+            editing::set_primary(&ctx, id, crate::ops::Sel::new(a, b));
+            if let Some(t) = self.tabs.get_mut(self.active) {
+                t.sels.clear();
+            }
+        }
+        let reveal = std::mem::take(&mut self.reveal) || select.is_some();
+        let find_matches: Vec<(usize, usize)> = self.find.as_ref().map(|f| f.matches.clone()).unwrap_or_default();
+        let mut layout_out: Option<editing::LastLayout> = None;
+        let alt_click = std::mem::take(&mut self.alt_click);
+        let mark_color = accent;
         let Some(t) = self.tabs.get_mut(self.active) else { return };
         let name = t.name();
-        let id = egui::Id::unique(("edit-body", t.path.clone()));
+        let multi_sels = t.sels.clone();
         // Tab puts in spaces (Shift+Tab is left to move the keyboard).
-        if !quick_open && ctx.memory(|m| m.has_focus(id)) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Tab)) {
+        if !quick_open && multi_sels.len() < 2 && ctx.memory(|m| m.has_focus(id)) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Tab)) {
             let mut st = egui::TextEdit::load_state(&ctx, id).unwrap_or_default();
             if let Some(r) = st.cursor.char_range() {
                 let (a, b) = (r.primary.index.0.min(r.secondary.index.0), r.primary.index.0.max(r.secondary.index.0));
@@ -552,13 +590,19 @@ impl EditApp {
                         }
                     }
                 }
-                if goto.is_some() {
+                // Matches and the other cursors, over the text.
+                let main = out.cursor_range.map(|r| crate::ops::Sel::new(r.secondary.index.0, r.primary.index.0)).unwrap_or_default();
+                EditApp::draw_marks(ui.painter(), &out.galley, out.galley_pos, ui.clip_rect(), &multi_sels, &find_matches, main, &v, mark_color);
+                let _ = alt_click;
+                layout_out = Some(editing::LastLayout { galley: out.galley.clone(), pos: out.galley_pos, rect: out.response.response.rect });
+                if goto.is_some() || reveal {
                     let cc = out.cursor_range.map(|r| r.primary).unwrap_or_default();
                     let r = out.galley.pos_from_cursor(cc).translate(out.galley_pos.to_vec2());
                     ui.scroll_to_rect(r.expand2(Vec2::new(0.0, 120.0)), Some(egui::Align::Center));
                 }
             });
         });
+        self.last_layout = layout_out;
     }
 
     fn status_line(&mut self, ui: &mut egui::Ui) {
@@ -584,6 +628,9 @@ impl EditApp {
                     ui.label(egui::RichText::new(crate::syntax::language_name(&t.name())).color(weak));
                     ui.label(egui::RichText::new(format!("Spaces: {}", self.s.tab_width)).color(weak));
                     ui.label(egui::RichText::new(format!("Ln {}, Col {}", t.line_col.0, t.line_col.1)).color(weak));
+                    if t.sels.len() >= 2 {
+                        ui.label(egui::RichText::new(format!("{} cursors", t.sels.len())).color(weak)).on_hover_text("Esc goes back to one");
+                    }
                 }
             });
         });
@@ -740,6 +787,15 @@ impl EditApp {
                         None if esc => {}
                         None if enter => act = Some(save_as(tab, path.clone())),
                         None => next = Some(Prompt::SaveAs { tab, path }),
+                    }
+                }
+                Prompt::ReplaceInFiles { matches, files } => {
+                    title(ui, &format!("Replace {matches} match{} in {files} file{}?", if matches == 1 { "" } else { "es" }, if files == 1 { "" } else { "s" }), "Files open in tabs change there (save them after); the others are saved straight away.");
+                    match buttons(ui, &["Replace", "Cancel"]) {
+                        Some(0) => act = Some(Box::new(|a: &mut EditApp| a.replace_in_files())),
+                        Some(_) => {}
+                        None if esc => {}
+                        None => next = Some(Prompt::ReplaceInFiles { matches, files }),
                     }
                 }
                 Prompt::NewFile { folder, mut name } => {

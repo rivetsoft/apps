@@ -48,6 +48,9 @@ enum Cmd {
     CloseTab,
     GoToFile,
     GoToLine,
+    Find,
+    Replace,
+    SearchFiles,
     Sidebar,
     WordWrap,
     LineNumbers,
@@ -167,6 +170,9 @@ impl EditApp {
         add("File", "Save All", "Shift+Ctrl+S", None, Cmd::SaveAll, has_tab);
         add("File", "Close Tab", "Ctrl+W", None, Cmd::CloseTab, has_tab);
         add("Go", "Go to Line…", "Ctrl+G", None, Cmd::GoToLine, has_tab);
+        add("Edit", "Find", "Ctrl+F", None, Cmd::Find, has_tab);
+        add("Edit", "Replace", "Ctrl+H", None, Cmd::Replace, has_tab);
+        add("Edit", "Search in Folder", "Shift+Ctrl+F", None, Cmd::SearchFiles, has_root);
         add("View", "Sidebar", "F9", Some(self.s.show_sidebar), Cmd::Sidebar, true);
         add("View", "Word Wrap", "Alt+Z", Some(self.s.word_wrap), Cmd::WordWrap, true);
         add("View", "Line Numbers", "", Some(self.s.line_numbers), Cmd::LineNumbers, true);
@@ -201,6 +207,9 @@ impl EditApp {
             Cmd::CloseTab => self.close_tab(self.active, false),
             Cmd::GoToFile => self.open_quick(QuickKind::Files),
             Cmd::GoToLine => self.open_quick(QuickKind::Line),
+            Cmd::Find => self.find_pending = Some(false),
+            Cmd::Replace => self.find_pending = Some(true),
+            Cmd::SearchFiles => self.open_search(),
             Cmd::Sidebar => self.s.show_sidebar = !self.s.show_sidebar,
             Cmd::WordWrap => self.s.word_wrap = !self.s.word_wrap,
             Cmd::LineNumbers => self.s.line_numbers = !self.s.line_numbers,

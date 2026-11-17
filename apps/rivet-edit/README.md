@@ -60,6 +60,15 @@ fonts and icons, the same menus, Preferences and quick panel.
 | F9 / Alt+Z / Ctrl+M | Sidebar / word wrap / menu bar |
 | Ctrl+= / Ctrl+- | Bigger / smaller code |
 | Ctrl+, | Preferences |
+| Ctrl+F / Ctrl+H | Find / replace in the file (Enter, F3: next; Shift+Enter, Shift+F3: previous) |
+| Shift+Ctrl+F | Search (and replace) in every file of the folder |
+| Ctrl+D | Select the word, then add the next place it appears (another cursor) |
+| Shift+Ctrl+L | A cursor at every place it appears |
+| Alt+click, Ctrl+Alt+Up/Down | Another cursor there, or on the line above/below; Esc: back to one |
+| Alt+Up/Down, Shift+Alt+Up/Down | Move the lines, copy the lines |
+| Shift+Ctrl+K, Ctrl+L | Delete the lines, select the line |
+| Ctrl+/ , Ctrl+] / Ctrl+[ | Comment the lines out (or back in), indent / outdent |
+| Ctrl+Enter / Shift+Ctrl+Enter | A new line below / above |
 
 ## Build and run
 

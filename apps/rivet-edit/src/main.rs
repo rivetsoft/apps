@@ -1,6 +1,8 @@
 //! Rivet Edit: a lightweight code editor for folders (workspaces) and files.
 
 mod gui;
+mod find;
+mod ops;
 mod schemes;
 mod settings;
 mod syntax;

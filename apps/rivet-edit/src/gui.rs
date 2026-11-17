@@ -4,6 +4,7 @@
 //! fonts, in-app windows and the quick panel.
 
 mod draw;
+mod editing;
 mod prefs;
 mod quick;
 
@@ -36,6 +37,9 @@ pub(crate) struct Tab {
     pub cache: syntax::Cache,
     /// Line and column of the cursor (from 1), for the status bar.
     pub line_col: (usize, usize),
+    /// Every cursor and selection when there's more than one (the last is the main one, the
+    /// text box's); empty with one.
+    pub sels: Vec<crate::ops::Sel>,
     /// A preview: opened with a single click, and replaced by the next one until it's kept
     /// (double-click or Ctrl+click it, double-click its tab, or edit it).
     pub preview: bool,
@@ -62,6 +66,8 @@ pub(crate) enum Prompt {
     SaveAs { tab: usize, path: String },
     /// A new file in the workspace: its folder (inside it) and name.
     NewFile { folder: String, name: String },
+    /// Replace the workspace search's matches in every file.
+    ReplaceInFiles { matches: usize, files: usize },
 }
 
 pub struct EditApp {
@@ -101,6 +107,17 @@ pub struct EditApp {
     ext_icons: HashMap<(String, u32), Option<egui::TextureHandle>>,
     /// A line to put the cursor on and show (from Go to Line or Quick Open).
     pub(crate) goto: Option<usize>,
+    /// Characters to select and show (a found match, a search result).
+    pub(crate) select_after: Option<(usize, usize)>,
+    /// Bring the cursor into view after the editor's keys moved it.
+    pub(crate) reveal: bool,
+    pub(crate) find: Option<editing::FindBar>,
+    pub(crate) side: editing::Side,
+    pub(crate) search: editing::Search,
+    pub(crate) last_layout: Option<editing::LastLayout>,
+    pub(crate) alt_click: bool,
+    /// Open the find bar next frame (from a command; true: with replace).
+    pub(crate) find_pending: Option<bool>,
     /// Quitting is fine (changes saved or let go).
     allow_close: bool,
     /// A scheme shown while the theme list is open (before it's chosen).
@@ -167,6 +184,14 @@ impl EditApp {
             file_rank: None,
             ext_icons: HashMap::new(),
             goto: None,
+            select_after: None,
+            reveal: false,
+            find: None,
+            side: Default::default(),
+            search: Default::default(),
+            last_layout: None,
+            alt_click: false,
+            find_pending: None,
             allow_close: false,
             scheme_preview: None,
         };
@@ -188,6 +213,26 @@ impl EditApp {
             for rel in list.split(',').filter(|r| !r.is_empty()) {
                 app.preview_file(&root.join(rel));
             }
+        }
+        // RIVET_EDIT_SELECT=a,b selects those characters; RIVET_EDIT_FIND=query[|replace]
+        // opens the find bar; RIVET_EDIT_SEARCH=query searches the folder.
+        if let Some((a, b)) = std::env::var("RIVET_EDIT_SELECT").ok().and_then(|v| {
+            let (a, b) = v.split_once(',')?;
+            Some((a.parse().ok()?, b.parse().ok()?))
+        }) {
+            app.select_after = Some((a, b));
+        }
+        if let Ok(f) = std::env::var("RIVET_EDIT_FIND") {
+            let (q, r) = f.split_once('|').map(|(a, b)| (a.to_string(), Some(b.to_string()))).unwrap_or((f.clone(), None));
+            let mut bar = editing::FindBar::default();
+            bar.q.text = q;
+            bar.show_replace = r.is_some();
+            bar.replace = r.unwrap_or_default();
+            app.find = Some(bar);
+        }
+        if let Ok(q) = std::env::var("RIVET_EDIT_SEARCH") {
+            app.side = editing::Side::Search;
+            app.search.q.text = q;
         }
         if let Some(n) = std::env::var("RIVET_EDIT_LINE").ok().and_then(|v| v.parse().ok()) {
             app.goto = Some(n);
@@ -355,7 +400,7 @@ impl EditApp {
         }
         match workspace::read_text(&p) {
             Ok(text) => {
-                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview };
+                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new() };
                 // A new preview takes the old one's place (when it wasn't changed).
                 match self.tabs.iter().position(|t| t.preview && !t.dirty()).filter(|_| preview) {
                     Some(i) => {
@@ -388,7 +433,7 @@ impl EditApp {
     }
 
     pub(crate) fn new_tab(&mut self) {
-        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false });
+        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new() });
         self.active = self.tabs.len() - 1;
     }
 
@@ -501,6 +546,24 @@ impl EditApp {
                 i.consume_shortcut(&k(cmd, Key::Minus)),
             )
         });
+        // Find (Ctrl+F), replace (Ctrl+H), search the folder (Shift+Ctrl+F), next / previous (F3).
+        let (search, find, replace, f3_back, f3) = ctx.input_mut(|i| {
+            (
+                i.consume_shortcut(&k(shift, Key::F)),
+                i.consume_shortcut(&k(cmd, Key::F)),
+                i.consume_shortcut(&k(cmd, Key::H)),
+                i.consume_shortcut(&k(Modifiers::SHIFT, Key::F3)),
+                i.consume_shortcut(&k(Modifiers::NONE, Key::F3)),
+            )
+        });
+        if search {
+            self.open_search();
+        } else if (find || replace) && !self.tabs.is_empty() {
+            self.open_find(ctx, replace);
+        }
+        if f3 || f3_back {
+            self.find_step(ctx, f3_back);
+        }
         if ctx.input_mut(|i| i.consume_shortcut(&k(cmd, Key::Q))) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -555,11 +618,34 @@ impl eframe::App for EditApp {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         if let Some(shot) = &self.shot {
             rivet_kit::scripted_click("RIVET_EDIT", shot.frames(), raw);
-            // Checks: RIVET_EDIT_KEY=tab (a key name) presses that key once things settle.
-            if shot.frames() == 40
-                && let Some(key) = std::env::var("RIVET_EDIT_KEY").ok().and_then(|k| Key::from_name(&k))
-            {
-                raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: Modifiers::NONE });
+            // Checks: RIVET_EDIT_KEY="ctrl+d ctrl+d Tab" presses those, one a frame, once things
+            // settle; RIVET_EDIT_TYPE=text types it after them.
+            if let Ok(keys) = std::env::var("RIVET_EDIT_KEY") {
+                let list: Vec<&str> = keys.split_whitespace().collect();
+                let f = shot.frames() as usize;
+                if (40..40 + list.len()).contains(&f) {
+                    let k = list[f - 40];
+                    let mut m = Modifiers::NONE;
+                    let mut name = k;
+                    while let Some((pre, rest)) = name.split_once('+') {
+                        match pre {
+                            "ctrl" => m.command = true,
+                            "shift" => m.shift = true,
+                            "alt" => m.alt = true,
+                            _ => {}
+                        }
+                        m.ctrl = m.command;
+                        name = rest;
+                    }
+                    if let Some(key) = Key::from_name(name).or_else(|| Key::from_name(&name.to_uppercase())) {
+                        raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: m });
+                    }
+                }
+                if f == 40 + list.len()
+                    && let Ok(t) = std::env::var("RIVET_EDIT_TYPE")
+                {
+                    raw.events.push(egui::Event::Text(t));
+                }
             }
         }
     }
@@ -584,6 +670,11 @@ impl eframe::App for EditApp {
         if ctx.input(|i| i.viewport().close_requested()) && !self.allow_close && self.tabs.iter().any(Tab::dirty) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.prompt = Some(Prompt::Quit);
+        }
+        if let Some(r) = self.find_pending.take()
+            && !self.tabs.is_empty()
+        {
+            self.open_find(&ctx, r);
         }
         self.shortcuts(&ctx);
         // A preview that's been edited is kept.
