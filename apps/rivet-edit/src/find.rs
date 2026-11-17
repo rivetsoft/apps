@@ -3,6 +3,7 @@
 
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Query {
@@ -77,54 +78,142 @@ pub fn char_ranges(text: &str, ranges: &[Range<usize>]) -> Vec<(usize, usize)> {
     out
 }
 
-/// One match: (line number from 1, the line, the match within the line as characters, the
-/// match in the file as characters).
-pub type Hit = (usize, String, (usize, usize), (usize, usize));
+/// One match in a workspace search, ready to show: the line around it, cut short.
+#[derive(Clone, Debug)]
+pub struct Hit {
+    /// Line number, from 1.
+    pub line: usize,
+    /// The text before the match (at most a few words, "…" when cut).
+    pub pre: String,
+    pub hit: String,
+    /// The rest of the line (cut short).
+    pub post: String,
+    /// The match in the file, as characters.
+    pub at: (usize, usize),
+}
 
 /// One file's matches in a workspace search.
 #[derive(Clone, Debug)]
 pub struct FileHits {
     pub path: PathBuf,
     pub rel: String,
-    /// (line number from 1, the line, the match within the line as characters, the match in
-    /// the file as characters).
     pub hits: Vec<Hit>,
 }
 
-/// Search the workspace's files (text ones under 2 MB), at most `limit` matches in all.
-pub fn search_files(root: &Path, files: &[String], q: &Query, limit: usize) -> Result<(Vec<FileHits>, bool), String> {
-    let Some(re) = q.compile()? else { return Ok((Vec::new(), false)) };
-    let mut out = Vec::new();
-    let mut total = 0;
-    for rel in files {
-        let path = root.join(rel);
-        if std::fs::metadata(&path).map(|m| m.len() > 2 * 1024 * 1024).unwrap_or(true) {
-            continue;
-        }
-        let Ok(text) = crate::workspace::read_text(&path) else { continue };
-        let mut hits = Vec::new();
-        let ranges: Vec<Range<usize>> = re.find_iter(&text).filter(|m| !m.is_empty()).map(|m| m.range()).collect();
-        if ranges.is_empty() {
-            continue;
-        }
-        let chars = char_ranges(&text, &ranges);
-        for (r, (ca, cb)) in ranges.iter().zip(chars) {
-            let ls = text[..r.start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-            let le = text[r.start..].find('\n').map(|i| r.start + i).unwrap_or(text.len());
-            let line_no = text[..r.start].matches('\n').count() + 1;
-            let line = &text[ls..le];
-            let a = text[ls..r.start].chars().count();
-            let b = a + text[r.start..r.end.min(le)].chars().count();
-            hits.push((line_no, line.to_string(), (a, b), (ca, cb)));
-            total += 1;
-            if total >= limit {
-                out.push(FileHits { path, rel: rel.clone(), hits });
-                return Ok((out, true));
+/// Files never searched (pictures, archives, fonts and other binaries), by extension.
+const SKIP: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "icns", "tif", "tiff", "psd", "avif", "heic", "pdf", "zip", "gz", "tgz", "xz", "bz2", "zst", "7z", "rar", "jar", "war", "so", "dll", "dylib", "exe", "o", "a", "lib", "rlib", "rmeta", "class", "pyc", "wasm", "bin", "dat", "db",
+    "sqlite", "mdb", "woff", "woff2", "ttf", "otf", "eot", "mp3", "mp4", "m4a", "ogg", "wav", "flac", "mov", "avi", "mkv", "webm", "glb", "gltf", "fbx", "blend", "iso", "dmg", "deb", "rpm", "flatpak", "lock",
+];
+
+fn skipped(rel: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    match name.rsplit_once('.') {
+        Some((_, ext)) => SKIP.iter().any(|s| ext.eq_ignore_ascii_case(s)) && !name.eq_ignore_ascii_case("Cargo.lock"),
+        None => false,
+    }
+}
+
+/// The matches in one file's text, each with its line cut short around it.
+fn file_hits(text: &str, re: &regex::Regex, room: usize) -> Vec<Hit> {
+    let ranges: Vec<Range<usize>> = re.find_iter(text).filter(|m| !m.is_empty()).take(room).map(|m| m.range()).collect();
+    if ranges.is_empty() {
+        return Vec::new();
+    }
+    let chars = char_ranges(text, &ranges);
+    let bytes = text.as_bytes();
+    let (mut line, mut line_start, mut seen) = (1usize, 0usize, 0usize);
+    let mut out = Vec::with_capacity(ranges.len());
+    for (r, at) in ranges.into_iter().zip(chars) {
+        // Count lines once, walking forward (not from the top for every match).
+        for (i, &b) in bytes[seen..r.start].iter().enumerate() {
+            if b == b'\n' {
+                line += 1;
+                line_start = seen + i + 1;
             }
         }
-        out.push(FileHits { path, rel: rel.clone(), hits });
+        seen = r.start;
+        // The end of the line, looking only a little way past the match (long lines).
+        let mut window = (r.end + 400).min(text.len());
+        while !text.is_char_boundary(window) {
+            window -= 1;
+        }
+        let line_end = text[r.start..window].find('\n').map(|i| r.start + i).unwrap_or(window);
+        let hit_end = r.end.min(line_end);
+        let lead = text[line_start..r.start].trim_start();
+        let pre = match lead.char_indices().rev().nth(17) {
+            Some((i, _)) => format!("…{}", &lead[i..]),
+            None => lead.to_string(),
+        };
+        let post: String = text[hit_end..line_end].chars().take(80).collect();
+        out.push(Hit { line, pre, hit: text[r.start..hit_end].to_string(), post, at });
     }
-    Ok((out, false))
+    out
+}
+
+/// Search the workspace's files (text ones under 2 MB) on several threads, at most `limit`
+/// matches in all, in the files' order. Stops early when `stop` is set (a newer search).
+pub fn search_files(root: &Path, files: &[String], q: &Query, limit: usize, stop: &AtomicBool) -> Result<(Vec<FileHits>, bool), String> {
+    let Some(re) = q.compile()? else { return Ok((Vec::new(), false)) };
+    let next = AtomicUsize::new(0);
+    let total = AtomicUsize::new(0);
+    let workers = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).clamp(1, 8);
+    let mut found: Vec<(usize, FileHits)> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut mine = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        if i >= files.len() || stop.load(Ordering::Relaxed) || total.load(Ordering::Relaxed) >= limit {
+                            break;
+                        }
+                        let rel = &files[i];
+                        if skipped(rel) {
+                            continue;
+                        }
+                        let path = root.join(rel);
+                        if std::fs::metadata(&path).map(|m| m.len() > 2 * 1024 * 1024).unwrap_or(true) {
+                            continue;
+                        }
+                        let Ok(text) = crate::workspace::read_text(&path) else { continue };
+                        let room = limit.saturating_sub(total.load(Ordering::Relaxed));
+                        let hits = file_hits(&text, &re, room.max(1));
+                        if !hits.is_empty() {
+                            total.fetch_add(hits.len(), Ordering::Relaxed);
+                            mine.push((i, FileHits { path, rel: rel.clone(), hits }));
+                        }
+                    }
+                    mine
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()
+    });
+    if stop.load(Ordering::Relaxed) {
+        return Err("stopped".into());
+    }
+    found.sort_by_key(|(i, _)| *i);
+    // Keep the first `limit` matches in the files' order.
+    let mut left = limit;
+    let mut out = Vec::new();
+    let mut cut = false;
+    for (_, mut f) in found {
+        if left == 0 {
+            cut = true;
+            break;
+        }
+        if f.hits.len() >= left {
+            cut = cut || f.hits.len() > left || total.load(Ordering::Relaxed) > limit;
+            f.hits.truncate(left);
+        }
+        left -= f.hits.len();
+        out.push(f);
+    }
+    if total.load(Ordering::Relaxed) >= limit {
+        cut = true;
+    }
+    Ok((out, cut))
 }
 
 #[cfg(test)]
@@ -147,5 +236,17 @@ mod tests {
         assert_eq!(replace_all("a.b", &q(".", false, false, false), "$0").unwrap().0, "a$0b");
         assert_eq!(replacement("ab12", 2..4, &q(r"(\d)(\d)", false, false, true), "$2$1"), "21");
         assert_eq!(char_ranges("ää x ä", &[2..4, 7..9]), vec![(1, 2), (5, 6)]);
+    }
+
+    #[test]
+    fn hits_show_their_line() {
+        let re = q("fox", false, false, false).compile().unwrap().unwrap();
+        let text = "one\n\n    the quick brown fox jumps\nfox\n";
+        let h = file_hits(text, &re, 100);
+        assert_eq!(h.len(), 2);
+        assert_eq!((h[0].line, h[0].pre.as_str(), h[0].hit.as_str(), h[0].post.as_str()), (3, "the quick brown ", "fox", " jumps"));
+        assert_eq!((h[1].line, h[1].pre.as_str(), h[1].post.as_str()), (4, "", ""));
+        assert_eq!(h[1].at, (35, 38));
+        assert!(skipped("img/a.PNG") && !skipped("Cargo.lock") && !skipped("src/main.rs"));
     }
 }

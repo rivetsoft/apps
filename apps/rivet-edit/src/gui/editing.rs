@@ -49,6 +49,8 @@ pub(crate) struct Search {
     /// The query last searched for, and the answer coming.
     ran: Option<Query>,
     rx: Option<std::sync::mpsc::Receiver<SearchResult>>,
+    /// Set to stop the running search (a newer query replaces it).
+    stop: Arc<std::sync::atomic::AtomicBool>,
     pub results: Vec<FileHits>,
     pub cut: bool,
     pub error: Option<String>,
@@ -594,7 +596,11 @@ impl EditApp {
             }
         }
         let changed = self.search.ran.as_ref() != Some(&self.search.q);
-        if changed && self.search.rx.is_none() {
+        if changed {
+            // A newer query: stop the search still running rather than waiting for it.
+            if self.search.rx.take().is_some() {
+                self.search.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
             if now - self.search.edited_at < 0.25 {
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
                 return;
@@ -607,8 +613,13 @@ impl EditApp {
             }
             let (Some(root), files, q) = (self.root.clone(), self.files.clone(), self.search.q.clone()) else { return };
             let (tx, rx) = std::sync::mpsc::channel();
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            self.search.stop = stop.clone();
             std::thread::spawn(move || {
-                let _ = tx.send(find::search_files(&root, &files, &q, 5000));
+                let r = find::search_files(&root, &files, &q, 2000, &stop);
+                if !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    let _ = tx.send(r);
+                }
             });
             self.search.rx = Some(rx);
             ctx.request_repaint_after(std::time::Duration::from_millis(80));
@@ -672,56 +683,60 @@ impl EditApp {
         ui.add_space(4.0);
         let mut open: Option<(PathBuf, (usize, usize))> = None;
         let mut fold: Option<String> = None;
-        let names: Vec<String> = self.search.results.iter().map(|f| f.rel.rsplit('/').next().unwrap_or(&f.rel).to_string()).collect();
-        let icons: Vec<Option<egui::TextureHandle>> = names.iter().map(|n| self.file_icon(&ctx, n, 14.0)).collect();
-        egui::ScrollArea::vertical().id_salt("search-results").auto_shrink([false, false]).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for (k, f) in self.search.results.iter().enumerate() {
-                let folded = self.search.folded.contains(&f.rel);
-                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 24.0), Sense::click());
+        // One row per file and per match; only the rows in view are drawn.
+        let mut rows: Vec<(usize, Option<usize>)> = Vec::new();
+        for (k, f) in self.search.results.iter().enumerate() {
+            rows.push((k, None));
+            if !self.search.folded.contains(&f.rel) {
+                rows.extend((0..f.hits.len()).map(|j| (k, Some(j))));
+            }
+        }
+        let f12 = fonts::ui_font(12.0);
+        ui.spacing_mut().item_spacing.y = 0.0;
+        egui::ScrollArea::vertical().id_salt("search-results").auto_shrink([false, false]).show_rows(ui, 23.0, rows.len(), |ui, range| {
+            for &(k, j) in &rows[range] {
+                let icon = if j.is_none() {
+                    let name = self.search.results[k].rel.rsplit('/').next().unwrap_or_default().to_string();
+                    self.file_icon(&ctx, &name, 14.0)
+                } else {
+                    None
+                };
+                let f = &self.search.results[k];
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 23.0), Sense::click());
                 if resp.hovered() {
                     ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
                 }
-                let c = Pos2::new(r.left() + 8.0, r.center().y);
-                let pts = if !folded { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
-                ui.painter().add(egui::Shape::convex_polygon(pts, weak, Stroke::NONE));
-                if let Some(t) = &icons[k] {
-                    rivet_look::theme::paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::splat(14.0)), Color32::WHITE);
-                }
-                let g = ui.painter().layout_no_wrap(names[k].clone(), fonts::ui_font(12.5), v.text_color());
-                let gw = g.size().x;
-                ui.painter().galley(Pos2::new(r.left() + 36.0, r.center().y - g.size().y / 2.0), g, v.text_color());
-                let dir = f.rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-                ui.painter().with_clip_rect(r.shrink2(Vec2::new(30.0, 0.0))).text(Pos2::new(r.left() + 42.0 + gw, r.center().y), Align2::LEFT_CENTER, dir, fonts::ui_font(11.5), weak);
-                ui.painter().text(Pos2::new(r.right() - 6.0, r.center().y), Align2::RIGHT_CENTER, f.hits.len().to_string(), fonts::ui_font(11.0), weak);
-                if resp.clicked() {
-                    fold = Some(f.rel.clone());
-                }
-                if folded {
+                let Some(j) = j else {
+                    let folded = self.search.folded.contains(&f.rel);
+                    let c = Pos2::new(r.left() + 8.0, r.center().y);
+                    let pts = if !folded { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
+                    ui.painter().add(egui::Shape::convex_polygon(pts, weak, Stroke::NONE));
+                    let name = f.rel.rsplit('/').next().unwrap_or(&f.rel);
+                    if let Some(t) = &icon {
+                        rivet_look::theme::paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::splat(14.0)), Color32::WHITE);
+                    }
+                    let g = ui.painter().layout_no_wrap(name.to_string(), fonts::ui_font(12.5), v.text_color());
+                    let gw = g.size().x;
+                    ui.painter().galley(Pos2::new(r.left() + 36.0, r.center().y - g.size().y / 2.0), g, v.text_color());
+                    let dir = f.rel.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+                    ui.painter().with_clip_rect(r.shrink2(Vec2::new(30.0, 0.0))).text(Pos2::new(r.left() + 42.0 + gw, r.center().y), Align2::LEFT_CENTER, dir, fonts::ui_font(11.5), weak);
+                    ui.painter().text(Pos2::new(r.right() - 6.0, r.center().y), Align2::RIGHT_CENTER, f.hits.len().to_string(), fonts::ui_font(11.0), weak);
+                    if resp.clicked() {
+                        fold = Some(f.rel.clone());
+                    }
                     continue;
-                }
-                for (line, text, (a, b), abs) in &f.hits {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::click());
-                    if resp.hovered() {
-                        ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
-                    }
-                    // The line, trimmed to start a little before the match, the match marked.
-                    let chars: Vec<char> = text.chars().collect();
-                    let start = a.saturating_sub(18).max(chars.iter().take_while(|c| c.is_whitespace()).count().min(*a));
-                    let pre: String = chars[start..*a].iter().collect();
-                    let hit: String = chars[*a..(*b).min(chars.len())].iter().collect();
-                    let post: String = chars[(*b).min(chars.len())..].iter().take(80).collect();
-                    let mut job = egui::text::LayoutJob::default();
-                    let f13 = fonts::ui_font(12.0);
-                    job.append(&format!("{}{pre}", if start > 0 { "…" } else { "" }), 0.0, egui::TextFormat { font_id: f13.clone(), color: weak, ..Default::default() });
-                    job.append(&hit, 0.0, egui::TextFormat { font_id: f13.clone(), color: v.strong_text_color(), background: v.selection.bg_fill.gamma_multiply(0.45), ..Default::default() });
-                    job.append(&post, 0.0, egui::TextFormat { font_id: f13, color: weak, ..Default::default() });
-                    job.wrap = egui::text::TextWrapping::truncate_at_width(r.width() - 30.0);
-                    let g = ui.painter().layout_job(job);
-                    ui.painter().galley(Pos2::new(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, v.text_color());
-                    if resp.on_hover_text(format!("{}:{line}", f.rel)).clicked() {
-                        open = Some((f.path.clone(), *abs));
-                    }
+                };
+                // The line around the match (cut short when searching), the match marked.
+                let h = &f.hits[j];
+                let mut job = egui::text::LayoutJob::default();
+                job.append(&h.pre, 0.0, egui::TextFormat { font_id: f12.clone(), color: weak, ..Default::default() });
+                job.append(&h.hit, 0.0, egui::TextFormat { font_id: f12.clone(), color: v.strong_text_color(), background: v.selection.bg_fill.gamma_multiply(0.45), ..Default::default() });
+                job.append(&h.post, 0.0, egui::TextFormat { font_id: f12.clone(), color: weak, ..Default::default() });
+                job.wrap = egui::text::TextWrapping::truncate_at_width(r.width() - 30.0);
+                let g = ui.painter().layout_job(job);
+                ui.painter().galley(Pos2::new(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, v.text_color());
+                if resp.on_hover_text(format!("{}:{}", f.rel, h.line)).clicked() {
+                    open = Some((f.path.clone(), h.at));
                 }
             }
         });
