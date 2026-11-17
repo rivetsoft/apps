@@ -34,6 +34,7 @@ Usage:
                                      (or run COMMAND there)
   rivet-ftp sftp NAME                Open the sftp command line there
   rivet-ftp keys                     Your SSH keys, and which connections use them
+  rivet-ftp --install-desktop-entry  Add Rivet FTP to the app launcher (for this user)
   rivet-ftp ssh-config               How to reach saved connections from plain ssh,
                                      scp, rsync and git by name
 
@@ -72,7 +73,12 @@ fn main() -> ExitCode {
 
 fn window(open: Option<String>, screenshot: Option<PathBuf>) -> ExitCode {
     if screenshot.is_some() {
-        rivet_kit::headless::run([1100.0, 700.0], move |cc| Box::new(gui::FtpApp::new(cc, open, screenshot)));
+        // RIVET_SHOT_SIZE=WxH for documentation pictures (1100x700 by default).
+        let size = std::env::var("RIVET_SHOT_SIZE").ok().and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some([w.parse().ok()?, h.parse().ok()?])
+        });
+        rivet_kit::headless::run(size.unwrap_or([1100.0, 700.0]), move |cc| Box::new(gui::FtpApp::new(cc, open, screenshot)));
         return ExitCode::SUCCESS;
     }
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet FTP").with_app_id("rivet-ftp").with_inner_size([1100.0, 720.0]).with_min_inner_size([640.0, 420.0]);
@@ -90,6 +96,23 @@ fn window(open: Option<String>, screenshot: Option<PathBuf>) -> ExitCode {
     }
 }
 
+/// The launcher entry and icon, in the user's data folder, running this program.
+fn install_desktop_entry() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("couldn't find this program: {e}"))?;
+    let data = rivet_xdg::places::data_home();
+    let entry = data.join("applications/rivet-ftp.desktop");
+    let icon = data.join("icons/hicolor/scalable/apps/rivet-ftp.svg");
+    let text = include_str!("../data/rivet-ftp.desktop").replace("Exec=rivet-ftp", &format!("Exec=\"{}\"", exe.display()));
+    for (p, body) in [(&entry, text.as_str()), (&icon, gui::ICON_SVG)] {
+        if let Some(d) = p.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(p, body).map_err(|e| format!("couldn't write {}: {e}", p.display()))?;
+    }
+    let _ = std::process::Command::new("update-desktop-database").arg(data.join("applications")).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    Ok(entry)
+}
+
 fn run(args: &[String]) -> Result<(), String> {
     let Some(cmd) = args.first() else { return Ok(()) };
     let rest = &args[1..];
@@ -97,6 +120,10 @@ fn run(args: &[String]) -> Result<(), String> {
         "help" | "-h" | "--help" => println!("{HELP}"),
         "-V" | "--version" | "version" => println!("rivet-ftp {}", env!("CARGO_PKG_VERSION")),
         "list" | "ls" => list(&Store::load()),
+        "--install-desktop-entry" => {
+            let p = install_desktop_entry()?;
+            println!("Added {}", p.display());
+        }
         "add" => add(rest)?,
         "remove" | "rm" | "delete" => {
             let name = one_name(rest, "remove")?;

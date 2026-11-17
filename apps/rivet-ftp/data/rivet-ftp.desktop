@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet FTP
+GenericName=File Transfer
+Comment=Copy files to and from servers over SFTP, side by side
+Exec=rivet-ftp
+Icon=rivet-ftp
+Terminal=false
+Categories=Network;FileTransfer;
+Keywords=sftp;ftp;ftps;ssh;server;upload;download;transfer;
+StartupWMClass=rivet-ftp

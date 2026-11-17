@@ -645,7 +645,9 @@ impl FtpApp {
                     egui::Grid::new("info-grid").num_columns(2).spacing([18.0, 8.0]).show(ui, |ui| {
                         if !e.is_dir {
                             ui.label(egui::RichText::new("Size").color(weak));
-                            ui.label(format!("{} ({} bytes)", crate::listing::human_size(e.size), e.size));
+                            // The exact count too, unless the short form already is it ("56 bytes").
+                            let short = crate::listing::human_size(e.size);
+                            ui.label(if e.size < 1000 { short } else { format!("{short} ({} bytes)", e.size) });
                             ui.end_row();
                         }
                         ui.label(egui::RichText::new("Modified").color(weak));

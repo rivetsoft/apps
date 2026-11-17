@@ -7,7 +7,7 @@ A dual-pane file-transfer app for Linux (SFTP, FTP and FTPS), built on Rivet's c
 written in Rust and egui, with no GTK or Qt. It's in the same family as Transmit and FileZilla
 and works the way people expect from those, but it has its own name, icon and look.
 
-**Status:** the window works over SFTP, with Rivet's look: a menu bar (or a menu button), Preferences (style, accent, desktop colors, text size, transfer behavior), sortable columns, and Rivet's stepped path bar. It has the connection list, both panes, transfers
+**Status:** getting ready for a first version (0.1.0, SFTP only). Screenshots: `utilities/rivet-dev ftp-screenshots`, using a demo server made of a throwaway folder (`RIVET_FTP_DEMO_SERVER`, no network). The window works over SFTP, with Rivet's look: a menu bar (or a menu button), Preferences (style, accent, desktop colors, text size, transfer behavior), sortable columns, and Rivet's stepped path bar. It has the connection list, both panes, transfers
 both ways (files and whole folders) with a queue, new folder, rename and delete on the
 server, and a quick-connect field. The command line works too. FTP and FTPS can be saved but
 not opened yet. Open the window with `rivet-ftp`, or `rivet-ftp open NAME` to connect straight

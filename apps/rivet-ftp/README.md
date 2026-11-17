@@ -1,20 +1,59 @@
+<img src="data/rivet-ftp.svg" width="96" alt="Rivet FTP icon">
+
 # Rivet FTP
 
 Part of [Rivet Apps](../../README.md).
 
-> **Early alpha.** Rivet FTP is not ready for daily use: things are missing, change without
-> notice, or break. Try it on servers and files you don't mind losing, and keep backups.
+> **Early alpha.** Rivet FTP is young: things may still change or break. Try it on servers and
+> files you have backups of. **SFTP works; FTP and FTPS aren't built yet.**
 
-A dual-pane file-transfer app for SFTP, FTP and FTPS, built on Rivet's core: this computer on
-one side, the server on the other, and a transfer queue underneath. See the
-[plan and keys](../../docs/rivet-ftp.md). SFTP works; FTP and FTPS come next.
+A dual-pane file-transfer app built on Rivet's core: this computer on one side, the server on
+the other, and a transfer queue underneath. See the [plan and keys](../../docs/rivet-ftp.md).
+
+![Rivet FTP connected to a server, with finished transfers](../../docs/screenshots/ftp-connected-wide.png)
+
+## Features
+
+- **Saved connections** in groups, with tabs for several servers at once; a quick-connect bar for
+  `user@server`.
+- **Transfers** by drag and drop, double-click, or Upload / Download, with a queue showing speed
+  and progress. Files already on the other side are **compared first** (dates and sizes).
+- **Edit server files** in your editor; every save goes back to the server.
+- **Info and permissions** (chmod), rename, new folder, delete; previews of pictures and text.
+- **SSH keys**: list, make and add keys to servers, and pick a key per connection.
+- **The command line**: `rivet-ftp ssh`, `sftp`, `list` and more, and your saved connections in
+  plain `ssh`, `scp`, `rsync` and `git` by name.
+- Follows your desktop's colors, fonts and icon theme; light or dark; a toolbar you arrange.
+
+<table>
+  <tr>
+    <td><img src="../../docs/screenshots/ftp-replace-wide.png" alt="Files already on the server, compared before replacing"></td>
+    <td><img src="../../docs/screenshots/ftp-light-wide.png" alt="The light theme"></td>
+  </tr>
+  <tr>
+    <td><img src="../../docs/screenshots/ftp-info-wide.png" alt="Info and permissions for a server file"></td>
+    <td><img src="../../docs/screenshots/ftp-new-connection-wide.png" alt="A new connection"></td>
+  </tr>
+  <tr>
+    <td><img src="../../docs/screenshots/ftp-preferences-wide.png" alt="Preferences: transfers"></td>
+    <td><img src="../../docs/screenshots/ftp-keys-wide.png" alt="Preferences: SSH keys"></td>
+  </tr>
+</table>
+
+Changes are in the [changelog](CHANGELOG.md).
+
+## Build and run
 
 ```sh
-cargo build -p rivet-ftp
-./target/debug/rivet-ftp                 # the window
-./target/debug/rivet-ftp open work-site  # the window, connected
-./target/debug/rivet-ftp --help          # the command line
+cargo build --release -p rivet-ftp
+./target/release/rivet-ftp                 # the window
+./target/release/rivet-ftp open work-site  # the window, connected
+./target/release/rivet-ftp --help          # the command line
+./target/release/rivet-ftp --install-desktop-entry   # add it to the app launcher
 ```
+
+Screenshots come from a demo server made of a throwaway folder (no network, no ssh daemon):
+`utilities/rivet-dev ftp-screenshots`.
 
 SFTP goes through your system's own `sftp` program (OpenSSH), so your keys, ssh agent,
 `~/.ssh/config` and known_hosts all apply. Drag files between the panes, double-click a file to

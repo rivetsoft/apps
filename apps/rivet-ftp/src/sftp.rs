@@ -101,6 +101,34 @@ impl Session {
         let (tx, req_rx) = channel::<(u64, Request)>();
         let (reply_tx, rx) = channel();
         let conn = conn.clone();
+        // The demo server's folder stands for the server's "/" (paths never leave it).
+        let root = std::env::var("RIVET_FTP_DEMO_SERVER").ok().filter(|d| std::path::Path::new(d).is_dir()).map(|d| d.trim_end_matches('/').to_string());
+        let to_srv = {
+            let root = root.clone();
+            move |p: String| match &root {
+                Some(r) => format!("{r}{}", if p.starts_with('/') { p } else { format!("/{p}") }),
+                None => p,
+            }
+        };
+        let from_srv = {
+            let root = root.clone();
+            move |p: String| match &root {
+                Some(r) => match p.strip_prefix(r.as_str()) {
+                    Some("") => "/".to_string(),
+                    Some(rest) => rest.to_string(),
+                    None => "/".to_string(),
+                },
+                None => p,
+            }
+        };
+        // The demo server's files belong to whoever runs it; show the connection's user instead.
+        let demo_user = root.as_ref().map(|_| conn.user.clone().unwrap_or_else(|| "me".into()));
+        let demo_owner = move |e: &mut crate::listing::Entry| {
+            if let Some(u) = &demo_user {
+                e.owner = u.clone();
+                e.group = u.clone();
+            }
+        };
         std::thread::spawn(move || {
             let send = |r: Reply| {
                 let _ = reply_tx.send(r);
@@ -117,29 +145,37 @@ impl Session {
                     None => return send(Reply::Closed(e)),
                 },
             };
+            let home = from_srv(home);
             send(Reply::Connected(home));
             for (id, req) in req_rx {
+                let t = &to_srv;
                 let result = match req {
-                    Request::List(path) => match proc.list(&path) {
-                        Ok(entries) => {
+                    Request::List(path) => match proc.list(&t(path.clone())) {
+                        Ok(mut entries) => {
+                            for e in &mut entries {
+                                demo_owner(e);
+                            }
                             send(Reply::Listing(path, entries));
                             Ok(())
                         }
                         Err(e) => Err(e),
                     },
-                    Request::Mkdir(p) => proc.simple(&format!("-mkdir {}", q(&p))),
-                    Request::Rename(a, b) => proc.simple(&format!("-rename {} {}", q(&a), q(&b))),
-                    Request::Remove(p, dir) => proc.remove(&p, dir),
-                    Request::Get(remote, local, dir) => proc.simple(&format!("-get{} -p {} {}", if dir { " -r" } else { "" }, q(&remote), q(&local.to_string_lossy()))),
-                    Request::Chmod(path, mode, recursive) => proc.chmod(&path, mode, recursive),
-                    Request::Stat(path) => match proc.stat(&path) {
-                        Ok(e) => {
+                    Request::Mkdir(p) => proc.simple(&format!("-mkdir {}", q(&t(p)))),
+                    Request::Rename(a, b) => proc.simple(&format!("-rename {} {}", q(&t(a)), q(&t(b)))),
+                    Request::Remove(p, dir) => proc.remove(&t(p), dir),
+                    Request::Get(remote, local, dir) => proc.simple(&format!("-get{} -p {} {}", if dir { " -r" } else { "" }, q(&t(remote)), q(&local.to_string_lossy()))),
+                    Request::Chmod(path, mode, recursive) => proc.chmod(&t(path), mode, recursive),
+                    Request::Stat(path) => match proc.stat(&t(path)) {
+                        Ok(mut e) => {
+                            if let Some(e) = e.as_mut() {
+                                demo_owner(e);
+                            }
                             send(Reply::Stat(id, e));
                             continue;
                         }
                         Err(e) => Err(e),
                     },
-                    Request::Put(local, remote, dir) => proc.simple(&format!("-put{} -p {} {}", if dir { " -r" } else { "" }, q(&local.to_string_lossy()), q(&remote))),
+                    Request::Put(local, remote, dir) => proc.simple(&format!("-put{} -p {} {}", if dir { " -r" } else { "" }, q(&local.to_string_lossy()), q(&t(remote)))),
                 };
                 match result {
                     Err(e) if proc.dead() => return send(Reply::Closed(e)),
@@ -186,8 +222,21 @@ impl Proc {
             args.extend(extra.split_whitespace().map(str::to_string));
         }
         args.extend(c.sftp_args()?);
+        // Checks and documentation pictures: RIVET_FTP_DEMO_SERVER=FOLDER talks to the local
+        // sftp-server program directly (no ssh, no network), starting in FOLDER.
+        let demo = std::env::var("RIVET_FTP_DEMO_SERVER").ok().filter(|d| std::path::Path::new(d).is_dir());
+        if demo.is_some() {
+            let server = ["/usr/libexec/openssh/sftp-server", "/usr/lib/openssh/sftp-server", "/usr/lib/ssh/sftp-server", "/usr/libexec/sftp-server"]
+                .into_iter()
+                .find(|p| std::path::Path::new(p).exists())
+                .ok_or("no sftp-server program for the demo server")?;
+            args = vec!["-b".into(), "-".into(), "-D".into(), server.into()];
+        }
         let (reader, writer) = std::io::pipe().map_err(|e| e.to_string())?;
         let mut cmd = Command::new("sftp");
+        if let Some(d) = &demo {
+            cmd.current_dir(d);
+        }
         cmd.args(&args).stdin(Stdio::piped()).stdout(writer.try_clone().map_err(|e| e.to_string())?).stderr(writer);
         if let Some(sec) = secret {
             let me = std::env::current_exe().map_err(|e| e.to_string())?;
