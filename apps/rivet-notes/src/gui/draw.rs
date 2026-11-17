@@ -855,7 +855,7 @@ impl NotesApp {
                 .desired_width(f32::INFINITY)
                 .desired_rows(24)
                 .lock_focus(true)
-                .hint_text(egui::RichText::new("Write in Markdown…").size(editor_size * 1.15 * fonts::scale()).italics().color(weak))
+                .hint_text(egui::RichText::new("Write in Markdown…").size(editor_size * 1.06 * fonts::scale()).italics().color(weak))
                 .layouter(&mut layouter)
                 .show(ui);
             // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
