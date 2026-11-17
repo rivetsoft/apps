@@ -82,6 +82,40 @@ fn hue_of(c: Color32) -> Option<f32> {
     Some((h + 360.0) % 360.0)
 }
 
+/// Hue (degrees), saturation and value.
+fn hsv(c: Color32) -> (f32, f32, f32) {
+    let (r, g, b) = (c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let d = max - min;
+    let h = if d == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / d).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / d + 2.0)
+    } else {
+        60.0 * ((r - g) / d + 4.0)
+    };
+    (h, if max == 0.0 { 0.0 } else { d / max }, max)
+}
+
+fn from_hsv(h: f32, s: f32, v: f32) -> Color32 {
+    let h = h.rem_euclid(360.0) / 60.0;
+    let c = v * s;
+    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+    let (r, g, b) = match h as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = v - c;
+    let f = |v: f32| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
+    Color32::from_rgb(f(r), f(g), f(b))
+}
+
 fn hue_gap(a: f32, b: f32) -> f32 {
     let d = (a - b).abs() % 360.0;
     d.min(360.0 - d)
@@ -118,16 +152,41 @@ impl TermColors {
         let code = rivet_look::highlight::colors(fg, bg, p, s, t3);
         let dark = luminance(bg) < 0.5;
         let mut t = Self::from_code(bg, fg, dark, &code);
+        // How the theme's colours feel on average (their strength and brightness), so every hue
+        // takes on the theme's character, not only the ones near its colours.
+        let theme_hsv: Vec<(f32, f32, f32)> = trio.iter().map(|c| hsv(*c)).collect();
+        let avg_s = theme_hsv.iter().map(|x| x.1).sum::<f32>() / 3.0;
+        let avg_v = theme_hsv.iter().map(|x| x.2).sum::<f32>() / 3.0;
         for i in 1..7 {
-            let Some(h) = hue_of(t.ansi[i]) else { continue };
-            // The nearest theme colour by hue, and how near: the nearer, the stronger the lean.
-            let near = trio.iter().filter_map(|c| hue_of(*c).map(|th| (*c, hue_gap(h, th)))).min_by(|a, b| a.1.total_cmp(&b.1));
-            if let Some((c, gap)) = near {
-                // Near theme colours pull hard; far ones only tint (magenta mustn't turn red).
-                let pull = 0.42 * (1.0 - (gap / 60.0).min(1.0)) + 0.08;
-                t.ansi[i] = readable(mix(t.ansi[i], c, pull), bg);
-                t.ansi[i + 8] = mix(t.ansi[i], if dark { Color32::WHITE } else { Color32::BLACK }, 0.18);
+            let (h, s0, v0) = hsv(t.ansi[i]);
+            if s0 < 0.08 {
+                continue;
             }
+            // The nearest theme colour by hue, and the signed turn toward it.
+            let Some(&(th, ts, tv)) = theme_hsv.iter().filter(|x| x.1 > 0.08).min_by(|a, b| hue_gap(h, a.0).total_cmp(&hue_gap(h, b.0))) else { continue };
+            let mut d = th - h;
+            if d > 180.0 {
+                d -= 360.0;
+            } else if d < -180.0 {
+                d += 360.0;
+            }
+            // Turn most of the way toward it, but never out of the colour's family (red least,
+            // so errors stay red).
+            // Far from every theme colour, only a nudge (blue mustn't become cyan).
+            let reach = (1.0 - (d.abs() - 30.0).max(0.0) / 90.0).clamp(0.25, 1.0);
+            let cap = if i == 1 { 14.0 } else { 34.0 * reach };
+            let turn = (d * 0.75).clamp(-cap, cap);
+            // Near ones also take the theme colour's strength and brightness; all take some of
+            // the theme's average.
+            let near = 1.0 - (d.abs() / 70.0).min(1.0);
+            let s = s0 + ((ts * near + avg_s * (1.0 - near)) - s0) * 0.55;
+            let v = v0 + ((tv * near + avg_v * (1.0 - near)) - v0) * 0.35;
+            t.ansi[i] = readable(from_hsv(h + turn, s.clamp(0.25, 0.9), v.clamp(0.3, 0.97)), bg);
+            t.ansi[i + 8] = mix(t.ansi[i], if dark { Color32::WHITE } else { Color32::BLACK }, 0.2);
+        }
+        // Black, white and the greys lean toward the accent too.
+        for i in [0, 7, 8, 15] {
+            t.ansi[i] = mix(t.ansi[i], p, 0.1);
         }
         t.cursor = p;
         t.selection = mix(bg, p, if dark { 0.38 } else { 0.3 });
