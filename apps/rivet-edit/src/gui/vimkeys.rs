@@ -164,14 +164,68 @@ impl EditApp {
         }
     }
 
-    /// The status bar's Vim part: the mode and keys typed so far, or the `:` line.
-    pub(crate) fn vim_status(&self) -> Option<(String, bool)> {
+    /// The status bar's Vim part, on the right: the mode as a coloured tag, and keys typed
+    /// toward a command just before it.
+    pub(crate) fn vim_mode_tag(&self, ui: &mut egui::Ui) {
         if !self.s.vim_keys || self.tabs.is_empty() {
-            return None;
+            return;
         }
-        Some(match &self.vim.cmdline {
-            Some((k, line)) => (format!("{k}{line}"), true),
-            None => (self.vim.status(), false),
-        })
+        let v = ui.visuals().clone();
+        let accent = self.accent();
+        let hue = rivet_look::builtin_icons::hue;
+        // A colour per mode, from the accent so it sits in the theme.
+        let col = match self.vim.mode {
+            Mode::Normal => accent,
+            Mode::Insert => hue(accent, 120.0),
+            Mode::Visual | Mode::VisualLine => hue(accent, -110.0),
+        };
+        let fg = if v.dark_mode { rivet_look::palette::mix(col, egui::Color32::WHITE, 0.25) } else { rivet_look::palette::mix(col, egui::Color32::BLACK, 0.3) };
+        let g = ui.painter().layout_no_wrap(self.vim.mode_name().to_string(), egui::FontId::new(10.5, egui::FontFamily::Proportional), fg);
+        let (r, resp) = ui.allocate_exact_size(egui::Vec2::new(g.size().x + 16.0, 18.0), egui::Sense::hover());
+        ui.painter().rect_filled(r, rivet_look::theme::r_sm(), col.gamma_multiply(if v.dark_mode { 0.24 } else { 0.18 }));
+        ui.painter().rect_stroke(r, rivet_look::theme::r_sm(), egui::Stroke::new(1.0, col.gamma_multiply(0.45)), egui::StrokeKind::Inside);
+        // A touch of weight: the text drawn twice, a hair apart.
+        let pos = r.center() - g.size() / 2.0;
+        ui.painter().galley(pos, g.clone(), fg);
+        ui.painter().galley(pos + egui::Vec2::new(0.45, 0.0), g, fg);
+        resp.on_hover_text("Vim keys: Esc for Normal, i for Insert, v or V to select, : for commands");
+        let typed = self.vim.typed();
+        if !typed.is_empty() {
+            ui.label(egui::RichText::new(typed).monospace().color(v.text_color()));
+        }
+    }
+
+    /// The `:` / `/` line, in the middle of the status bar while it's being typed.
+    pub(crate) fn vim_cmdline(&self, ui: &egui::Ui, bar: egui::Rect) {
+        let Some((k, line)) = &self.vim.cmdline else { return };
+        if !self.s.vim_keys {
+            return;
+        }
+        let v = ui.visuals().clone();
+        let accent = self.accent();
+        let font = egui::FontId::monospace(12.5);
+        let gk = ui.painter().layout_no_wrap(k.to_string(), font.clone(), accent);
+        let gl = ui.painter().layout_no_wrap(line.clone(), font.clone(), v.strong_text_color());
+        let w = (gk.size().x + gl.size().x + 34.0).max(280.0).min(bar.width() * 0.5);
+        let r = egui::Rect::from_center_size(bar.center(), egui::Vec2::new(w, 22.0));
+        let p = ui.painter().with_clip_rect(bar.expand(4.0));
+        p.rect_filled(r, rivet_look::theme::r_md(), rivet_look::palette::mix(v.panel_fill, v.text_color(), 0.07));
+        p.rect_stroke(r, rivet_look::theme::r_md(), egui::Stroke::new(1.0, accent.gamma_multiply(0.7)), egui::StrokeKind::Inside);
+        let x = r.left() + 12.0;
+        let y = r.center().y;
+        p.galley(egui::Pos2::new(x, y - gk.size().y / 2.0), gk.clone(), accent);
+        let tx = x + gk.size().x + 4.0;
+        let lw = gl.size().x;
+        p.with_clip_rect(r.shrink(2.0)).galley(egui::Pos2::new(tx, y - gl.size().y / 2.0), gl, v.strong_text_color());
+        // The caret.
+        let cx = (tx + lw + 1.0).min(r.right() - 8.0);
+        p.line_segment([egui::Pos2::new(cx, y - 7.0), egui::Pos2::new(cx, y + 7.0)], egui::Stroke::new(1.5, accent));
+        let hint = match k {
+            ':' => "Enter runs it · Esc cancels",
+            _ => "Enter searches · Esc cancels",
+        };
+        if line.is_empty() {
+            p.text(egui::Pos2::new(cx + 8.0, y), egui::Align2::LEFT_CENTER, hint, egui::FontId::proportional(11.5), v.weak_text_color());
+        }
     }
 }

@@ -503,16 +503,19 @@ fn is_change(k: &[char]) -> bool {
 // ---------------------------------------------------------------- doing it
 
 impl Vim {
-    /// What the status bar shows: the mode, and keys typed toward a command.
-    pub fn status(&self) -> String {
-        let mode = match self.mode {
+    /// The mode's name for the status bar.
+    pub fn mode_name(&self) -> &'static str {
+        match self.mode {
             Mode::Normal => "NORMAL",
             Mode::Insert => "INSERT",
             Mode::Visual => "VISUAL",
-            Mode::VisualLine => "VISUAL LINE",
-        };
-        let typed: String = self.keys.iter().filter(|c| !c.is_control()).collect();
-        if typed.is_empty() { mode.to_string() } else { format!("{mode}  {typed}") }
+            Mode::VisualLine => "V-LINE",
+        }
+    }
+
+    /// Keys typed toward a command not finished yet ("2d", "f").
+    pub fn typed(&self) -> String {
+        self.keys.iter().filter(|c| !c.is_control()).collect()
     }
 
     /// The selection Visual mode shows: (from, to) as a range of characters.

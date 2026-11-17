@@ -672,6 +672,8 @@ impl EditApp {
         let v = ui.visuals().clone();
         let weak = v.weak_text_color();
         let ws_icon = self.icon(&ctx, &["folder-symbolic"], 14.0);
+        let bar = ui.max_rect();
+        let cmdline_open = self.s.vim_keys && self.vim.cmdline.is_some();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             if let Some(w) = self.workspace_name() {
@@ -680,18 +682,15 @@ impl EditApp {
                 }
                 ui.label(egui::RichText::new(w).color(weak)).on_hover_text(self.root.as_ref().map(|r| r.display().to_string()).unwrap_or_default());
             }
-            if let Some((m, bad)) = &self.note {
+            if let Some((m, bad)) = self.note.as_ref().filter(|_| !cmdline_open) {
                 ui.add_space(10.0);
                 ui.label(egui::RichText::new(m).color(if *bad { status(&ctx).danger } else { weak }));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
                 let diags = self.diag_ranges();
-                // Vim: the : line (or the mode, and keys typed so far).
-                if let Some((words, line)) = self.vim_status() {
-                    let col = if line { v.strong_text_color() } else { weak };
-                    ui.label(egui::RichText::new(words).monospace().color(col));
-                }
+                // Vim: the mode, and keys typed so far.
+                self.vim_mode_tag(ui);
                 if let Some(t) = self.tabs.get(self.active) {
                     // The language server, and the problems it found.
                     if let Some((words, tip, trouble)) = &self.lsp_status {
@@ -718,6 +717,8 @@ impl EditApp {
                 }
             });
         });
+        // Vim's : line, in the middle.
+        self.vim_cmdline(ui, bar);
         if let Some(k) = open_quick {
             self.open_quick(k);
         }
