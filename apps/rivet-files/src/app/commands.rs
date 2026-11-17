@@ -13,6 +13,7 @@ enum Cmd {
     NewFolder,
     NewDocument,
     NewTab,
+    NewWindow,
     CloseTab,
     Terminal,
     Properties,
@@ -149,8 +150,9 @@ impl RivetApp {
         add(Cmd::Connect, "Go", "Connect to Server", "", None, true);
         add(Cmd::Location, "Go", "Type a Location", "Ctrl+L", None, true);
         add(Cmd::Search, "Go", "Search for Files", "Ctrl+F", None, true);
-        add(Cmd::NewFolder, "File", "Create New Folder", "Shift+Ctrl+N", None, in_dir);
+        add(Cmd::NewFolder, "File", "Create New Folder", "Ctrl+N", None, in_dir);
         add(Cmd::NewDocument, "File", "Create New Document", "", None, in_dir);
+        add(Cmd::NewWindow, "File", "New Window", "Shift+Ctrl+N", None, true);
         add(Cmd::NewTab, "File", "New Tab", "Ctrl+T", None, true);
         add(Cmd::CloseTab, "File", "Close Tab", "Ctrl+W", None, self.tabs.len() > 1);
         add(Cmd::Terminal, "File", "Open in Terminal", "", None, in_dir);
@@ -178,6 +180,7 @@ impl RivetApp {
             Cmd::NewFolder => self.pending.push(Action::NewFolder),
             Cmd::NewDocument => self.pending.push(Action::NewFile(None)),
             Cmd::NewTab => self.pending.push(Action::NewTab),
+            Cmd::NewWindow => self.pending.push(Action::NewWindow),
             Cmd::CloseTab => self.pending.push(Action::CloseTab(self.active)),
             Cmd::Terminal => {
                 if let Some(d) = dir {

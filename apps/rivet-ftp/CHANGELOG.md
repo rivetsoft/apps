@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Ctrl+N makes a new folder and Ctrl+Shift+N opens a new window (File → New Window); a new
+  connection is Ctrl+Shift+K. Ctrl+Shift+Tab goes to the previous tab again (Ctrl+Tab used to
+  catch it).
+
 ## 0.2.0
 
 - Code in the preview takes Rivet's own code colors (a color for keywords, strings, numbers,

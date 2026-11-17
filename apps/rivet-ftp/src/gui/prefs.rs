@@ -684,6 +684,7 @@ fn chip(ui: &mut egui::Ui, text: &str) {
 fn cmd_label(c: Cmd) -> &'static str {
     match c {
         Cmd::NewConnection => "New connection",
+        Cmd::NewWindow => "New window",
         Cmd::QuickConnect => "Quick connect",
         Cmd::Disconnect => "Disconnect",
         Cmd::Preferences => "Preferences",

@@ -56,8 +56,8 @@ check() { if eval "$2"; then echo "PASS  $1"; pass=$((pass + 1)); else echo "FAI
 fresh() { d="$T/work/$1"; mkdir -p "$d"; for f in a.txt b.txt c.md; do : > "$d/$f"; done; echo "$d"; }
 run() { dir=$1; shift; env RIVET_KEYBOARD=1 "$@" "$BIN" "$dir" --view list --screenshot "$T/shots/run.png" </dev/null >/dev/null 2>&1; }
 
-D=$(fresh new);    run "$D" RIVET_CLICKS="key:ctrl+shift+n@6;type:Alpha@10;key:enter@13"
-check "new folder (Ctrl+Shift+N, type, Enter)" "[ -d '$D/Alpha' ]"
+D=$(fresh new);    run "$D" RIVET_CLICKS="key:ctrl+n@6;type:Alpha@10;key:enter@13"
+check "new folder (Ctrl+N, type, Enter)" "[ -d '$D/Alpha' ]"
 D=$(fresh rename); run "$D" RIVET_SELECT=0 RIVET_CLICKS="key:f2@6;type:renamed@10;key:enter@13"
 check "rename (F2 keeps the extension)" "[ -f '$D/renamed.txt' ] && [ ! -f '$D/a.txt' ]"
 D=$(fresh trash);  run "$D" RIVET_SELECT=1 RIVET_CLICKS="key:delete@6;key:enter@10"
@@ -70,7 +70,7 @@ D=$(fresh zip);    run "$D" RIVET_SELECT=0 RIVET_DIALOG=compress RIVET_CLICKS="k
 check "compress" "ls '$D' | grep -q 'a.*\.zip'"
 D=$(fresh bulk);   run "$D" RIVET_SELECT=0,1 RIVET_DIALOG=bulkrename RIVET_CLICKS="type:x_@20;key:enter@24"
 check "bulk rename" "[ -f '$D/x_a.txt' ] && [ -f '$D/x_b.txt' ]"
-D=$(fresh nav);    mkdir -p "$D/sub/deeper"; run "$D/sub/deeper" RIVET_CLICKS="key:alt+ArrowUp@6;key:alt+ArrowUp@9;key:ctrl+shift+n@12;type:Here@16;key:enter@19"
+D=$(fresh nav);    mkdir -p "$D/sub/deeper"; run "$D/sub/deeper" RIVET_CLICKS="key:alt+ArrowUp@6;key:alt+ArrowUp@9;key:ctrl+n@12;type:Here@16;key:enter@19"
 check "Alt+Up twice, new folder lands there" "[ -d '$D/Here' ]"
 
 echo

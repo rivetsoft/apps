@@ -50,9 +50,10 @@ All of these are also in the menus, and in Help → Keyboard Shortcuts.
 | Ctrl+U / Ctrl+D | Upload / download the selection |
 | F2 | Rename |
 | Delete | Delete on the server (asks first) |
-| Ctrl+Shift+N | New folder |
+| Ctrl+N | New folder |
+| Ctrl+Shift+N | New window |
 | Ctrl+L | Type a path |
-| Ctrl+N / Ctrl+K | New connection / quick connect |
+| Ctrl+Shift+K / Ctrl+K | New connection / quick connect |
 | Ctrl+Shift+D | Disconnect |
 | Ctrl+H | Show hidden files |
 | Ctrl+M, F9, F8 | Show or hide the menu bar, connections, transfers |

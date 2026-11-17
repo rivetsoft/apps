@@ -8,6 +8,7 @@ use super::*;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Cmd {
     NewConnection,
+    NewWindow,
     QuickConnect,
     Disconnect,
     Preferences,
@@ -50,9 +51,13 @@ const ALT: Modifiers = Modifiers::ALT;
 
 /// Shortcuts that work anywhere in the window (also while a text field has the keyboard).
 pub(super) const GLOBAL: &[(Modifiers, Key, Cmd)] = &[
-    (CTRL, Key::N, Cmd::NewConnection),
-    (CTRL, Key::K, Cmd::QuickConnect),
+    // Shifted ones first: Ctrl+N would also match Ctrl+Shift+N (extra Shift is ignored).
+    (CTRL_SHIFT, Key::N, Cmd::NewWindow),
+    (CTRL_SHIFT, Key::K, Cmd::NewConnection),
     (CTRL_SHIFT, Key::D, Cmd::Disconnect),
+    (CTRL_SHIFT, Key::Tab, Cmd::PrevTab),
+    (CTRL, Key::N, Cmd::NewFolder),
+    (CTRL, Key::K, Cmd::QuickConnect),
     (CTRL, Key::Comma, Cmd::Preferences),
     (CTRL, Key::Q, Cmd::Quit),
     (CTRL, Key::M, Cmd::ToggleMenubar),
@@ -70,8 +75,6 @@ pub(super) const GLOBAL: &[(Modifiers, Key, Cmd)] = &[
     (CTRL, Key::PageDown, Cmd::NextTab),
     (CTRL, Key::PageUp, Cmd::PrevTab),
     (CTRL, Key::Tab, Cmd::NextTab),
-    (CTRL_SHIFT, Key::Tab, Cmd::PrevTab),
-    (CTRL_SHIFT, Key::N, Cmd::NewFolder),
 ];
 
 /// Shortcuts for the file lists (only when no text field has the keyboard).
@@ -113,6 +116,17 @@ impl FtpApp {
         let side = self.focus;
         match cmd {
             Cmd::NewConnection => self.form = Some(Form::blank()),
+            Cmd::NewWindow => {
+                // Another Rivet FTP window (its own copy of the program).
+                if self.shot.is_none()
+                    && let Ok(exe) = std::env::current_exe()
+                {
+                    let r = std::process::Command::new(exe).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+                    if let Err(e) = r {
+                        self.note = Some((format!("Couldn't open a window: {e}"), true));
+                    }
+                }
+            }
             Cmd::QuickConnect => self.focus_quick = true,
             Cmd::Disconnect => {
                 if let Some(c) = &self.conn {
@@ -346,6 +360,7 @@ impl FtpApp {
             self.item(ui, "Open in Editor", Cmd::EditRemote, one_file);
             self.item(ui, "Properties", Cmd::Properties, sel_focus > 0 && (focus == Side::Local || connected));
             ui.separator();
+            self.item(ui, "New Window", Cmd::NewWindow, true);
             self.item(ui, "New Tab", Cmd::NewTab, true);
             self.item(ui, "New Connection…", Cmd::NewConnection, true);
             ui.menu_button("Connect To", |ui| {

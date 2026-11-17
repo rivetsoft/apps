@@ -67,6 +67,8 @@ enum Action {
     Unmount(Mount),
     CloseTab(usize),
     NewTab,
+    /// Another Rivet Files window (its own copy of the program), in the current folder.
+    NewWindow,
     Run(PathBuf),
     /// Open the Preview light box on this file.
     QuickView(PathBuf),
@@ -1404,6 +1406,20 @@ impl RivetApp {
                     let loc = self.tab().loc.clone();
                     self.new_tab(loc);
                 }
+                Action::NewWindow => {
+                    if self.screenshot.is_none()
+                        && let Ok(exe) = std::env::current_exe()
+                    {
+                        let mut c = std::process::Command::new(exe);
+                        match self.current_dir() {
+                            Some(d) => c.arg(d),
+                            None => c.arg("--home"),
+                        };
+                        if let Err(e) = c.stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn() {
+                            self.flash(&format!("Couldn't open a window: {e}"));
+                        }
+                    }
+                }
                 Action::Compress(paths) => {
                     if !paths.is_empty() {
                         let format = crate::archive::Format::from_id(&self.s.compress_format);
@@ -2045,7 +2061,10 @@ impl RivetApp {
         if cmd && pressed(Key::A) {
             self.pending.push(Action::SelectAll);
         }
+        // Ctrl+Shift+N a new window, Ctrl+N a new folder (the shifted one first).
         if cmd && m.shift && pressed(Key::N) {
+            self.pending.push(Action::NewWindow);
+        } else if cmd && pressed(Key::N) {
             self.pending.push(Action::NewFolder);
         }
         if cmd && pressed(Key::D)

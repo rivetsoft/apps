@@ -202,13 +202,16 @@ impl RivetApp {
         ui.spacing_mut().button_padding.x += MENU_EXTRA_PAD;
         ui.menu_button("File", |ui| {
             self.roomy_menu(ui);
-            if ui.add_enabled(in_dir.is_some(), egui::Button::new("Create New Folder").shortcut_text("Shift+Ctrl+N")).clicked() {
+            if ui.add_enabled(in_dir.is_some(), egui::Button::new("Create New Folder").shortcut_text("Ctrl+N")).clicked() {
                 self.pending.push(Action::NewFolder);
             }
             if ui.add_enabled(in_dir.is_some(), egui::Button::new("Create New Document")).clicked() {
                 self.pending.push(Action::NewFile(None));
             }
             ui.separator();
+            if ui.add(egui::Button::new("New Window").shortcut_text("Shift+Ctrl+N")).clicked() {
+                self.pending.push(Action::NewWindow);
+            }
             if ui.add(egui::Button::new("New Tab").shortcut_text("Ctrl+T")).clicked() {
                 self.pending.push(Action::NewTab);
             }

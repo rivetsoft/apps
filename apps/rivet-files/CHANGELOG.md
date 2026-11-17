@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Shortcuts**: Ctrl+N makes a new folder, Ctrl+Shift+N opens a new window (File → New Window).
+
 ## 0.7.0
 
 ### New
