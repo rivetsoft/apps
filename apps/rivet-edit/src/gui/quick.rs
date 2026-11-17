@@ -508,7 +508,7 @@ impl EditApp {
                 scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| b.1.0.cmp(&a.1.0)).then_with(|| a.1.1.to_lowercase().cmp(&b.1.1.to_lowercase())));
                 scored.truncate(200);
                 // First row: open the folder typed (folder mode).
-                let folder_icon = self.icon(ctx, &["folder"], 24.0);
+                let folder_icon = self.folder_icon(ctx, "", false, 24.0);
                 let mut rows: Vec<QuickRow> = Vec::new();
                 let open_here = !files && word.is_empty() && dir.is_dir();
                 // Tab fills in the highlighted folder or file (the best match when the
@@ -522,7 +522,7 @@ impl EditApp {
                     ctx.request_repaint();
                 }
                 if open_here {
-                    rows.push(QuickRow::Item { icon: self.icon(ctx, &["folder-open", "folder"], 24.0), name: format!("Open {}", dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir_s.clone())), sub: "As the workspace".into() });
+                    rows.push(QuickRow::Item { icon: self.folder_icon(ctx, "", true, 24.0), name: format!("Open {}", dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir_s.clone())), sub: "As the workspace".into() });
                 }
                 for (_, (is_dir, name)) in &scored {
                     let icon = if *is_dir { folder_icon.clone() } else { self.file_icon(ctx, name, 24.0) };

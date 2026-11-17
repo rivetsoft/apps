@@ -81,3 +81,9 @@ cargo build --release -p rivet-edit
 
 Screenshots come from a demo project: `utilities/rivet-dev edit-screenshots`. Changes are in the
 [changelog](CHANGELOG.md).
+
+## Credits
+
+File and folder icons are from [Material Design Icons](https://pictogrammers.com/library/mdi/) by
+Pictogrammers, used under the Apache License 2.0 (see `LICENSE-APACHE`). Their shapes live in
+`crates/rivet-look/src/mdi.rs`; the colours are Rivet's, a little closer to your accent.

@@ -285,21 +285,33 @@ impl EditApp {
         if self.files_cut {
             ui.label(egui::RichText::new(format!("Showing the first {} files", workspace::MAX_FILES)).small().color(v.weak_text_color()));
         }
-        let folder_icon = self.icon(&ctx, &["folder"], 16.0);
         let open_rel = self.tabs.get(self.active).and_then(|t| t.path.clone()).and_then(|p| self.root.as_ref().and_then(|r| p.strip_prefix(r).ok().map(|x| x.to_string_lossy().replace('\\', "/"))));
-        // File icons, looked up once per kind of file.
-        let names: Vec<String> = self.files.iter().map(|f| f.rsplit('/').next().unwrap_or(f).to_string()).collect();
+        // Icons for what's showing: folders by name (open or shut), files by name.
+        let parent_of = |f: &str| f.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
+        let shown = |f: &str, open_dirs: &HashSet<String>| {
+            let p = parent_of(f);
+            p.is_empty() || open_dirs.contains(&p)
+        };
+        let vis_folders: Vec<String> = self.folders.iter().filter(|f| shown(f, &self.open_dirs)).cloned().collect();
+        let mut folder_icons: HashMap<String, Option<egui::TextureHandle>> = HashMap::new();
+        for f in vis_folders {
+            let name = f.rsplit('/').next().unwrap_or(&f).to_string();
+            let open = self.open_dirs.contains(&f);
+            let t = self.folder_icon(&ctx, &name, open, 16.0);
+            folder_icons.insert(f, t);
+        }
+        let names: Vec<String> = self.files.iter().filter(|f| shown(f, &self.open_dirs)).map(|f| f.rsplit('/').next().unwrap_or(f).to_string()).collect();
         let mut icons: HashMap<String, Option<egui::TextureHandle>> = HashMap::new();
-        for n in &names {
-            let ext = n.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
-            if let std::collections::hash_map::Entry::Vacant(e) = icons.entry(ext) {
-                e.insert(self.file_icon(&ctx, n, 16.0));
+        for n in names {
+            if let std::collections::hash_map::Entry::Vacant(e) = icons.entry(n) {
+                let t = self.file_icon(&ctx, e.key(), 16.0);
+                e.insert(t);
             }
         }
         let mut pick = None;
         egui::ScrollArea::vertical().id_salt("edit-tree").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            tree(ui, "", 0, &self.folders, &self.files, &self.open_dirs, &folder_icon, &icons, open_rel.as_deref(), &mut pick);
+            tree(ui, "", 0, &self.folders, &self.files, &self.open_dirs, &folder_icons, &icons, open_rel.as_deref(), &mut pick);
             ui.allocate_space(Vec2::new(ui.available_width(), 30.0));
         });
         match pick {
@@ -1052,7 +1064,7 @@ fn tree(
     folders: &[String],
     files: &[String],
     open_dirs: &HashSet<String>,
-    folder_icon: &Option<egui::TextureHandle>,
+    folder_icons: &HashMap<String, Option<egui::TextureHandle>>,
     icons: &HashMap<String, Option<egui::TextureHandle>>,
     open: Option<&str>,
     pick: &mut Option<Pick>,
@@ -1071,7 +1083,7 @@ fn tree(
         let c = Pos2::new(x + 4.0, rect.center().y);
         let pts = if is_open { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
         ui.painter().add(egui::Shape::convex_polygon(pts, v.weak_text_color(), Stroke::NONE));
-        if let Some(t) = folder_icon {
+        if let Some(Some(t)) = folder_icons.get(sub) {
             paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(x + 20.0, rect.center().y), Vec2::splat(16.0)), Color32::WHITE);
         }
         ui.painter().with_clip_rect(rect).text(Pos2::new(x + 32.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), v.text_color());
@@ -1087,7 +1099,7 @@ fn tree(
         if is_open {
             let top = rect.bottom();
             let guide = ui.painter().add(egui::Shape::Noop);
-            tree(ui, sub, depth + 1, folders, files, open_dirs, folder_icon, icons, open, pick);
+            tree(ui, sub, depth + 1, folders, files, open_dirs, folder_icons, icons, open, pick);
             let bottom = ui.min_rect().bottom();
             if bottom > top + 1.0 {
                 let col = palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.16 } else { 0.20 });
@@ -1107,8 +1119,7 @@ fn tree(
             ui.painter().rect_filled(rect, r_sm(), v.widgets.hovered.weak_bg_fill);
         }
         let x = rect.left() + 6.0 + depth as f32 * indent + 12.0;
-        let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
-        if let Some(Some(t)) = icons.get(&ext) {
+        if let Some(Some(t)) = icons.get(name) {
             paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(x + 8.0, rect.center().y), Vec2::splat(16.0)), Color32::WHITE);
         }
         let fg = if on { v.strong_text_color() } else { v.text_color() };

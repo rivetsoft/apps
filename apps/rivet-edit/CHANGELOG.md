@@ -12,6 +12,8 @@ The first version.
 - Safe saving, reloading files changed elsewhere, and questions before losing changes.
 - 39 editor color themes (One Dark, Dracula, Catppuccin, Gruvbox, Solarized, Tokyo Night, GitHub,
   Rosé Pine…), previewed live from Commands → Color Theme, or the app's own colors.
+- File and folder icons by type (Material Design Icons), each kind in its own colour leaning a
+  little toward the accent; Preferences > Appearance > Icons can switch back to the icon theme.
 - Suggestions as you type (Ctrl+Space any time) and errors underlined, from the language's
   server when one is installed (rust-analyzer, clangd, pyright, typescript-language-server,
   gopls…), else from the file's own words.

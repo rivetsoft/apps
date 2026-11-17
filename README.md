@@ -133,3 +133,6 @@ The top of the repository is only the Cargo workspace. CI builds, tests and lint
 ## License
 
 [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
+Rivet Edit's file and folder icons are from [Material Design Icons](https://pictogrammers.com/library/mdi/)
+by Pictogrammers, under the Apache License 2.0.

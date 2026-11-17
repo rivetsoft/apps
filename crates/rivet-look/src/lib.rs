@@ -9,6 +9,7 @@ pub mod fonts;
 pub mod highlight;
 pub mod live;
 pub mod icons;
+pub mod mdi;
 pub mod nerd;
 pub mod palette;
 pub mod quick;

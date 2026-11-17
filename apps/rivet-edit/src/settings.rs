@@ -16,6 +16,9 @@ pub struct Settings {
     /// Interface text size in points; 0 follows the desktop's.
     pub text_size: f32,
     pub builtin_icons: bool,
+    /// Files and folders get Material Design icons in a colour per type (else the icon
+    /// theme's).
+    pub typed_icons: bool,
     pub show_menubar: bool,
     pub show_sidebar: bool,
     pub show_statusbar: bool,
@@ -49,6 +52,7 @@ impl Default for Settings {
             follow_desktop_colors: true,
             text_size: 0.0,
             builtin_icons: true,
+            typed_icons: true,
             show_menubar: true,
             show_sidebar: true,
             show_statusbar: true,
@@ -93,6 +97,7 @@ impl Settings {
                 "follow_desktop_colors" => s.follow_desktop_colors = b,
                 "text_size" => s.text_size = v.parse::<f32>().unwrap_or(0.0).clamp(0.0, 24.0),
                 "builtin_icons" => s.builtin_icons = b,
+                "typed_icons" => s.typed_icons = b,
                 "show_menubar" => s.show_menubar = b,
                 "show_sidebar" => s.show_sidebar = b,
                 "show_statusbar" => s.show_statusbar = b,
@@ -125,10 +130,11 @@ impl Settings {
         let [r, g, b] = self.accent;
         let recent = self.recent.iter().map(|p| p.to_string_lossy().replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nuse_tabs={}\ndetect_indent={}\nautocomplete={}\nlsp={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\ntyped_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nuse_tabs={}\ndetect_indent={}\nautocomplete={}\nlsp={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.builtin_icons,
+            self.typed_icons,
             self.show_menubar,
             self.show_sidebar,
             self.show_statusbar,

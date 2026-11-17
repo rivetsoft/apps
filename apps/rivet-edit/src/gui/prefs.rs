@@ -259,9 +259,15 @@ impl EditApp {
                                                 ui.selectable_value(&mut self.s.builtin_icons, false, "Desktop icon theme");
                                             });
                                             ui.end_row();
+                                            ui.label("Files and folders");
+                                            ui.horizontal(|ui| {
+                                                ui.selectable_value(&mut self.s.typed_icons, true, "By type, in color");
+                                                ui.selectable_value(&mut self.s.typed_icons, false, "From the icon theme");
+                                            });
+                                            ui.end_row();
                                         });
                                         ui.add_space(6.0);
-                                        hint(ui, "Rivet's own icons take your accent color; the desktop's are the ones your other apps use.");
+                                        hint(ui, "By type: Material Design Icons, a color for each kind of file, leaning a little toward your accent. Rivet's own icons take your accent color; the desktop's are the ones your other apps use.");
                                     });
                                 }
                                 Page::Editor => {

@@ -124,6 +124,8 @@ pub struct EditApp {
     pub(crate) file_rank: Option<quick::FileRank>,
     /// File icons by kind of file and size.
     ext_icons: HashMap<(String, u32), Option<egui::TextureHandle>>,
+    /// File-type icons drawn in their colours: (shape, colour, pixels).
+    mdi_icons: HashMap<(usize, [u8; 4], u32), Option<egui::TextureHandle>>,
     /// A line to put the cursor on and show (from Go to Line or Quick Open).
     pub(crate) goto: Option<usize>,
     /// Characters to select and show (a found match, a search result).
@@ -215,6 +217,7 @@ impl EditApp {
             files_gen: 0,
             file_rank: None,
             ext_icons: HashMap::new(),
+            mdi_icons: HashMap::new(),
             goto: None,
             select_after: None,
             reveal: false,
@@ -326,6 +329,9 @@ impl EditApp {
 
     /// A file's icon, by its type.
     pub(crate) fn file_icon(&mut self, ctx: &egui::Context, name: &str, px: f32) -> Option<egui::TextureHandle> {
+        if self.s.typed_icons {
+            return self.typed_icon(ctx, rivet_look::mdi::for_file(name), px);
+        }
         let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
         if !self.icon_names.contains_key(&ext) {
             let db = self.mime.get_or_insert_with(rivet_xdg::mime::MimeDb::load);
@@ -342,6 +348,29 @@ impl EditApp {
         let refs: Vec<&str> = names.iter().map(String::as_str).collect();
         let t = self.icon(ctx, &refs, px);
         self.ext_icons.insert(key, t.clone());
+        t
+    }
+
+    /// A folder's icon (open or shut), by its name.
+    pub(crate) fn folder_icon(&mut self, ctx: &egui::Context, name: &str, open: bool, px: f32) -> Option<egui::TextureHandle> {
+        if !self.s.typed_icons {
+            return self.icon(ctx, if open { &["folder-open", "folder"] } else { &["folder"] }, px);
+        }
+        let accent = self.accent();
+        self.typed_icon(ctx, rivet_look::mdi::for_folder(name, open, accent), px)
+    }
+
+    /// A file-type icon in its own colour, nudged toward the theme's accent.
+    fn typed_icon(&mut self, ctx: &egui::Context, kind: rivet_look::mdi::Kind, px: f32) -> Option<egui::TextureHandle> {
+        let dark = ctx.global_style().visuals.dark_mode;
+        let col = rivet_look::mdi::tint(kind.color, self.accent(), dark);
+        let size = (px * ctx.pixels_per_point()).round().max(8.0) as u32;
+        let key = (kind.path.as_ptr() as usize, col.to_array(), size);
+        if let Some(t) = self.mdi_icons.get(&key) {
+            return t.clone();
+        }
+        let t = icons::render_svg(rivet_look::mdi::svg(kind.path, col).as_bytes(), size).map(|img| ctx.load_texture(format!("mdi-{}-{size}-{:?}", kind.key, col.to_array()), img, egui::TextureOptions::LINEAR));
+        self.mdi_icons.insert(key, t.clone());
         t
     }
 
