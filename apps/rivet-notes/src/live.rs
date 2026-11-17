@@ -40,6 +40,8 @@ pub struct St {
     pub collapse: bool,
     /// The collapsed opening fence (a little taller: the block's label sits on it).
     pub fence_top: bool,
+    /// The line is a picture shown in place: the room it takes (points), else 0.
+    pub image_h: u16,
 }
 
 /// Something drawn over the text; positions are character indices.
@@ -52,6 +54,8 @@ pub enum Deco {
     /// A super todo's details, drawn after its text (at this character).
     Todo { at: usize, due: Option<chrono::NaiveDate>, priority: crate::tasks::Priority, done: bool },
     /// A super todo's text (characters `from..to` on line `line`): clicking it opens its panel.
+    /// A picture shown in place of its line (at this character).
+    Image { at: usize, src: String },
     Super { line: usize, start: usize, from: usize, to: usize, due: Option<chrono::NaiveDate>, priority: crate::tasks::Priority, done: bool },
     /// A quote bar at this character (the `>`).
     Quote(usize),
@@ -87,12 +91,12 @@ pub fn heading_level(line: &str) -> u8 {
 /// `held` is the line being edited (by index) and the heading level it had when the cursor came
 /// to it: that line shows as plain Markdown at that size until the cursor leaves it.
 pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>) -> Live {
-    analyze_with(text, raw, held, &[])
+    analyze_with(text, raw, held, &[], &|_| None)
 }
 
 /// [`analyze`], with the todo tags that make a task a super todo (its tag and details fold away
 /// into a due date and a flag).
-pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, triggers: &[String]) -> Live {
+pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, triggers: &[String], image_h: &dyn Fn(&str) -> Option<f32>) -> Live {
     let mut st = vec![St::default(); text.len()];
     let mut decos = Vec::new();
     let mut blocks = Vec::new();
@@ -165,6 +169,18 @@ pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize
             continue;
         }
         let at = r.start + indent;
+        // A line that's just a picture (which could be loaded): the picture, in its place.
+        if let Some(src) = image_only(t)
+            && let Some(h) = image_h(src)
+        {
+            for s in &mut st[r.clone()] {
+                s.hide = Hide::Tiny;
+                s.image_h = h.clamp(1.0, 2000.0) as u16;
+            }
+            decos.push(Deco::Image { at: char_at(r.start), src: src.to_string() });
+            i += 1;
+            continue;
+        }
         let mark = |st: &mut [St], range: Range<usize>, hide: Hide| {
             for s in &mut st[range] {
                 if editing {
@@ -270,6 +286,15 @@ pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize
         i += 1;
     }
     Live { st, decos, blocks }
+}
+
+/// The address of a picture when the line is only `![alt](address)`.
+pub fn image_only(line: &str) -> Option<&str> {
+    let t = line.trim();
+    let rest = t.strip_prefix("![")?;
+    let mid = rest.find("](")?;
+    let src = rest[mid + 2..].strip_suffix(')')?;
+    (!src.is_empty() && !src.contains(char::is_whitespace) && !rest[..mid].contains(']')).then_some(src)
 }
 
 /// Bold, italics, strikethrough, `code`, links and #tags inside one line.
@@ -491,7 +516,7 @@ mod tests {
     fn super_todos_fold_their_details() {
         let t = "- [ ] Ship it #task #work due:2026-12-01 priority:high\n- [ ] plain #work\n";
         let tags = vec!["task".to_string()];
-        let l = analyze_with(t, None, None, &tags);
+        let l = analyze_with(t, None, None, &tags, &|_| None);
         let shown: String = t.char_indices().filter(|(i, _)| l.st[*i].hide == Hide::No).map(|(_, c)| c).collect();
         assert!(shown.starts_with(" Ship it #work\n"), "{shown:?}");
         assert!(l.decos.iter().any(|d| matches!(d, Deco::Todo { priority: crate::tasks::Priority::High, due: Some(_), .. })));

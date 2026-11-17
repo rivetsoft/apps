@@ -35,6 +35,8 @@ pub(super) struct LiveLook {
     pub code: Color32,
     /// The tags that make a task a super todo.
     pub todo_tags: Vec<String>,
+    /// Pictures the note shows (by the address written), with the size they're shown at.
+    pub images: std::collections::HashMap<String, (egui::TextureHandle, Vec2)>,
 }
 
 /// How much bigger each heading level is.
@@ -183,9 +185,82 @@ pub(super) fn code_panels(ui: &egui::Ui, text: &str, out: &egui::text_edit::Text
     hits
 }
 
+impl super::NotesApp {
+    /// The pictures on lines of their own in the open note, loaded (and kept) and sized to fit
+    /// `width` (at most 360 points tall), by the address written in the note.
+    pub(super) fn note_pictures(&mut self, ctx: &egui::Context, width: f32) -> std::collections::HashMap<String, (egui::TextureHandle, Vec2)> {
+        let mut out = std::collections::HashMap::new();
+        let Some(d) = self.doc.as_ref() else { return out };
+        let dir = d.path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+        let srcs: Vec<String> = d.body.lines().filter_map(live::image_only).filter(|s| !s.contains("://")).map(str::to_string).collect();
+        for src in srcs {
+            let path = dir.join(src.replace("%20", " "));
+            let tex = self
+                .note_images
+                .entry(path.clone())
+                .or_insert_with(|| rivet_look::icons::load_picture(&path, 1600).map(|img| ctx.load_texture(format!("note-img:{}", path.display()), img, egui::TextureOptions::LINEAR)))
+                .clone();
+            if let Some(t) = tex {
+                let size = t.size_vec2() / ctx.pixels_per_point();
+                let scale = (width.max(80.0) / size.x).min(360.0 / size.y).min(1.0);
+                out.insert(src, (t, size * scale));
+            }
+        }
+        out
+    }
+
+    /// Files dropped on the window (with a note open): copied into the attachments folder and
+    /// linked at the cursor (or the end of the note).
+    pub(super) fn take_drops(&mut self, ctx: &egui::Context) {
+        let mut dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        // Checks: RIVET_NOTES_DROP=file[,file] drops those (on the sample vault only).
+        if self.shot.is_some()
+            && !self.drop_done
+            && let Ok(v) = std::env::var("RIVET_NOTES_DROP")
+        {
+            self.drop_done = true;
+            dropped.extend(v.split(',').map(std::path::PathBuf::from));
+        }
+        let hovering = ctx.input(|i| !i.raw.hovered_files.is_empty());
+        if hovering && self.doc.is_some() {
+            let v = ctx.global_style().visuals.clone();
+            let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("drop-files")));
+            let r = self.page_rect.expand(8.0);
+            painter.rect_filled(r, rivet_look::theme::r_lg(), v.selection.bg_fill.gamma_multiply(0.10));
+            painter.rect_stroke(r, rivet_look::theme::r_lg(), Stroke::new(2.0, v.selection.bg_fill), egui::StrokeKind::Inside);
+            let folder = if self.s.attachments_folder.is_empty() { "the top of the vault".to_string() } else { format!("\"{}\"", self.s.attachments_folder) };
+            painter.text(r.center(), egui::Align2::CENTER_CENTER, format!("Drop to add to {folder}"), rivet_look::fonts::ui_font(15.0), v.selection.bg_fill);
+        }
+        if dropped.is_empty() {
+            return;
+        }
+        let (Some(vault), Some(d)) = (self.vault.clone(), self.doc.as_ref()) else { return };
+        let note_dir = d.path.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| vault.clone());
+        let dest = vault.join(self.s.attachments_folder.trim_matches('/'));
+        let mut links = Vec::new();
+        for f in dropped.iter().filter(|f| f.is_file()) {
+            match crate::attach::copy_in(f, &dest) {
+                Ok(to) => links.push(crate::attach::markdown(&to, &note_dir)),
+                Err(e) => self.note_msg = Some((format!("Couldn't add {}: {e}", f.display()), true)),
+            }
+        }
+        if links.is_empty() {
+            return;
+        }
+        let caret = self.caret_state.map(|(_, c)| c);
+        let Some(d) = self.doc.as_mut() else { return };
+        let at = caret.and_then(|c| d.body.char_indices().nth(c).map(|(b, _)| b)).unwrap_or(d.body.len());
+        let text = crate::attach::insert_block(&d.body, at, &links.join("\n"));
+        d.body = text;
+        d.dirty = true;
+        self.rescan();
+        ctx.request_repaint();
+    }
+}
+
 /// The note laid out live.
 pub(super) fn job(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, look: &LiveLook, colors: &highlight::Colors) -> LayoutJob {
-    let l = live::analyze_with(text, raw, held, &look.todo_tags);
+    let l = live::analyze_with(text, raw, held, &look.todo_tags, &|s| look.images.get(s).map(|i| i.1.y + 12.0));
     let mono_size = look.size * 0.92;
     // Code blocks colored for their language.
     let mut hl: Vec<Option<Color32>> = vec![None; text.len()];
@@ -256,7 +331,9 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
         Hide::No => {}
     }
     // Folded fences leave a little room above and below the code (the label sits on top).
-    let line_height = if s.collapse { Some(if s.fence_top { 18.0 } else { 8.0 }) } else { Some(line_size * look.line_spacing) };
+    let line_height = if s.image_h > 0 {
+        Some(s.image_h as f32)
+    } else if s.collapse { Some(if s.fence_top { 18.0 } else { 8.0 }) } else { Some(line_size * look.line_spacing) };
     TextFormat {
         font_id: egui::FontId::new(size, family),
         line_height,
@@ -273,7 +350,7 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
 /// Draw bullets, check boxes, quote bars and rules over the laid-out text. Returns the byte of
 /// a check box's mark when one was clicked (to tick or untick it).
 pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook, under: egui::layers::ShapeIdx) -> Vec<(Rect, Hit)> {
-    let l = live::analyze_with(text, raw, held, &look.todo_tags);
+    let l = live::analyze_with(text, raw, held, &look.todo_tags, &|s| look.images.get(s).map(|i| i.1.y + 12.0));
     let p = ui.painter().with_clip_rect(ui.clip_rect());
     let at = |c: usize| out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
     let pointer = ui.ctx().pointer_hover_pos();
@@ -285,6 +362,14 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 let (a, b) = (at(c), at(c + 1));
                 let y = a.center().y;
                 p.circle_filled(Pos2::new((a.left() + b.left()) / 2.0, y), (look.size * 0.17).max(2.2), look.accent);
+            }
+            Deco::Image { at: c, ref src } => {
+                if let Some((tex, size)) = look.images.get(src) {
+                    let a = at(c);
+                    let r = Rect::from_min_size(Pos2::new(out.galley_pos.x, a.top() + 6.0), *size);
+                    p.add(egui::Shape::image(tex.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE));
+                    p.rect_stroke(r, rivet_look::theme::r_sm(), Stroke::new(1.0, look.weak.gamma_multiply(0.2)), egui::StrokeKind::Outside);
+                }
             }
             Deco::Super { line, start, from, to, due, priority, done } => {
                 // The whole row: a click opens its panel (the line stays rendered); the box itself

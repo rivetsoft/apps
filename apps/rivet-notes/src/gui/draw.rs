@@ -635,6 +635,10 @@ impl NotesApp {
             tag: self.icon(&ctx, &["tag-symbolic"], 14.0),
             link: self.icon(&ctx, &["insert-link-symbolic", "emblem-symbolic-link"], 14.0),
         };
+        // Pictures the note shows on lines of their own (live mode), fitted to the page.
+        let images = if self.s.live_mode { self.note_pictures(&ctx, ui.available_width()) } else { Default::default() };
+        // Files dropped on the window go into the attachments folder, linked at the cursor.
+        self.take_drops(&ctx);
         let Some(d) = self.doc.as_mut() else { return };
         // ---- heading: the title, where it is
         let (title, _) = vault::note_title(d.fm.as_ref(), &d.path);
@@ -730,6 +734,7 @@ impl NotesApp {
             code_bg: palette::mix(v.extreme_bg_color, v.text_color(), 0.06),
             code: colors.string,
             todo_tags: if todos_on { todo_tags.clone() } else { Vec::new() },
+            images,
         };
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap: f32| {
             if live_on {

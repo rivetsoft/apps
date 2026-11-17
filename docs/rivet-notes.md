@@ -131,6 +131,15 @@ and numbered lists, a todo, a super todo (with that module on), a quote, a code 
 divider, a link to a note, or today's date. Keep typing to filter (`/h2`, `/code`); Up/Down
 choose, Enter or Tab adds it, Esc hides the menu. Used mid-line, line blocks start a new line.
 
+## Attachments and pictures
+
+Drop files from a file manager onto a note: they're copied into the vault's attachments folder
+(`Attachments` by default; Preferences → Editor → Attachments), never overwriting (a second
+`photo.png` becomes `photo 2.png`), and linked where the cursor is, relative to the note so any
+Markdown app finds them: `![photo](../Attachments/photo.png)` for pictures, `[report](…)` for
+other files. In live mode, a line that's only a picture shows the picture, fitted to the page;
+the reading view shows them too.
+
 ## Moving lines
 
 Point at a line and a handle (⠿) shows in the margin beside it; drag it up or down and drop it

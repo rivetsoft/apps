@@ -56,6 +56,8 @@ pub struct Settings {
     pub daily_notes: bool,
     /// Where daily notes live, inside the vault (empty: the top of the vault).
     pub daily_folder: String,
+    /// Where dropped files go, inside the vault.
+    pub attachments_folder: String,
     /// Module: super todos — tasks tagged with one of `todo_tags` get details and the Todos page.
     pub super_todos: bool,
     /// The tags that make a task a super todo (without `#`).
@@ -93,6 +95,7 @@ impl Default for Settings {
             note_widths: Vec::new(),
             daily_notes: false,
             daily_folder: "Daily".into(),
+            attachments_folder: "Attachments".into(),
             super_todos: false,
             todo_tags: vec!["task".into()],
             todo_board: false,
@@ -160,6 +163,7 @@ impl Settings {
                 "todo_width" => s.todo_centered = v == "centered",
                 "todo_tags" => s.todo_tags = v.split(',').map(|t| t.trim().trim_start_matches('#').to_string()).filter(|t| !t.is_empty()).collect(),
                 "daily_folder" => s.daily_folder = v.trim_matches('/').to_string(),
+                "attachments_folder" => s.attachments_folder = v.trim_matches('/').to_string(),
                 "note_widths" => {
                     s.note_widths = v
                         .split(SEP)
@@ -190,7 +194,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let join = |v: Vec<String>| v.into_iter().map(|x| x.replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nedit_mode={}\nshow_breadcrumbs={}\ndaily_notes={}\nsuper_todos={}\ntodo_view={}\ntodo_width={}\ntodo_tags={}\ndaily_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nshow_menubar={}\nshow_statusbar={}\nshow_sidebar={}\npanels={}\nsplit={}\nshow_properties={}\nbuiltin_icons={}\nui_font={}\neditor_font={}\nmono_font={}\neditor_size={}\nline_spacing={}\nnote_width={}\nshow_peek={}\nedit_mode={}\nshow_breadcrumbs={}\ndaily_notes={}\nsuper_todos={}\ntodo_view={}\ntodo_width={}\ntodo_tags={}\ndaily_folder={}\nattachments_folder={}\nnote_widths={}\nvaults={}\ncollapsed={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.show_menubar,
@@ -215,6 +219,7 @@ impl Settings {
             if self.todo_centered { "centered" } else { "full" },
             self.todo_tags.join(",").replace('\n', ""),
             self.daily_folder.replace('\n', ""),
+            self.attachments_folder.replace('\n', ""),
             join(self.note_widths.iter().map(|(p, c)| format!("{}{}", if *c { 'c' } else { 'f' }, p.to_string_lossy())).collect()),
             join(self.vaults.iter().map(|p| p.to_string_lossy().into_owned()).collect()),
             join(self.collapsed.clone()),

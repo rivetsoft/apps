@@ -255,6 +255,15 @@ impl NotesApp {
                                         ui.add_space(4.0);
                                         hint(ui, "Live: you still write Markdown, but each line shows rendered once you leave it.");
                                     });
+                                    section(ui, "Attachments", &mut |ui| {
+                                        grid(ui, "attach-grid", &mut |ui| {
+                                            ui.label("Folder");
+                                            ui.add(egui::TextEdit::singleline(&mut self.s.attachments_folder).hint_text("Top of the vault").desired_width(220.0));
+                                            ui.end_row();
+                                        });
+                                        ui.add_space(4.0);
+                                        hint(ui, "Files dropped on a note are copied here and linked where the cursor is; pictures show in the note.");
+                                    });
                                     section(ui, "Fonts", &mut |ui| {
                                         grid(ui, "notes-fonts", &mut |ui| {
                                             ui.label("Interface");

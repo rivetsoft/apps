@@ -142,6 +142,10 @@ pub struct NotesApp {
     task_pop_line: Option<usize>,
     /// The note text's cursor (character) as of the last frame.
     caret_state: Option<(egui::Id, usize)>,
+    /// Pictures shown in notes (live mode), by file.
+    note_images: std::collections::HashMap<PathBuf, Option<egui::TextureHandle>>,
+    /// The check's test drop happened.
+    drop_done: bool,
     /// The open note's backlinks: for which note and list, and the notes with their lines.
     backlinks: Option<(PathBuf, u64, Vec<Backlink>)>,
 }
@@ -249,6 +253,8 @@ impl NotesApp {
             task_pop: None,
             task_pop_line: None,
             caret_state: None,
+            note_images: Default::default(),
+            drop_done: false,
             backlinks: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
