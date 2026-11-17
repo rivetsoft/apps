@@ -6,7 +6,7 @@
 #   utilities/rivet-dev bump [APP] major      0.1.1 -> 1.0.0
 #   utilities/rivet-dev bump [APP] 0.3.0      an exact version
 #
-# APP is files (the default), ftp or notes (rivet-dev passes it as RIVET_APP).
+# APP is files (the default), ftp, notes, edit or terminal (rivet-dev passes it as RIVET_APP).
 # Updates the app's Cargo.toml and Cargo.lock, adds the release to the app metadata (Rivet
 # Files), starts a CHANGELOG.md section from the commit messages since the app's last release
 # tag, and commits it all as "Release <App> X.Y.Z".
@@ -31,7 +31,7 @@ case "${1:-patch}" in
     minor) NEW="$MAJOR.$((MINOR + 1)).0" ;;
     major) NEW="$((MAJOR + 1)).0.0" ;;
     [0-9]*.[0-9]*.[0-9]*) NEW="$1" ;;
-    *) echo "Usage: utilities/rivet-dev bump [files|ftp|notes] [patch|minor|major|X.Y.Z]" >&2; exit 1 ;;
+    *) echo "Usage: utilities/rivet-dev bump [files|ftp|notes|edit|terminal] [patch|minor|major|X.Y.Z]" >&2; exit 1 ;;
 esac
 TAG="$TAG_PREFIX$NEW"
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then

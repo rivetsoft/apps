@@ -126,6 +126,9 @@ Each app is released on its own, with its own version, changelog and tags (`v0.6
 Files, `rivet-notes-v0.1.0`, `rivet-ftp-v0.1.0`). `utilities/rivet-dev apps` shows where each
 one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the default).
 `utilities/rivet-dev install notes` installs one for you from source.
+To release several at once, `utilities/rivet-dev release-all` goes through every app in turn:
+it shows what changed, skips apps with nothing new, and asks release, skip or stop for each
+(`--dry-run` first to see the plan; `--publish` to send each to GitHub as it goes).
 
 ## Repository layout
 
