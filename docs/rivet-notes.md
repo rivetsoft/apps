@@ -124,6 +124,13 @@ makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
 - Peek on the Todos page is its own: list or board, full width or centered (the page's own width,
   apart from the notes'), and counts of to do, in progress, done, overdue and due soon.
 
+## Slash menu
+
+Type `/` at the start of a line (or after a space) for a menu of blocks: headings 1–3, bulleted
+and numbered lists, a todo, a super todo (with that module on), a quote, a code block, a
+divider, a link to a note, or today's date. Keep typing to filter (`/h2`, `/code`); Up/Down
+choose, Enter or Tab adds it, Esc hides the menu. Used mid-line, line blocks start a new line.
+
 ## Moving lines
 
 Point at a line and a handle (⠿) shows in the margin beside it; drag it up or down and drop it

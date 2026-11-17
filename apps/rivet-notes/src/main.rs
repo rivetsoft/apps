@@ -9,6 +9,7 @@ mod live;
 mod props;
 mod render;
 mod settings;
+mod slash;
 mod tasks;
 mod vault;
 

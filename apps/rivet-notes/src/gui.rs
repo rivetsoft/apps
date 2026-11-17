@@ -129,6 +129,11 @@ pub struct NotesApp {
     link_sel: usize,
     link_hide: Option<usize>,
     link_pending: Option<(usize, usize, String)>,
+    /// The slash menu: the highlighted item, where a dismissed menu's `/` was, and a clicked
+    /// item waiting to go in (the `/`, the end of what's typed, the item).
+    slash_sel: usize,
+    slash_hide: Option<usize>,
+    slash_pending: Option<(usize, usize, crate::slash::Kind)>,
     /// The Todos page is showing (instead of a note).
     todo_page: bool,
     todo_view: todos::TodoView,
@@ -236,6 +241,9 @@ impl NotesApp {
             link_sel: 0,
             link_hide: None,
             link_pending: None,
+            slash_sel: 0,
+            slash_hide: None,
+            slash_pending: None,
             todo_page: false,
             todo_view: Default::default(),
             task_pop: None,

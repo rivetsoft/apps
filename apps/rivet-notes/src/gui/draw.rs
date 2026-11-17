@@ -852,6 +852,56 @@ impl NotesApp {
                     }
                 }
             }
+            // The slash menu: keys first too, and a clicked item from last frame goes in now.
+            let mut slash_apply = self.slash_pending.take();
+            if slash_apply.is_none()
+                && accept.is_none()
+                && let Some(c) = caret
+                && let Some((start, q)) = crate::slash::typing(&d.body, c)
+                && self.slash_hide != Some(start)
+            {
+                let items = crate::slash::matches(&q, todos_on);
+                if !items.is_empty() {
+                    let n = items.len();
+                    let (up, down, enter, esc) = ctx.input_mut(|i| {
+                        (
+                            i.consume_key(egui::Modifiers::NONE, Key::ArrowUp),
+                            i.consume_key(egui::Modifiers::NONE, Key::ArrowDown),
+                            i.consume_key(egui::Modifiers::NONE, Key::Enter) || i.consume_key(egui::Modifiers::NONE, Key::Tab),
+                            i.consume_key(egui::Modifiers::NONE, Key::Escape),
+                        )
+                    });
+                    if down {
+                        self.slash_sel = (self.slash_sel + 1) % n;
+                    }
+                    if up {
+                        self.slash_sel = (self.slash_sel + n - 1) % n;
+                    }
+                    if esc {
+                        self.slash_hide = Some(start);
+                    }
+                    if enter {
+                        slash_apply = Some((start, c, items[self.slash_sel.min(n - 1)].kind));
+                    }
+                }
+            }
+            if let Some((start, end, kind)) = slash_apply
+                && start < end
+                && end <= d.body.len()
+                && d.body.is_char_boundary(start)
+                && d.body.is_char_boundary(end)
+            {
+                let tag = todo_tags.first().cloned().unwrap_or_else(|| "task".into());
+                let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+                let (text, cur) = crate::slash::apply(&d.body, start, end, kind, &tag, &today);
+                d.body = text;
+                let mut st = egui::TextEdit::load_state(&ctx, body_id).unwrap_or_default();
+                st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(cur))));
+                st.store(&ctx, body_id);
+                ctx.memory_mut(|m| m.request_focus(body_id));
+                self.slash_sel = 0;
+                changed = true;
+            }
             if let Some((start, end, name)) = accept
                 && start <= end
                 && end <= d.body.len()
@@ -944,6 +994,27 @@ impl NotesApp {
                     None => {
                         self.link_hide = None;
                         self.link_sel = 0;
+                    }
+                }
+            }
+            // The slash menu, under the cursor.
+            if let Some(cc) = caret_after {
+                let c = d.body.char_indices().nth(cc.index.0).map(|(b, _)| b).unwrap_or(d.body.len());
+                match crate::slash::typing(&d.body, c) {
+                    Some((start, q)) if self.slash_hide != Some(start) => {
+                        let items = crate::slash::matches(&q, todos_on);
+                        if !items.is_empty() {
+                            let at = out.galley.pos_from_cursor(cc).translate(out.galley_pos.to_vec2());
+                            if let Some(k) = slash_popup(&ctx, at.left_bottom() + Vec2::new(0.0, 4.0), &items, &mut self.slash_sel) {
+                                self.slash_pending = Some((start, c, k));
+                                ctx.request_repaint();
+                            }
+                        }
+                    }
+                    Some(_) => {}
+                    None => {
+                        self.slash_hide = None;
+                        self.slash_sel = 0;
                     }
                 }
             }
@@ -1610,6 +1681,52 @@ fn link_suggestions(notes: &[Note], open: &Path, typed: &str) -> Vec<String> {
         scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.title.to_lowercase().cmp(&b.1.title.to_lowercase())));
     }
     scored.into_iter().take(8).map(|(_, n)| n.title.clone()).collect()
+}
+
+/// The slash menu at `pos` (above it when there's no room below). Returns the item clicked.
+fn slash_popup(ctx: &egui::Context, pos: Pos2, items: &[&crate::slash::Item], sel: &mut usize) -> Option<crate::slash::Kind> {
+    *sel = (*sel).min(items.len().saturating_sub(1));
+    let mut picked = None;
+    let row_h = 40.0;
+    let shown = items.len().min(8);
+    let h = shown as f32 * row_h + 40.0;
+    let screen = ctx.content_rect();
+    let pos = if pos.y + h > screen.bottom() - 8.0 { Pos2::new(pos.x, (pos.y - h - 28.0).max(screen.top() + 8.0)) } else { pos };
+    egui::Area::new(egui::Id::unique("slash-menu")).order(egui::Order::Foreground).fixed_pos(pos).show(ctx, |ui| {
+        egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::same(6)).show(ui, |ui| {
+            ui.set_width(280.0);
+            let v = ui.visuals().clone();
+            ui.label(egui::RichText::new("BLOCKS").font(fonts::ui_font(10.5)).color(v.weak_text_color()));
+            ui.add_space(2.0);
+            egui::ScrollArea::vertical().max_height(row_h * 8.0).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                for (i, it) in items.iter().enumerate() {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(280.0, row_h), Sense::click());
+                    if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
+                        *sel = i;
+                    }
+                    if i == *sel {
+                        let (fill, stroke) = selected_tile(&v, v.window_fill);
+                        ui.painter().rect_filled(r, r_sm(), fill);
+                        ui.painter().rect_stroke(r, r_sm(), stroke, egui::StrokeKind::Inside);
+                        ui.scroll_to_rect(r, None);
+                    }
+                    // A tile with the block's mark, then its name and a hint.
+                    let tile = Rect::from_center_size(Pos2::new(r.left() + 22.0, r.center().y), Vec2::splat(28.0));
+                    ui.painter().rect_filled(tile, r_sm(), palette::mix(v.window_fill, v.text_color(), 0.08));
+                    ui.painter().text(tile.center(), Align2::CENTER_CENTER, it.mark, egui::FontId::monospace(12.0), v.text_color());
+                    ui.painter().text(Pos2::new(r.left() + 46.0, r.top() + 13.0), Align2::LEFT_CENTER, it.label, fonts::ui_font(13.0), v.strong_text_color());
+                    ui.painter().text(Pos2::new(r.left() + 46.0, r.bottom() - 11.0), Align2::LEFT_CENTER, it.hint, fonts::ui_font(11.0), v.weak_text_color());
+                    if resp.clicked() {
+                        picked = Some(it.kind);
+                    }
+                }
+            });
+            ui.add_space(2.0);
+            ui.label(egui::RichText::new("Enter to add  ·  Esc to hide").size(11.0).color(v.weak_text_color()));
+        });
+    });
+    picked
 }
 
 /// The list of note suggestions at `pos`. Returns the one clicked.
