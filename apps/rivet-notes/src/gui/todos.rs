@@ -163,6 +163,77 @@ fn state_box(p: &egui::Painter, r: Rect, it: &Item, v: &egui::Visuals, hot: bool
     }
 }
 
+/// The page's search box: a rounded field with a magnifier.
+fn search_box(ui: &mut egui::Ui, query: &mut String) {
+    let v = ui.visuals().clone();
+    let id = egui::Id::unique("todo-search");
+    let focused = ui.ctx().memory(|m| m.has_focus(id));
+    let fill = palette::mix(v.extreme_bg_color, v.text_color(), 0.05);
+    let frame = egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin { left: 28, right: 10, top: 5, bottom: 5 });
+    let r = frame
+        .show(ui, |ui| {
+            ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).hint_text("Search todos").font(fonts::ui_font(13.0)).desired_width(170.0));
+        })
+        .response
+        .rect;
+    let c = Pos2::new(r.left() + 15.0, r.center().y - 1.0);
+    let st = Stroke::new(1.4, v.weak_text_color());
+    ui.painter().circle_stroke(c, 4.5, st);
+    ui.painter().line_segment([c + Vec2::new(3.3, 3.3), c + Vec2::new(6.5, 6.5)], st);
+    if focused {
+        ui.painter().rect_stroke(r, r_md(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Outside);
+    }
+}
+
+/// One choice out of a few, as a single rounded control.
+fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, options: &[(T, &str)]) {
+    let v = ui.visuals().clone();
+    let font = fonts::ui_font(13.0);
+    let sizes: Vec<Vec2> = options.iter().map(|(_, l)| ui.painter().layout_no_wrap(l.to_string(), font.clone(), v.text_color()).size() + Vec2::new(22.0, 10.0)).collect();
+    let total = Vec2::new(sizes.iter().map(|s| s.x).sum::<f32>() + 6.0, sizes.iter().map(|s| s.y).fold(0.0, f32::max) + 6.0);
+    let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
+    ui.painter().rect_filled(rect, r_md(), palette::mix(v.extreme_bg_color, v.text_color(), 0.06));
+    let mut x = rect.left() + 3.0;
+    for ((val, label), size) in options.iter().zip(sizes) {
+        let r = Rect::from_min_size(Pos2::new(x, rect.top() + 3.0), Vec2::new(size.x, rect.height() - 6.0));
+        let resp = ui.interact(r, egui::Id::unique(("seg", *label)), Sense::click());
+        let on = *value == *val;
+        if on {
+            ui.painter().rect_filled(r, r_sm(), v.window_fill);
+            ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color), egui::StrokeKind::Inside);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill.gamma_multiply(0.5));
+        }
+        let fg = if on { v.strong_text_color() } else { v.weak_text_color() };
+        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, *label, font.clone(), fg);
+        if resp.clicked() {
+            *value = *val;
+        }
+        x += size.x;
+    }
+}
+
+/// A quiet drop-down: the choice's name and a chevron.
+fn dropdown<T: PartialEq + Copy>(ui: &mut egui::Ui, id: &str, value: &mut T, options: &[(T, &str)]) {
+    let v = ui.visuals().clone();
+    let current = options.iter().find(|(o, _)| *o == *value).map(|(_, l)| *l).unwrap_or("");
+    let btn = egui::Button::new(egui::RichText::new(format!("{current}     ")).font(fonts::ui_font(13.0)).color(v.text_color())).frame_when_inactive(false).corner_radius(r_sm()).min_size(Vec2::new(0.0, 28.0));
+    let (resp, _) = egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
+        ui.set_min_width(150.0);
+        for (o, l) in options {
+            if ui.add(egui::Button::selectable(*o == *value, *l)).clicked() {
+                *value = *o;
+                ui.close();
+            }
+        }
+    });
+    let c = Pos2::new(resp.rect.right() - 13.0, resp.rect.center().y);
+    let st = Stroke::new(1.4, v.weak_text_color());
+    ui.painter().line_segment([c + Vec2::new(-3.5, -1.5), c + Vec2::new(0.0, 2.0)], st);
+    ui.painter().line_segment([c + Vec2::new(3.5, -1.5), c + Vec2::new(0.0, 2.0)], st);
+    let _ = id;
+}
+
 /// A section title in the popover.
 fn caption(ui: &mut egui::Ui, text: &str) {
     ui.add_space(4.0);
@@ -505,61 +576,43 @@ impl NotesApp {
             }
         }
         tags.sort_by_key(|t| t.to_lowercase());
-        // ---- header and controls
+        // ---- header: title and count, search on the right
         let open_n = all.iter().filter(|(_, _, i)| !i.done).count();
+        let tv = &mut self.todo_view;
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Todos").size(25.0 * fonts::scale()).strong().color(v.strong_text_color()));
-            ui.add_space(6.0);
-            ui.label(egui::RichText::new(format!("{open_n} open")).color(weak));
-        });
-        ui.add_space(10.0);
-        let tv = &mut self.todo_view;
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(4.0, 6.0);
-            ui.add(egui::TextEdit::singleline(&mut tv.query).hint_text("Filter").desired_width(160.0));
-            ui.add_space(8.0);
-            for (s, l) in [(Show::Open, "Open"), (Show::Doing, "In progress"), (Show::Done, "Done"), (Show::All, "All")] {
-                ui.selectable_value(&mut tv.show, s, l);
-            }
-            ui.add_space(8.0);
-            egui::ComboBox::from_id_salt("todo-when")
-                .selected_text(match tv.when {
-                    When::Any => "Any time",
-                    When::Overdue => "Overdue",
-                    When::Today => "Due today",
-                    When::Week => "Next 7 days",
-                    When::NoDate => "No date",
-                })
-                .show_ui(ui, |ui| {
-                    for (w, l) in [(When::Any, "Any time"), (When::Overdue, "Overdue"), (When::Today, "Due today"), (When::Week, "Next 7 days"), (When::NoDate, "No date")] {
-                        ui.selectable_value(&mut tv.when, w, l);
-                    }
-                });
-            egui::ComboBox::from_id_salt("todo-sort")
-                .selected_text(match tv.sort {
-                    Sort::Due => "Sort: Due date",
-                    Sort::Priority => "Sort: Priority",
-                    Sort::Note => "Sort: Note",
-                })
-                .show_ui(ui, |ui| {
-                    for (s, l) in [(Sort::Due, "Due date"), (Sort::Priority, "Priority"), (Sort::Note, "Note")] {
-                        ui.selectable_value(&mut tv.sort, s, l);
-                    }
-                });
-        });
-        if !tags.is_empty() {
             ui.add_space(4.0);
+            ui.label(egui::RichText::new(format!("{open_n} open")).color(weak));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                search_box(ui, &mut tv.query);
+            });
+        });
+        ui.add_space(12.0);
+        // ---- status, then when and sort
+        ui.horizontal(|ui| {
+            segmented(ui, &mut tv.show, &[(Show::Open, "Open"), (Show::Doing, "In progress"), (Show::Done, "Done"), (Show::All, "All")]);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                dropdown(ui, "todo-sort", &mut tv.sort, &[(Sort::Due, "By due date"), (Sort::Priority, "By priority"), (Sort::Note, "By note")]);
+                dropdown(ui, "todo-when", &mut tv.when, &[(When::Any, "Any time"), (When::Overdue, "Overdue"), (When::Today, "Due today"), (When::Week, "Next 7 days"), (When::NoDate, "No date")]);
+            });
+        });
+        // ---- tags
+        if !tags.is_empty() {
+            ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
                 for t in &tags {
                     let on = tv.tag.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(t));
-                    if ui.selectable_label(on, format!("#{t}")).clicked() {
+                    let (fg, fill) = if on { (v.selection.stroke.color, v.selection.bg_fill) } else { (weak, palette::mix(v.extreme_bg_color, v.text_color(), 0.06)) };
+                    let b = egui::Button::new(egui::RichText::new(format!("#{t}")).font(fonts::ui_font(12.0)).color(fg)).fill(fill).corner_radius(10.0).min_size(Vec2::new(0.0, 22.0));
+                    if ui.add(b).on_hover_text(if on { "Show every tag" } else { "Only this tag" }).clicked() {
                         tv.tag = if on { None } else { Some(t.clone()) };
                     }
                 }
             });
         }
-        ui.add_space(10.0);
+        ui.add_space(6.0);
         // ---- filter and sort
         let q = tv.query.trim().to_lowercase();
         let mut rows: Vec<&(PathBuf, String, Item)> = all
@@ -596,22 +649,77 @@ impl NotesApp {
                 ui.label(egui::RichText::new(msg).color(weak));
             });
         }
+        // Sections: when it's due, its priority, or its note (following the sort).
+        let sort = tv.sort;
+        let group = |note: &str, it: &Item| -> String {
+            if it.done && sort != Sort::Note {
+                return "Done".into();
+            }
+            match sort {
+                Sort::Due => match it.due {
+                    Some(d) if d < t0 => "Overdue".into(),
+                    Some(d) if d == t0 => "Today".into(),
+                    Some(d) if d <= t0 + chrono::Days::new(7) => "Next 7 days".into(),
+                    Some(_) => "Later".into(),
+                    None => "No date".into(),
+                },
+                Sort::Priority => match it.priority {
+                    Priority::None => "No priority".into(),
+                    p => format!("{} priority", p.label()),
+                },
+                Sort::Note => note.to_string(),
+            }
+        };
+        let hair = palette::mix(v.extreme_bg_color, v.text_color(), 0.07);
         egui::ScrollArea::vertical().id_salt("todos").auto_shrink([false, false]).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            for (path, note, it) in rows {
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::click());
+            ui.spacing_mut().item_spacing.y = 0.0;
+            let mut last_group: Option<String> = None;
+            for (k, (path, note, it)) in rows.iter().map(|r| (&r.0, &r.1, &r.2)).enumerate() {
+                let g = group(note, it);
+                if last_group.as_ref() != Some(&g) {
+                    let count = rows[k..].iter().take_while(|r| group(&r.1, &r.2) == g).count();
+                    ui.add_space(if last_group.is_none() { 8.0 } else { 18.0 });
+                    ui.horizontal(|ui| {
+                        let col = if g == "Overdue" { status(&ctx).danger } else { weak };
+                        ui.label(egui::RichText::new(g.to_uppercase()).font(fonts::ui_font(11.0)).strong().color(col));
+                        ui.label(egui::RichText::new(count.to_string()).font(fonts::ui_font(11.0)).color(weak.gamma_multiply(0.7)));
+                    });
+                    ui.add_space(4.0);
+                    last_group = Some(g);
+                } else {
+                    let (sep, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 1.0), Sense::hover());
+                    ui.painter().hline(Rect::from_min_max(Pos2::new(sep.left() + 38.0, sep.top()), sep.max).x_range(), sep.center().y, Stroke::new(1.0, hair));
+                }
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::click());
                 if resp.hovered() {
-                    ui.painter().rect_filled(rect, r_sm(), v.widgets.hovered.weak_bg_fill.gamma_multiply(0.6));
+                    ui.painter().rect_filled(rect, r_sm(), v.widgets.hovered.weak_bg_fill.gamma_multiply(0.45));
                 }
                 let p = ui.painter();
                 // Check box.
-                let b = Rect::from_center_size(Pos2::new(rect.left() + 18.0, rect.center().y), Vec2::splat(16.0));
+                let b = Rect::from_center_size(Pos2::new(rect.left() + 16.0, rect.center().y), Vec2::splat(16.0));
                 let on_box = ctx.pointer_hover_pos().is_some_and(|q| b.expand(4.0).contains(q));
                 state_box(p, b, it, &v, on_box);
-                // Title, then the note and tags.
-                let x = rect.left() + 38.0;
-                let right_w = 150.0;
-                let maxw = (rect.right() - x - right_w).max(40.0);
+                // Right side first (due, progress, flag), so the words know their room.
+                let mut rx = rect.right() - 10.0;
+                if it.priority != Priority::None {
+                    flag(p, Pos2::new(rx - 4.0, rect.center().y), priority_color(&ctx, it.priority, weak));
+                    rx -= 20.0;
+                }
+                if let Some(d) = it.due {
+                    let probe = due_pill(&p.with_clip_rect(Rect::NOTHING), Pos2::ZERO, d, it.done, 14.0);
+                    due_pill(p, Pos2::new(rx - probe.width(), rect.center().y), d, it.done, 14.0);
+                    rx -= probe.width() + 6.0;
+                }
+                if it.doing && !it.done {
+                    let g = p.layout_no_wrap("In progress".into(), fonts::ui_font(11.5), v.selection.bg_fill);
+                    let pr = Rect::from_min_size(Pos2::new(rx - g.size().x - 14.0, rect.center().y - g.size().y / 2.0 - 3.0), g.size() + Vec2::new(14.0, 6.0));
+                    p.rect_filled(pr, pr.height() / 2.0, v.selection.bg_fill.gamma_multiply(0.15));
+                    p.galley(pr.min + Vec2::new(7.0, 3.0), g, v.selection.bg_fill);
+                    rx = pr.left() - 6.0;
+                }
+                // The words, then where it is and its tags.
+                let x = rect.left() + 36.0;
+                let maxw = (rx - x - 10.0).max(40.0);
                 let fg = if it.done { weak } else { v.text_color() };
                 let mut job = egui::text::LayoutJob::simple_singleline(if it.title.is_empty() { "(no text)".into() } else { it.title.clone() }, fonts::ui_font(14.0), fg);
                 job.wrap = egui::text::TextWrapping::truncate_at_width(maxw);
@@ -621,31 +729,19 @@ impl NotesApp {
                     s.format.strikethrough = Stroke::new(1.0, weak);
                 }
                 let g = p.layout_job(job);
-                p.galley(Pos2::new(x, rect.top() + 6.0), g, fg);
+                p.galley(Pos2::new(x, rect.top() + 5.0), g, fg);
                 let extra: Vec<String> = it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())).map(|t| format!("#{t}")).collect();
-                let sub = if extra.is_empty() { note.clone() } else { format!("{note}   {}", extra.join(" ")) };
+                let sub = match (sort == Sort::Note, extra.is_empty()) {
+                    (true, true) => String::new(),
+                    (true, false) => extra.join(" "),
+                    (false, true) => note.clone(),
+                    (false, false) => format!("{note}  ·  {}", extra.join(" ")),
+                };
                 let mut job = egui::text::LayoutJob::simple_singleline(sub, fonts::ui_font(11.5), weak);
                 job.wrap = egui::text::TextWrapping::truncate_at_width(maxw);
                 let g = p.layout_job(job);
-                p.galley(Pos2::new(x, rect.bottom() - 7.0 - g.size().y), g, weak);
-                // Due date and priority on the right.
-                let mut rx = rect.right() - 12.0;
-                if it.priority != Priority::None {
-                    flag(p, Pos2::new(rx - 4.0, rect.center().y), priority_color(&ctx, it.priority, weak));
-                    rx -= 22.0;
-                }
-                if let Some(d) = it.due {
-                    let probe = due_pill(&p.with_clip_rect(Rect::NOTHING), Pos2::ZERO, d, it.done, 14.0);
-                    due_pill(p, Pos2::new(rx - probe.width(), rect.center().y), d, it.done, 14.0);
-                    rx -= probe.width() + 8.0;
-                }
-                if it.doing && !it.done {
-                    let g = p.layout_no_wrap("In progress".into(), fonts::ui_font(11.5), v.selection.bg_fill);
-                    let pr = Rect::from_min_size(Pos2::new(rx - g.size().x - 14.0, rect.center().y - g.size().y / 2.0 - 3.0), g.size() + Vec2::new(14.0, 6.0));
-                    p.rect_filled(pr, pr.height() / 2.0, v.selection.bg_fill.gamma_multiply(0.15));
-                    p.galley(pr.min + Vec2::new(7.0, 3.0), g, v.selection.bg_fill);
-                }
-                let resp = resp.on_hover_text(format!("{}\nIn {note}{}", it.title, if it.priority != Priority::None { format!(" · {} priority", it.priority.label()) } else { String::new() }));
+                p.galley(Pos2::new(x, rect.bottom() - 6.0 - g.size().y), g, weak);
+                let resp = resp.on_hover_text(format!("Open {note}"));
                 if resp.clicked() {
                     if on_box {
                         toggle = Some((path.clone(), it.clone()));

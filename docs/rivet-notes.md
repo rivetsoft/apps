@@ -114,7 +114,8 @@ makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
   progress, Done), due date (Today, Tomorrow, Next week or a calendar), priority (flags) and tags.
 - **Todos page** (the check box button at the top right, File → Todos, or Quick Actions): every
   super todo in the vault. Filter by text, Open / In progress / Done / All, when it's due (overdue, today, next
-  7 days, no date) and tag; sort by due date, priority or note. Tick a box to finish a task (its
+  7 days, no date) and tag; sort by due date, priority or note, which also groups the list (Overdue,
+  Today, Next 7 days… or by priority or note). Tick a box to finish a task (its
   note changes on disk); click a row to open its note. Overdue dates are red.
 
 ## Formatting
