@@ -10,6 +10,7 @@ mod editing;
 mod navigate;
 mod prefs;
 mod quick;
+mod treemenu;
 mod vimkeys;
 
 use std::collections::{HashMap, HashSet};
@@ -87,6 +88,12 @@ pub(crate) enum Prompt {
     SaveAs { tab: usize, path: String },
     /// A new file in the workspace: its folder (inside it) and name.
     NewFile { folder: String, name: String },
+    /// A new folder in the workspace: where, and its name.
+    NewFolder { folder: String, name: String },
+    /// A new name for a file or folder in the workspace.
+    Rename { rel: String, name: String },
+    /// Move a file or folder to the Trash?
+    Trash { rel: String, dir: bool },
     /// Replace the workspace search's matches in every file.
     ReplaceInFiles { matches: usize, files: usize },
 }

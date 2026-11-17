@@ -79,6 +79,35 @@ pub fn write_text(p: &Path, text: &str) -> std::io::Result<()> {
     std::fs::rename(&tmp, p)
 }
 
+/// Move to the desktop's Trash (~/.local/share/Trash, the freedesktop way) so it can be
+/// restored from any file manager. Only within one disk (a rename).
+pub fn trash(src: &Path) -> Result<(), String> {
+    use rivet_xdg::places;
+    let tdir = places::trash_dir();
+    let (files, info) = (tdir.join("files"), tdir.join("info"));
+    std::fs::create_dir_all(&files).and_then(|_| std::fs::create_dir_all(&info)).map_err(|e| e.to_string())?;
+    let name = src.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
+    let (stem, ext) = match name.rsplit_once('.') {
+        Some((s, e)) if !s.is_empty() && !src.is_dir() => (s.to_string(), format!(".{e}")),
+        _ => (name.clone(), String::new()),
+    };
+    let mut tname = name.clone();
+    let mut i = 2;
+    while files.join(&tname).symlink_metadata().is_ok() || info.join(format!("{tname}.trashinfo")).exists() {
+        tname = format!("{stem}.{i}{ext}");
+        i += 1;
+    }
+    let abs = std::fs::canonicalize(src).unwrap_or_else(|_| src.to_path_buf());
+    let date = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
+    let info_path = info.join(format!("{tname}.trashinfo"));
+    std::fs::write(&info_path, format!("[Trash Info]\nPath={}\nDeletionDate={date}\n", places::percent_encode_path(&abs))).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(src, files.join(&tname)) {
+        let _ = std::fs::remove_file(&info_path);
+        return Err(if e.raw_os_error() == Some(18) { "it's on another disk than the Trash".into() } else { e.to_string() });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

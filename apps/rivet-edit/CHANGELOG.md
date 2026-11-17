@@ -12,6 +12,8 @@ The first version.
 - Safe saving, reloading files changed elsewhere, and questions before losing changes.
 - 39 editor color themes (One Dark, Dracula, Catppuccin, Gruvbox, Solarized, Tokyo Night, GitHub,
   Rosé Pine…), previewed live from Commands → Color Theme, or the app's own colors.
+- A right-click menu in the sidebar: new file or folder, rename, move to the Trash, copy the path,
+  search in a folder, open in the file manager or a terminal, collapse all, reload.
 - A right-click menu in the editor: Go to Definition, Find References, Back / Forward, cut, copy,
   paste, select all, matches, comment out, find and search the folder for the word.
 - Go to Definition (F12, Ctrl+click), Find References (Shift+F12), what a name is when the

@@ -31,7 +31,8 @@ enum Pick {
     /// Open it to keep (not as a preview).
     Keep(String),
     Fold(String),
-    NewHere(String),
+    /// From the right-click menu.
+    Menu(treemenu::TreeAct),
 }
 
 impl EditApp {
@@ -312,7 +313,16 @@ impl EditApp {
         egui::ScrollArea::vertical().id_salt("edit-tree").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             tree(ui, "", 0, &self.folders, &self.files, &self.open_dirs, &folder_icons, &icons, open_rel.as_deref(), &mut pick);
-            ui.allocate_space(Vec2::new(ui.available_width(), 30.0));
+            // The space below the tree: the workspace's own menu.
+            let h = (ui.available_height()).max(30.0);
+            let (_, below) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+            below.context_menu(|ui| {
+                let mut act = None;
+                treemenu::tree_menu(ui, "", true, &mut act);
+                if let Some(a) = act {
+                    pick = Some(Pick::Menu(a));
+                }
+            });
         });
         match pick {
             Some(Pick::File(rel)) => {
@@ -330,7 +340,7 @@ impl EditApp {
                     self.open_dirs.insert(d);
                 }
             }
-            Some(Pick::NewHere(d)) => self.prompt = Some(Prompt::NewFile { folder: d, name: String::new() }),
+            Some(Pick::Menu(a)) => self.tree_act(&ctx, a),
             None => {}
         }
     }
@@ -1065,6 +1075,44 @@ impl EditApp {
                         None => next = Some(Prompt::NewFile { folder, name }),
                     }
                 }
+                Prompt::NewFolder { folder, mut name } => {
+                    let where_ = if folder.is_empty() { ws.clone() } else { format!("{ws}/{folder}") };
+                    title(ui, "New Folder", &format!("In {where_}. Type a/b to make both."));
+                    let enter = field(ui, &mut name, "folder name");
+                    let make = |folder: String, name: String| -> Act { Box::new(move |a: &mut EditApp| a.make_folder(&folder, &name)) };
+                    match buttons(ui, &["Create", "Cancel"]) {
+                        Some(0) => act = Some(make(folder.clone(), name.clone())),
+                        Some(_) => {}
+                        None if esc => {}
+                        None if enter => act = Some(make(folder.clone(), name.clone())),
+                        None => next = Some(Prompt::NewFolder { folder, name }),
+                    }
+                }
+                Prompt::Rename { rel, mut name } => {
+                    title(ui, "Rename", &format!("A new name for {rel}. Open tabs follow it."));
+                    let enter = field(ui, &mut name, "new name");
+                    let go = |rel: String, name: String| -> Act { Box::new(move |a: &mut EditApp| a.rename_path(&rel, &name)) };
+                    match buttons(ui, &["Rename", "Cancel"]) {
+                        Some(0) => act = Some(go(rel.clone(), name.clone())),
+                        Some(_) => {}
+                        None if esc => {}
+                        None if enter => act = Some(go(rel.clone(), name.clone())),
+                        None => next = Some(Prompt::Rename { rel, name }),
+                    }
+                }
+                Prompt::Trash { rel, dir } => {
+                    let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
+                    title(ui, &format!("Move {name} to the Trash?"), if dir { "The folder and everything in it. You can bring it back from the Trash." } else { "You can bring it back from the Trash. A tab open on it closes." });
+                    match buttons(ui, &["Move to Trash", "Cancel"]) {
+                        Some(0) => {
+                            let r = rel.clone();
+                            act = Some(Box::new(move |a: &mut EditApp| a.trash_path(&r)));
+                        }
+                        Some(_) => {}
+                        None if esc => {}
+                        None => next = Some(Prompt::Trash { rel, dir }),
+                    }
+                }
             }
         });
         self.prompt = next;
@@ -1172,9 +1220,10 @@ fn tree(
             *pick = Some(Pick::Fold(sub.clone()));
         }
         resp.context_menu(|ui| {
-            menu_style(ui);
-            if item(ui, "New File Here…", "", true) {
-                *pick = Some(Pick::NewHere(sub.clone()));
+            let mut act = None;
+            treemenu::tree_menu(ui, sub, true, &mut act);
+            if let Some(a) = act {
+                *pick = Some(Pick::Menu(a));
             }
         });
         if is_open {
@@ -1206,6 +1255,13 @@ fn tree(
         let fg = if on { v.strong_text_color() } else { v.text_color() };
         ui.painter().with_clip_rect(rect).text(Pos2::new(x + 22.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), fg);
         let resp = resp.on_hover_text(format!("{f}\nClick to preview · double-click or Ctrl+click to keep open"));
+        resp.context_menu(|ui| {
+            let mut act = None;
+            treemenu::tree_menu(ui, f, false, &mut act);
+            if let Some(a) = act {
+                *pick = Some(Pick::Menu(a));
+            }
+        });
         if resp.double_clicked() || (resp.clicked() && ui.input(|i| i.modifiers.command)) {
             *pick = Some(Pick::Keep(f.clone()));
         } else if resp.clicked() {

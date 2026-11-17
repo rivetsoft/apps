@@ -55,6 +55,15 @@ pub(crate) struct Search {
     pub cut: bool,
     pub error: Option<String>,
     pub folded: HashSet<String>,
+    /// Only files in this folder (inside the workspace; empty for all of it).
+    pub scope: String,
+}
+
+impl Search {
+    /// Search again (the scope or files changed).
+    pub(crate) fn rerun(&mut self) {
+        self.ran = None;
+    }
 }
 
 /// Where the editor's text was laid out last frame (for Alt+click).
@@ -614,7 +623,9 @@ impl EditApp {
                 self.search.error = None;
                 return;
             }
-            let (Some(root), files, q) = (self.root.clone(), self.files.clone(), self.search.q.clone()) else { return };
+            let scope = self.search.scope.clone();
+            let files: Vec<String> = if scope.is_empty() { self.files.clone() } else { self.files.iter().filter(|f| f.starts_with(&format!("{scope}/"))).cloned().collect() };
+            let (Some(root), q) = (self.root.clone(), self.search.q.clone()) else { return };
             let (tx, rx) = std::sync::mpsc::channel();
             let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
             self.search.stop = stop.clone();
@@ -667,6 +678,17 @@ impl EditApp {
                 let w = (ui.available_width() - 90.0).max(60.0);
                 field(ui, &mut self.search.replace, "Replace", egui::Id::unique("search-replace"), w, false);
                 replace_all = ui.add_enabled(!self.search.results.is_empty(), egui::Button::new("Replace All").corner_radius(r_sm())).clicked();
+            });
+        }
+        // Searching one folder: say which, with a way back to all of them.
+        if !self.search.scope.is_empty() {
+            ui.horizontal(|ui| {
+                ui.add_space(21.0);
+                ui.label(egui::RichText::new(format!("In {}/", self.search.scope)).small().color(weak));
+                if ui.small_button("×").on_hover_text("Search every folder").clicked() {
+                    self.search.scope.clear();
+                    self.search.rerun();
+                }
             });
         }
         ui.add_space(4.0);
