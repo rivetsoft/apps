@@ -12,6 +12,8 @@ The first version.
 - Safe saving, reloading files changed elsewhere, and questions before losing changes.
 - 39 editor color themes (One Dark, Dracula, Catppuccin, Gruvbox, Solarized, Tokyo Night, GitHub,
   Rosé Pine…), previewed live from Commands → Color Theme, or the app's own colors.
+- A right-click menu in the editor: Go to Definition, Find References, Back / Forward, cut, copy,
+  paste, select all, matches, comment out, find and search the folder for the word.
 - Go to Definition (F12, Ctrl+click), Find References (Shift+F12), what a name is when the
   pointer rests on it, and Back / Forward (Alt+Left / Alt+Right), from the language's server;
   without one, Go to Definition finds `fn` / `def` / `class` / `struct`… by name in the folder.

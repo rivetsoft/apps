@@ -4,6 +4,7 @@
 //! fonts, in-app windows and the quick panel.
 
 mod complete;
+mod context;
 mod draw;
 mod editing;
 mod navigate;
@@ -152,6 +153,8 @@ pub struct EditApp {
     pub(crate) nav: navigate::Nav,
     /// Each open file's cursor as last drawn (to come back to it).
     pub(crate) last_cursor: HashMap<PathBuf, usize>,
+    /// Events for the next frame (the right-click menu's Cut, Copy, Paste and keys).
+    pub(crate) inject: Vec<egui::Event>,
     /// Quitting is fine (changes saved or let go).
     allow_close: bool,
     /// A scheme shown while the theme list is open (before it's chosen).
@@ -243,6 +246,7 @@ impl EditApp {
             vim: Default::default(),
             nav: Default::default(),
             last_cursor: HashMap::new(),
+            inject: Vec::new(),
             allow_close: false,
             scheme_preview: None,
         };
@@ -714,8 +718,23 @@ impl EditApp {
 
 impl eframe::App for EditApp {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // What the right-click menu asked for, as if typed.
+        raw.events.append(&mut self.inject);
         if let Some(shot) = &self.shot {
             rivet_kit::scripted_click("RIVET_EDIT", shot.frames(), raw);
+            // RIVET_EDIT_PICK=X,Y: a left click there at frame 45 (an item in a menu opened by
+            // RIVET_EDIT_RIGHTCLICK).
+            if let Some(pos) = std::env::var("RIVET_EDIT_PICK").ok().and_then(|v| {
+                let (a, b) = v.split_once(',')?;
+                Some(egui::Pos2::new(a.trim().parse().ok()?, b.trim().parse().ok()?))
+            }) {
+                match shot.frames() {
+                    44 => raw.events.push(egui::Event::PointerMoved(pos)),
+                    45 => raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }),
+                    46 => raw.events.push(egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }),
+                    _ => {}
+                }
+            }
             // Checks: RIVET_EDIT_KEY="ctrl+d ctrl+d Tab" presses those, one a frame, once things
             // settle; RIVET_EDIT_TYPE=text types it after them.
             if let Ok(keys) = std::env::var("RIVET_EDIT_KEY") {

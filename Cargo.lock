@@ -2333,6 +2333,7 @@ dependencies = [
 name = "rivet-edit"
 version = "0.1.0"
 dependencies = [
+ "arboard",
  "eframe",
  "regex",
  "rivet-kit",

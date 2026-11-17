@@ -9,13 +9,13 @@ use super::*;
 
 const ROW_H: f32 = 26.0;
 
-fn menu_style(ui: &mut egui::Ui) {
+pub(crate) fn menu_style(ui: &mut egui::Ui) {
     ui.set_min_width(230.0);
     ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
     ui.spacing_mut().item_spacing.y = 3.0;
 }
 
-fn item(ui: &mut egui::Ui, label: &str, shortcut: &str, on: bool) -> bool {
+pub(crate) fn item(ui: &mut egui::Ui, label: &str, shortcut: &str, on: bool) -> bool {
     let b = egui::Button::new(label);
     let b = if shortcut.is_empty() { b } else { b.shortcut_text(shortcut) };
     let r = ui.add_enabled(on, b).clicked();
@@ -533,6 +533,8 @@ impl EditApp {
         // The character under a resting pointer (for hover), and a Ctrl+click (Go to Definition).
         let mut probe: Option<(usize, Pos2)> = None;
         let mut ctrl_click = false;
+        // A right-click on the text: the response (for its menu) and the character clicked.
+        let mut right: Option<(egui::Response, Option<usize>, (usize, usize))> = None;
         // A found match or search result: select it and show it.
         let select = self.select_after.take();
         if let Some((a, b)) = select {
@@ -666,6 +668,11 @@ impl EditApp {
                     }
                 }
                 ctrl_click = resp.clicked() && ui.input(|i| i.modifiers.command);
+                {
+                    let sel = out.cursor_range.map(|r| (r.secondary.index.0, r.primary.index.0)).unwrap_or_default();
+                    let at = if resp.secondary_clicked() { resp.interact_pointer_pos().map(|pp| out.galley.cursor_from_pos(pp - out.galley_pos).index.0) } else { None };
+                    right = Some((resp.clone(), at, sel));
+                }
                 // Matches and the other cursors, over the text.
                 let main = out.cursor_range.map(|r| crate::ops::Sel::new(r.secondary.index.0, r.primary.index.0)).unwrap_or_default();
                 EditApp::draw_marks(ui.painter(), &out.galley, out.galley_pos, ui.clip_rect(), &multi_sels, &find_matches, main, &v, mark_color);
@@ -684,6 +691,27 @@ impl EditApp {
         }
         if ctrl_click {
             self.nav.pending = Some(navigate::NavCmd::Definition);
+        }
+        // The right-click menu.
+        if let Some((resp, at, sel)) = right {
+            if let Some(ch) = at {
+                self.context_click(&ctx, id, ch, sel);
+            }
+            let (word, has_sel) = match (self.tabs.get(self.active), egui::TextEdit::load_state(&ctx, id).and_then(|s| s.cursor.char_range())) {
+                (Some(t), Some(r)) => {
+                    let (a, b) = (r.primary.index.0.min(r.secondary.index.0), r.primary.index.0.max(r.secondary.index.0));
+                    let chars: Vec<char> = t.text.chars().collect();
+                    let word = if a != b {
+                        let s: String = chars[a.min(chars.len())..b.min(chars.len())].iter().collect();
+                        (!s.contains('\n') && !s.trim().is_empty()).then(|| s.trim().to_string())
+                    } else {
+                        crate::ops::word_at(&chars, a).map(|(x, y)| chars[x..y].iter().collect())
+                    };
+                    (word, a != b || t.sels.len() >= 2)
+                }
+                _ => (None, false),
+            };
+            self.context_menu(&resp, id, word, has_sel);
         }
         if !quick_open {
             let caret_now = if ctx.memory(|m| m.has_focus(id)) { caret } else { None };

@@ -258,6 +258,11 @@ impl EditApp {
         self.last_cursor.get(p).copied().unwrap_or(0)
     }
 
+    /// Whether there's anywhere to go back (or forward) to.
+    pub(crate) fn nav_can(&self, back: bool) -> bool {
+        if back { !self.nav.back.is_empty() } else { !self.nav.fwd.is_empty() }
+    }
+
     fn go_history(&mut self, ctx: &egui::Context, back: bool) {
         let Some((p, ch)) = (if back { self.nav.back.pop() } else { self.nav.fwd.pop() }) else {
             self.note = Some((if back { "Nowhere to go back to" } else { "Nowhere to go forward to" }.into(), false));
