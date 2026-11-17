@@ -277,8 +277,6 @@ impl NotesApp {
                         self.s.show_peek = !self.s.show_peek;
                         self.s.save();
                     }
-                    let sep = ui.allocate_exact_size(Vec2::new(1.0, 18.0), Sense::hover()).0;
-                    ui.painter().line_segment([sep.center_top(), sep.center_bottom()], Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.4)));
                     // The rendered page.
                     let read_icon = self.icon(&ctx, &["view-reveal-symbolic", "document-open-symbolic", "x-office-document-symbolic"], 16.0);
                     let b = match &read_icon {
