@@ -668,10 +668,11 @@ impl TermApp {
             for (i, t) in self.tabs.iter().enumerate() {
                 let on = i == self.active;
                 let label = if t.label.is_empty() { "Terminal".to_string() } else { t.label.clone() };
-                let shown: String = if label.chars().count() > 28 { format!("{}…", label.chars().take(27).collect::<String>()) } else { label.clone() };
+                let shown: String = if label.chars().count() > 34 { format!("{}…", label.chars().take(33).collect::<String>()) } else { label.clone() };
                 let g = ui.painter().layout_no_wrap(shown, fonts::ui_font(13.0), v.text_color());
                 let extra = if t.panes.len() > 1 { 22.0 } else { 0.0 };
-                let w = (g.size().x + 46.0 + extra).max(90.0);
+                // Roomy tabs: at least 170 points, the name with space either side.
+                let w = (g.size().x + 64.0 + extra).max(170.0);
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
                 if on {
                     ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.09 } else { 0.07 }));
@@ -680,7 +681,7 @@ impl TermApp {
                     ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.05));
                 }
                 let fg = if on { v.strong_text_color() } else { v.weak_text_color() };
-                ui.painter().galley(Pos2::new(r.left() + 12.0, r.center().y - g.size().y / 2.0), g, fg);
+                ui.painter().galley(Pos2::new(r.left() + 16.0, r.center().y - g.size().y / 2.0), g, fg);
                 if t.panes.len() > 1 {
                     // How many panes, as a small count.
                     let cx = r.right() - 38.0;
