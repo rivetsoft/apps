@@ -354,9 +354,13 @@ impl NotesApp {
             let p = ui.painter();
             p.rect_filled(r, r_sm(), if pointer_on { v.widgets.hovered.weak_bg_fill } else { v.faint_bg_color });
             p.rect_stroke(r, r_sm(), Stroke::new(1.0, look_weak.gamma_multiply(0.35)), egui::StrokeKind::Inside);
-            for dx in [-5.0f32, 0.0, 5.0] {
-                p.circle_filled(r.center() + Vec2::new(dx, 0.0), 1.5, if pointer_on { v.text_color() } else { look_weak });
-            }
+            // An arrow: open the task's panel.
+            let c = r.center();
+            let col = if pointer_on { v.text_color() } else { look_weak };
+            let st = Stroke::new(1.5, col);
+            p.line_segment([c + Vec2::new(-4.5, 0.0), c + Vec2::new(4.5, 0.0)], st);
+            p.line_segment([c + Vec2::new(1.0, -3.5), c + Vec2::new(4.5, 0.0)], st);
+            p.line_segment([c + Vec2::new(1.0, 3.5), c + Vec2::new(4.5, 0.0)], st);
             if pointer_on {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }

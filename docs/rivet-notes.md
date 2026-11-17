@@ -110,7 +110,7 @@ makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
 - In live mode, clicking a super todo's words opens its panel (the line stays rendered; *Edit
   text* in the panel puts the cursor at the end of the line, and *Plain todo* turns it back
   into an ordinary todo, dropping its todo tag, due date and priority).
-- On a super todo's line (cursor or pointer) a ⋯ button also opens the panel for its progress (To do, In
+- On a super todo's line (cursor or pointer) an arrow button also opens the panel for its progress (To do, In
   progress, Done), due date (Today, Tomorrow, Next week or a calendar), priority (flags) and tags.
 - **Todos page** (the check box button at the top right, File → Todos, or Quick Actions): every
   super todo in the vault. Filter by text, Open / In progress / Done / All, when it's due (overdue, today, next
