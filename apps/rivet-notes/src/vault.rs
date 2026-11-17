@@ -203,6 +203,8 @@ pub struct Note {
     pub snippet: String,
     /// Its links to other notes.
     pub links: Vec<crate::links::Link>,
+    /// Its Markdown tasks (`- [ ] …`).
+    pub tasks: Vec<crate::tasks::Item>,
 }
 
 impl Note {
@@ -281,7 +283,8 @@ pub fn read_note(root: &Path, path: &Path) -> Option<Note> {
     let (title, _) = note_title(fm.as_ref(), path);
     let snippet = body.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("```")).unwrap_or("").chars().take(120).collect();
     let links = crate::links::outgoing(body);
-    Some(Note { path: path.to_path_buf(), rel, title, tags, modified: std::fs::metadata(path).and_then(|m| m.modified()).ok(), snippet, links })
+    let tasks = crate::tasks::scan(body);
+    Some(Note { path: path.to_path_buf(), rel, title, tags, modified: std::fs::metadata(path).and_then(|m| m.modified()).ok(), snippet, links, tasks })
 }
 
 /// Every note in a vault (`.md` and `.markdown`), skipping hidden folders such as `.git`,

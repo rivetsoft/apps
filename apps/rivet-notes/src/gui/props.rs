@@ -425,7 +425,7 @@ fn chip(ui: &mut egui::Ui, text: &str, fill: Color32, fg: Color32, weak: Color32
 }
 
 /// A month to pick a day from. Returns the day clicked.
-fn calendar(ui: &mut egui::Ui, value: &str) -> Option<chrono::NaiveDate> {
+pub(super) fn calendar(ui: &mut egui::Ui, value: &str) -> Option<chrono::NaiveDate> {
     let v = ui.visuals().clone();
     let weak = v.weak_text_color();
     let today = chrono::Local::now().date_naive();

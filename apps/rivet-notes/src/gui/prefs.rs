@@ -52,7 +52,7 @@ impl Page {
 
 /// The keys, for the Keyboard page.
 const KEYS: [(&str, &[(&str, &str)]); 3] = [
-    ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Daily note (Daily notes module)", "Ctrl+D"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F"), ("Quick Open: go to a note", "Ctrl+P"), ("Quick Actions: every command", "Shift+Ctrl+P")]),
+    ("Notes", &[("New note", "Ctrl+N"), ("New folder", "Shift+Ctrl+N"), ("Daily note (Daily notes module)", "Ctrl+D"), ("Make a super todo (Super todos module)", "Shift+Ctrl+T"), ("Save now", "Ctrl+S"), ("Rename the note", "F2"), ("Move the note to the Trash", "Delete"), ("Search", "Ctrl+F"), ("Quick Open: go to a note", "Ctrl+P"), ("Quick Actions: every command", "Shift+Ctrl+P")]),
     ("View", &[("Reading view (Esc closes it)", "Ctrl+Space"), ("Switch folders / tags", "Ctrl+T"), ("Show or hide the sidebar", "F9"), ("Show or hide Peek", "F11"), ("Show or hide the menu bar", "Ctrl+M"), ("Preferences", "Ctrl+,")]),
     ("Formatting", &[]),
 ];
@@ -317,6 +317,22 @@ impl NotesApp {
                                     });
                                 }
                                 Page::Modules => {
+                                    section(ui, "Super todos", &mut |ui| {
+                                        ui.checkbox(&mut self.s.super_todos, egui::RichText::new("Super todos").strong());
+                                        ui.add_space(2.0);
+                                        hint(ui, "A task (- [ ]) with a todo tag becomes a super todo: it gets a due date, priority and tags, and shows on the Todos page. Shift+Ctrl+T makes the line at the cursor one.");
+                                        ui.add_space(10.0);
+                                        ui.add_enabled_ui(self.s.super_todos, |ui| {
+                                            grid(ui, "todo-grid", &mut |ui| {
+                                                ui.label("Todo tags");
+                                                let mut text = self.s.todo_tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(", ");
+                                                if ui.add(egui::TextEdit::singleline(&mut text).hint_text("#task").desired_width(240.0)).changed() {
+                                                    self.s.todo_tags = text.split([',', ' ']).map(|t| t.trim().trim_start_matches('#').to_string()).filter(|t| !t.is_empty()).collect();
+                                                }
+                                                ui.end_row();
+                                            });
+                                        });
+                                    });
                                     section(ui, "Daily notes", &mut |ui| {
                                         ui.checkbox(&mut self.s.daily_notes, egui::RichText::new("Daily notes").strong());
                                         ui.add_space(2.0);

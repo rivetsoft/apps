@@ -20,6 +20,8 @@ enum Cmd {
     NewNote,
     NewFolder,
     DailyNote,
+    Todos,
+    SuperTodo,
     Reading,
     Sidebar,
     Peek,
@@ -65,6 +67,8 @@ impl NotesApp {
         add("Note", "New Note", "Ctrl+N", None, Cmd::NewNote, has_vault);
         add("Note", "New Folder", "Shift+Ctrl+N", None, Cmd::NewFolder, has_vault);
         add("Note", "Daily Note", "Ctrl+D", None, Cmd::DailyNote, has_vault && self.s.daily_notes);
+        add("Todos", "Todos Page", "", None, Cmd::Todos, has_vault && self.s.super_todos);
+        add("Todos", "Make Super Todo", "Shift+Ctrl+T", None, Cmd::SuperTodo, has_doc && self.s.super_todos);
         add("View", "Reading View", "Ctrl+Space", None, Cmd::Reading, has_doc);
         add("View", "Sidebar", "F9", Some(self.s.show_sidebar), Cmd::Sidebar, true);
         add("View", "Peek", "F11", Some(self.s.show_peek), Cmd::Peek, true);
@@ -182,6 +186,11 @@ impl NotesApp {
             Cmd::NewNote => self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() }),
             Cmd::NewFolder => self.prompt = Some(Prompt::NewFolder { parent: self.current_folder.clone(), name: String::new() }),
             Cmd::DailyNote => self.daily_note(),
+            Cmd::Todos => {
+                self.save_now();
+                self.todo_page = true;
+            }
+            Cmd::SuperTodo => self.make_super_todo(),
             Cmd::Reading => self.toggle_reading(ctx),
             Cmd::Sidebar => self.s.show_sidebar = !self.s.show_sidebar,
             Cmd::Peek => self.s.show_peek = !self.s.show_peek,

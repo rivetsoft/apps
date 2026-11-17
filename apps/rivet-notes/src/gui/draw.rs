@@ -176,6 +176,8 @@ impl NotesApp {
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(col).layout(egui::Layout::top_down(egui::Align::Min)));
             if self.vault.is_none() {
                 self.welcome(&mut child);
+            } else if self.todo_page && self.s.super_todos {
+                self.todos_page(&mut child);
             } else if self.doc.is_some() {
                 self.editor(&mut child);
             } else {
@@ -276,6 +278,22 @@ impl NotesApp {
                     if toggle_button(ui, &peek_icon, "i", "Peek: this note's details and display (F11)", self.vault.is_some()).clicked() {
                         self.s.show_peek = !self.s.show_peek;
                         self.s.save();
+                    }
+                    // The Todos page (with super todos on).
+                    if self.s.super_todos {
+                        let todo_icon = self.icon(&ctx, &["checkbox-checked-symbolic", "object-select-symbolic", "emblem-ok-symbolic"], 16.0);
+                        let b = match &todo_icon {
+                            Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
+                            None => egui::Button::new("Todos"),
+                        };
+                        let r = ui.add_enabled(self.vault.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm()));
+                        if self.todo_page && !r.hovered() {
+                            ui.painter().rect_stroke(r.rect, r_sm(), v.widgets.hovered.bg_stroke, egui::StrokeKind::Inside);
+                        }
+                        if r.on_hover_text("Todos: every super todo in the vault").clicked() {
+                            self.save_now();
+                            self.todo_page = !self.todo_page;
+                        }
                     }
                     // The rendered page.
                     let read_icon = self.icon(&ctx, &["view-reveal-symbolic", "document-open-symbolic", "x-office-document-symbolic"], 16.0);
@@ -601,6 +619,8 @@ impl NotesApp {
         let mut fmt_pick: Option<crate::format::Fmt> = None;
         let mut sel_rect: Option<(Rect, Rect, Rect)> = None;
         let page = self.page_rect;
+        let todos_on = self.s.super_todos;
+        let todo_tags = self.todo_tags();
         let live_on = self.s.live_mode;
         let mut title_commit: Option<String> = None;
         let mut follow: Option<String> = None;
@@ -875,6 +895,9 @@ impl NotesApp {
                         }
                     }
                     super::live_edit::Hit::Link(t) => follow = Some(t),
+                    super::live_edit::Hit::Task(n, at) => {
+                        self.task_pop = Some(super::todos::TaskPop { line: n, at, fresh: true, tag_input: String::new() });
+                    }
                     super::live_edit::Hit::Copy(t) => {
                         ctx.copy_text(t);
                         self.note_msg = None;
@@ -919,6 +942,20 @@ impl NotesApp {
                 }
             }
             d.live_boxes = super::live_edit::code_panels(ui, &d.body, &out, &live_look, panels_under);
+            // Super todos: a button beside the one at the cursor (or under the pointer).
+            let caret_char = out.cursor_range.filter(|_| ctx.memory(|m| m.has_focus(body_id))).map(|r| r.primary.index.0);
+            self.caret_state = caret_char.map(|c| (body_id, c));
+            if todos_on {
+                let caret_b = caret_char.map(|c| d.body.char_indices().nth(c).map(|(b, _)| b).unwrap_or(d.body.len()));
+                d.live_boxes.extend(NotesApp::task_buttons(ui, &d.body, &out, &todo_tags, caret_b, weak));
+                // A popover asked for by Shift+Ctrl+T opens under its line.
+                if let Some(n) = self.task_pop_line.take() {
+                    let start: usize = d.body.split_inclusive('\n').take(n).map(str::len).sum();
+                    let row = out.galley.pos_from_cursor(egui::text::CCursor::new(d.body[..start.min(d.body.len())].chars().count())).translate(out.galley_pos.to_vec2());
+                    let right = out.response.response.rect.right();
+                    self.task_pop = Some(super::todos::TaskPop { line: n, at: Pos2::new(right - 240.0, row.bottom() + 6.0), fresh: true, tag_input: String::new() });
+                }
+            }
             if live_on {
                 let raw = if tick.is_some() { live_raw } else { super::live_edit::shift_raw(&live_before, &d.body, live_raw) };
                 let more = super::live_edit::decorate(ui, &d.body, raw, live_held, &out, &live_look);
@@ -1015,6 +1052,9 @@ impl NotesApp {
         }
         if let Some(t) = title_commit {
             self.retitle(&t);
+        }
+        if todos_on {
+            self.task_popover(&ctx);
         }
         if let Some(t) = follow {
             self.follow_link(&t);

@@ -96,6 +96,20 @@ Actions. The reading view (the eye, Ctrl+Space) works in either:
   language with their fences tucked away until you move into the block. With the keyboard
   elsewhere, the whole note shows rendered.
 
+## Super todos (module)
+
+Turned on in Preferences → Modules, where the todo tags are set (`#task` by default). A plain
+`- [ ]` stays an ordinary todo; one carrying a todo tag is a **super todo**, and Shift+Ctrl+T
+makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
+
+- Its details are plain text in the line: `- [ ] Send the invoice #task #work due:2026-12-01 priority:high`.
+- On a super todo's line (cursor or pointer) a ⋯ button opens a popover for its due date
+  (Today, Tomorrow, Next week or a calendar), priority, tags, and Done.
+- **Todos page** (the check box button at the top right, File → Todos, or Quick Actions): every
+  super todo in the vault. Filter by text, Open / Done / All, when it's due (overdue, today, next
+  7 days, no date) and tag; sort by due date, priority or note. Tick a box to finish a task (its
+  note changes on disk); click a row to open its note. Overdue dates are red.
+
 ## Formatting
 
 Keys that turn the selection (or the word under the cursor) into Markdown, and back again when

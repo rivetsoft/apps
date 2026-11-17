@@ -17,6 +17,8 @@ pub(super) enum Hit {
     Link(String),
     /// A code block's Copy button: the code.
     Copy(String),
+    /// A super todo's button: its line, and where its popover hangs.
+    Task(usize, Pos2),
 }
 
 /// The colors and sizes live mode draws with.

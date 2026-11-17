@@ -7,6 +7,7 @@ mod live_edit;
 mod peek;
 mod props;
 mod quick;
+mod todos;
 mod prefs;
 mod read;
 
@@ -124,6 +125,14 @@ pub struct NotesApp {
     link_sel: usize,
     link_hide: Option<usize>,
     link_pending: Option<(usize, usize, String)>,
+    /// The Todos page is showing (instead of a note).
+    todo_page: bool,
+    todo_view: todos::TodoView,
+    /// A super todo's popover, and a line whose popover should open once it's laid out.
+    task_pop: Option<todos::TaskPop>,
+    task_pop_line: Option<usize>,
+    /// The note text's cursor (character) as of the last frame.
+    caret_state: Option<(egui::Id, usize)>,
     /// The open note's backlinks: for which note and list, and the notes with their lines.
     backlinks: Option<(PathBuf, u64, Vec<Backlink>)>,
 }
@@ -164,6 +173,10 @@ impl NotesApp {
         // Test hook: RIVET_NOTES_DAILY turns the daily notes module on.
         if std::env::var_os("RIVET_NOTES_DAILY").is_some() {
             s.daily_notes = true;
+        }
+        // Test hook: RIVET_NOTES_TODOS turns super todos on (=page also opens the Todos page).
+        if std::env::var_os("RIVET_NOTES_TODOS").is_some() {
+            s.super_todos = true;
         }
         // Test hook: RIVET_NOTES_QUICK=open|actions[:query] opens a quick panel (applied below).
         // Test hook: RIVET_NOTES_NO_STATUS hides the status bar.
@@ -219,6 +232,11 @@ impl NotesApp {
             link_sel: 0,
             link_hide: None,
             link_pending: None,
+            todo_page: false,
+            todo_view: Default::default(),
+            task_pop: None,
+            task_pop_line: None,
+            caret_state: None,
             backlinks: None,
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
@@ -302,6 +320,9 @@ impl NotesApp {
                 p.query = query.to_string();
             }
         }
+        if std::env::var("RIVET_NOTES_TODOS").as_deref() == Ok("page") {
+            app.todo_page = true;
+        }
         // Test hook for checks: RIVET_NOTES_RETITLE with RIVET_NOTES_WRITE renames the open note
         // as if its title had been typed in the heading (only on a throwaway vault).
         if let Ok(t) = std::env::var("RIVET_NOTES_RETITLE")
@@ -363,6 +384,8 @@ impl NotesApp {
     // ---------------------------------------------------------------- notes
 
     fn open_note(&mut self, p: &Path) {
+        self.todo_page = false;
+        self.task_pop = None;
         if self.doc.as_ref().is_some_and(|d| d.path == p) {
             return;
         }
@@ -701,7 +724,8 @@ impl NotesApp {
         let cmd = Modifiers::COMMAND;
         let shift = Modifiers { shift: true, ..Modifiers::COMMAND };
         let daily_on = self.s.daily_notes;
-        let (f, n, s, comma, m, b, t, qa, qo, find, pk, day) = ctx.input_mut(|i| {
+        let todos_on = self.s.super_todos;
+        let (f, n, s, comma, m, b, st, t, qa, qo, find, pk, day) = ctx.input_mut(|i| {
             (
                 // Shift first: a plain Ctrl+N pattern also matches with Shift held.
                 i.consume_shortcut(&KeyboardShortcut::new(shift, Key::N)),
@@ -710,6 +734,7 @@ impl NotesApp {
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::Comma)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::M)),
                 i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::F9)),
+                todos_on && i.consume_shortcut(&KeyboardShortcut::new(shift, Key::T)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::T)),
                 i.consume_shortcut(&KeyboardShortcut::new(shift, Key::P)),
                 i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::P)),
@@ -718,6 +743,9 @@ impl NotesApp {
                 daily_on && i.consume_shortcut(&KeyboardShortcut::new(cmd, Key::D)),
             )
         });
+        if st {
+            self.make_super_todo();
+        }
         if day && self.vault.is_some() {
             self.daily_note();
         }
@@ -797,6 +825,11 @@ impl NotesApp {
             style(ui);
             if ui.add_enabled(has_vault, egui::Button::new("New Note…").shortcut_text("Ctrl+N")).clicked() {
                 self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
+                ui.close();
+            }
+            if self.s.super_todos && ui.add_enabled(has_vault, egui::Button::new("Todos")).clicked() {
+                self.save_now();
+                self.todo_page = true;
                 ui.close();
             }
             if self.s.daily_notes && ui.add_enabled(has_vault, egui::Button::new("Daily Note").shortcut_text("Ctrl+D")).clicked() {
@@ -974,9 +1007,13 @@ impl eframe::App for NotesApp {
             if shot.frames() == 40
                 && let Ok(k) = std::env::var("RIVET_NOTES_KEY")
             {
-                let (modifiers, name) = match k.strip_prefix("ctrl+") {
-                    Some(n) => (Modifiers::COMMAND, n.to_string()),
-                    None => (Modifiers::NONE, k),
+                let (modifiers, name) = if let Some(n) = k.strip_prefix("ctrl+shift+") {
+                    (Modifiers { shift: true, ..Modifiers::COMMAND }, n.to_string())
+                } else {
+                    match k.strip_prefix("ctrl+") {
+                        Some(n) => (Modifiers::COMMAND, n.to_string()),
+                        None => (Modifiers::NONE, k),
+                    }
                 };
                 if let Some(key) = Key::from_name(&name) {
                     raw.events.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers });

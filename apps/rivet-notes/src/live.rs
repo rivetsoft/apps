@@ -362,6 +362,20 @@ fn inline(text: &str, st: &mut [St], r: Range<usize>, editing: bool) {
     pairs(st, &mut used, "~~", &|s| s.strike = true);
     pairs(st, &mut used, "*", &|s| s.italic = true);
     pairs(st, &mut used, "_", &|s| s.italic = true);
+    // Super todo details (due:…, priority:…) colored like tags.
+    for key in ["due:", "priority:"] {
+        let mut from = r.start;
+        while let Some(off) = text[from..r.end].find(key) {
+            let p = from + off;
+            let end = text[p..r.end].find(char::is_whitespace).map(|o| p + o).unwrap_or(r.end);
+            if (p == r.start || b[p - 1].is_ascii_whitespace()) && end > p + key.len() && !used[idx(p)] {
+                for s in &mut st[p..end] {
+                    s.tag = true;
+                }
+            }
+            from = end.max(p + 1);
+        }
+    }
     // #tags (shown as they are, colored).
     let mut p = r.start;
     while p < r.end {
