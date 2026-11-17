@@ -33,6 +33,8 @@ pub(crate) enum QuickKind {
     Line,
     /// The editor's color schemes, previewed while highlighted.
     Themes,
+    /// Definitions or uses found (Go to Definition with several, Find References).
+    Places,
     /// The open tab's language: told from the file, plain text, or one chosen.
     Language,
     /// The open tab's indentation: tabs or spaces, how many, convert, detect.
@@ -68,6 +70,7 @@ enum Cmd {
     Language,
     Indentation,
     VimKeys,
+    Nav(super::navigate::NavCmd),
     ConvertIndent(bool),
     Reload,
     Recent(PathBuf),
@@ -178,6 +181,11 @@ impl EditApp {
         add("File", "Save All", "Shift+Ctrl+S", None, Cmd::SaveAll, has_tab);
         add("File", "Close Tab", "Ctrl+W", None, Cmd::CloseTab, has_tab);
         add("Go", "Go to Line…", "Ctrl+G", None, Cmd::GoToLine, has_tab);
+        add("Go", "Go to Definition", "F12", None, Cmd::Nav(super::navigate::NavCmd::Definition), has_tab);
+        add("Go", "Find References", "Shift+F12", None, Cmd::Nav(super::navigate::NavCmd::References), has_tab);
+        add("Go", "Show What It Is (Hover)", "", None, Cmd::Nav(super::navigate::NavCmd::Hover), has_tab);
+        add("Go", "Back", "Alt+Left", None, Cmd::Nav(super::navigate::NavCmd::Back), has_tab);
+        add("Go", "Forward", "Alt+Right", None, Cmd::Nav(super::navigate::NavCmd::Forward), has_tab);
         add("Edit", "Find", "Ctrl+F", None, Cmd::Find, has_tab);
         add("Edit", "Replace", "Ctrl+H", None, Cmd::Replace, has_tab);
         add("Edit", "Search in Folder", "Shift+Ctrl+F", None, Cmd::SearchFiles, has_root);
@@ -237,6 +245,7 @@ impl EditApp {
             Cmd::Preferences => self.prefs_open = true,
             Cmd::Themes => self.open_quick(QuickKind::Themes),
             Cmd::Language => self.open_quick(QuickKind::Language),
+            Cmd::Nav(c) => self.nav.pending = Some(c),
             Cmd::VimKeys => {
                 self.s.vim_keys = !self.s.vim_keys;
                 self.vim = Default::default();
@@ -382,6 +391,30 @@ impl EditApp {
                         self.scheme_preview = None;
                         keep = false;
                     }
+                    None => {}
+                }
+            }
+            QuickKind::Places => {
+                // Filter by file name or line text.
+                let ranked: Vec<usize> = (0..self.nav.list.len())
+                    .filter(|i| {
+                        q.is_empty() || {
+                            let s = &self.nav.list[*i];
+                            fuzzy_score(&format!("{} {}", s.path.to_string_lossy(), s.preview), &q).is_some()
+                        }
+                    })
+                    .collect();
+                let rows: Vec<QuickRow> = self.spot_rows(ctx, &ranked);
+                let title = self.nav.list_title.clone();
+                let text = QuickText { hint: &title, empty: "Nothing matches", legend: "Up/Down choose   ·   Enter go there   ·   Esc close" };
+                match panel.show(ctx, "edit-quick-places", &rows, &text, search.as_ref()) {
+                    Some(QuickEvent::Pick(i)) => {
+                        if let Some(s) = ranked.get(i).and_then(|k| self.nav.list.get(*k)).cloned() {
+                            self.jump_to(s.path, s.ch);
+                        }
+                        keep = false;
+                    }
+                    Some(QuickEvent::Close) => keep = false,
                     None => {}
                 }
             }

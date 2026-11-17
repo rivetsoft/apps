@@ -6,6 +6,7 @@
 mod complete;
 mod draw;
 mod editing;
+mod navigate;
 mod prefs;
 mod quick;
 mod vimkeys;
@@ -147,6 +148,10 @@ pub struct EditApp {
     pub(crate) lsp_status: Option<complete::LspStatus>,
     /// Vim keys' state (when they're on).
     pub(crate) vim: crate::vim::Vim,
+    /// Go to Definition, references, hover, Back / Forward.
+    pub(crate) nav: navigate::Nav,
+    /// Each open file's cursor as last drawn (to come back to it).
+    pub(crate) last_cursor: HashMap<PathBuf, usize>,
     /// Quitting is fine (changes saved or let go).
     allow_close: bool,
     /// A scheme shown while the theme list is open (before it's chosen).
@@ -236,6 +241,8 @@ impl EditApp {
             complete_seq: 0,
             lsp_status: None,
             vim: Default::default(),
+            nav: Default::default(),
+            last_cursor: HashMap::new(),
             allow_close: false,
             scheme_preview: None,
         };
@@ -768,7 +775,9 @@ impl eframe::App for EditApp {
             self.open_find(&ctx, r);
         }
         self.shortcuts(&ctx);
+        self.nav_keys(&ctx);
         self.lsp_tick();
+        self.nav_tick(&ctx);
         // A preview that's been edited is kept.
         for t in self.tabs.iter_mut().filter(|t| t.preview && t.dirty()) {
             t.preview = false;

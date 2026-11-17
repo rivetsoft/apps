@@ -530,6 +530,9 @@ impl EditApp {
         }
         let diags = self.diag_ranges();
         let mut caret: Option<(usize, Pos2)> = None;
+        // The character under a resting pointer (for hover), and a Ctrl+click (Go to Definition).
+        let mut probe: Option<(usize, Pos2)> = None;
+        let mut ctrl_click = false;
         // A found match or search result: select it and show it.
         let select = self.select_after.take();
         if let Some((a, b)) = select {
@@ -646,7 +649,23 @@ impl EditApp {
                 if let Some(r) = out.cursor_range {
                     let cr = out.galley.pos_from_cursor(r.primary).translate(out.galley_pos.to_vec2());
                     caret = Some((r.primary.index.0, cr.left_bottom()));
+                    // K's box sits above the cursor's line.
+                    if let Some(c) = caret.as_mut() {
+                        c.1 = cr.left_top();
+                    }
                 }
+                let resp = &out.response.response;
+                if let Some(pp) = ui.ctx().pointer_hover_pos().filter(|pp| resp.rect.contains(*pp) && ui.clip_rect().contains(*pp))
+                    && !ui.input(|i| i.pointer.any_down())
+                {
+                    let c = out.galley.cursor_from_pos(pp - out.galley_pos);
+                    let r = out.galley.pos_from_cursor(c).translate(out.galley_pos.to_vec2());
+                    // Only over the text itself, not the empty space after a line.
+                    if (pp.x - r.left()).abs() < 400.0 && pp.y >= r.top() - 2.0 && pp.y <= r.bottom() + 2.0 {
+                        probe = Some((c.index.0, r.left_top()));
+                    }
+                }
+                ctrl_click = resp.clicked() && ui.input(|i| i.modifiers.command);
                 // Matches and the other cursors, over the text.
                 let main = out.cursor_range.map(|r| crate::ops::Sel::new(r.secondary.index.0, r.primary.index.0)).unwrap_or_default();
                 EditApp::draw_marks(ui.painter(), &out.galley, out.galley_pos, ui.clip_rect(), &multi_sels, &find_matches, main, &v, mark_color);
@@ -660,6 +679,17 @@ impl EditApp {
             });
         });
         self.last_layout = layout_out;
+        if let (Some((c, _)), Some(p)) = (caret, self.tabs.get(self.active).and_then(|t| t.path.clone())) {
+            self.last_cursor.insert(p, c);
+        }
+        if ctrl_click {
+            self.nav.pending = Some(navigate::NavCmd::Definition);
+        }
+        if !quick_open {
+            let caret_now = if ctx.memory(|m| m.has_focus(id)) { caret } else { None };
+            self.hover_tick(&ctx, probe, caret_now, typed.is_some());
+            self.hover_box(&ctx, &font);
+        }
         if !quick_open && ctx.memory(|m| m.has_focus(id)) {
             self.complete_after(caret, typed, ctrl_space);
             self.complete_popup(&ctx, id, &font, &colors);

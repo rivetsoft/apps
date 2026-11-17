@@ -78,7 +78,7 @@ fn at(text: &str, starts: &[(usize, usize)], (line, col): (u32, u32), utf8: bool
 
 impl EditApp {
     /// The folder a file's server works in: the workspace when the file's in it.
-    fn lsp_root(&self, p: &Path) -> PathBuf {
+    pub(crate) fn lsp_root(&self, p: &Path) -> PathBuf {
         match &self.root {
             Some(r) if p.starts_with(r) => r.clone(),
             _ => p.parent().map(Path::to_path_buf).unwrap_or_default(),
@@ -101,6 +101,8 @@ impl EditApp {
                         }
                     }
                 }
+                lsp::Event::Places { seq, places } => self.nav_places(seq, places),
+                lsp::Event::Hover { seq, text } => self.hover_answer(seq, text),
             }
         }
         let open: HashSet<PathBuf> = if self.s.lsp { self.tabs.iter().filter_map(|t| t.path.clone()).collect() } else { HashSet::new() };

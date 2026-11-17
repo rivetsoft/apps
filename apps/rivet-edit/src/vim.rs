@@ -41,6 +41,10 @@ pub enum Effect {
     Reveal,
     /// Copied: put on the clipboard as well.
     Yanked(String),
+    /// gd, gr, K: Go to Definition, Find References, what it is.
+    Definition,
+    References,
+    Hover,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -487,6 +491,7 @@ fn parse(k: &[char], visual: bool) -> Parsed {
         'g' => match k.get(i + 1) {
             None => Parsed::More,
             Some('J') => Parsed::Simple(count, 'J', Some('g')),
+            Some(&c2 @ ('d' | 'r')) => Parsed::Simple(count, 'g', Some(c2)),
             _ => Parsed::Bad,
         },
         _ => Parsed::Simple(count, c, None),
@@ -1171,6 +1176,8 @@ impl Vim {
             }
             ':' | '/' | '?' => self.cmdline = Some((c, String::new())),
             'z' => fx.push(Effect::Reveal),
+            'g' => fx.push(if extra == Some('d') { Effect::Definition } else { Effect::References }),
+            'K' => fx.push(Effect::Hover),
             ENTER => {}
             _ => {}
         }

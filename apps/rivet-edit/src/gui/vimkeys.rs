@@ -154,6 +154,9 @@ impl EditApp {
                 }
                 Effect::Message(m, bad) => self.note = Some((m, bad)),
                 Effect::Reveal => self.reveal = true,
+                Effect::Definition => self.nav.pending = Some(super::navigate::NavCmd::Definition),
+                Effect::References => self.nav.pending = Some(super::navigate::NavCmd::References),
+                Effect::Hover => self.nav.pending = Some(super::navigate::NavCmd::Hover),
                 Effect::Yanked(text) => {
                     // Copies go to the clipboard too (never in checks).
                     if self.shot.is_none() {

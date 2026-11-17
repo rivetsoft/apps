@@ -179,6 +179,65 @@ pub struct Diag {
 
 pub enum Event {
     Completion { seq: u64, items: Vec<Item> },
+    /// Where something is defined, or used.
+    Places { seq: u64, places: Vec<Place> },
+    /// What the server says about what's under the pointer (plain text; empty when nothing).
+    Hover { seq: u64, text: String },
+}
+
+/// A place in a file: (line, character) start and end, as the server counts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Place {
+    pub path: PathBuf,
+    pub start: (u32, u32),
+    pub end: (u32, u32),
+}
+
+/// What to ask the server about a place in the text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    Definition,
+    References,
+    Hover,
+}
+
+fn places_from(v: &Value) -> Vec<Place> {
+    let pos = |p: Option<&Value>| -> (u32, u32) { (p.and_then(|p| p.get("line")).and_then(Value::as_u64).unwrap_or(0) as u32, p.and_then(|p| p.get("character")).and_then(Value::as_u64).unwrap_or(0) as u32) };
+    let one = |l: &Value| -> Option<Place> {
+        // A Location (uri, range) or a LocationLink (targetUri, targetSelectionRange).
+        let (u, r) = match l.get("targetUri") {
+            Some(u) => (u, l.get("targetSelectionRange").or_else(|| l.get("targetRange"))?),
+            None => (l.get("uri")?, l.get("range")?),
+        };
+        Some(Place { path: path_of(u.as_str()?)?, start: pos(r.get("start")), end: pos(r.get("end")) })
+    };
+    match v {
+        Value::Array(a) => a.iter().filter_map(one).take(2000).collect(),
+        Value::Object(_) => one(v).into_iter().collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Hover contents as plain text: MarkupContent, a MarkedString, or a list of them. Code fences
+/// are dropped (their lines kept).
+fn hover_text(v: &Value) -> String {
+    fn piece(v: &Value) -> String {
+        match v {
+            Value::String(s) => s.clone(),
+            Value::Object(o) => o.get("value").and_then(Value::as_str).unwrap_or("").to_string(),
+            Value::Array(a) => a.iter().map(piece).filter(|s| !s.trim().is_empty()).collect::<Vec<_>>().join("\n\n"),
+            _ => String::new(),
+        }
+    }
+    let raw = v.get("contents").map(piece).unwrap_or_default();
+    let mut out: Vec<&str> = raw.lines().filter(|l| !l.trim_start().starts_with("```")).collect();
+    while out.first().is_some_and(|l| l.trim().is_empty()) {
+        out.remove(0);
+    }
+    while out.last().is_some_and(|l| l.trim().is_empty()) {
+        out.pop();
+    }
+    out.join("\n").replace("\\_", "_").replace("&nbsp;", " ")
 }
 
 /// A completion item's text without snippet marks (`$1`, `${2:name}` → name).
@@ -271,6 +330,8 @@ fn items_from(v: &Value) -> Vec<Item> {
 enum Pending {
     Init,
     Completion(u64),
+    Places(u64),
+    Hover(u64),
 }
 
 pub struct Server {
@@ -376,7 +437,10 @@ impl Server {
                         "completionItem": { "snippetSupport": false, "insertReplaceSupport": false, "labelDetailsSupport": true },
                         "contextSupport": true
                     },
-                    "publishDiagnostics": { "relatedInformation": false }
+                    "publishDiagnostics": { "relatedInformation": false },
+                    "definition": { "linkSupport": true },
+                    "references": {},
+                    "hover": { "contentFormat": ["plaintext", "markdown"] }
                 },
                 "window": { "workDoneProgress": false }
             }
@@ -480,6 +544,14 @@ impl Server {
                         Some(Pending::Completion(seq)) => {
                             let items = msg.get("result").map(items_from).unwrap_or_default();
                             out.push(Event::Completion { seq, items });
+                        }
+                        Some(Pending::Places(seq)) => {
+                            let places = msg.get("result").map(places_from).unwrap_or_default();
+                            out.push(Event::Places { seq, places });
+                        }
+                        Some(Pending::Hover(seq)) => {
+                            let text = msg.get("result").map(hover_text).unwrap_or_default();
+                            out.push(Event::Hover { seq, text });
                         }
                         _ => {}
                     }
@@ -599,6 +671,34 @@ impl Lsp {
         true
     }
 
+    /// Ask where the thing at `ch` is defined or used, or about it (hover); the answer comes
+    /// back as `seq`. False when there's no server ready.
+    pub fn ask(&mut self, doc: Doc, ch: usize, what: Ask, seq: u64) -> bool {
+        let Doc { path, root, lang, text } = doc;
+        let Some(s) = self.server(lang, root) else { return false };
+        if !s.ready {
+            return false;
+        }
+        s.sync(path, lang, text);
+        let (line, character) = to_pos(text, ch, s.utf8);
+        let mut params = json!({ "textDocument": { "uri": uri(path) }, "position": { "line": line, "character": character } });
+        let (method, pending) = match what {
+            Ask::Definition => ("textDocument/definition", Pending::Places(seq)),
+            Ask::References => {
+                params["context"] = json!({ "includeDeclaration": true });
+                ("textDocument/references", Pending::Places(seq))
+            }
+            Ask::Hover => ("textDocument/hover", Pending::Hover(seq)),
+        };
+        s.request_now(method, params, pending);
+        true
+    }
+
+    /// Whether a server for this language is running and ready.
+    pub fn ready(&mut self, lang: Lang, root: &Path) -> bool {
+        self.server(lang, root).is_some_and(|s| s.ready)
+    }
+
     pub fn saved(&mut self, path: &Path) {
         let u = uri(path);
         for s in self.servers.values_mut() {
@@ -703,6 +803,17 @@ mod tests {
         let p = Path::new("/home/a b/ça.rs");
         assert_eq!(uri(p), "file:///home/a%20b/%C3%A7a.rs");
         assert_eq!(path_of(&uri(p)).unwrap(), p);
+    }
+
+    #[test]
+    fn places_and_hover() {
+        let p = places_from(&json!([{ "uri": "file:///a%20b/x.rs", "range": { "start": { "line": 3, "character": 4 }, "end": { "line": 3, "character": 9 } } }]));
+        assert_eq!(p, vec![Place { path: PathBuf::from("/a b/x.rs"), start: (3, 4), end: (3, 9) }]);
+        let l = places_from(&json!([{ "targetUri": "file:///y.c", "targetRange": { "start": { "line": 0, "character": 0 } }, "targetSelectionRange": { "start": { "line": 2, "character": 7 }, "end": { "line": 2, "character": 9 } } }]));
+        assert_eq!(l[0].start, (2, 7));
+        assert_eq!(places_from(&Value::Null), vec![]);
+        assert_eq!(hover_text(&json!({ "contents": { "kind": "markdown", "value": "```rust\nfn len(&self) -> usize\n```\n\nThe length." } })), "fn len(&self) -> usize\n\nThe length.");
+        assert_eq!(hover_text(&json!({ "contents": [{ "language": "c", "value": "int x" }, "a value"] })), "int x\n\na value");
     }
 
     #[test]

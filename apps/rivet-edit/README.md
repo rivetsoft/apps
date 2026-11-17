@@ -60,6 +60,8 @@ fonts and icons, the same menus, Preferences and quick panel.
 | F9 / Alt+Z / Ctrl+M | Sidebar / word wrap / menu bar |
 | Ctrl+= / Ctrl+- | Bigger / smaller code |
 | Ctrl+, | Preferences |
+| F12 or Ctrl+click, Shift+F12 | Go to Definition, Find References (a list when there are several) |
+| Alt+Left / Alt+Right | Back / forward through the places you jumped from |
 | Ctrl+Space | Suggestions (they also open as you type; Enter or Tab puts one in) |
 | Ctrl+F / Ctrl+H | Find / replace in the file (Enter, F3: next; Shift+Enter, Shift+F3: previous) |
 | Shift+Ctrl+F | Search (and replace) in every file of the folder |
@@ -76,7 +78,7 @@ fonts and icons, the same menus, Preferences and quick panel.
 Switch them on in Preferences > Editor (or Vim Keys in the command list). Normal, Insert, Visual
 and Visual Line modes; counts; `d` `c` `y` `>` `<` with motions (`w b e 0 ^ $ gg G { } % f t ; ,`)
 and text objects (`iw aw i" a" i( a( i{ a{ i[ a[`); `x X s S C D Y J r ~ p P`; `u` and Ctrl+R;
-`.` to repeat; `/ ? n N * #` to search; and `:w :q :wq :x :qa :42 :s/old/new/g :%s/old/new/g`.
+`.` to repeat; `/ ? n N * #` to search; `gd`, `gr` and `K` for definition, references and hover; and `:w :q :wq :x :qa :42 :s/old/new/g :%s/old/new/g`.
 The status bar shows the mode and the `:` line. Copies go to the clipboard too.
 
 ## Build and run
