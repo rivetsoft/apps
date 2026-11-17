@@ -305,10 +305,23 @@ impl EditApp {
                                             ui.label("Size");
                                             ui.add(egui::Slider::new(&mut self.s.code_size, 8.0..=32.0).step_by(1.0).suffix(" pt"));
                                             ui.end_row();
-                                            ui.label("Tab key");
+                                        });
+                                    });
+                                    section(ui, "Indentation", &mut |ui| {
+                                        ui.checkbox(&mut self.s.detect_indent, "Follow each file's own indentation");
+                                        hint(ui, "Tabs or spaces, and how many, told from the file when it's opened. The status bar shows it; click there to change one file's.");
+                                        ui.add_space(10.0);
+                                        grid(ui, "edit-indent", &mut |ui| {
+                                            ui.label("Otherwise indent with");
+                                            ui.horizontal(|ui| {
+                                                ui.selectable_value(&mut self.s.use_tabs, false, "Spaces");
+                                                ui.selectable_value(&mut self.s.use_tabs, true, "Tabs");
+                                            });
+                                            ui.end_row();
+                                            ui.label(if self.s.use_tabs { "Tab size" } else { "Spaces" });
                                             ui.horizontal(|ui| {
                                                 for n in [2usize, 4, 8] {
-                                                    ui.selectable_value(&mut self.s.tab_width, n, format!("{n} spaces"));
+                                                    ui.selectable_value(&mut self.s.tab_width, n, n.to_string());
                                                 }
                                             });
                                             ui.end_row();

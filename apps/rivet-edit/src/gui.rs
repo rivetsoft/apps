@@ -43,11 +43,28 @@ pub(crate) struct Tab {
     /// A preview: opened with a single click, and replaced by the next one until it's kept
     /// (double-click or Ctrl+click it, double-click its tab, or edit it).
     pub preview: bool,
+    /// The language it's shown as (told from the file unless chosen).
+    pub lang: crate::syntax::Pick,
+    /// Tabs or spaces, and how many: told from the file, or the settings' for new files.
+    pub indent: crate::ops::Indent,
 }
 
 impl Tab {
     pub fn dirty(&self) -> bool {
         self.text != self.saved
+    }
+
+    /// The line comment for Ctrl+/ (by the language it's shown as).
+    pub fn comment(&self) -> Option<&'static str> {
+        use crate::syntax::{Pick, detect};
+        match self.lang {
+            Pick::Plain => None,
+            Pick::Lang(l) => l.comment(),
+            Pick::Auto => match detect(&self.name(), &self.text) {
+                Some(l) => l.comment(),
+                None => crate::ops::comment_token(&self.name()),
+            },
+        }
     }
 
     /// The name shown on its tab.
@@ -250,6 +267,8 @@ impl EditApp {
                 "commands" => quick::QuickKind::Commands,
                 "line" => quick::QuickKind::Line,
                 "themes" => quick::QuickKind::Themes,
+                "language" => quick::QuickKind::Language,
+                "indent" => quick::QuickKind::Indent,
                 "folder" => quick::QuickKind::Browse { files: false },
                 _ => quick::QuickKind::Files,
             };
@@ -407,7 +426,8 @@ impl EditApp {
         }
         match workspace::read_text(&p) {
             Ok(text) => {
-                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new() };
+                let indent = self.indent_for(&text);
+                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent };
                 // A new preview takes the old one's place (when it wasn't changed).
                 match self.tabs.iter().position(|t| t.preview && !t.dirty()).filter(|_| preview) {
                     Some(i) => {
@@ -440,8 +460,25 @@ impl EditApp {
     }
 
     pub(crate) fn new_tab(&mut self) {
-        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new() });
+        let indent = self.default_indent();
+        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent });
         self.active = self.tabs.len() - 1;
+    }
+
+    /// The indentation from the settings (new files, and files that don't show theirs).
+    pub(crate) fn default_indent(&self) -> crate::ops::Indent {
+        crate::ops::Indent { tabs: self.s.use_tabs, width: self.s.tab_width.clamp(1, 8) }
+    }
+
+    /// A file's indentation: its own when it can be told (and that's wanted), else the default.
+    pub(crate) fn indent_for(&self, text: &str) -> crate::ops::Indent {
+        let d = self.default_indent();
+        match crate::ops::detect_indent(text).filter(|_| self.s.detect_indent) {
+            // A tab's width isn't in the file: keep the chosen one.
+            Some(i) if i.tabs => crate::ops::Indent { tabs: true, width: d.width },
+            Some(i) => i,
+            None => d,
+        }
     }
 
     /// Save a tab; a new file asks where first. Returns whether it was saved.

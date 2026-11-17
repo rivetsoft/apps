@@ -26,7 +26,7 @@ In the window: Ctrl+P goes to a file, Shift+Ctrl+P runs a command, Ctrl+O opens 
 /// A small project for screenshot runs (checks never show the person's own files).
 fn sample_workspace() -> Option<PathBuf> {
     let root = std::env::temp_dir().join(format!("rivet-edit-sample-{}", std::process::id())).join("hello-rivet");
-    let files: [(&str, &str); 7] = [
+    let files: [(&str, &str); 8] = [
         (
             "src/main.rs",
             "//! A tiny word counter.\n\nuse std::collections::HashMap;\n\n/// How often each word appears in `text`.\nfn count_words(text: &str) -> HashMap<&str, usize> {\n    let mut counts = HashMap::new();\n    for word in text.split_whitespace() {\n        *counts.entry(word).or_insert(0) += 1;\n    }\n    counts\n}\n\nfn main() {\n    let text = \"the quick brown fox jumps over the lazy dog\";\n    let counts = count_words(text);\n    println!(\"{} words, 'the' appears {} times\", counts.len(), counts[\"the\"]);\n}\n",
@@ -35,6 +35,7 @@ fn sample_workspace() -> Option<PathBuf> {
         ("src/words.rs", "pub fn is_long(word: &str) -> bool {\n    word.chars().count() > 8\n}\n"),
         ("Cargo.toml", "[package]\nname = \"hello-rivet\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"),
         ("README.md", "# Hello, Rivet\n\nA tiny word counter.\n\n```sh\ncargo run\n```\n"),
+        ("scripts/release", "#!/bin/bash\n# Tag and build a release (no extension: told from the first line).\nset -e\nif [ -z \"$1\" ]; then\n\techo \"usage: release VERSION\"\n\texit 1\nfi\ngit tag \"v$1\"\ncargo build --release\n"),
         ("scripts/build.sh", "#!/bin/sh\n# Build a release.\nset -e\ncargo build --release\necho \"done\"\n"),
         ("web/app.js", "// Count words in the browser.\nexport function countWords(text) {\n  const counts = new Map();\n  for (const w of text.split(/\\s+/)) {\n    counts.set(w, (counts.get(w) ?? 0) + 1);\n  }\n  return counts;\n}\n"),
     ];

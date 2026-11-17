@@ -33,6 +33,10 @@ pub(crate) enum QuickKind {
     Line,
     /// The editor's color schemes, previewed while highlighted.
     Themes,
+    /// The open tab's language: told from the file, plain text, or one chosen.
+    Language,
+    /// The open tab's indentation: tabs or spaces, how many, convert, detect.
+    Indent,
     /// Type a path; `files` also lists (and opens) files, else only folders.
     Browse { files: bool },
 }
@@ -61,6 +65,9 @@ enum Cmd {
     Smaller,
     Preferences,
     Themes,
+    Language,
+    Indentation,
+    ConvertIndent(bool),
     Reload,
     Recent(PathBuf),
 }
@@ -184,6 +191,10 @@ impl EditApp {
         add("Theme", "Light", "", Some(self.s.theme == Mode::Light && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Light), true);
         add("Theme", "Dark", "", Some(self.s.theme == Mode::Dark && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Dark), true);
         add("Editor", "Color Theme…", "", None, Cmd::Themes, true);
+        add("Editor", "Change Language…", "", None, Cmd::Language, has_tab);
+        add("Editor", "Indentation…", "", None, Cmd::Indentation, has_tab);
+        add("Editor", "Convert Indentation to Spaces", "", None, Cmd::ConvertIndent(false), has_tab);
+        add("Editor", "Convert Indentation to Tabs", "", None, Cmd::ConvertIndent(true), has_tab);
         add("App", "Preferences", "Ctrl+,", None, Cmd::Preferences, true);
         add("Workspace", "Reload Files", "", None, Cmd::Reload, has_root);
         for p in &self.s.recent {
@@ -223,6 +234,9 @@ impl EditApp {
             Cmd::Smaller => self.s.code_size = (self.s.code_size - 1.0).max(8.0),
             Cmd::Preferences => self.prefs_open = true,
             Cmd::Themes => self.open_quick(QuickKind::Themes),
+            Cmd::Language => self.open_quick(QuickKind::Language),
+            Cmd::Indentation => self.open_quick(QuickKind::Indent),
+            Cmd::ConvertIndent(tabs) => self.convert_indent(tabs),
             Cmd::Reload => self.rescan(),
             Cmd::Recent(p) => {
                 if p.is_dir() {
@@ -233,6 +247,20 @@ impl EditApp {
             }
         }
         self.s.save();
+    }
+
+    /// Rewrite the open file's indentation as tabs or spaces (and indent with them from now on).
+    pub(crate) fn convert_indent(&mut self, tabs: bool) {
+        let Some(t) = self.tabs.get_mut(self.active) else { return };
+        let new = crate::ops::convert_indent(&t.text, tabs, t.indent.width);
+        t.indent.tabs = tabs;
+        t.sels.clear();
+        let changed = new != t.text;
+        t.text = new;
+        if changed {
+            t.preview = false;
+        }
+        self.note = Some((if changed { format!("Indentation is now {}", if tabs { "tabs" } else { "spaces" }) } else { "The indentation was already like that".into() }, false));
     }
 
     /// Draw the open quick panel, if any, and act on what's chosen.
@@ -348,6 +376,93 @@ impl EditApp {
                         self.scheme_preview = None;
                         keep = false;
                     }
+                    None => {}
+                }
+            }
+            QuickKind::Language => {
+                use crate::syntax::{Lang, Pick};
+                let Some(t) = self.tabs.get(self.active) else { return };
+                let found = crate::syntax::shown_name(&t.name(), &t.text, Pick::Auto);
+                let now = t.lang;
+                let mut picks: Vec<(Pick, String, &str)> = vec![(Pick::Auto, format!("Auto-detect ({found})"), "File"), (Pick::Plain, "Plain Text".into(), "File")];
+                picks.extend(Lang::ALL.iter().map(|l| (Pick::Lang(*l), l.name().to_string(), "Language")));
+                let mut ranked: Vec<(i32, usize)> = picks.iter().enumerate().filter_map(|(i, (_, label, _))| fuzzy_score(label, &q).map(|v| (v, i))).collect();
+                if !q.is_empty() {
+                    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+                }
+                let rows: Vec<QuickRow> = ranked.iter().map(|(_, i)| QuickRow::Command { group: picks[*i].2.to_string(), label: picks[*i].1.clone(), keys: String::new(), state: Some(picks[*i].0 == now) }).collect();
+                let text = QuickText { hint: "Show this file as…", empty: "No matching languages", legend: "Enter choose   ·   Esc close" };
+                match panel.show(ctx, "edit-quick-lang", &rows, &text, search.as_ref()) {
+                    Some(QuickEvent::Pick(i)) => {
+                        if let (Some((_, k)), Some(t)) = (ranked.get(i), self.tabs.get_mut(self.active)) {
+                            t.lang = picks[*k].0;
+                        }
+                        keep = false;
+                    }
+                    Some(QuickEvent::Close) => keep = false,
+                    None => {}
+                }
+            }
+            QuickKind::Indent => {
+                let Some(t) = self.tabs.get(self.active) else { return };
+                let now = t.indent;
+                let found = crate::ops::detect_indent(&t.text);
+                #[derive(Clone, Copy)]
+                enum Do {
+                    Tabs(bool),
+                    Width(usize),
+                    Detect,
+                    Convert(bool),
+                }
+                let mut opts: Vec<(Do, String, &str, Option<bool>)> = vec![
+                    (Do::Tabs(false), "Indent Using Spaces".into(), "Tab key", Some(!now.tabs)),
+                    (Do::Tabs(true), "Indent Using Tabs".into(), "Tab key", Some(now.tabs)),
+                ];
+                for w in [2usize, 3, 4, 8] {
+                    opts.push((Do::Width(w), format!("{}: {w}", if now.tabs { "Tab Size" } else { "Spaces" }), "Width", Some(now.width == w)));
+                }
+                let told = match found {
+                    Some(i) if i.tabs => " (tabs)".to_string(),
+                    Some(i) => format!(" ({} spaces)", i.width),
+                    None => " (not indented yet)".to_string(),
+                };
+                opts.push((Do::Detect, format!("Detect From the File{told}"), "File", None));
+                opts.push((Do::Convert(false), "Convert Indentation to Spaces".into(), "File", None));
+                opts.push((Do::Convert(true), "Convert Indentation to Tabs".into(), "File", None));
+                let mut ranked: Vec<(i32, usize)> = opts.iter().enumerate().filter_map(|(i, o)| fuzzy_score(&o.1, &q).map(|v| (v, i))).collect();
+                if !q.is_empty() {
+                    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+                }
+                let rows: Vec<QuickRow> = ranked.iter().map(|(_, i)| QuickRow::Command { group: opts[*i].2.to_string(), label: opts[*i].1.clone(), keys: String::new(), state: opts[*i].3 }).collect();
+                let text = QuickText { hint: "Indentation for this file…", empty: "Nothing matches", legend: "Enter choose   ·   Esc close" };
+                match panel.show(ctx, "edit-quick-indent", &rows, &text, search.as_ref()) {
+                    Some(QuickEvent::Pick(i)) => {
+                        if let Some((_, k)) = ranked.get(i) {
+                            match opts[*k].0 {
+                                Do::Tabs(tabs) => {
+                                    if let Some(t) = self.tabs.get_mut(self.active) {
+                                        t.indent.tabs = tabs;
+                                    }
+                                }
+                                Do::Width(w) => {
+                                    if let Some(t) = self.tabs.get_mut(self.active) {
+                                        t.indent.width = w;
+                                    }
+                                }
+                                Do::Detect => {
+                                    let text = self.tabs.get(self.active).map(|t| t.text.clone()).unwrap_or_default();
+                                    let ind = self.indent_for(&text);
+                                    let ind = if self.s.detect_indent { ind } else { crate::ops::detect_indent(&text).unwrap_or(ind) };
+                                    if let Some(t) = self.tabs.get_mut(self.active) {
+                                        t.indent = ind;
+                                    }
+                                }
+                                Do::Convert(tabs) => self.convert_indent(tabs),
+                            }
+                        }
+                        keep = false;
+                    }
+                    Some(QuickEvent::Close) => keep = false,
                     None => {}
                 }
             }

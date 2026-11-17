@@ -490,7 +490,7 @@ impl EditApp {
             None => highlight::colors(v.text_color(), code_bg, accent, builtin_icons::derive_secondary(accent), builtin_icons::derive_tertiary(accent)),
         };
         let font = egui::FontId::monospace(self.s.code_size * fonts::scale());
-        let (wrap, numbers, tab_width) = (self.s.word_wrap, self.s.line_numbers, self.s.tab_width);
+        let (wrap, numbers) = (self.s.word_wrap, self.s.line_numbers);
         let goto = self.goto.take();
         let quick_open = self.quick.is_some() || self.prompt.is_some() || self.prefs_open;
         if self.find.is_some() {
@@ -515,8 +515,10 @@ impl EditApp {
         let mark_color = accent;
         let Some(t) = self.tabs.get_mut(self.active) else { return };
         let name = t.name();
+        let (pick, ind) = (t.lang, t.indent);
         let multi_sels = t.sels.clone();
-        // Tab puts in spaces (Shift+Tab is left to move the keyboard).
+        // Tab puts in a tab or spaces, as the file is indented (Shift+Tab is left to move the
+        // keyboard).
         if !quick_open && multi_sels.len() < 2 && ctx.memory(|m| m.has_focus(id)) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Tab)) {
             let mut st = egui::TextEdit::load_state(&ctx, id).unwrap_or_default();
             if let Some(r) = st.cursor.char_range() {
@@ -525,8 +527,9 @@ impl EditApp {
                 let (ba, bb) = (byte(a), byte(b));
                 let line_start = t.text[..ba].rfind('\n').map(|i| i + 1).unwrap_or(0);
                 let col = t.text[line_start..ba].chars().count();
-                let n = tab_width - col % tab_width;
-                t.text.replace_range(ba..bb, &" ".repeat(n));
+                let put = if ind.tabs { "\t".to_string() } else { " ".repeat(ind.width - col % ind.width.max(1)) };
+                let n = put.chars().count();
+                t.text.replace_range(ba..bb, &put);
                 st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(a + n))));
                 st.store(&ctx, id);
             }
@@ -545,7 +548,7 @@ impl EditApp {
         let gutter = if numbers { digits * char_w + 28.0 } else { 14.0 };
         let Tab { text, cache, line_col, .. } = t;
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| {
-            let mut job = cache.job(buf.as_str(), &name, &colors, &font);
+            let mut job = cache.job(buf.as_str(), &name, pick, &colors, &font);
             job.wrap.max_width = if wrap { wrap_w } else { f32::INFINITY };
             ui.fonts_mut(|f| f.layout_job(job))
         };
@@ -615,6 +618,7 @@ impl EditApp {
 
     fn status_line(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        let mut open_quick: Option<quick::QuickKind> = None;
         let v = ui.visuals().clone();
         let weak = v.weak_text_color();
         let ws_icon = self.icon(&ctx, &["folder-symbolic"], 14.0);
@@ -631,10 +635,17 @@ impl EditApp {
                 ui.label(egui::RichText::new(m).color(if *bad { status(&ctx).danger } else { weak }));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 18.0;
+                ui.spacing_mut().item_spacing.x = 12.0;
                 if let Some(t) = self.tabs.get(self.active) {
-                    ui.label(egui::RichText::new(crate::syntax::language_name(&t.name())).color(weak));
-                    ui.label(egui::RichText::new(format!("Spaces: {}", self.s.tab_width)).color(weak));
+                    // The language and the indentation: click either to change it.
+                    let lang = crate::syntax::shown_name(&t.name(), &t.text, t.lang);
+                    let tip = if t.lang == crate::syntax::Pick::Auto { "Told from the file; click to choose another" } else { "Chosen by hand; click to change" };
+                    if status_button(ui, lang).on_hover_text(tip).clicked() {
+                        open_quick = Some(quick::QuickKind::Language);
+                    }
+                    if status_button(ui, &t.indent.label()).on_hover_text("Tabs or spaces, and how many; click to change").clicked() {
+                        open_quick = Some(quick::QuickKind::Indent);
+                    }
                     ui.label(egui::RichText::new(format!("Ln {}, Col {}", t.line_col.0, t.line_col.1)).color(weak));
                     if t.sels.len() >= 2 {
                         ui.label(egui::RichText::new(format!("{} cursors", t.sels.len())).color(weak)).on_hover_text("Esc goes back to one");
@@ -642,6 +653,9 @@ impl EditApp {
                 }
             });
         });
+        if let Some(k) = open_quick {
+            self.open_quick(k);
+        }
     }
 
     // ---------------------------------------------------------------- welcome
@@ -1075,4 +1089,19 @@ fn tree(
             *pick = Some(Pick::File(f.clone()));
         }
     }
+}
+
+/// A quiet status bar word that can be clicked (a light box under the pointer).
+fn status_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let v = ui.visuals().clone();
+    let g = ui.painter().layout_no_wrap(text.to_string(), egui::TextStyle::Body.resolve(ui.style()), v.weak_text_color());
+    let (r, resp) = ui.allocate_exact_size(g.size() + Vec2::new(12.0, 4.0), Sense::click());
+    let fg = if resp.hovered() {
+        ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
+        v.text_color()
+    } else {
+        v.weak_text_color()
+    };
+    ui.painter().galley(r.center() - g.size() / 2.0, g, fg);
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

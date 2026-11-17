@@ -22,8 +22,13 @@ pub struct Settings {
     /// The code font (a monospace family; empty: the system's).
     pub code_font: String,
     pub code_size: f32,
-    /// Spaces a Tab key puts in.
+    /// Spaces a Tab key puts in (or a tab's width, with `use_tabs`), for new files and files
+    /// whose indentation can't be told.
     pub tab_width: usize,
+    /// The Tab key puts in a tab rather than spaces (for new files and undetected ones).
+    pub use_tabs: bool,
+    /// Follow each file's own indentation (tabs or spaces, and how many).
+    pub detect_indent: bool,
     pub word_wrap: bool,
     pub line_numbers: bool,
     /// The editor's color scheme by name (empty: follow the app's colors).
@@ -46,6 +51,8 @@ impl Default for Settings {
             code_font: String::new(),
             code_size: 14.0,
             tab_width: 4,
+            use_tabs: false,
+            detect_indent: true,
             word_wrap: false,
             line_numbers: true,
             code_scheme: String::new(),
@@ -86,6 +93,8 @@ impl Settings {
                 "code_font" => s.code_font = v.to_string(),
                 "code_size" => s.code_size = v.parse::<f32>().unwrap_or(14.0).clamp(8.0, 32.0),
                 "tab_width" => s.tab_width = v.parse::<usize>().unwrap_or(4).clamp(1, 8),
+                "use_tabs" => s.use_tabs = b,
+                "detect_indent" => s.detect_indent = b,
                 "word_wrap" => s.word_wrap = b,
                 "line_numbers" => s.line_numbers = b,
                 "code_scheme" => s.code_scheme = v.to_string(),
@@ -108,7 +117,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let recent = self.recent.iter().map(|p| p.to_string_lossy().replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nuse_tabs={}\ndetect_indent={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.builtin_icons,
@@ -118,6 +127,8 @@ impl Settings {
             self.code_font.replace('\n', ""),
             self.code_size,
             self.tab_width,
+            self.use_tabs,
+            self.detect_indent,
             self.word_wrap,
             self.line_numbers,
             self.code_scheme.replace('\n', ""),

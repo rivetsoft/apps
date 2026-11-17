@@ -138,8 +138,8 @@ impl EditApp {
     /// The editor's keys while it has the keyboard; returns the selections to show (several
     /// when there are multiple cursors).
     pub(crate) fn editor_keys(&mut self, ctx: &egui::Context, id: egui::Id) {
-        let tab_width = self.s.tab_width;
         let Some(t) = self.tabs.get_mut(self.active) else { return };
+        let ind = t.indent;
         let focused = ctx.memory(|m| m.has_focus(id));
         // A click without Alt in the text: back to one cursor.
         let press = ctx.input(|i| if i.pointer.primary_pressed() { i.pointer.interact_pos().map(|p| (p, i.modifiers.alt)) } else { None });
@@ -216,7 +216,7 @@ impl EditApp {
         let mut changed = false;
         let mut moved = false;
         if let Some(op) = op {
-            let name = t.name();
+            let comment = t.comment();
             match op {
                 Op::Next => ops::add_next_occurrence(&chars, &mut sels),
                 Op::All => ops::select_all_occurrences(&chars, &mut sels),
@@ -229,12 +229,12 @@ impl EditApp {
                 Op::CopyDown => ops::duplicate_lines(&mut chars, &mut sels, true),
                 Op::DeleteLines => ops::delete_lines(&mut chars, &mut sels),
                 Op::Comment => {
-                    if let Some(tok) = ops::comment_token(&name) {
+                    if let Some(tok) = comment {
                         ops::toggle_comment(&mut chars, &mut sels, tok);
                     }
                 }
-                Op::Indent => ops::indent_lines(&mut chars, &mut sels, tab_width, false),
-                Op::Outdent => ops::indent_lines(&mut chars, &mut sels, tab_width, true),
+                Op::Indent => ops::indent_lines(&mut chars, &mut sels, ind, false),
+                Op::Outdent => ops::indent_lines(&mut chars, &mut sels, ind, true),
                 Op::LineBelow => ops::insert_line(&mut chars, &mut sels, false),
                 Op::LineAbove => ops::insert_line(&mut chars, &mut sels, true),
             }
@@ -276,7 +276,7 @@ impl EditApp {
                             Key::Backspace => ops::delete(&mut chars, &mut sels, false),
                             Key::Delete => ops::delete(&mut chars, &mut sels, true),
                             Key::Enter => ops::newline(&mut chars, &mut sels),
-                            Key::Tab => ops::insert(&mut chars, &mut sels, &" ".repeat(tab_width)),
+                            Key::Tab => ops::insert(&mut chars, &mut sels, &ind.unit()),
                             Key::ArrowLeft => ops::move_sels(&chars, &mut sels, if word { Move::WordLeft } else { Move::Left }, ext),
                             Key::ArrowRight => ops::move_sels(&chars, &mut sels, if word { Move::WordRight } else { Move::Right }, ext),
                             Key::ArrowUp => ops::move_sels(&chars, &mut sels, Move::Up, ext),

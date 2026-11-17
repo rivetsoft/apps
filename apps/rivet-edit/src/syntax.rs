@@ -66,7 +66,60 @@ pub enum Lang {
     Yaml,
 }
 
+/// The language a tab is shown as: told from the file (the default), plain text, or one
+/// chosen by hand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum Pick {
+    #[default]
+    Auto,
+    Plain,
+    Lang(Lang),
+}
+
+/// The language of a file: by its name, else by its first line (a `#!` line naming python,
+/// node or a shell; `<!DOCTYPE html>`).
+pub fn detect(name: &str, text: &str) -> Option<Lang> {
+    if let Some(l) = Lang::for_file(name) {
+        return Some(l);
+    }
+    let first = text.lines().next().unwrap_or("").trim().to_lowercase();
+    if let Some(bang) = first.strip_prefix("#!") {
+        let prog = bang.split_whitespace().flat_map(|w| w.rsplit('/').next()).find(|w| *w != "env" && !w.starts_with('-')).unwrap_or("");
+        return match prog.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.') {
+            "python" | "pypy" => Some(Lang::Python),
+            "node" | "deno" | "bun" | "nodejs" => Some(Lang::JavaScript),
+            "sh" | "bash" | "zsh" | "dash" | "ksh" => Some(Lang::Bash),
+            _ => None,
+        };
+    }
+    if first.starts_with("<!doctype html") || first.starts_with("<html") {
+        return Some(Lang::Html);
+    }
+    None
+}
+
+/// What the status bar calls a tab's language.
+pub fn shown_name(name: &str, text: &str, pick: Pick) -> &'static str {
+    match pick {
+        Pick::Plain => "Plain Text",
+        Pick::Lang(l) => l.name(),
+        Pick::Auto => match detect(name, text) {
+            Some(l) => l.name(),
+            None => language_name(name),
+        },
+    }
+}
+
 impl Lang {
+    /// The line comment (Ctrl+/), or none.
+    pub fn comment(self) -> Option<&'static str> {
+        match self {
+            Lang::Python | Lang::Bash | Lang::Toml | Lang::Yaml => Some("#"),
+            Lang::Json | Lang::Html | Lang::Css => None,
+            _ => Some("//"),
+        }
+    }
+
     pub const ALL: [Lang; 13] = [Lang::Rust, Lang::Python, Lang::JavaScript, Lang::TypeScript, Lang::Tsx, Lang::Json, Lang::Bash, Lang::C, Lang::Go, Lang::Html, Lang::Css, Lang::Toml, Lang::Yaml];
 
     pub fn name(self) -> &'static str {
@@ -186,10 +239,11 @@ pub struct Cache {
 
 impl Cache {
     /// The laid-out (not yet wrapped) text of `name` in `font`.
-    pub fn job(&mut self, text: &str, name: &str, colors: &Colors, font: &FontId) -> LayoutJob {
+    pub fn job(&mut self, text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId) -> LayoutJob {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         text.hash(&mut h);
         name.hash(&mut h);
+        pick.hash(&mut h);
         font.size.to_bits().hash(&mut h);
         colors.hash(&mut h);
         let key = h.finish();
@@ -198,7 +252,7 @@ impl Cache {
         {
             return j.clone();
         }
-        let job = build(text, name, colors, font);
+        let job = build(text, name, pick, colors, font);
         self.key = key;
         self.job = Some(job.clone());
         job
@@ -208,16 +262,20 @@ impl Cache {
 /// Very large files are shown plain (highlighting them would slow typing down).
 const MAX_HIGHLIGHT: usize = 1_500_000;
 
-fn build(text: &str, name: &str, colors: &Colors, font: &FontId) -> LayoutJob {
+fn build(text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId) -> LayoutJob {
     let plain = || {
         let mut j = LayoutJob::default();
         j.append(text, 0.0, eframe::egui::TextFormat { font_id: font.clone(), color: colors.text, ..Default::default() });
         j
     };
-    if text.len() > MAX_HIGHLIGHT {
+    if text.len() > MAX_HIGHLIGHT || pick == Pick::Plain {
         return plain();
     }
-    if let Some(lang) = Lang::for_file(name)
+    let lang = match pick {
+        Pick::Lang(l) => Some(l),
+        _ => detect(name, text),
+    };
+    if let Some(lang) = lang
         && let Some(sp) = spans(text, lang, colors)
     {
         let mut j = LayoutJob { text: text.to_string(), ..Default::default() };
@@ -236,6 +294,9 @@ fn build(text: &str, name: &str, colors: &Colors, font: &FontId) -> LayoutJob {
             j.sections.push(section(covered..text.len(), colors.text, font));
         }
         return j;
+    }
+    if lang.is_some() {
+        return plain();
     }
     // Everything else: the shared highlighter.
     let mut j = highlight::layout(text, name, colors, font.clone());

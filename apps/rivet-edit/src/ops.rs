@@ -454,7 +454,9 @@ pub fn delete_lines(chars: &mut Vec<char>, sels: &mut Vec<Sel>) {
 }
 
 /// Ctrl+] and Ctrl+[: indent by `width` spaces, or take an indent away.
-pub fn indent_lines(chars: &mut Vec<char>, sels: &mut Vec<Sel>, width: usize, out: bool) {
+pub fn indent_lines(chars: &mut Vec<char>, sels: &mut Vec<Sel>, ind: Indent, out: bool) {
+    let width = ind.width.max(1);
+    let unit: Vec<char> = ind.unit().chars().collect();
     with_lines(chars, sels, |lines, bl, lcs| {
         let mut delta: Vec<(usize, isize)> = Vec::new();
         for &(a, b) in bl {
@@ -465,10 +467,8 @@ pub fn indent_lines(chars: &mut Vec<char>, sels: &mut Vec<Sel>, width: usize, ou
                     l.drain(..n);
                     delta.push((i, -(n as isize)));
                 } else if !l.is_empty() {
-                    for _ in 0..width {
-                        l.insert(0, ' ');
-                    }
-                    delta.push((i, width as isize));
+                    l.splice(0..0, unit.iter().copied());
+                    delta.push((i, unit.len() as isize));
                 }
             }
         }
@@ -480,6 +480,88 @@ pub fn indent_lines(chars: &mut Vec<char>, sels: &mut Vec<Sel>, width: usize, ou
             }
         }
     });
+}
+
+/// How a file is indented: tabs or spaces, and how wide a step is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Indent {
+    pub tabs: bool,
+    pub width: usize,
+}
+
+impl Indent {
+    /// What one step of indentation is.
+    pub fn unit(self) -> String {
+        if self.tabs { "\t".into() } else { " ".repeat(self.width) }
+    }
+
+    /// The status bar's words for it.
+    pub fn label(self) -> String {
+        if self.tabs { format!("Tab Size: {}", self.width) } else { format!("Spaces: {}", self.width) }
+    }
+}
+
+/// Tell a file's indentation from its lines (the first few thousand): tabs or spaces, and the
+/// step between indented lines. None when nothing's indented.
+pub fn detect_indent(text: &str) -> Option<Indent> {
+    let (mut tab_lines, mut space_lines) = (0usize, 0usize);
+    let mut steps = [0usize; 9];
+    let mut prev = 0usize;
+    for line in text.lines().take(5000) {
+        if line.trim().is_empty() {
+            continue;
+        }
+        if line.starts_with('\t') {
+            tab_lines += 1;
+            continue;
+        }
+        let n = line.chars().take_while(|c| *c == ' ').count();
+        // A lone space before "*" continues a block comment; not indentation.
+        if n % 2 == 1 && line[n..].starts_with('*') {
+            continue;
+        }
+        if n > 0 {
+            space_lines += 1;
+        }
+        let d = n.abs_diff(prev);
+        if (2..=8).contains(&d) {
+            steps[d] += 1;
+        }
+        prev = n;
+    }
+    if tab_lines == 0 && space_lines == 0 {
+        return None;
+    }
+    if tab_lines > space_lines {
+        return Some(Indent { tabs: true, width: 4 });
+    }
+    // The most common step (4 wins a tie, then 2).
+    let width = [4usize, 2, 8, 3, 6].into_iter().max_by_key(|w| (steps[*w], *w == 4, *w == 2)).unwrap_or(4);
+    Some(Indent { tabs: false, width: if steps[width] == 0 { 4 } else { width } })
+}
+
+/// Rewrite every line's indentation as tabs or as spaces (a tab counting `width` columns).
+pub fn convert_indent(text: &str, to_tabs: bool, width: usize) -> String {
+    let width = width.max(1);
+    let mut out = String::with_capacity(text.len());
+    for (i, line) in text.split('\n').enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        let lead = line.len() - line.trim_start_matches([' ', '\t']).len();
+        let mut cols = 0;
+        for c in line[..lead].chars() {
+            cols = if c == '\t' { (cols / width + 1) * width } else { cols + 1 };
+        }
+        if to_tabs {
+            out.push_str(&"\t".repeat(cols / width));
+            out.push_str(&" ".repeat(cols % width));
+        } else {
+            out.push_str(&" ".repeat(cols));
+        }
+        out.push_str(&line[lead..]);
+    }
+    out
 }
 
 /// Ctrl+/: comment the lines out with `token` (or back in when they all are).
@@ -592,6 +674,22 @@ pub fn selected_text(chars: &[char], sels: &[Sel]) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn indentation_is_told_and_converted() {
+        assert_eq!(detect_indent("fn a() {\n    b();\n    if c {\n        d();\n    }\n}\n"), Some(Indent { tabs: false, width: 4 }));
+        assert_eq!(detect_indent("a:\n  b:\n    c: 1\n  d: 2\n"), Some(Indent { tabs: false, width: 2 }));
+        assert_eq!(detect_indent("func a() {\n\tb()\n\tif c {\n\t\td()\n\t}\n}\n").map(|i| i.tabs), Some(true));
+        assert_eq!(detect_indent("one\ntwo\n"), None);
+        assert_eq!(convert_indent("a\n    b\n        c\n  d", true, 4), "a\n\tb\n\t\tc\n  d");
+        assert_eq!(convert_indent("\tb\n\t\tc\n \td", false, 4), "    b\n        c\n    d");
+        let mut chars: Vec<char> = "a\nb".chars().collect();
+        let mut sels = vec![Sel::new(0, 3)];
+        indent_lines(&mut chars, &mut sels, Indent { tabs: true, width: 4 }, false);
+        assert_eq!(chars.iter().collect::<String>(), "\ta\n\tb");
+        indent_lines(&mut chars, &mut sels, Indent { tabs: true, width: 4 }, true);
+        assert_eq!(chars.iter().collect::<String>(), "a\nb");
+    }
+
     fn c(s: &str) -> Vec<char> {
         s.chars().collect()
     }
@@ -676,9 +774,9 @@ mod tests {
         assert_eq!(s(&t), "fn x() {\n    y();\n}");
         let mut t = c("a\nb");
         let mut sels = vec![Sel::new(0, 3)];
-        indent_lines(&mut t, &mut sels, 4, false);
+        indent_lines(&mut t, &mut sels, Indent { tabs: false, width: 4 }, false);
         assert_eq!(s(&t), "    a\n    b");
-        indent_lines(&mut t, &mut sels, 4, true);
+        indent_lines(&mut t, &mut sels, Indent { tabs: false, width: 4 }, true);
         assert_eq!(s(&t), "a\nb");
         let mut t = c("  a\nb");
         let mut sels = vec![Sel::caret(1)];
