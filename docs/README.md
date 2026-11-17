@@ -23,6 +23,11 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 - [Rivet Notes](rivet-notes.md): vaults, frontmatter, folders and tags
 - [README](../apps/rivet-notes/README.md): build and run
 
+## Rivet Edit (just started)
+
+- [Rivet Edit](rivet-edit.md): workspaces, tree-sitter highlighting, Go to File and Commands
+- [README](../apps/rivet-edit/README.md): keys, build and run
+
 ## All the apps
 
 - [Shared crates](shared-crates.md): which code the apps share, and the order of the move

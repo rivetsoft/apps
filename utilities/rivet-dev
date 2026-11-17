@@ -15,8 +15,9 @@ Rivet developer utilities
 
 Usage: utilities/rivet-dev <command> [APP] [options]
 
-APP is files (the default), ftp or notes, for the commands marked [APP]. Each app has its own
-version, changelog and release tags: vX.Y.Z (Rivet Files), rivet-ftp-vX.Y.Z, rivet-notes-vX.Y.Z.
+APP is files (the default), ftp, notes or edit, for the commands marked [APP]. Each app has its
+own version, changelog and release tags: vX.Y.Z (Rivet Files), rivet-ftp-vX.Y.Z,
+rivet-notes-vX.Y.Z, rivet-edit-vX.Y.Z.
 
 Releasing
   apps                             Each app's version, last release tag and unreleased changes
@@ -25,9 +26,9 @@ Releasing
                                    CHANGELOG.md becomes its section; commits the release
   release [APP]                    Build the app's downloads in dist/ and tag it — on this
                                    computer only, nothing goes online (Rivet Files: tarball +
-                                   AppImage; FTP and Notes: a tarball)
+                                   AppImage; the others: a tarball)
   release [APP] --publish          The same, then send code + tag to GitHub and create the
-                                   GitHub release with the files (FTP and Notes as pre-releases,
+                                   GitHub release with the files (the others as pre-releases,
                                    so "latest release" stays Rivet Files')
   push                             Send your latest commits to GitHub — no release
                                    (creates the GitHub repo the first time)
@@ -49,6 +50,8 @@ Docs and checks
   screenshots                      Regenerate the README screenshots (sample home folder)
   notes-screenshots                Regenerate Rivet Notes' screenshots (demo vault)
   ftp-screenshots                  Regenerate Rivet FTP's screenshots (demo server, no network)
+  edit-screenshots                 Regenerate Rivet Edit's screenshots (demo project)
+  flatpak-sources                  Add new crates from Cargo.lock to the Flatpak's offline list
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
   qa                               Open every dialog and mode looking for crashes, then run the
                                    common file workflows (all in a throwaway home folder)
@@ -86,6 +89,8 @@ case "$cmd" in
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;
     notes-screenshots) exec sh "$LIB/notes-screenshots.sh" "$@" ;;
     ftp-screenshots) exec sh "$LIB/ftp-screenshots.sh" "$@" ;;
+    edit-screenshots) exec sh "$LIB/edit-screenshots.sh" "$@" ;;
+    flatpak-sources) exec python3 "$LIB/flatpak-sources-sync.py" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
     qa)            exec sh "$LIB/qa.sh" "$@" ;;
     help|-h|--help) usage ;;

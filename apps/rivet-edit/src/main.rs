@@ -1,0 +1,136 @@
+//! Rivet Edit: a lightweight code editor for folders (workspaces) and files.
+
+mod gui;
+mod settings;
+mod syntax;
+mod workspace;
+
+use std::path::PathBuf;
+use std::process::ExitCode;
+
+const HELP: &str = "Rivet Edit: a lightweight code editor
+
+Usage:
+  rivet-edit [FOLDER] [FILE...]     Open the window: FOLDER as the workspace, FILEs in tabs
+                                    (with nothing given, the last folder)
+  rivet-edit --install-desktop-entry
+                                    Add Rivet Edit to the app launcher (for this user)
+  rivet-edit -h, --help             This help
+  rivet-edit -V, --version          The version
+
+In the window: Ctrl+P goes to a file, Shift+Ctrl+P runs a command, Ctrl+O opens a folder.";
+
+/// A small project for screenshot runs (checks never show the person's own files).
+fn sample_workspace() -> Option<PathBuf> {
+    let root = std::env::temp_dir().join(format!("rivet-edit-sample-{}", std::process::id())).join("hello-rivet");
+    let files: [(&str, &str); 7] = [
+        (
+            "src/main.rs",
+            "//! A tiny word counter.\n\nuse std::collections::HashMap;\n\n/// How often each word appears in `text`.\nfn count_words(text: &str) -> HashMap<&str, usize> {\n    let mut counts = HashMap::new();\n    for word in text.split_whitespace() {\n        *counts.entry(word).or_insert(0) += 1;\n    }\n    counts\n}\n\nfn main() {\n    let text = \"the quick brown fox jumps over the lazy dog\";\n    let counts = count_words(text);\n    println!(\"{} words, 'the' appears {} times\", counts.len(), counts[\"the\"]);\n}\n",
+        ),
+        ("src/lib.rs", "pub mod words;\n\npub const VERSION: &str = \"0.1.0\";\n"),
+        ("src/words.rs", "pub fn is_long(word: &str) -> bool {\n    word.chars().count() > 8\n}\n"),
+        ("Cargo.toml", "[package]\nname = \"hello-rivet\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"),
+        ("README.md", "# Hello, Rivet\n\nA tiny word counter.\n\n```sh\ncargo run\n```\n"),
+        ("scripts/build.sh", "#!/bin/sh\n# Build a release.\nset -e\ncargo build --release\necho \"done\"\n"),
+        ("web/app.js", "// Count words in the browser.\nexport function countWords(text) {\n  const counts = new Map();\n  for (const w of text.split(/\\s+/)) {\n    counts.set(w, (counts.get(w) ?? 0) + 1);\n  }\n  return counts;\n}\n"),
+    ];
+    for (rel, text) in files {
+        let p = root.join(rel);
+        std::fs::create_dir_all(p.parent()?).ok()?;
+        std::fs::write(&p, text).ok()?;
+    }
+    Some(root)
+}
+
+/// The launcher entry and icon, in the user's data folder, running this program.
+fn install_desktop_entry() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("couldn't find this program: {e}"))?;
+    let data = rivet_xdg::places::data_home();
+    let entry = data.join("applications/rivet-edit.desktop");
+    let icon = data.join("icons/hicolor/scalable/apps/rivet-edit.svg");
+    let text = include_str!("../data/rivet-edit.desktop").replace("Exec=rivet-edit", &format!("Exec=\"{}\"", exe.display()));
+    for (p, body) in [(&entry, text.as_str()), (&icon, gui::ICON_SVG)] {
+        if let Some(d) = p.parent() {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(p, body).map_err(|e| format!("couldn't write {}: {e}", p.display()))?;
+    }
+    let _ = std::process::Command::new("update-desktop-database").arg(data.join("applications")).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    Ok(entry)
+}
+
+fn main() -> ExitCode {
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mut screenshot = None;
+    if let Some(i) = args.iter().position(|a| a == "--screenshot") {
+        args.remove(i);
+        if i < args.len() {
+            screenshot = Some(PathBuf::from(args.remove(i)));
+        }
+    }
+    match args.first().map(String::as_str) {
+        Some("-h" | "--help" | "help") => {
+            println!("{HELP}");
+            return ExitCode::SUCCESS;
+        }
+        Some("-V" | "--version" | "version") => {
+            println!("rivet-edit {}", env!("CARGO_PKG_VERSION"));
+            return ExitCode::SUCCESS;
+        }
+        Some("--install-desktop-entry") => {
+            return match install_desktop_entry() {
+                Ok(p) => {
+                    println!("Added {}", p.display());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => {
+                    eprintln!("rivet-edit: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        _ => {}
+    }
+    // Folders and files from the command line (the first folder is the workspace).
+    let mut start = gui::Start { folder: None, files: Vec::new() };
+    for a in &args {
+        let p = match a.strip_prefix("~/") {
+            Some(rest) => rivet_xdg::places::home().join(rest),
+            None => PathBuf::from(a),
+        };
+        if p.is_dir() && start.folder.is_none() {
+            start.folder = Some(p);
+        } else if !p.is_dir() {
+            start.files.push(p);
+        }
+    }
+    if screenshot.is_some() {
+        if start.folder.is_none() && start.files.is_empty() && std::env::var_os("RIVET_EDIT_EMPTY").is_none() {
+            start.folder = sample_workspace();
+        }
+        let size = std::env::var("RIVET_SHOT_SIZE").ok().and_then(|v| {
+            let (w, h) = v.split_once('x')?;
+            Some([w.parse().ok()?, h.parse().ok()?])
+        });
+        rivet_kit::headless::run(size.unwrap_or([1100.0, 700.0]), move |cc| Box::new(gui::EditApp::new(cc, start, screenshot)));
+        return ExitCode::SUCCESS;
+    }
+    // With nothing given, the last folder.
+    if start.folder.is_none() && start.files.is_empty() {
+        start.folder = settings::Settings::load().recent.into_iter().find(|p| p.is_dir());
+    }
+    let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet Edit").with_app_id("rivet-edit").with_inner_size([1180.0, 760.0]).with_min_inner_size([620.0, 400.0]);
+    if let Some(img) = rivet_look::icons::render_svg(gui::ICON_SVG.as_bytes(), 128) {
+        let rgba = img.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+        viewport = viewport.with_icon(eframe::egui::IconData { rgba, width: 128, height: 128 });
+    }
+    let options = eframe::NativeOptions { viewport, persist_window: false, ..Default::default() };
+    match eframe::run_native("Rivet Edit", options, Box::new(move |cc| Ok(Box::new(gui::EditApp::new(cc, start, None))))) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            eprintln!("rivet-edit: couldn't open the window: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}

@@ -4,6 +4,8 @@
   <img src="apps/rivet-ftp/data/rivet-ftp.svg" width="88" alt="Rivet FTP icon">
   &nbsp;
   <img src="apps/rivet-notes/data/rivet-notes.svg" width="88" alt="Rivet Notes icon">
+  &nbsp;
+  <img src="apps/rivet-edit/data/rivet-edit.svg" width="88" alt="Rivet Edit icon">
 </p>
 
 # Rivet Apps
@@ -51,6 +53,16 @@ todos with a list or board.
 
 ![Rivet Notes in live mode, with Peek open](docs/screenshots/notes-live-wide.png)
 
+### <img src="apps/rivet-edit/data/rivet-edit.svg" width="32" alt=""> Rivet Edit
+
+A lightweight code editor: open a folder or single files, tree-sitter colors for a dozen
+languages, Go to File (Ctrl+P) and Commands (Shift+Ctrl+P) on the same quick panel as the other
+apps.
+**Just started:** not released yet; build it from source.
+[More about Rivet Edit](apps/rivet-edit/README.md)
+
+![Rivet Edit with a Rust project open](docs/screenshots/edit-editor-wide.png)
+
 > **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
@@ -64,6 +76,7 @@ told apart by name and tag:
 | Rivet Files | `v0.7.0` | AppImage, archive, Flatpak bundle; AUR packages. See the [Rivet Files README](apps/rivet-files/README.md#-install) for the libraries the window needs. |
 | Rivet FTP | `rivet-ftp-v0.1.0` | An archive (pre-release) |
 | Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
+| Rivet Edit | `rivet-edit-v…` | Not released yet: build from source |
 
 For Rivet FTP or Rivet Notes, unpack the archive and run its installer, which puts the program in
 `~/.local/bin` and adds it to your app launcher:
@@ -84,11 +97,13 @@ You need Rust 1.88 or newer. From the top of the repository:
 cargo build --release                    # Rivet Files (the default)
 cargo build --release -p rivet-ftp       # Rivet FTP
 cargo build --release -p rivet-notes     # Rivet Notes
+cargo build --release -p rivet-edit      # Rivet Edit
 cargo build --release --workspace        # everything
 
 ./target/release/rivet [FOLDER]
 ./target/release/rivet-ftp
 ./target/release/rivet-notes [VAULT]
+./target/release/rivet-edit [FOLDER] [FILE...]
 ```
 
 `utilities/rivet-dev help` lists the developer tasks: QA, screenshots, packaging and releases.
@@ -104,6 +119,7 @@ one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the def
 | `apps/rivet-files` | Rivet Files: its code, data, changelog and packaging (Flatpak, AUR) |
 | `apps/rivet-ftp` | Rivet FTP (early alpha): code, data, changelog |
 | `apps/rivet-notes` | Rivet Notes (early alpha): code, data, changelog |
+| `apps/rivet-edit` | Rivet Edit (just started): code, data, changelog |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
 | `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, in-app windows |
 | `crates/rivet-kit` | Shared: in-memory screenshots for checks |
