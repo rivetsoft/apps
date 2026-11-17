@@ -272,12 +272,13 @@ fn format(s: &live::St, hl: Option<Color32>, look: &LiveLook) -> TextFormat {
 
 /// Draw bullets, check boxes, quote bars and rules over the laid-out text. Returns the byte of
 /// a check box's mark when one was clicked (to tick or untick it).
-pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook) -> Vec<(Rect, Hit)> {
+pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, out: &egui::text_edit::TextEditOutput, look: &LiveLook, under: egui::layers::ShapeIdx) -> Vec<(Rect, Hit)> {
     let l = live::analyze_with(text, raw, held, &look.todo_tags);
     let p = ui.painter().with_clip_rect(ui.clip_rect());
     let at = |c: usize| out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
     let pointer = ui.ctx().pointer_hover_pos();
     let mut boxes = Vec::new();
+    let mut glows: Vec<egui::Shape> = Vec::new();
     for d in &l.decos {
         match *d {
             Deco::Bullet(c) => {
@@ -286,24 +287,19 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
                 p.circle_filled(Pos2::new((a.left() + b.left()) / 2.0, y), (look.size * 0.17).max(2.2), look.accent);
             }
             Deco::Super { line, start, from, to, due, priority, done } => {
-                // The whole task, box to flag: a click opens its panel (the line stays rendered);
-                // the box itself still ticks.
+                // The whole row: a click opens its panel (the line stays rendered); the box itself
+                // still ticks. Under the pointer it glows softly, with some room around the task.
                 let (s0, a, b) = (at(start), at(from), at(to));
-                let mut right = b.right();
-                if due.is_some() || priority != crate::tasks::Priority::None {
-                    right += 10.0;
-                    if let Some(d) = due {
-                        right += super::todos::due_pill(&p.with_clip_rect(Rect::NOTHING), Pos2::ZERO, d, done, look.size).width() + 6.0;
-                    }
-                    if priority != crate::tasks::Priority::None {
-                        right += 12.0;
-                    }
-                }
-                let right = (right + 6.0).min(out.response.response.rect.right() - 36.0);
-                let r = Rect::from_min_max(Pos2::new(s0.left() - 4.0, a.top()), Pos2::new(right.max(a.left() + 40.0), b.bottom()));
+                let _ = (due, priority, done);
+                let row = out.response.response.rect;
+                let r = Rect::from_min_max(Pos2::new(s0.left().min(a.left()) - 10.0, a.top() - 3.0), Pos2::new(row.right() + 6.0, b.bottom() + 3.0));
                 if pointer.is_some_and(|q| r.contains(q)) {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-                    p.rect_filled(r, rivet_look::theme::r_sm(), look.weak.gamma_multiply(0.08));
+                    let radius = rivet_look::theme::r_md();
+                    let glow = egui::epaint::Shadow { offset: [0, 0], blur: 14, spread: 0, color: look.accent.gamma_multiply(0.22) };
+                    glows.push(glow.as_shape(r, radius).into());
+                    glows.push(egui::Shape::rect_filled(r, radius, look.accent.gamma_multiply(0.07)));
+                    glows.push(egui::Shape::rect_stroke(r, radius, Stroke::new(1.0, look.accent.gamma_multiply(0.30)), egui::StrokeKind::Inside));
                 }
                 boxes.push((r, Hit::Task(line, Pos2::new(a.left() - 2.0, b.bottom() + 6.0))));
             }
@@ -355,6 +351,7 @@ pub(super) fn decorate(ui: &egui::Ui, text: &str, raw: Option<(usize, usize)>, h
             }
         }
     }
+    ui.painter().set(under, egui::Shape::Vec(glows));
     // Rendered links to notes open with a click.
     for link in crate::links::outgoing(text) {
         if l.st.get(link.range.start).is_none_or(|s| s.hide == Hide::No) {

@@ -868,6 +868,7 @@ impl NotesApp {
             let keep = tick.as_ref().map(|_| (egui::TextEdit::load_state(&ctx, body_id), ctx.memory(|m| m.has_focus(body_id))));
             // Code block panels go under the text.
             let panels_under = ui.painter().add(egui::Shape::Noop);
+            let glow_under = ui.painter().add(egui::Shape::Noop);
             let out = egui::TextEdit::multiline(&mut d.body)
                 .id(egui::Id::unique("note-body"))
                 .frame(egui::Frame::NONE)
@@ -959,7 +960,7 @@ impl NotesApp {
             }
             if live_on {
                 let raw = if tick.is_some() { live_raw } else { super::live_edit::shift_raw(&live_before, &d.body, live_raw) };
-                let more = super::live_edit::decorate(ui, &d.body, raw, live_held, &out, &live_look);
+                let more = super::live_edit::decorate(ui, &d.body, raw, live_held, &out, &live_look, glow_under);
                 d.live_boxes.extend(more);
             }
             // Where a selection sits on screen, for the format bar.
