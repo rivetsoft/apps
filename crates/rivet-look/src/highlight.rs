@@ -353,7 +353,37 @@ fn looks_like_char_or_string(b: &[u8], i: usize, rust: bool) -> bool {
     matches!(close.map(|p| b[i + 1 + p]), Some(b'\''))
 }
 
-/// Pick readable highlight colors from the theme's three palette colors.
+/// Rivet's default code palette: a colour per kind of token, one set for dark backgrounds and
+/// one for light. `colors` mixes the theme into these, so code always has distinct, familiar
+/// hues (keywords, strings, numbers, functions, types) that still lean toward the desktop's
+/// colours. Every Rivet app that highlights code goes through `colors`, so they all match.
+pub mod defaults {
+    use super::Color32;
+    /// (keyword, string, number, function, type) on dark backgrounds.
+    pub const DARK: [Color32; 5] = [
+        Color32::from_rgb(0xb8, 0x8c, 0xf0),
+        Color32::from_rgb(0xa5, 0xd3, 0x7c),
+        Color32::from_rgb(0xf2, 0xa6, 0x5e),
+        Color32::from_rgb(0x6f, 0xb5, 0xf2),
+        Color32::from_rgb(0xe9, 0xc8, 0x6c),
+    ];
+    /// The same on light backgrounds (deeper, so they read on white).
+    pub const LIGHT: [Color32; 5] = [
+        Color32::from_rgb(0x84, 0x3f, 0xc9),
+        Color32::from_rgb(0x3f, 0x86, 0x26),
+        Color32::from_rgb(0xb3, 0x5a, 0x10),
+        Color32::from_rgb(0x1f, 0x69, 0xbd),
+        Color32::from_rgb(0x95, 0x6a, 0x00),
+    ];
+}
+
+/// How far each token's default colour moves toward the theme: keywords most (they carry the
+/// accent), the rest enough to sit in the theme without all turning into one colour.
+const THEME_PULL: [f32; 5] = [0.42, 0.24, 0.26, 0.28, 0.26];
+
+/// Highlight colours for code: Rivet's default palette mixed with the theme's three palette
+/// colours (keywords and types toward the primary, strings toward the secondary, numbers and
+/// functions toward the tertiary), then kept readable on `bg`.
 pub fn colors(text: Color32, bg: Color32, primary: Color32, secondary: Color32, tertiary: Color32) -> Colors {
     let lum = crate::palette::luminance;
     let dark = lum(bg) < 0.5;
@@ -369,14 +399,19 @@ pub fn colors(text: Color32, bg: Color32, primary: Color32, secondary: Color32, 
         c
     };
     let mix = crate::palette::mix;
+    let base = if dark { defaults::DARK } else { defaults::LIGHT };
+    // The secondary is a calm colour; lend it the primary's strength before mixing it in.
+    let secondary = mix(secondary, primary, 0.35);
+    let theme = [primary, secondary, tertiary, tertiary, primary];
+    let tinted: Vec<Color32> = (0..5).map(|i| readable(mix(base[i], theme[i], THEME_PULL[i]))).collect();
     Colors {
         text,
-        keyword: readable(primary),
-        string: readable(secondary),
-        number: readable(tertiary),
-        comment: mix(text, bg, 0.45),
-        function: readable(mix(tertiary, text, 0.35)),
-        type_: readable(mix(primary, text, 0.4)),
+        keyword: tinted[0],
+        string: tinted[1],
+        number: tinted[2],
+        comment: mix(mix(text, bg, 0.45), primary, 0.12),
+        function: tinted[3],
+        type_: tinted[4],
         punct: mix(text, bg, 0.3),
     }
 }
@@ -384,6 +419,21 @@ pub fn colors(text: Color32, bg: Color32, primary: Color32, secondary: Color32, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_palette_leans_toward_the_theme() {
+        let orange = Color32::from_rgb(0xe6, 0x61, 0x00);
+        let blue = Color32::from_rgb(0x35, 0x84, 0xe4);
+        let bg = Color32::from_rgb(0x1e, 0x1e, 0x1e);
+        let a = colors(Color32::WHITE, bg, orange, orange, orange);
+        let b = colors(Color32::WHITE, bg, blue, blue, blue);
+        // Distinct hues per token, whatever the theme…
+        assert_ne!(a.keyword, a.string);
+        assert_ne!(a.string, a.function);
+        // …but the theme shows: the same token differs between themes.
+        assert_ne!(a.keyword, b.keyword);
+        assert!(a.keyword.r() > b.keyword.r());
+    }
 
     fn colors_of(job: &LayoutJob, word: &str) -> Option<Color32> {
         job.sections.iter().find(|s| &job.text[s.byte_range.start.0..s.byte_range.end.0] == word).map(|s| s.format.color)
