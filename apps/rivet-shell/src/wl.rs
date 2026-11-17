@@ -110,6 +110,8 @@ pub struct Shell {
     palette_watch: Vec<(PathBuf, Option<SystemTime>)>,
     recolor_until: Option<Instant>,
     last_minute: u32,
+    bg_key: (u32, u64, Option<(u32, bool)>),
+    prev_status: sys::Status,
     pub exit: bool,
 }
 
@@ -163,6 +165,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         palette_watch: palette_files(),
         recolor_until: None,
         last_minute: 99,
+        bg_key: (0, 0, None),
+        prev_status: sys::Status::default(),
         exit: false,
     };
     let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
@@ -365,9 +369,9 @@ impl Shell {
             self.reload_settings(false);
         }
         let now = Instant::now();
-        let watch = palette_files();
-        if watch != self.palette_watch {
-            self.palette_watch = watch;
+        // The colour files' dates only (reading them again is the surfaces' job, when they change).
+        if self.palette_watch.iter().any(|(p, t)| mtime(p) != *t) {
+            self.palette_watch = palette_files();
             // Each surface checks the colours as it draws (every 2 s): keep drawing for a moment.
             self.recolor_until = Some(now + Duration::from_secs(3));
         }
@@ -375,12 +379,27 @@ impl Shell {
         let generation = self.live.generation();
         let status_changed = generation != self.last_gen;
         self.last_gen = generation;
+        // The wallpaper's widgets only change with what they show, in the units they show it
+        // (whole percent, tenths of a gigabyte): not every time the processor reading wiggles.
+        let st = self.live.get();
+        let bg_key = (st.cpu.round() as u32, st.mem.0 / (100 << 20), st.battery);
+        let bg_changed = bg_key != self.bg_key;
+        self.bg_key = bg_key;
+        // Likewise the panel (workspaces, volume, network, battery) and the dock (open apps).
+        let prev = std::mem::replace(&mut self.prev_status, st.clone());
+        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery;
+        let dock_changed = st.running != prev.running;
         let minute = chrono::Timelike::minute(&chrono::Local::now());
         let new_minute = minute != self.last_minute;
         self.last_minute = minute;
         for s in &mut self.surfs {
             let clocked = matches!(s.kind, Kind::Panel) || (s.kind == Kind::Background && self.s.widget_clock);
-            let shows_status = matches!(s.kind, Kind::Panel | Kind::Dock) || (s.kind == Kind::Background && self.s.widget_system);
+            let shows_status = match s.kind {
+                Kind::Panel => panel_changed,
+                Kind::Dock => dock_changed,
+                Kind::Background => self.s.widget_system && bg_changed,
+                Kind::Popup => false,
+            };
             if recolor || (new_minute && clocked) || (status_changed && shows_status) || s.repaint_at.is_some_and(|t| now >= t) {
                 s.dirty = true;
             }
@@ -437,13 +456,14 @@ impl Shell {
         }
     }
 
-    fn wall_for(&mut self, size: (u32, u32)) -> Option<&[u8]> {
+    /// Which cached wallpaper fits this size (loading it in the background when none does).
+    fn wall_for(&mut self, size: (u32, u32)) -> Option<usize> {
         if self.s.wallpaper.is_empty() {
             return None;
         }
         let path = PathBuf::from(&self.s.wallpaper);
         if let Some(i) = self.walls.iter().position(|w| w.path == path && w.size == size) {
-            return Some(&self.walls[i].pixels);
+            return Some(i);
         }
         if !self.loading.iter().any(|(p, s)| *p == path && *s == size) {
             self.loading.push((path.clone(), size));
@@ -469,8 +489,9 @@ impl Shell {
         }
         let scale = self.surfs[i].scale;
         let (pw, ph) = self.surfs[i].physical();
-        let wall = if kind == Kind::Background { self.wall_for((pw, ph)).map(|p| p.to_vec()) } else { None };
-        let Shell { surfs, s: settings, apps, popup, comp, .. } = self;
+        let wall_idx = if kind == Kind::Background { self.wall_for((pw, ph)) } else { None };
+        let Shell { surfs, s: settings, apps, popup, comp, walls, .. } = self;
+        let wall: Option<&[u8]> = wall_idx.and_then(|i| walls.get(i)).map(|w| w.pixels.as_slice());
         let surf = &mut surfs[i];
         surf.dirty = false;
         let mut raw = egui::RawInput {
@@ -511,7 +532,7 @@ impl Shell {
         let prims = surf.ctx.tessellate(out.shapes, scale as f32);
         let stride = pw as i32 * 4;
         let Ok((buffer, canvas)) = surf.pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else { return };
-        match (kind, &wall) {
+        match (kind, wall) {
             (Kind::Background, Some(px)) if px.len() == canvas.len() => canvas.copy_from_slice(px),
             (Kind::Background, _) => {
                 // No picture (yet): the theme's background, a little lighter at the top.
