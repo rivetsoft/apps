@@ -251,9 +251,7 @@ impl TermApp {
                                             });
                                             ui.end_row();
                                         });
-                                        ui.add_space(6.0);
-                                        hint(ui, "The same color themes as Rivet Edit. Following the app, the terminal takes your desktop's colors, with Rivet's sixteen terminal colors leaning toward your accent. Ctrl+Shift+P, then Color Theme, tries them as you move through the list.");
-                                        ui.add_space(6.0);
+                                        ui.add_space(10.0);
                                         ui.checkbox(&mut self.s.bold_is_bright, "Bold text in the bright colors");
                                     });
                                     section(ui, "Text", &mut |ui| {
