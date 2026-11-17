@@ -181,6 +181,11 @@ impl TermApp {
             Ok("dark") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Dark, false),
             _ => {}
         }
+        // Checks: RIVET_TERM_ACCENT=rrggbb picks the accent (and stops following the desktop).
+        if let Some(n) = std::env::var("RIVET_TERM_ACCENT").ok().and_then(|h| u32::from_str_radix(h.trim_start_matches('#'), 16).ok()) {
+            s.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+            s.follow_desktop_colors = false;
+        }
         if let Ok(n) = std::env::var("RIVET_TERM_SCHEME") {
             s.scheme = n;
         }
@@ -277,7 +282,15 @@ impl TermApp {
     pub(crate) fn term_colors(&self, v: &egui::Visuals) -> TermColors {
         match self.scheme() {
             Some(s) => TermColors::from_scheme(s),
-            None => TermColors::from_theme(v.extreme_bg_color, v.text_color(), self.accent()),
+            None => {
+                // The desktop palette's own secondary and tertiary when following it (a new
+                // wallpaper changes all three), else ones made from the accent.
+                let a = self.accent();
+                let pal = self.palette().filter(|_| self.s.follow_desktop_colors);
+                let s = pal.as_ref().and_then(|p| p.secondary).unwrap_or_else(|| rivet_look::builtin_icons::derive_secondary(a));
+                let t = pal.as_ref().and_then(|p| p.tertiary).unwrap_or_else(|| rivet_look::builtin_icons::derive_tertiary(a));
+                TermColors::from_theme_trio(v.extreme_bg_color, v.text_color(), [a, s, t])
+            }
         }
     }
 

@@ -106,11 +106,31 @@ impl TermColors {
     /// app that shows code), so the terminal's colours match the editor's.
     pub fn from_theme(bg: Color32, fg: Color32, accent: Color32) -> TermColors {
         use rivet_look::builtin_icons::{derive_secondary, derive_tertiary};
-        let code = rivet_look::highlight::colors(fg, bg, accent, derive_secondary(accent), derive_tertiary(accent));
+        Self::from_theme_trio(bg, fg, [accent, derive_secondary(accent), derive_tertiary(accent)])
+    }
+
+    /// The same from the theme's three colours (the desktop palette's primary, secondary and
+    /// tertiary when it has them). Each of the six hues then leans toward whichever theme colour
+    /// is nearest to it, so a new wallpaper or accent shows in the terminal, while red stays
+    /// reddish, blue bluish and so on.
+    pub fn from_theme_trio(bg: Color32, fg: Color32, trio: [Color32; 3]) -> TermColors {
+        let [p, s, t3] = trio;
+        let code = rivet_look::highlight::colors(fg, bg, p, s, t3);
         let dark = luminance(bg) < 0.5;
         let mut t = Self::from_code(bg, fg, dark, &code);
-        t.cursor = accent;
-        t.selection = mix(bg, accent, if dark { 0.38 } else { 0.3 });
+        for i in 1..7 {
+            let Some(h) = hue_of(t.ansi[i]) else { continue };
+            // The nearest theme colour by hue, and how near: the nearer, the stronger the lean.
+            let near = trio.iter().filter_map(|c| hue_of(*c).map(|th| (*c, hue_gap(h, th)))).min_by(|a, b| a.1.total_cmp(&b.1));
+            if let Some((c, gap)) = near {
+                // Near theme colours pull hard; far ones only tint (magenta mustn't turn red).
+                let pull = 0.42 * (1.0 - (gap / 60.0).min(1.0)) + 0.08;
+                t.ansi[i] = readable(mix(t.ansi[i], c, pull), bg);
+                t.ansi[i + 8] = mix(t.ansi[i], if dark { Color32::WHITE } else { Color32::BLACK }, 0.18);
+            }
+        }
+        t.cursor = p;
+        t.selection = mix(bg, p, if dark { 0.38 } else { 0.3 });
         t
     }
 
@@ -210,20 +230,22 @@ impl TermColors {
 mod tests {
     use super::*;
 
+
     #[test]
     fn colours_from_theme_and_scheme() {
         let t = TermColors::from_theme(rgb(0x1e1e1e), rgb(0xeeeeee), rgb(0xe66100));
         // Red stays red, green stays green.
         assert!(t.ansi[1].r() > t.ansi[1].g() && t.ansi[2].g() > t.ansi[2].r());
-        // Green is the editor's string colour, blue its function colour (the same defaults).
-        let a = rgb(0xe66100);
-        let code = rivet_look::highlight::colors(rgb(0xeeeeee), rgb(0x1e1e1e), a, rivet_look::builtin_icons::derive_secondary(a), rivet_look::builtin_icons::derive_tertiary(a));
-        assert_eq!(t.ansi[2], code.string);
         // Red stays a true red even when the theme's orange numbers are near it.
         assert!(t.ansi[1].r() > 180 && t.ansi[1].g() < 140, "{:?}", t.ansi[1]);
-        for c in [code.keyword, code.function] {
-            assert!(t.ansi[..8].contains(&c), "{c:?}");
-        }
+        // The theme shows: a blue accent makes blue bluer than an orange one does, and the
+        // colours differ between themes (they used to stay all but the same).
+        let b = TermColors::from_theme(rgb(0x1e1e1e), rgb(0xeeeeee), rgb(0x3584e4));
+        assert!(b.ansi[4].b() > t.ansi[4].b());
+        let moved: u32 = (1..7).map(|i| (t.ansi[i].r() as i32 - b.ansi[i].r() as i32).unsigned_abs() + (t.ansi[i].b() as i32 - b.ansi[i].b() as i32).unsigned_abs()).sum();
+        assert!(moved > 150, "{moved}");
+        // Each hue keeps its family: magenta stays bluer than red.
+        assert!(t.ansi[5].b() > t.ansi[1].b() + 40, "{:?} {:?}", t.ansi[5], t.ansi[1]);
         assert_eq!(t.indexed(16), Color32::from_rgb(0, 0, 0));
         assert_eq!(t.indexed(231), Color32::from_rgb(255, 255, 255));
         assert_eq!(t.indexed(232), Color32::from_rgb(8, 8, 8));
