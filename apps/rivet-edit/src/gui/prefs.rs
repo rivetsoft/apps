@@ -85,6 +85,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("Indent / outdent", "Ctrl+] / Ctrl+["),
             ("New line below / above", "Ctrl+Enter / Shift+Ctrl+Enter"),
             ("Wrap long lines", "Alt+Z"),
+            ("Suggestions", "Ctrl+Space"),
         ],
     ),
 ];
@@ -326,6 +327,13 @@ impl EditApp {
                                             });
                                             ui.end_row();
                                         });
+                                    });
+                                    section(ui, "Suggestions and errors", &mut |ui| {
+                                        ui.checkbox(&mut self.s.autocomplete, "Suggest as you type");
+                                        hint(ui, "Ctrl+Space shows suggestions any time. Enter or Tab puts one in; Esc closes them.");
+                                        ui.add_space(8.0);
+                                        ui.checkbox(&mut self.s.lsp, "Use the language's server");
+                                        hint(ui, "Smarter suggestions, and errors underlined as you go, from the server installed for each language: rust-analyzer, clangd, pyright, typescript-language-server, gopls and others. Without one, suggestions come from the file's own words.");
                                     });
                                     section(ui, "Layout", &mut |ui| {
                                         ui.checkbox(&mut self.s.word_wrap, "Wrap long lines");

@@ -60,6 +60,7 @@ fonts and icons, the same menus, Preferences and quick panel.
 | F9 / Alt+Z / Ctrl+M | Sidebar / word wrap / menu bar |
 | Ctrl+= / Ctrl+- | Bigger / smaller code |
 | Ctrl+, | Preferences |
+| Ctrl+Space | Suggestions (they also open as you type; Enter or Tab puts one in) |
 | Ctrl+F / Ctrl+H | Find / replace in the file (Enter, F3: next; Shift+Enter, Shift+F3: previous) |
 | Shift+Ctrl+F | Search (and replace) in every file of the folder |
 | Ctrl+D | Select the word, then add the next place it appears (another cursor) |

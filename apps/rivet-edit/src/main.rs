@@ -2,6 +2,7 @@
 
 mod gui;
 mod find;
+mod lsp;
 mod ops;
 mod schemes;
 mod settings;

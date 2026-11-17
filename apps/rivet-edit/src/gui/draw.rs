@@ -497,9 +497,20 @@ impl EditApp {
             self.find_bar(ui);
         }
         let Some(id) = self.tabs.get(self.active).map(|t| egui::Id::unique(("edit-body", t.path.clone()))) else { return };
+        // The suggestion list's keys come first (Enter, Tab, arrows), then the editor's.
+        let ctrl_space = if quick_open {
+            self.complete = None;
+            false
+        } else {
+            self.complete_keys(&ctx, id)
+        };
+        // What was typed this frame (to open or narrow the suggestions).
+        let typed: Option<char> = if quick_open { None } else { ctx.input(|i| i.events.iter().rev().find_map(|e| if let egui::Event::Text(t) = e { t.chars().last() } else { None })) };
         if !quick_open {
             self.editor_keys(&ctx, id);
         }
+        let diags = self.diag_ranges();
+        let mut caret: Option<(usize, Pos2)> = None;
         // A found match or search result: select it and show it.
         let select = self.select_after.take();
         if let Some((a, b)) = select {
@@ -601,6 +612,12 @@ impl EditApp {
                         }
                     }
                 }
+                // The server's problems, with wavy lines.
+                complete::draw_diags(ui, &out, text, &diags);
+                if let Some(r) = out.cursor_range {
+                    let cr = out.galley.pos_from_cursor(r.primary).translate(out.galley_pos.to_vec2());
+                    caret = Some((r.primary.index.0, cr.left_bottom()));
+                }
                 // Matches and the other cursors, over the text.
                 let main = out.cursor_range.map(|r| crate::ops::Sel::new(r.secondary.index.0, r.primary.index.0)).unwrap_or_default();
                 EditApp::draw_marks(ui.painter(), &out.galley, out.galley_pos, ui.clip_rect(), &multi_sels, &find_matches, main, &v, mark_color);
@@ -614,6 +631,10 @@ impl EditApp {
             });
         });
         self.last_layout = layout_out;
+        if !quick_open && ctx.memory(|m| m.has_focus(id)) {
+            self.complete_after(caret, typed, ctrl_space);
+            self.complete_popup(&ctx, id, &font, &colors);
+        }
     }
 
     fn status_line(&mut self, ui: &mut egui::Ui) {
@@ -636,7 +657,17 @@ impl EditApp {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
+                let diags = self.diag_ranges();
                 if let Some(t) = self.tabs.get(self.active) {
+                    // The language server, and the problems it found.
+                    if let Some((words, tip, trouble)) = &self.lsp_status {
+                        let col = if *trouble { weak.gamma_multiply(0.7) } else { weak };
+                        ui.label(egui::RichText::new(words).color(col)).on_hover_text(tip);
+                    }
+                    if let Some((sum, errors)) = complete::diag_summary(&diags) {
+                        let st = status(&ctx);
+                        ui.label(egui::RichText::new(sum).color(if errors { st.danger } else { st.warning })).on_hover_text("Point at a wavy line to read it");
+                    }
                     // The language and the indentation: click either to change it.
                     let lang = crate::syntax::shown_name(&t.name(), &t.text, t.lang);
                     let tip = if t.lang == crate::syntax::Pick::Auto { "Told from the file; click to choose another" } else { "Chosen by hand; click to change" };

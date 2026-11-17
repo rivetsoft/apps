@@ -2338,6 +2338,7 @@ dependencies = [
  "rivet-kit",
  "rivet-look",
  "rivet-xdg",
+ "serde_json",
  "tree-sitter",
  "tree-sitter-bash",
  "tree-sitter-c",

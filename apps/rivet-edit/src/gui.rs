@@ -3,6 +3,7 @@
 //! runs any command. Built on the Rivet apps' shared look: theme and desktop colors, icons,
 //! fonts, in-app windows and the quick panel.
 
+mod complete;
 mod draw;
 mod editing;
 mod prefs;
@@ -136,6 +137,11 @@ pub struct EditApp {
     pub(crate) alt_click: bool,
     /// Open the find bar next frame (from a command; true: with replace).
     pub(crate) find_pending: Option<bool>,
+    /// The language servers, and the suggestion list.
+    pub(crate) lsp: crate::lsp::Lsp,
+    pub(crate) complete: Option<complete::Complete>,
+    complete_seq: u64,
+    pub(crate) lsp_status: Option<complete::LspStatus>,
     /// Quitting is fine (changes saved or let go).
     allow_close: bool,
     /// A scheme shown while the theme list is open (before it's chosen).
@@ -160,6 +166,8 @@ impl EditApp {
             // Checks look the same everywhere: Rivet's own icons, the default fonts.
             s.builtin_icons = true;
             s.code_font.clear();
+            // No language servers in checks unless asked for (they're slow to start).
+            s.lsp = std::env::var_os("RIVET_EDIT_LSP").is_some();
             // Never the person's own recent folders: the sample's files instead.
             s.recent = match &start.folder {
                 Some(root) => ["src/main.rs", "README.md", "web/app.js"].iter().map(|r| root.join(r)).collect(),
@@ -216,6 +224,10 @@ impl EditApp {
             last_layout: None,
             alt_click: false,
             find_pending: None,
+            lsp: crate::lsp::Lsp::new(Some(_cc.egui_ctx.clone())),
+            complete: None,
+            complete_seq: 0,
+            lsp_status: None,
             allow_close: false,
             scheme_preview: None,
         };
@@ -497,6 +509,7 @@ impl EditApp {
                 t.saved = t.text.clone();
                 t.disk = mtime(&p);
                 self.note = Some((format!("Saved {}", t.name()), false));
+                self.lsp.saved(&p);
                 true
             }
             Err(e) => {
@@ -721,6 +734,7 @@ impl eframe::App for EditApp {
             self.open_find(&ctx, r);
         }
         self.shortcuts(&ctx);
+        self.lsp_tick();
         // A preview that's been edited is kept.
         for t in self.tabs.iter_mut().filter(|t| t.preview && t.dirty()) {
             t.preview = false;

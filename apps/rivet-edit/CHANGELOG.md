@@ -12,6 +12,9 @@ The first version.
 - Safe saving, reloading files changed elsewhere, and questions before losing changes.
 - 39 editor color themes (One Dark, Dracula, Catppuccin, Gruvbox, Solarized, Tokyo Night, GitHub,
   Rosé Pine…), previewed live from Commands → Color Theme, or the app's own colors.
+- Suggestions as you type (Ctrl+Space any time) and errors underlined, from the language's
+  server when one is installed (rust-analyzer, clangd, pyright, typescript-language-server,
+  gopls…), else from the file's own words.
 - The language and the indentation (tabs or spaces, and how many) are told from each file and
   shown in the status bar; click either to change it, or to convert the indentation.
 - A new start page (Start and Recent side by side, with icons and keys) and Preferences laid
