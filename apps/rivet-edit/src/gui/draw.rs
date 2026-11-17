@@ -308,8 +308,28 @@ impl EditApp {
         let icons: Vec<Option<egui::TextureHandle>> = (0..self.tabs.len()).map(|i| self.file_icon(&ctx, &self.tabs[i].name(), 14.0)).collect();
         let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 38.0));
         ui.painter().line_segment([strip.left_bottom() + Vec2::new(12.0, 0.0), strip.right_bottom() - Vec2::new(12.0, 0.0)], Stroke::new(1.0, palette::mix(v.extreme_bg_color, v.text_color(), 0.08)));
-        let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(strip.shrink2(Vec2::new(8.0, 0.0))).layout(egui::Layout::left_to_right(egui::Align::Max)));
-        egui::ScrollArea::horizontal().id_salt("edit-tabs").show(&mut inner, |ui| {
+        // Too many tabs to fit: they scroll sideways with no scroll bar over them; < and >
+        // buttons at the end, the mouse wheel, and a newly chosen tab is brought into view.
+        let over_id = egui::Id::unique("edit-tabs-overflow");
+        let overflow = ctx.data(|d| d.get_temp::<bool>(over_id)).unwrap_or(false);
+        let arrows_w = if overflow { 62.0 } else { 0.0 };
+        let tabs_rect = Rect::from_min_max(strip.min + Vec2::new(8.0, 0.0), strip.max - Vec2::new(8.0 + arrows_w, 0.0));
+        let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Max)));
+        let wheel = if ui.rect_contains_pointer(tabs_rect) { ctx.input(|i| i.smooth_scroll_delta.y + i.smooth_scroll_delta.x) } else { 0.0 };
+        let shown_id = egui::Id::unique("edit-tabs-shown");
+        let bring = ctx.data(|d| d.get_temp::<usize>(shown_id)) != Some(self.active);
+        ctx.data_mut(|d| d.insert_temp(shown_id, self.active));
+        let active = self.active;
+        let goto_id = egui::Id::unique("edit-tabs-goto");
+        let mut sa = egui::ScrollArea::horizontal()
+            .id_salt("edit-tabs")
+            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+            .scroll_source(egui::scroll_area::ScrollSource { scroll_bar: false, drag: egui::scroll_area::DragScroll::Always, mouse_wheel: false });
+        // An offset asked for last frame (arrows, wheel).
+        if let Some(x) = ctx.data_mut(|d| d.remove_temp::<f32>(goto_id)) {
+            sa = sa.horizontal_scroll_offset(x);
+        }
+        let out = sa.show(&mut inner, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
                 for (i, t) in self.tabs.iter().enumerate() {
@@ -318,6 +338,9 @@ impl EditApp {
                     let g = ui.painter().layout_no_wrap(name.clone(), fonts::ui_font(13.0), v.text_color());
                     let w = g.size().x + 64.0;
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 32.0), Sense::click());
+                    if bring && i == active {
+                        ui.scroll_to_rect(r, None);
+                    }
                     if on {
                         ui.painter().rect_filled(r, egui::CornerRadius { nw: r_md(), ne: r_md(), sw: 0, se: 0 }, palette::mix(v.extreme_bg_color, v.text_color(), 0.06));
                         ui.painter().line_segment([r.left_bottom() + Vec2::new(4.0, -1.0), r.right_bottom() + Vec2::new(-4.0, -1.0)], Stroke::new(2.0, v.selection.bg_fill));
@@ -351,6 +374,66 @@ impl EditApp {
                 }
             });
         });
+        let max = (out.content_size.x - out.inner_rect.width()).max(0.0);
+        let mut off = out.state.clamped_offset().x;
+        if (max > 0.5) != overflow {
+            ctx.data_mut(|d| d.insert_temp(over_id, max > 0.5));
+            // The strip's width changed (arrows came or went): show the open tab again.
+            ctx.data_mut(|d| d.remove_temp::<usize>(shown_id));
+            ctx.request_repaint();
+        }
+        let mut step = -wheel;
+        if overflow {
+            // < and >: a step of tabs each way.
+            let arrow = |x: f32, left: bool, on: bool| -> bool {
+                let r = Rect::from_center_size(Pos2::new(x, strip.center().y + 1.0), Vec2::new(26.0, 26.0));
+                let resp = ui.interact(r, egui::Id::unique(("tab-arrow", left)), Sense::click());
+                if on && resp.hovered() {
+                    ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
+                }
+                let col = if on { v.text_color() } else { v.weak_text_color().gamma_multiply(0.5) };
+                let c = r.center();
+                let d = if left { -1.0 } else { 1.0 };
+                ui.painter().line_segment([c + Vec2::new(-2.5 * d, -5.0), c + Vec2::new(2.5 * d, 0.0)], Stroke::new(1.6, col));
+                ui.painter().line_segment([c + Vec2::new(2.5 * d, 0.0), c + Vec2::new(-2.5 * d, 5.0)], Stroke::new(1.6, col));
+                on && resp.on_hover_text(if left { "Scroll the tabs left" } else { "Scroll the tabs right" }).clicked()
+            };
+            let x = strip.right() - 8.0;
+            if arrow(x - 44.0, true, off > 0.5) {
+                step -= tabs_rect.width() * 0.6;
+            }
+            if arrow(x - 16.0, false, off < max - 0.5) {
+                step += tabs_rect.width() * 0.6;
+            }
+        }
+        if step != 0.0 {
+            off = (off + step).clamp(0.0, max);
+            ctx.data_mut(|d| d.insert_temp(goto_id, off));
+            if wheel != 0.0 {
+                ctx.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
+            }
+            ctx.request_repaint();
+        }
+        // Faded edges where more tabs are hidden.
+        let bg = v.extreme_bg_color;
+        let fade = |x_edge: f32, inward: f32| {
+            let r = Rect::from_x_y_ranges(x_edge.min(x_edge + inward)..=x_edge.max(x_edge + inward), strip.top()..=strip.bottom() - 1.0);
+            let (a, b) = if inward > 0.0 { (bg, Color32::TRANSPARENT) } else { (Color32::TRANSPARENT, bg) };
+            let mut mesh = egui::Mesh::default();
+            mesh.colored_vertex(r.left_top(), a);
+            mesh.colored_vertex(r.right_top(), b);
+            mesh.colored_vertex(r.right_bottom(), b);
+            mesh.colored_vertex(r.left_bottom(), a);
+            mesh.add_triangle(0, 1, 2);
+            mesh.add_triangle(0, 2, 3);
+            ui.painter().add(egui::Shape::mesh(mesh));
+        };
+        if off > 0.5 {
+            fade(tabs_rect.left(), 28.0);
+        }
+        if off < max - 0.5 {
+            fade(tabs_rect.right(), -28.0);
+        }
         ui.advance_cursor_after_rect(strip);
         if let Some(i) = select {
             self.active = i;
