@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 ### New
 - **Thumbnails beyond pictures**: videos, PDFs, fonts, office files, e-books and anything else
