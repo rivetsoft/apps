@@ -57,6 +57,10 @@ struct Doc {
     live_boxes: Vec<(egui::Rect, live_edit::Hit)>,
     /// The title while it's being edited in the heading.
     title_buf: Option<String>,
+    /// A block of lines being dragged by its handle: its first and last line.
+    line_drag: Option<(usize, usize)>,
+    /// The line handle last shown: its block and where it is (kept while it's pressed).
+    grip: Option<(usize, usize, egui::Rect)>,
 }
 
 /// An editing command from the text's right-click menu, carried out on the next frame (once
@@ -405,6 +409,8 @@ impl NotesApp {
             renaming: None,
             props_open: true,
             title_buf: None,
+            line_drag: None,
+            grip: None,
             live_held: None,
             live_boxes: Vec::new(),
         });

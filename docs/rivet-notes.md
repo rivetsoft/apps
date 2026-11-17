@@ -124,6 +124,12 @@ makes the line at the cursor one (adding the tag, and the `- [ ]` if needed).
 - Peek on the Todos page is its own: list or board, full width or centered (the page's own width,
   apart from the notes'), and counts of to do, in progress, done, overdue and due soon.
 
+## Moving lines
+
+Point at a line and a handle (⠿) shows in the margin beside it; drag it up or down and drop it
+where the marker shows. A list item or task brings the items nested under it, and a fenced code
+block moves as a whole. Works in both editing modes.
+
 ## Formatting
 
 Keys that turn the selection (or the word under the cursor) into Markdown, and back again when

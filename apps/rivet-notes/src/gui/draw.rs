@@ -948,6 +948,125 @@ impl NotesApp {
                 }
             }
             d.live_boxes = super::live_edit::code_panels(ui, &d.body, &out, &live_look, panels_under);
+            // ---- line handles: drag a line (with what's nested under it) somewhere else
+            if !d.body.is_empty() {
+                let gx = out.galley_pos.x;
+                let clip = out.text_clip_rect;
+                let right = out.response.response.rect.right();
+                let starts: Vec<usize> = {
+                    let mut v = vec![0usize];
+                    let mut c = 0;
+                    for l in d.body.split_inclusive('\n') {
+                        c += l.chars().count();
+                        v.push(c);
+                    }
+                    v
+                };
+                let n_lines = d.body.split('\n').count();
+                let row_of = |n: usize| out.galley.pos_from_cursor(egui::text::CCursor::new(starts[n.min(starts.len() - 1)])).translate(out.galley_pos.to_vec2());
+                let line_at = |y: f32| {
+                    let cc = out.galley.cursor_from_pos(Vec2::new(0.0, y - out.galley_pos.y));
+                    starts.iter().rposition(|&s| s <= cc.index.0).unwrap_or(0).min(n_lines - 1)
+                };
+                let mut started = None;
+                // The handle under the pointer; while it's pressed, the same one stays.
+                let down = ctx.input(|i| i.pointer.primary_down());
+                let origin = ctx.input(|i| i.pointer.press_origin());
+                let held = d.grip.filter(|(_, _, r)| down && origin.is_some_and(|o| r.contains(o)));
+                let target = if d.line_drag.is_some() || self.task_pop.is_some() {
+                    None
+                } else if held.is_some() {
+                    held
+                } else if !down
+                    && let Some(p) = ctx.pointer_hover_pos()
+                    && p.y >= clip.top()
+                    && p.y <= clip.bottom()
+                    && p.x >= gx - 34.0
+                    && p.x <= right
+                {
+                    let n = line_at(p.y);
+                    let (a, b) = crate::blocks::block_at(&d.body, n);
+                    let first = d.body.split('\n').nth(a).unwrap_or("");
+                    let row = row_of(a);
+                    let grip = Rect::from_center_size(Pos2::new(gx - 16.0, row.center().y), Vec2::new(16.0, 22.0));
+                    (!first.trim().is_empty() && grip.top() >= clip.top() - 4.0 && grip.bottom() <= clip.bottom() + 4.0).then_some((a, b, grip))
+                } else {
+                    None
+                };
+                d.grip = target;
+                // A press on the handle that moves a few points starts the drag.
+                if let Some((a, b, _)) = held
+                    && let (Some(o), Some(p)) = (origin, ctx.input(|i| i.pointer.latest_pos()))
+                    && (p - o).length() > 4.0
+                {
+                    started = Some((a, b));
+                }
+                if let Some((a, b, grip)) = target {
+                    {
+                        egui::Area::new(egui::Id::unique("line-grip")).order(egui::Order::Foreground).fixed_pos(grip.min).show(&ctx, |ui| {
+                            let (r, resp) = ui.allocate_exact_size(grip.size(), Sense::drag());
+                            let hot = resp.hovered();
+                            if hot {
+                                ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                            }
+                            let col = if hot { v.text_color() } else { weak.gamma_multiply(0.7) };
+                            for dy in [-5.0f32, 0.0, 5.0] {
+                                for dx in [-2.5f32, 2.5] {
+                                    ui.painter().circle_filled(r.center() + Vec2::new(dx, dy), 1.4, col);
+                                }
+                            }
+                            resp.on_hover_text(if b > a { "Drag to move these lines" } else { "Drag to move this line" });
+                        });
+                    }
+                }
+                if let Some(s) = started {
+                    d.line_drag = Some(s);
+                }
+                if let Some((a, b)) = d.line_drag {
+                    ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+                    let released = !ctx.input(|i| i.pointer.primary_down());
+                    let p = ctx.input(|i| i.pointer.latest_pos());
+                    // Where it would go: before or after the line under the pointer.
+                    let gap = p.map(|p| {
+                        let y = p.y.clamp(clip.top(), clip.bottom());
+                        let n = line_at(y);
+                        let row = row_of(n);
+                        if y < row.center().y { n } else { crate::blocks::block_at(&d.body, n).1 + 1 }
+                    });
+                    if let Some(g) = gap {
+                        let y = if g < n_lines { row_of(g).top() - 1.0 } else { row_of(n_lines - 1).bottom() + 1.0 };
+                        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("line-drop")));
+                        let ok = !(g >= a && g <= b + 1);
+                        if ok {
+                            let acc = v.selection.bg_fill;
+                            painter.line_segment([Pos2::new(gx - 4.0, y), Pos2::new(right, y)], Stroke::new(2.0, acc));
+                            painter.circle_stroke(Pos2::new(gx - 8.0, y), 3.5, Stroke::new(2.0, acc));
+                        }
+                        // What's moving, beside the pointer.
+                        if let Some(p) = p {
+                            let first = d.body.split('\n').nth(a).unwrap_or("").trim().to_string();
+                            let label = if b > a { format!("{first}  +{}", b - a) } else { first };
+                            let g = painter.layout_no_wrap(label.chars().take(60).collect(), fonts::ui_font(12.5), v.text_color());
+                            let r = Rect::from_min_size(p + Vec2::new(14.0, 8.0), g.size() + Vec2::new(18.0, 10.0));
+                            painter.add(egui::epaint::Shadow { offset: [0, 3], blur: 10, spread: 0, color: Color32::from_black_alpha(70) }.as_shape(r, r_sm()));
+                            painter.rect_filled(r, r_sm(), v.window_fill);
+                            painter.rect_stroke(r, r_sm(), Stroke::new(1.0, v.selection.bg_fill), egui::StrokeKind::Inside);
+                            painter.galley(r.min + Vec2::new(9.0, 5.0), g, v.text_color());
+                        }
+                    }
+                    if released {
+                        if let Some(g) = gap
+                            && let Some(new) = crate::blocks::move_block(&d.body, a, b, g)
+                        {
+                            d.body = new;
+                            changed = true;
+                        }
+                        d.line_drag = None;
+                    }
+                    ctx.request_repaint();
+                }
+            }
             // Super todos: a button beside the one at the cursor (or under the pointer).
             let caret_char = out.cursor_range.filter(|_| ctx.memory(|m| m.has_focus(body_id))).map(|r| r.primary.index.0);
             self.caret_state = caret_char.map(|c| (body_id, c));

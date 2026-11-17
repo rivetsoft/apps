@@ -1,6 +1,7 @@
 //! Rivet Notes: Markdown notes in plain folders (vaults), with frontmatter and tags.
 
 mod gui;
+mod blocks;
 mod format;
 mod layout;
 mod links;
