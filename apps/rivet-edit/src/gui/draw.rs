@@ -354,14 +354,15 @@ impl EditApp {
         let mut close = None;
         let mut keep = None;
         let icons: Vec<Option<egui::TextureHandle>> = (0..self.tabs.len()).map(|i| self.file_icon(&ctx, &self.tabs[i].name(), 14.0)).collect();
-        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 36.0));
+        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 40.0));
         // Too many tabs to fit: they scroll sideways with no scroll bar over them; < and >
         // buttons at the end, the mouse wheel, and a newly chosen tab is brought into view.
         let over_id = egui::Id::unique("edit-tabs-overflow");
         let overflow = ctx.data(|d| d.get_temp::<bool>(over_id)).unwrap_or(false);
         let arrows_w = if overflow { 62.0 } else { 0.0 };
-        // 4 points under the tabs, above the code.
-        let tabs_rect = Rect::from_min_max(strip.min, strip.max - Vec2::new(arrows_w, 4.0));
+        // A clear gap under the tabs, so the open tab's rounded corners don't sit on the
+        // code card's.
+        let tabs_rect = Rect::from_min_max(strip.min, strip.max - Vec2::new(arrows_w, 8.0));
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Max)));
         let wheel = if ui.rect_contains_pointer(tabs_rect) { ctx.input(|i| i.smooth_scroll_delta.y + i.smooth_scroll_delta.x) } else { 0.0 };
         let shown_id = egui::Id::unique("edit-tabs-shown");
