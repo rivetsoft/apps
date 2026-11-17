@@ -132,9 +132,8 @@ impl NotesApp {
                     ("Characters", format!("{chars}")),
                     ("Lines", format!("{lines}")),
                     ("Reading time", format!("About {minutes} min")),
+                    ("Location", d.path.parent().map(|p| p.display().to_string()).unwrap_or_default()),
                 ]);
-                ui.add_space(2.0);
-                ui.label(egui::RichText::new(d.path.display().to_string()).small().color(weak)).on_hover_text("Where the file is");
             });
             // ---- dates
             card(ui, "Dates", |ui| {
