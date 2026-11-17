@@ -68,7 +68,9 @@ impl NotesApp {
                     ui.add_space(4.0);
                 }
                 ui.add_space(2.0);
-                ui.checkbox(&mut self.s.show_properties, "Show properties");
+                if ui.radio(self.s.show_properties, "Show properties").clicked() {
+                    self.s.show_properties = !self.s.show_properties;
+                }
                 if self.s != before {
                     self.s.save();
                 }
