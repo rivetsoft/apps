@@ -196,6 +196,11 @@ impl EditApp {
             };
         }
         // Test hooks for checks.
+        // Checks: RIVET_EDIT_ACCENT=rrggbb picks the accent (and stops following the desktop).
+        if let Some(n) = std::env::var("RIVET_EDIT_ACCENT").ok().and_then(|h| u32::from_str_radix(h.trim_start_matches('#'), 16).ok()) {
+            s.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
+            s.follow_desktop_colors = false;
+        }
         match std::env::var("RIVET_EDIT_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
             Ok("dark") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Dark, false),

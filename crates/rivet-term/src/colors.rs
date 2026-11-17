@@ -82,40 +82,6 @@ fn hue_of(c: Color32) -> Option<f32> {
     Some((h + 360.0) % 360.0)
 }
 
-/// Hue (degrees), saturation and value.
-fn hsv(c: Color32) -> (f32, f32, f32) {
-    let (r, g, b) = (c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0);
-    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
-    let d = max - min;
-    let h = if d == 0.0 {
-        0.0
-    } else if max == r {
-        60.0 * (((g - b) / d).rem_euclid(6.0))
-    } else if max == g {
-        60.0 * ((b - r) / d + 2.0)
-    } else {
-        60.0 * ((r - g) / d + 4.0)
-    };
-    (h, if max == 0.0 { 0.0 } else { d / max }, max)
-}
-
-fn from_hsv(h: f32, s: f32, v: f32) -> Color32 {
-    let h = h.rem_euclid(360.0) / 60.0;
-    let c = v * s;
-    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
-    let (r, g, b) = match h as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    let m = v - c;
-    let f = |v: f32| ((v + m) * 255.0).round().clamp(0.0, 255.0) as u8;
-    Color32::from_rgb(f(r), f(g), f(b))
-}
-
 fn hue_gap(a: f32, b: f32) -> f32 {
     let d = (a - b).abs() % 360.0;
     d.min(360.0 - d)
@@ -149,41 +115,20 @@ impl TermColors {
     /// reddish, blue bluish and so on.
     pub fn from_theme_trio(bg: Color32, fg: Color32, trio: [Color32; 3]) -> TermColors {
         let [p, s, t3] = trio;
-        let code = rivet_look::highlight::colors(fg, bg, p, s, t3);
         let dark = luminance(bg) < 0.5;
-        let mut t = Self::from_code(bg, fg, dark, &code);
-        // How the theme's colours feel on average (their strength and brightness), so every hue
-        // takes on the theme's character, not only the ones near its colours.
-        let theme_hsv: Vec<(f32, f32, f32)> = trio.iter().map(|c| hsv(*c)).collect();
-        let avg_s = theme_hsv.iter().map(|x| x.1).sum::<f32>() / 3.0;
-        let avg_v = theme_hsv.iter().map(|x| x.2).sum::<f32>() / 3.0;
+        // Rivet's plain default code palette (the same one Rivet Edit starts from), mapped onto
+        // the sixteen; then each colour leans toward the theme through the same function Rivet
+        // Edit's code colours use (`highlight::lean`), so a theme shapes both alike.
+        let d = if dark { rivet_look::highlight::defaults::DARK } else { rivet_look::highlight::defaults::LIGHT };
+        let plain = rivet_look::highlight::Colors { text: fg, keyword: d[0], string: d[1], number: d[2], comment: mix(fg, bg, 0.45), function: d[3], type_: d[4], punct: mix(fg, bg, 0.3) };
+        let mut t = Self::from_code(bg, fg, dark, &plain);
         for i in 1..7 {
-            let (h, s0, v0) = hsv(t.ansi[i]);
-            if s0 < 0.08 {
-                continue;
-            }
-            // The nearest theme colour by hue, and the signed turn toward it.
-            let Some(&(th, ts, tv)) = theme_hsv.iter().filter(|x| x.1 > 0.08).min_by(|a, b| hue_gap(h, a.0).total_cmp(&hue_gap(h, b.0))) else { continue };
-            let mut d = th - h;
-            if d > 180.0 {
-                d -= 360.0;
-            } else if d < -180.0 {
-                d += 360.0;
-            }
-            // Turn most of the way toward it, but never out of the colour's family (red least,
-            // so errors stay red).
-            // Far from every theme colour, only a nudge (blue mustn't become cyan).
-            let reach = (1.0 - (d.abs() - 30.0).max(0.0) / 90.0).clamp(0.25, 1.0);
-            let cap = if i == 1 { 14.0 } else { 34.0 * reach };
-            let turn = (d * 0.75).clamp(-cap, cap);
-            // Near ones also take the theme colour's strength and brightness; all take some of
-            // the theme's average.
-            let near = 1.0 - (d.abs() / 70.0).min(1.0);
-            let s = s0 + ((ts * near + avg_s * (1.0 - near)) - s0) * 0.55;
-            let v = v0 + ((tv * near + avg_v * (1.0 - near)) - v0) * 0.35;
-            t.ansi[i] = readable(from_hsv(h + turn, s.clamp(0.25, 0.9), v.clamp(0.3, 0.97)), bg);
+            // Red turns least, so errors stay red.
+            let cap = if i == 1 { 14.0 } else { 34.0 };
+            t.ansi[i] = readable(rivet_look::highlight::lean(t.ansi[i], [p, s, t3], cap), bg);
             t.ansi[i + 8] = mix(t.ansi[i], if dark { Color32::WHITE } else { Color32::BLACK }, 0.2);
         }
+        t.ansi[8] = mix(mix(fg, bg, 0.45), p, 0.08);
         // Black, white and the greys lean toward the accent too.
         for i in [0, 7, 8, 15] {
             t.ansi[i] = mix(t.ansi[i], p, 0.1);
@@ -300,7 +245,8 @@ mod tests {
         // The theme shows: a blue accent makes blue bluer than an orange one does, and the
         // colours differ between themes (they used to stay all but the same).
         let b = TermColors::from_theme(rgb(0x1e1e1e), rgb(0xeeeeee), rgb(0x3584e4));
-        assert!(b.ansi[4].b() > t.ansi[4].b());
+        let to_accent = |c: Color32| hue_gap(hue_of(c).unwrap(), hue_of(rgb(0x3584e4)).unwrap());
+        assert!(to_accent(b.ansi[4]) < to_accent(t.ansi[4]), "{:?} {:?}", b.ansi[4], t.ansi[4]);
         let moved: u32 = (1..7).map(|i| (t.ansi[i].r() as i32 - b.ansi[i].r() as i32).unsigned_abs() + (t.ansi[i].b() as i32 - b.ansi[i].b() as i32).unsigned_abs()).sum();
         assert!(moved > 150, "{moved}");
         // Each hue keeps its family: magenta stays bluer than red.

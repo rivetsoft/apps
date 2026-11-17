@@ -377,9 +377,39 @@ pub mod defaults {
     ];
 }
 
-/// How far each token's default colour moves toward the theme: keywords most (they carry the
-/// accent), the rest a little: the default hues lead, the theme only tints them.
-const THEME_PULL: [f32; 5] = [0.26, 0.14, 0.16, 0.16, 0.16];
+/// Lean a colour toward the theme: its hue turns toward the nearest of the theme's colours
+/// (most of the way when near, up to `cap` degrees; only a nudge when far, so a colour stays in
+/// its family), and it takes on the theme's saturation and brightness (the near colour's, or the
+/// theme's average). Rivet Edit's code colours and Rivet Terminal's sixteen both go through this,
+/// so a theme shapes them alike. Greys are left alone.
+pub fn lean(c: Color32, trio: [Color32; 3], cap: f32) -> Color32 {
+    use crate::builtin_icons::{from_hsv, to_hsv};
+    let (h, s0, v0) = to_hsv(c);
+    if s0 < 0.08 {
+        return c;
+    }
+    let theme: Vec<(f32, f32, f32)> = trio.iter().map(|x| to_hsv(*x)).collect();
+    let avg_s = theme.iter().map(|x| x.1).sum::<f32>() / 3.0;
+    let avg_v = theme.iter().map(|x| x.2).sum::<f32>() / 3.0;
+    let gap = |a: f32, b: f32| {
+        let d = (a - b).abs() % 360.0;
+        d.min(360.0 - d)
+    };
+    let Some(&(th, ts, tv)) = theme.iter().filter(|x| x.1 > 0.08).min_by(|a, b| gap(h, a.0).total_cmp(&gap(h, b.0))) else { return c };
+    let mut d = th - h;
+    if d > 180.0 {
+        d -= 360.0;
+    } else if d < -180.0 {
+        d += 360.0;
+    }
+    let reach = (1.0 - (d.abs() - 30.0).max(0.0) / 90.0).clamp(0.25, 1.0);
+    let turn = (d * 0.75).clamp(-cap * reach, cap * reach);
+    let near = 1.0 - (d.abs() / 70.0).min(1.0);
+    let s = s0 + ((ts * near + avg_s * (1.0 - near)) - s0) * 0.55;
+    let v = v0 + ((tv * near + avg_v * (1.0 - near)) - v0) * 0.35;
+    from_hsv(h + turn, s.clamp(0.25, 0.9), v.clamp(0.3, 0.97))
+}
+
 
 /// Highlight colours for code: Rivet's default palette mixed with the theme's three palette
 /// colours (keywords and types toward the primary, strings toward the secondary, numbers and
@@ -400,10 +430,9 @@ pub fn colors(text: Color32, bg: Color32, primary: Color32, secondary: Color32, 
     };
     let mix = crate::palette::mix;
     let base = if dark { defaults::DARK } else { defaults::LIGHT };
-    // The secondary is a calm colour; lend it the primary's strength before mixing it in.
-    let secondary = mix(secondary, primary, 0.35);
-    let theme = [primary, secondary, tertiary, tertiary, primary];
-    let tinted: Vec<Color32> = (0..5).map(|i| readable(mix(base[i], theme[i], THEME_PULL[i]))).collect();
+    // Each default colour leans toward the theme the same way Rivet Terminal's colours do.
+    let trio = [primary, secondary, tertiary];
+    let tinted: Vec<Color32> = (0..5).map(|i| readable(lean(base[i], trio, 34.0))).collect();
     Colors {
         text,
         keyword: tinted[0],

@@ -26,7 +26,7 @@ fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     crate::palette::mix(a, b, t)
 }
 
-fn to_hsv(c: Color32) -> (f32, f32, f32) {
+pub(crate) fn to_hsv(c: Color32) -> (f32, f32, f32) {
     let (r, g, b) = (c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0);
     let max = r.max(g).max(b);
     let min = r.min(g).min(b);
@@ -44,7 +44,7 @@ fn to_hsv(c: Color32) -> (f32, f32, f32) {
     (h, s, max)
 }
 
-fn from_hsv(h: f32, s: f32, v: f32) -> Color32 {
+pub(crate) fn from_hsv(h: f32, s: f32, v: f32) -> Color32 {
     let h = h.rem_euclid(360.0);
     let c = v * s;
     let x = c * (1.0 - ((h / 60.0).rem_euclid(2.0) - 1.0).abs());
