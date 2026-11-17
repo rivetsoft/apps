@@ -18,6 +18,7 @@ const HELP: &str = "Rivet Shell: a panel, dock, desktop widgets and wallpaper fo
 Usage:
   rivet-shell                       Start the shell in this Wayland session
   rivet-shell settings              The settings window
+  rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
   rivet-shell msg COMMAND           Tell the running shell: launcher (open or close it),
                                     settings, wallpaper PATH, reload, quit
   rivet-shell --install-desktop-entry
@@ -95,6 +96,29 @@ fn main() -> ExitCode {
             }
         },
         Some("settings") => settings_window(screenshot),
+        Some("colors") => {
+            // matugen on a picture, as the shell runs it, with the result shown.
+            let Some(pic) = args.get(1).map(PathBuf::from) else {
+                eprintln!("rivet-shell: colors PICTURE");
+                return ExitCode::FAILURE;
+            };
+            let s = config::Settings::load();
+            let (tx, rx) = std::sync::mpsc::channel();
+            wall::run_matugen(&pic, s.color_mode, &s.scheme_type, move |r| {
+                let _ = tx.send(r);
+            });
+            match rx.recv() {
+                Ok(Ok(())) => {
+                    println!("Colors made from {}", pic.display());
+                    ExitCode::SUCCESS
+                }
+                Ok(Err(e)) => {
+                    eprintln!("rivet-shell: matugen: {e}");
+                    ExitCode::FAILURE
+                }
+                Err(_) => ExitCode::FAILURE,
+            }
+        }
         Some("msg") => {
             let line = args[1..].join(" ");
             if line.is_empty() {
