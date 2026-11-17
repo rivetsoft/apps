@@ -324,7 +324,7 @@ impl NotesApp {
 
     /// Buttons beside the super todos in the open note's text: on the cursor's line and the
     /// one under the pointer. Each opens the task's popover.
-    pub(super) fn task_buttons(ui: &egui::Ui, text: &str, out: &egui::text_edit::TextEditOutput, triggers: &[String], caret: Option<usize>, look_weak: Color32) -> Vec<(Rect, super::live_edit::Hit)> {
+    pub(super) fn task_buttons(ui: &egui::Ui, text: &str, out: &egui::text_edit::TextEditOutput, triggers: &[String], caret: Option<usize>, _look_weak: Color32) -> Vec<(Rect, super::live_edit::Hit)> {
         let mut hits = Vec::new();
         if triggers.is_empty() {
             return hits;
@@ -352,12 +352,11 @@ impl NotesApp {
             let pointer_on = ui.ctx().pointer_hover_pos().is_some_and(|p| r.contains(p));
             let v = ui.visuals();
             let p = ui.painter();
-            p.rect_filled(r, r_sm(), if pointer_on { v.widgets.hovered.weak_bg_fill } else { v.faint_bg_color });
-            p.rect_stroke(r, r_sm(), Stroke::new(1.0, look_weak.gamma_multiply(0.35)), egui::StrokeKind::Inside);
             // An arrow: open the task's panel.
             let c = r.center();
-            let col = if pointer_on { v.text_color() } else { look_weak };
-            let st = Stroke::new(1.5, col);
+            // Just the arrow, in the strongest text color (brighter still under the pointer).
+            let col = if pointer_on { v.strong_text_color() } else { v.strong_text_color().gamma_multiply(0.85) };
+            let st = Stroke::new(if pointer_on { 1.9 } else { 1.6 }, col);
             p.line_segment([c + Vec2::new(-4.5, 0.0), c + Vec2::new(4.5, 0.0)], st);
             p.line_segment([c + Vec2::new(1.0, -3.5), c + Vec2::new(4.5, 0.0)], st);
             p.line_segment([c + Vec2::new(1.0, 3.5), c + Vec2::new(4.5, 0.0)], st);
