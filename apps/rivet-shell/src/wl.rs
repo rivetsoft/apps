@@ -502,7 +502,12 @@ impl Shell {
                 }
             }
         });
-        surf.tex.update(&out.textures_delta);
+        // Take in the frame's texture changes (fonts, icons) and mark them handled: egui
+        // insists on that before the changes are dropped.
+        let mut out = out;
+        let mut delta = std::mem::take(&mut out.textures_delta);
+        surf.tex.update(&delta);
+        delta.clear();
         let prims = surf.ctx.tessellate(out.shapes, scale as f32);
         let stride = pw as i32 * 4;
         let Ok((buffer, canvas)) = surf.pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else { return };
