@@ -165,7 +165,7 @@ Appearance → Typography) and any installed Nerd Font.
 
 ## 📦 Install
 
-Grab the latest from the [Releases page](https://github.com/ulinaaron/rivet-apps/releases):
+Grab the latest Rivet Files release (tags `vX.Y.Z`; the Rivet FTP and Rivet Notes releases share the page) from the [Releases page](https://github.com/ulinaaron/rivet-apps/releases):
 
 - **AppImage** — one file, nothing else to install: `chmod +x Rivet_Files-*.AppImage` and run it.
   It includes the keyboard libraries below and runs on Ubuntu 22.04, Debian 12, and newer.

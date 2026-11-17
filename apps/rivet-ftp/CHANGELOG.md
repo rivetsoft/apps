@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0
 
 The first version. SFTP only; FTP and FTPS come later.
 

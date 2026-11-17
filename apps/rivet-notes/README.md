@@ -45,6 +45,21 @@ import and nothing locked in; any other Markdown app can open the same notes.
 More in [Rivet Notes](../../docs/rivet-notes.md) (every feature and key) and the
 [changelog](CHANGELOG.md).
 
+## Install
+
+Download `rivet-notes-0.1.0-x86_64-linux.tar.gz` from the Rivet Notes release on the
+[Releases page](https://github.com/ulinaaron/rivet-apps/releases) (tag `rivet-notes-v0.1.0`), then:
+
+```sh
+tar xzf rivet-notes-0.1.0-x86_64-linux.tar.gz
+cd rivet-notes-0.1.0-x86_64-linux
+./install.sh          # rivet-notes in ~/.local/bin, and Rivet Notes in your app launcher
+```
+
+The program is linked against glibc 2.31, so it doesn't need a recent system; the window needs
+the same few libraries as Rivet Files ([the list](../rivet-files/README.md#libraries-the-window-needs)).
+From a source checkout, `utilities/rivet-dev install notes` does the same.
+
 ## Build and run
 
 ```sh

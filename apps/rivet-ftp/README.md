@@ -42,6 +42,21 @@ the other, and a transfer queue underneath. See the [plan and keys](../../docs/r
 
 Changes are in the [changelog](CHANGELOG.md).
 
+## Install
+
+Download `rivet-ftp-0.1.0-x86_64-linux.tar.gz` from the Rivet FTP release on the
+[Releases page](https://github.com/ulinaaron/rivet-apps/releases) (tag `rivet-ftp-v0.1.0`), then:
+
+```sh
+tar xzf rivet-ftp-0.1.0-x86_64-linux.tar.gz
+cd rivet-ftp-0.1.0-x86_64-linux
+./install.sh          # rivet-ftp in ~/.local/bin, and Rivet FTP in your app launcher
+```
+
+The program is linked against glibc 2.31, so it doesn't need a recent system; the window needs
+the same few libraries as Rivet Files ([the list](../rivet-files/README.md#libraries-the-window-needs)).
+From a source checkout, `utilities/rivet-dev install ftp` does the same.
+
 ## Build and run
 
 ```sh

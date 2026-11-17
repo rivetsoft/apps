@@ -36,7 +36,7 @@ your other apps' file picker.
 A dual-pane file-transfer client: this computer on one side, the server on the other, and a
 transfer queue. Saved connections in groups, tabs, editing server files in place, SSH keys, and
 saved connections that also work from the command line and plain `ssh`.
-**Early alpha:** SFTP works; FTP and FTPS aren't built yet.
+**Early alpha, first release 0.1.0:** SFTP works; FTP and FTPS aren't built yet.
 [More about Rivet FTP](apps/rivet-ftp/README.md)
 
 ![Rivet FTP connected to a server, with finished transfers](docs/screenshots/ftp-connected-wide.png)
@@ -46,22 +46,35 @@ saved connections that also work from the command line and plain `ssh`.
 Markdown notes in plain folders. Live editing, properties from the frontmatter, links between
 notes with backlinks, folders and tags, a slash menu, and modules for daily notes and super
 todos with a list or board.
-**Early alpha:** usable, but young.
+**Early alpha, first release 0.1.0:** usable, but young.
 [More about Rivet Notes](apps/rivet-notes/README.md)
 
 ![Rivet Notes in live mode, with Peek open](docs/screenshots/notes-live-wide.png)
 
-> **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break,
-> and there are no releases or packages yet. Build them from source to try them, on servers
-> and notes you have backups of.
+> **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
+> Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
 ## Install
 
-**Rivet Files**: grab it from the [Releases page](https://github.com/ulinaaron/rivet-apps/releases)
-(AppImage, archive or Flatpak bundle). The [Rivet Files README](apps/rivet-files/README.md#-install)
-has the details and the libraries the window needs.
+Every app has its own releases on the [Releases page](https://github.com/ulinaaron/rivet-apps/releases),
+told apart by name and tag:
 
-**Rivet FTP and Rivet Notes**: from source only, for now (see below).
+| App | Tags | Downloads |
+| --- | --- | --- |
+| Rivet Files | `v0.7.0` | AppImage, archive, Flatpak bundle; AUR packages. See the [Rivet Files README](apps/rivet-files/README.md#-install) for the libraries the window needs. |
+| Rivet FTP | `rivet-ftp-v0.1.0` | An archive (pre-release) |
+| Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
+
+For Rivet FTP or Rivet Notes, unpack the archive and run its installer, which puts the program in
+`~/.local/bin` and adds it to your app launcher:
+
+```sh
+tar xzf rivet-notes-0.1.0-x86_64-linux.tar.gz
+cd rivet-notes-0.1.0-x86_64-linux
+./install.sh
+```
+
+Or build any of them from source (below).
 
 ## Build from source
 
@@ -89,8 +102,8 @@ one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the def
 | Folder | What it is |
 | --- | --- |
 | `apps/rivet-files` | Rivet Files: its code, data, changelog and packaging (Flatpak, AUR) |
-| `apps/rivet-ftp` | Rivet FTP (early alpha) |
-| `apps/rivet-notes` | Rivet Notes (early alpha) |
+| `apps/rivet-ftp` | Rivet FTP (early alpha): code, data, changelog |
+| `apps/rivet-notes` | Rivet Notes (early alpha): code, data, changelog |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
 | `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, in-app windows |
 | `crates/rivet-kit` | Shared: in-memory screenshots for checks |

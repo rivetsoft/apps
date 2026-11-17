@@ -35,6 +35,12 @@
 - In split view, the other pane now updates when files change on disk too.
 - Copy Location (and every other text copy: crash reports, the terminal link command) reaches
   other apps again, and pasting text into Rivet's fields from other apps works.
+- Bold text uses the font's real bold face when the desktop font can't be read (it fell back to
+  the regular one).
+
+### Changed
+- Rivet Files now lives in the [Rivet Apps](https://github.com/ulinaaron/rivet-apps) repository,
+  beside Rivet FTP and Rivet Notes; its downloads, Flatpak id and AUR packages are unchanged.
 
 ## 0.6.0
 
