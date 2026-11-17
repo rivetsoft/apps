@@ -19,6 +19,13 @@ fonts and icons, the same menus, Preferences and quick panel.
 - **Tree-sitter colors** for Rust, Python, JavaScript, TypeScript and TSX, JSON, shell, C, Go,
   HTML, CSS, TOML and YAML; other files get the colors Rivet Files' Peek uses. Colors follow your
   theme and accent.
+- **Color themes** for the editor: One Dark and Light, Dracula, Monokai (and Pro), Solarized,
+  Nord, Gruvbox, Catppuccin (Latte, Frappé, Macchiato, Mocha), Tokyo Night (and Day), GitHub
+  (Light, Dark, Dimmed), Rosé Pine (Main, Moon, Dawn), Everforest, Ayu (Dark, Mirage, Light),
+  Material, Palenight, Kanagawa, Night Owl, Light Owl, VS Code Dark and Light Modern, JetBrains
+  Darcula, Xcode Light and Dark, and High Contrast Dark and Light. Commands → *Color Theme…*
+  previews each as you move through the list; Preferences → Editor has them too. Or follow the
+  app's own colors (the default).
 - **Go to File** (Ctrl+P): type a few letters of a file's name or path. **Commands**
   (Shift+Ctrl+P): every command and option by name. **Go to Line** (Ctrl+G).
 - Line numbers, the cursor's line and column, word wrap (Alt+Z), Tab puts in spaces, code size

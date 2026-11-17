@@ -26,6 +26,8 @@ pub struct Settings {
     pub tab_width: usize,
     pub word_wrap: bool,
     pub line_numbers: bool,
+    /// The editor's color scheme by name (empty: follow the app's colors).
+    pub code_scheme: String,
     /// Folders and files opened before, newest first.
     pub recent: Vec<PathBuf>,
 }
@@ -46,6 +48,7 @@ impl Default for Settings {
             tab_width: 4,
             word_wrap: false,
             line_numbers: true,
+            code_scheme: String::new(),
             recent: Vec::new(),
         }
     }
@@ -85,6 +88,7 @@ impl Settings {
                 "tab_width" => s.tab_width = v.parse::<usize>().unwrap_or(4).clamp(1, 8),
                 "word_wrap" => s.word_wrap = b,
                 "line_numbers" => s.line_numbers = b,
+                "code_scheme" => s.code_scheme = v.to_string(),
                 "recent" => s.recent = v.split(SEP).filter(|x| !x.is_empty()).map(PathBuf::from).collect(),
                 _ => {}
             }
@@ -104,7 +108,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let recent = self.recent.iter().map(|p| p.to_string_lossy().replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nword_wrap={}\nline_numbers={}\nrecent={recent}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.builtin_icons,
@@ -116,6 +120,7 @@ impl Settings {
             self.tab_width,
             self.word_wrap,
             self.line_numbers,
+            self.code_scheme.replace('\n', ""),
         );
         let p = path();
         if let Some(d) = p.parent() {

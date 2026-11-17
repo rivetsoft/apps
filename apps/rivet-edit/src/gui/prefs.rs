@@ -96,6 +96,27 @@ impl EditApp {
                     });
                     section(ui, "Editor", &mut |ui| {
                         grid(ui, "edit-editor", &mut |ui| {
+                            ui.label("Color theme");
+                            let shown = if self.s.code_scheme.is_empty() { "Follow the app's colors".to_string() } else { self.s.code_scheme.clone() };
+                            egui::ComboBox::from_id_salt("code-scheme").selected_text(shown).width(240.0).height(420.0).show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.s.code_scheme, String::new(), "Follow the app's colors");
+                                for dark in [true, false] {
+                                    ui.separator();
+                                    ui.label(egui::RichText::new(if dark { "DARK" } else { "LIGHT" }).small().color(weak));
+                                    for sc in crate::schemes::SCHEMES.iter().filter(|s| s.dark == dark) {
+                                        ui.horizontal(|ui| {
+                                            // A little card of its colors.
+                                            let (r, _) = ui.allocate_exact_size(Vec2::new(46.0, 16.0), Sense::hover());
+                                            ui.painter().rect_filled(r, 3.0, sc.bg());
+                                            for (k, c) in sc.swatch().into_iter().enumerate() {
+                                                ui.painter().circle_filled(egui::pos2(r.left() + 8.0 + k as f32 * 10.0, r.center().y), 3.2, c);
+                                            }
+                                            ui.selectable_value(&mut self.s.code_scheme, sc.name.to_string(), sc.name);
+                                        });
+                                    }
+                                }
+                            });
+                            ui.end_row();
                             ui.label("Code font");
                             let shown = if self.s.code_font.is_empty() { format!("System ({system_mono})") } else { self.s.code_font.clone() };
                             egui::ComboBox::from_id_salt("code-font").selected_text(shown).width(240.0).show_ui(ui, |ui| {

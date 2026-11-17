@@ -31,6 +31,8 @@ pub(crate) enum QuickKind {
     Files,
     Commands,
     Line,
+    /// The editor's color schemes, previewed while highlighted.
+    Themes,
     /// Type a path; `files` also lists (and opens) files, else only folders.
     Browse { files: bool },
 }
@@ -55,6 +57,7 @@ enum Cmd {
     Bigger,
     Smaller,
     Preferences,
+    Themes,
     Reload,
     Recent(PathBuf),
 }
@@ -174,6 +177,7 @@ impl EditApp {
         add("Theme", "Follow System", "", Some(self.s.theme == Mode::System && !self.s.follow_desktop_colors), Cmd::Theme(Mode::System), true);
         add("Theme", "Light", "", Some(self.s.theme == Mode::Light && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Light), true);
         add("Theme", "Dark", "", Some(self.s.theme == Mode::Dark && !self.s.follow_desktop_colors), Cmd::Theme(Mode::Dark), true);
+        add("Editor", "Color Theme…", "", None, Cmd::Themes, true);
         add("App", "Preferences", "Ctrl+,", None, Cmd::Preferences, true);
         add("Workspace", "Reload Files", "", None, Cmd::Reload, has_root);
         for p in &self.s.recent {
@@ -209,6 +213,7 @@ impl EditApp {
             Cmd::Bigger => self.s.code_size = (self.s.code_size + 1.0).min(32.0),
             Cmd::Smaller => self.s.code_size = (self.s.code_size - 1.0).max(8.0),
             Cmd::Preferences => self.prefs_open = true,
+            Cmd::Themes => self.open_quick(QuickKind::Themes),
             Cmd::Reload => self.rescan(),
             Cmd::Recent(p) => {
                 if p.is_dir() {
@@ -297,6 +302,43 @@ impl EditApp {
                         keep = false;
                     }
                     Some(QuickEvent::Close) => keep = false,
+                    None => {}
+                }
+            }
+            QuickKind::Themes => {
+                // "Follow the app", then every scheme, dark ones first; the highlighted one is
+                // shown in the editor straight away (Esc puts the old one back).
+                let mut names: Vec<(String, &'static str)> = vec![(String::new(), "Rivet")];
+                names.extend(crate::schemes::SCHEMES.iter().filter(|s| s.dark).map(|s| (s.name.to_string(), "Dark")));
+                names.extend(crate::schemes::SCHEMES.iter().filter(|s| !s.dark).map(|s| (s.name.to_string(), "Light")));
+                let shown_name = |n: &str| if n.is_empty() { "Follow the App's Colors".to_string() } else { n.to_string() };
+                let mut ranked: Vec<(i32, usize)> = names.iter().enumerate().filter_map(|(i, (n, g))| fuzzy_score(&shown_name(n), &q).max(fuzzy_score(&format!("{g} {}", shown_name(n)), &q).map(|v| v - 200)).map(|v| (v, i))).collect();
+                if !q.is_empty() {
+                    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+                }
+                let current = self.s.code_scheme.clone();
+                let rows: Vec<QuickRow> = ranked.iter().map(|(_, i)| QuickRow::Command { group: names[*i].1.to_string(), label: shown_name(&names[*i].0), keys: String::new(), state: Some(names[*i].0 == current) }).collect();
+                let text = QuickText { hint: "Choose an editor color theme…", empty: "No matching themes", legend: "Up/Down preview   ·   Enter choose   ·   Esc keep the current one" };
+                let ev = panel.show(ctx, "edit-quick-themes", &rows, &text, search.as_ref());
+                // Preview the highlighted one.
+                let hi = ranked.get(panel.sel).map(|(_, i)| names[*i].0.clone());
+                if self.scheme_preview != hi {
+                    self.scheme_preview = hi;
+                    ctx.request_repaint();
+                }
+                match ev {
+                    Some(QuickEvent::Pick(i)) => {
+                        if let Some((_, k)) = ranked.get(i) {
+                            self.s.code_scheme = names[*k].0.clone();
+                            self.s.save();
+                        }
+                        self.scheme_preview = None;
+                        keep = false;
+                    }
+                    Some(QuickEvent::Close) => {
+                        self.scheme_preview = None;
+                        keep = false;
+                    }
                     None => {}
                 }
             }

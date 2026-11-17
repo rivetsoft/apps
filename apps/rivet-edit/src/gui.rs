@@ -100,6 +100,8 @@ pub struct EditApp {
     pub(crate) goto: Option<usize>,
     /// Quitting is fine (changes saved or let go).
     allow_close: bool,
+    /// A scheme shown while the theme list is open (before it's chosen).
+    pub(crate) scheme_preview: Option<String>,
 }
 
 /// Start the window on these: folders (the first is the workspace) and files.
@@ -126,6 +128,9 @@ impl EditApp {
             Ok("light") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Light, false),
             Ok("dark") => (s.theme, s.follow_desktop_colors) = (rivet_look::theme::Mode::Dark, false),
             _ => {}
+        }
+        if let Ok(n) = std::env::var("RIVET_EDIT_SCHEME") {
+            s.code_scheme = n;
         }
         if std::env::var_os("RIVET_EDIT_WRAP").is_some() {
             s.word_wrap = true;
@@ -160,6 +165,7 @@ impl EditApp {
             ext_icons: HashMap::new(),
             goto: None,
             allow_close: false,
+            scheme_preview: None,
         };
         if let Some(f) = start.folder {
             app.open_folder(f);
@@ -182,6 +188,7 @@ impl EditApp {
             let kind = match k {
                 "commands" => quick::QuickKind::Commands,
                 "line" => quick::QuickKind::Line,
+                "themes" => quick::QuickKind::Themes,
                 "folder" => quick::QuickKind::Browse { files: false },
                 _ => quick::QuickKind::Files,
             };
@@ -197,6 +204,12 @@ impl EditApp {
 
     fn choice(&self) -> Choice {
         Choice { mode: self.s.theme, accent: self.s.accent, follow_desktop_colors: self.s.follow_desktop_colors, text_size: self.s.text_size }
+    }
+
+/// The editor's scheme now (the one being previewed, else the chosen one).
+    pub(crate) fn scheme(&self) -> Option<&'static crate::schemes::Scheme> {
+        let name = self.scheme_preview.as_deref().unwrap_or(&self.s.code_scheme);
+        crate::schemes::Scheme::by_name(name)
     }
 
     pub(crate) fn accent(&self) -> egui::Color32 {

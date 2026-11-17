@@ -55,8 +55,13 @@ impl EditApp {
         let main = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: if side { 0 } else { 12 }, right: 12, top: 0, bottom: if self.s.show_statusbar { 0 } else { 12 } });
         egui::CentralPanel::default().frame(main).show(ui, |ui| {
             let r = ui.max_rect();
-            ui.painter().rect_filled(r, r_lg(), v.extreme_bg_color);
+            // The editor's area takes the color scheme's look (the window keeps the app's).
+            let scheme_v = self.scheme().map(|s| s.visuals(&v));
+            ui.painter().rect_filled(r, r_lg(), scheme_v.as_ref().map(|s| s.extreme_bg_color).unwrap_or(v.extreme_bg_color));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::top_down(egui::Align::Min)));
+            if let Some(sv) = scheme_v {
+                child.style_mut().visuals = sv;
+            }
             if self.tabs.is_empty() {
                 self.welcome(&mut child);
             } else {
@@ -448,7 +453,10 @@ impl EditApp {
         let v = ui.visuals().clone();
         let accent = self.accent();
         let code_bg = v.extreme_bg_color;
-        let colors = highlight::colors(v.text_color(), code_bg, accent, builtin_icons::derive_secondary(accent), builtin_icons::derive_tertiary(accent));
+        let colors = match self.scheme() {
+            Some(s) => s.colors(),
+            None => highlight::colors(v.text_color(), code_bg, accent, builtin_icons::derive_secondary(accent), builtin_icons::derive_tertiary(accent)),
+        };
         let font = egui::FontId::monospace(self.s.code_size * fonts::scale());
         let (wrap, numbers, tab_width) = (self.s.word_wrap, self.s.line_numbers, self.s.tab_width);
         let goto = self.goto.take();
