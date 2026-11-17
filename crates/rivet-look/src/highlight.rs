@@ -378,8 +378,8 @@ pub mod defaults {
 }
 
 /// How far each token's default colour moves toward the theme: keywords most (they carry the
-/// accent), the rest enough to sit in the theme without all turning into one colour.
-const THEME_PULL: [f32; 5] = [0.42, 0.24, 0.26, 0.28, 0.26];
+/// accent), the rest a little: the default hues lead, the theme only tints them.
+const THEME_PULL: [f32; 5] = [0.26, 0.14, 0.16, 0.16, 0.16];
 
 /// Highlight colours for code: Rivet's default palette mixed with the theme's three palette
 /// colours (keywords and types toward the primary, strings toward the secondary, numbers and
@@ -409,7 +409,7 @@ pub fn colors(text: Color32, bg: Color32, primary: Color32, secondary: Color32, 
         keyword: tinted[0],
         string: tinted[1],
         number: tinted[2],
-        comment: mix(mix(text, bg, 0.45), primary, 0.12),
+        comment: mix(mix(text, bg, 0.45), primary, 0.08),
         function: tinted[3],
         type_: tinted[4],
         punct: mix(text, bg, 0.3),
