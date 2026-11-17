@@ -85,7 +85,7 @@ told apart by name and tag:
 
 | App | Tags | Downloads |
 | --- | --- | --- |
-| Rivet Files | `v0.7.0` | AppImage, archive, Flatpak bundle; AUR packages. See the [Rivet Files README](apps/rivet-files/README.md#-install) for the libraries the window needs. |
+| Rivet Files | `v0.6.0` | AppImage, archive, Flatpak bundle; AUR packages. See the [Rivet Files README](apps/rivet-files/README.md#-install) for the libraries the window needs. |
 | Rivet FTP | `rivet-ftp-v0.1.0` | An archive (pre-release) |
 | Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
 | Rivet Edit | `rivet-edit-v…` | Not released yet: build from source |
@@ -122,7 +122,7 @@ cargo build --release --workspace        # everything
 ```
 
 `utilities/rivet-dev help` lists the developer tasks: QA, screenshots, packaging and releases.
-Each app is released on its own, with its own version, changelog and tags (`v0.7.0` for Rivet
+Each app is released on its own, with its own version, changelog and tags (`v0.6.0` for Rivet
 Files, `rivet-notes-v0.1.0`, `rivet-ftp-v0.1.0`). `utilities/rivet-dev apps` shows where each
 one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the default).
 `utilities/rivet-dev install notes` installs one for you from source.
