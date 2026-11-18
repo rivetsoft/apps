@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Welcome
+Comment=Checks for new versions of the Rivet apps
+Exec=rivet-welcome --tray
+Icon=rivet-welcome
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

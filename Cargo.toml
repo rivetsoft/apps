@@ -5,6 +5,7 @@
 #   apps/rivet-edit    Rivet Edit, the code editor
 #   apps/rivet-terminal  Rivet Terminal (tabs and split panes; the terminal is crates/rivet-term)
 #   apps/rivet-shell   Rivet Shell (panel, dock, widgets, wallpaper for Wayland)
+#   apps/rivet-welcome Rivet Welcome (installs and updates the apps; a tray icon)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.

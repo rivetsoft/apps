@@ -10,6 +10,8 @@
   <img src="apps/rivet-terminal/data/rivet-terminal.svg" width="88" alt="Rivet Terminal icon">
   &nbsp;
   <img src="apps/rivet-shell/data/rivet-shell.svg" width="88" alt="Rivet Shell icon">
+  &nbsp;
+  <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="88" alt="Rivet Welcome icon">
 </p>
 
 # Rivet Apps
@@ -87,6 +89,15 @@ matugen so every app's colors follow it. Settings in the Rivet look.
 
 ![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.png)
 
+### <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="32" alt=""> Rivet Welcome
+
+Optional: installs and updates the other apps from their releases, and has a tray icon that
+looks for new versions when you sign in and tells you when there are some.
+**Just started:** not released yet; build it from source.
+[More about Rivet Welcome](apps/rivet-welcome/README.md)
+
+![Rivet Welcome with two updates and an install under way](docs/screenshots/welcome-wide.png)
+
 > **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
@@ -102,6 +113,7 @@ told apart by name and tag:
 | Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
 | Rivet Edit | `rivet-edit-v…` | Not released yet: build from source |
 | Rivet Terminal | `rivet-terminal-v…` | Not released yet: build from source |
+| Rivet Welcome | `rivet-welcome-v…` | Not released yet: build from source |
 
 For Rivet FTP or Rivet Notes, unpack the archive and run its installer, which puts the program in
 `~/.local/bin` and adds it to your app launcher:
@@ -125,6 +137,7 @@ cargo build --release -p rivet-notes     # Rivet Notes
 cargo build --release -p rivet-edit      # Rivet Edit
 cargo build --release -p rivet-terminal  # Rivet Terminal
 cargo build --release -p rivet-shell     # Rivet Shell
+cargo build --release -p rivet-welcome   # Rivet Welcome
 cargo build --release --workspace        # everything
 
 ./target/release/rivet [FOLDER]
@@ -132,6 +145,7 @@ cargo build --release --workspace        # everything
 ./target/release/rivet-notes [VAULT]
 ./target/release/rivet-edit [FOLDER] [FILE...]
 ./target/release/rivet-terminal [-d FOLDER] [-e PROGRAM ARGS...]
+./target/release/rivet-welcome [--tray]
 ```
 
 `utilities/rivet-dev help` lists the developer tasks: QA, screenshots, packaging and releases.
@@ -153,6 +167,7 @@ it shows what changed, skips apps with nothing new, and asks release, skip or st
 | `apps/rivet-edit` | Rivet Edit (just started): code, data, changelog |
 | `apps/rivet-terminal` | Rivet Terminal (just started): code, data, changelog |
 | `apps/rivet-shell` | Rivet Shell (just started): the panel, dock, widgets and wallpaper, and its settings |
+| `apps/rivet-welcome` | Rivet Welcome (just started): installs and updates the apps, with a tray icon |
 | `crates/rivet-term` | Shared: the terminal (a shell in a pseudo-terminal, drawn as a widget); Rivet Terminal's, and later Rivet Edit's panel |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
 | `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |

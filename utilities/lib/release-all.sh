@@ -72,10 +72,10 @@ suggest() {
     if [ "$major" = 0 ]; then echo "0.$((minor + 1)).0"; else echo "$major.$minor.$((patch + 1))"; fi
 }
 
-APPS="files ftp notes edit terminal"
+APPS="files ftp notes edit terminal welcome"
 [ -n "$ONLY" ] && APPS=$ONLY
 for a in $APPS; do
-    is_app "$a" || { echo "Unknown app: $a (files, ftp, notes, edit or terminal)" >&2; exit 1; }
+    is_app "$a" || { echo "Unknown app: $a (files, ftp, notes, edit, terminal or welcome)" >&2; exit 1; }
 done
 
 if [ -z "$DRY" ] && [ -n "$(git status --porcelain)" ]; then

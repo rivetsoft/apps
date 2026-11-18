@@ -2521,6 +2521,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivet-welcome"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "libc",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-xdg",
+ "serde_json",
+ "zbus",
+]
+
+[[package]]
 name = "rivet-xdg"
 version = "0.1.0"
 dependencies = [
