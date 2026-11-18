@@ -41,6 +41,7 @@ cargo build --release -p rivet-shell
 ./target/release/rivet-shell msg launcher          # open (or close) the launcher
 ./target/release/rivet-shell msg control-center    # quick settings
 ./target/release/rivet-shell msg volume up         # also down, mute; brightness up|down; media next…
+./target/release/rivet-shell msg wallpaper random  # also next, previous, or a picture's path
 ./target/release/rivet-shell msg quit              # stop it
 ./target/release/rivet-shell --install-desktop-entry   # Rivet Shell Settings in your launcher
 ```

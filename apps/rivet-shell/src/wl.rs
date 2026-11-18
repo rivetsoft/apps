@@ -608,6 +608,18 @@ impl Shell {
                     ("keep-awake", _) => self.act(Act::KeepAwake(self.inhibitor.is_none())),
                     ("settings", _) => open_settings(),
                     ("reload", _) => self.reload_settings(true),
+                    ("wallpaper", "random" | "next" | "previous") => {
+                        // A picture from the wallpaper folder (the Settings window's), on a thread:
+                        // a big folder takes a moment to list.
+                        let dir = PathBuf::from(&self.s.wallpaper_dir);
+                        let (now, how, tx) = (PathBuf::from(&self.s.wallpaper), arg.to_string(), self.tx.clone());
+                        std::thread::spawn(move || match crate::wall::pick(&dir, &now, &how) {
+                            Some(p) => {
+                                let _ = tx.send(Msg::Ipc(format!("wallpaper {}", p.display())));
+                            }
+                            None => eprintln!("rivet-shell: no pictures in {} (JPEG, PNG or WebP)", dir.display()),
+                        });
+                    }
                     ("wallpaper", _) if !arg.is_empty() => {
                         self.s.wallpaper = arg.to_string();
                         self.s.save();

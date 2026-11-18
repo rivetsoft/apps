@@ -28,7 +28,7 @@ Usage:
                                     power (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
-                                    settings, wallpaper PATH, reload, quit
+                                    settings, wallpaper PATH|random|next|previous, reload, quit
   rivet-shell --install-desktop-entry
                                     Add Rivet Shell Settings to the app launcher (for this user)
   rivet-shell -h, --help            This help

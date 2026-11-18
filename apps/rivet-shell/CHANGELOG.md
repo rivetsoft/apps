@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `rivet-shell msg wallpaper random` (and `next`, `previous`) picks another picture from the
+  wallpaper folder.
 - A clearer Panels page: a tab for each panel, a live preview of it, Position and Style
   switches, and the three zones side by side, where items are dragged to reorder them or move
   them between zones; Add Item lists what's left with a picture and a line about each.

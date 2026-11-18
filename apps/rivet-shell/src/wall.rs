@@ -33,6 +33,40 @@ pub fn pictures(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Another picture from the folder: `random` (never the current one, when there are others),
+/// or the `next` / `previous` one by name, going round.
+pub fn pick(dir: &Path, now: &Path, how: &str) -> Option<PathBuf> {
+    let list = pictures(dir);
+    choose(&list, now, how, seed())
+}
+
+fn seed() -> u64 {
+    let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0);
+    // Mixed (splitmix64), so close times give far-apart picks.
+    let mut z = t ^ ((std::process::id() as u64) << 32);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d049bb133111eb);
+    z ^ (z >> 31)
+}
+
+fn choose(list: &[PathBuf], now: &Path, how: &str, seed: u64) -> Option<PathBuf> {
+    if list.is_empty() {
+        return None;
+    }
+    let at = list.iter().position(|p| p == now);
+    let n = list.len();
+    let i = match (how, at) {
+        ("next", Some(i)) => (i + 1) % n,
+        ("previous", Some(i)) => (i + n - 1) % n,
+        ("next", None) => 0,
+        ("previous", None) => n - 1,
+        // Random among the others.
+        (_, Some(i)) if n > 1 => (i + 1 + (seed % (n as u64 - 1)) as usize) % n,
+        _ => (seed % n as u64) as usize,
+    };
+    list.get(i).cloned()
+}
+
 /// A picture scaled to cover `w`×`h` (cropping what overflows, centred), as BGRA bytes for a
 /// Wayland buffer.
 pub fn cover_bgra(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
@@ -212,6 +246,21 @@ pub fn demo_png(dir: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn picks_another_picture() {
+        let list: Vec<PathBuf> = ["a.jpg", "b.png", "c.webp"].iter().map(PathBuf::from).collect();
+        let now = PathBuf::from("b.png");
+        for seed in 0..50 {
+            let p = choose(&list, &now, "random", seed).unwrap();
+            assert_ne!(p, now);
+        }
+        assert_eq!(choose(&list, &now, "next", 0), Some(PathBuf::from("c.webp")));
+        assert_eq!(choose(&list, Path::new("c.webp"), "next", 0), Some(PathBuf::from("a.jpg")));
+        assert_eq!(choose(&list, Path::new("a.jpg"), "previous", 0), Some(PathBuf::from("c.webp")));
+        assert_eq!(choose(&list[..1], Path::new("a.jpg"), "random", 7), Some(PathBuf::from("a.jpg")));
+        assert_eq!(choose(&[], &now, "random", 1), None);
+    }
 
     #[test]
     fn covers_and_lists() {

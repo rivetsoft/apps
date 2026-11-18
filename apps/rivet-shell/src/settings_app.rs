@@ -506,6 +506,7 @@ impl SettingsApp {
                 ("rivet-shell msg brightness up | down", "Brightness"),
                 ("rivet-shell msg media play-pause | next | previous", "Music and video"),
                 ("rivet-shell msg dnd", "Do Not Disturb"),
+                ("rivet-shell msg wallpaper random | next | previous", "Another wallpaper from the folder"),
                 ("rivet-shell msg power", "Lock, suspend, restart, shut down"),
             ] {
                 ui.horizontal(|ui| {
