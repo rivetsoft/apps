@@ -137,8 +137,17 @@ fn draw_mesh(buf: &mut [u8], w: usize, h: usize, order: Order, mesh: &Mesh, clip
             continue;
         }
         let flat = v[0].color == v[1].color && v[1].color == v[2].color;
+        // egui draws plain shapes through its font texture too, all corners at one white texel:
+        // a triangle whose corners share one spot of the texture has one texture colour, looked
+        // up once here, so it can take the solid fast path below instead of sampling per pixel.
+        let texel = tex.filter(|_| v[0].uv == v[1].uv && v[1].uv == v[2].uv).map(|t| sample(t, v[0].uv.x, v[0].uv.y));
+        let tex = if texel.is_some() { None } else { tex };
+        let tint = |c: Color32| -> [f32; 4] {
+            let s = texel.unwrap_or([255.0; 4]);
+            [c.r() as f32 * s[0] / 255.0, c.g() as f32 * s[1] / 255.0, c.b() as f32 * s[2] / 255.0, c.a() as f32 * s[3] / 255.0]
+        };
         // Fully see-through and untextured: nothing to draw.
-        if flat && tex.is_none() && v[0].color.a() == 0 {
+        if flat && tex.is_none() && tint(v[0].color)[3] <= 0.0 {
             continue;
         }
         let x0 = (pa.x.min(pb.x).min(pc.x).floor().max(0.0) as usize).max(cx0);
@@ -151,8 +160,7 @@ fn draw_mesh(buf: &mut [u8], w: usize, h: usize, order: Order, mesh: &Mesh, clip
         // e0 weighs vertex a (the edge opposite it), e1 vertex b, e2 vertex c.
         let edges = [Edge::new(pb, pc, area), Edge::new(pc, pa, area), Edge::new(pa, pb, area)];
         let inv_area = 1.0 / area.abs();
-        let cc = v[0].color;
-        let flat_col = [cc.r() as f32, cc.g() as f32, cc.b() as f32, cc.a() as f32];
+        let flat_col = tint(v[0].color);
         for y in y0..y1 {
             let py = y as f32 + 0.5;
             if py < clip.min.y || py > clip.max.y {
@@ -193,7 +201,7 @@ fn draw_mesh(buf: &mut [u8], w: usize, h: usize, order: Order, mesh: &Mesh, clip
                 if sx >= ex {
                     continue;
                 }
-                let px = [cc.r(), cc.g(), cc.b(), cc.a()];
+                let px = flat_col.map(|c| c.round().clamp(0.0, 255.0) as u8);
                 let mut out = [0u8; 4];
                 out[ri] = px[0];
                 out[1] = px[1];
@@ -205,11 +213,21 @@ fn draw_mesh(buf: &mut [u8], w: usize, h: usize, order: Order, mesh: &Mesh, clip
                         *d = out;
                     }
                 } else {
+                    // Source over, two channels per multiply: each pixel as one u32, its bytes
+                    // split into the even and odd pairs, scaled by (255 - alpha) / 255 with
+                    // rounding, and the (premultiplied) colour added. Bytes stay in order, so
+                    // this works for either byte order.
                     let inv = 255 - px[3] as u32;
+                    let src = u32::from_le_bytes(out);
+                    let scale = |pair: u32| -> u32 {
+                        let t = pair * inv + 0x0080_0080;
+                        ((t + ((t >> 8) & 0x00ff_00ff)) >> 8) & 0x00ff_00ff
+                    };
                     for d in span.as_chunks_mut::<4>().0 {
-                        for k in 0..4 {
-                            d[k] = (out[k] as u32 + (d[k] as u32 * inv + 127) / 255).min(255) as u8;
-                        }
+                        let dst = u32::from_le_bytes(*d);
+                        let kept = scale(dst & 0x00ff_00ff) | (scale((dst >> 8) & 0x00ff_00ff) << 8);
+                        // Premultiplied: colour + kept never passes 255 a byte, so no carries.
+                        *d = src.wrapping_add(kept).to_le_bytes();
                     }
                 }
                 continue;
@@ -229,11 +247,10 @@ fn draw_mesh(buf: &mut [u8], w: usize, h: usize, order: Order, mesh: &Mesh, clip
                 } else {
                     let mut col = [0.0f32; 4];
                     for (vert, wt) in v.iter().zip([w0, w1, w2]) {
-                        let c = vert.color;
-                        col[0] += c.r() as f32 * wt;
-                        col[1] += c.g() as f32 * wt;
-                        col[2] += c.b() as f32 * wt;
-                        col[3] += c.a() as f32 * wt;
+                        let c = tint(vert.color);
+                        for k in 0..4 {
+                            col[k] += c[k] * wt;
+                        }
                     }
                     col
                 };
@@ -309,6 +326,27 @@ mod tests {
         // Exactly the rectangle's pixels: 2..6 in both directions.
         let red = img.pixels.iter().filter(|p| **p == Color32::from_rgb(255, 0, 0)).count();
         assert_eq!(red, 16);
+    }
+
+    #[test]
+    fn a_shape_on_one_texel_takes_that_texels_colour() {
+        // As egui draws plain shapes: through a texture, every corner at the same texel.
+        let mut img = ColorImage::filled([2, 2], Color32::BLACK);
+        img.pixels[0] = Color32::from_rgb(0, 200, 0);
+        let mut textures = Textures::default();
+        let mut delta = TexturesDelta::default();
+        delta.set.insert(TextureId::default(), std::iter::once(eframe::epaint::ImageDelta::full(ImageData::Color(std::sync::Arc::new(img)), eframe::egui::TextureOptions::NEAREST)).collect());
+        textures.update(&delta);
+        delta.clear();
+        let mut mesh = Mesh::default();
+        let r = Rect::from_min_max(Pos2::new(1.0, 1.0), Pos2::new(5.0, 5.0));
+        mesh.add_rect_with_uv(r, Rect::from_min_max(Pos2::new(0.25, 0.25), Pos2::new(0.25, 0.25)), Color32::from_rgb(255, 128, 255));
+        let prims = vec![ClippedPrimitive { clip_rect: Rect::EVERYTHING, primitive: Primitive::Mesh(mesh) }];
+        let out = render(&prims, &textures, [6, 6], [0.0, 0.0, 0.0, 1.0]);
+        // The vertex colour times the texel: (0, 100, 0); all 16 pixels, nothing outside.
+        let want = Color32::from_rgb(0, 100, 0);
+        assert_eq!(out.pixels.iter().filter(|p| **p == want).count(), 16);
+        assert_eq!(out.pixels[0], Color32::BLACK);
     }
 
     #[test]

@@ -95,6 +95,8 @@ struct Surf {
     /// The pointer is on it, or when it left.
     hovered: bool,
     left_at: Option<Instant>,
+    /// The last frame sent (to send only what changed).
+    last: Vec<u8>,
 }
 
 impl Surf {
@@ -153,6 +155,8 @@ pub struct Shell {
     user: String,
     /// The last popup's screen state (fonts, icons already made), so the next opens at once.
     spare: Option<(egui::Context, Kit, soft::Textures, Instant)>,
+    /// The launcher was drawn once unseen at the start, so its first opening is quick too.
+    prewarmed: bool,
     pub exit: bool,
 }
 
@@ -221,6 +225,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         inhibitor: None,
         user: sys::user_name(),
         spare: None,
+        prewarmed: false,
         exit: false,
     };
     shell.set_notifications();
@@ -352,6 +357,7 @@ impl Shell {
             collapsed: false,
             hovered: false,
             left_at: None,
+            last: Vec::new(),
         }
     }
 
@@ -648,11 +654,44 @@ impl Shell {
         }
     }
 
+    /// Draw the launcher once, unseen, at the start: its fonts and the first screen of app icons
+    /// are made then, and the first time it opens it takes them over (as later openings do).
+    fn prewarm(&mut self) {
+        if self.prewarmed || self.spare.is_some() || self.popup.is_some() {
+            return;
+        }
+        let Some(info) = self.output_state.outputs().next().and_then(|o| self.output_state.info(&o)) else { return };
+        self.prewarmed = true;
+        let scale = info.scale_factor.max(1) as f32;
+        let (w, h) = info.logical_size.map(|(w, h)| (w as f32, h as f32)).unwrap_or((1280.0, 720.0));
+        let ctx = egui::Context::default();
+        let mut kit = Kit::new(true);
+        let mut tex = soft::Textures::default();
+        let mut raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(w, h))), ..Default::default() };
+        if let Some(v) = raw.viewports.get_mut(&ViewportId::ROOT) {
+            v.native_pixels_per_point = Some(scale);
+        }
+        let status = self.live.get();
+        let extra = Extra::default();
+        let mut pop = Popup::launcher("");
+        let mut acts = Vec::new();
+        let out = ctx.run_ui(raw, |ui| {
+            kit.begin(ui.ctx(), &self.s);
+            let mut m = Model { s: &self.s, status: &status, extra: &extra, apps: &self.apps, compositor: self.comp, output: "", acts: &mut acts };
+            ui::popup(ui, &mut pop, &mut m, &mut kit);
+        });
+        let mut delta = out.textures_delta;
+        tex.update(&delta);
+        delta.clear();
+        self.spare = Some((ctx, kit, tex, Instant::now()));
+    }
+
     /// Twice a second: settings, the desktop's colours, the status, the clock, repaints asked for.
     fn tick(&mut self) {
         if crate::config::mtime() != self.s_mtime {
             self.reload_settings(false);
         }
+        self.prewarm();
         let now = Instant::now();
         // The colour files' dates only (reading them again is the surfaces' job, when they change).
         if self.palette_watch.iter().any(|(p, t)| mtime(p) != *t) {
@@ -965,6 +1004,7 @@ impl Shell {
         let output_name = surf.output_name.clone();
         let (slide, collapsed) = (surf.slide, surf.collapsed);
         let mut plain = egui::Color32::from_rgb(30, 30, 34);
+        let t_u0 = Instant::now();
         let out = surf.ctx.run_ui(raw, |ui| {
             surf.kit.begin(ui.ctx(), settings);
             plain = ui.visuals().extreme_bg_color;
@@ -991,13 +1031,18 @@ impl Shell {
         });
         // Take in the frame's texture changes (fonts, icons) and mark them handled: egui
         // insists on that before the changes are dropped.
+        let t_ui = t_u0.elapsed();
         let mut out = out;
         let mut delta = std::mem::take(&mut out.textures_delta);
         surf.tex.update(&delta);
         delta.clear();
+        let t_t0 = Instant::now();
         let prims = surf.ctx.tessellate(out.shapes, scale as f32);
+        let t_tess = t_t0.elapsed();
         let stride = pw as i32 * 4;
+        let t_b0 = Instant::now();
         let Ok((buffer, canvas)) = surf.pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else { return };
+        let t_buf = t_b0.elapsed();
         match (kind, wall) {
             (Kind::Background, Some(px)) if px.len() == canvas.len() => canvas.copy_from_slice(px),
             (Kind::Background, _) => {
@@ -1013,13 +1058,37 @@ impl Shell {
             }
             _ => canvas.fill(0),
         }
+        let t_r0 = Instant::now();
         soft::draw(canvas, pw as usize, ph as usize, soft::Order::Bgra, &prims, &surf.tex, scale as f32);
+        // Only the rows that changed since the last frame go to the compositor (typing in the
+        // launcher changes a few lines of a screen-sized surface). The wallpaper changes whole.
+        let row_bytes = pw as usize * 4;
+        let rows = if kind != Kind::Background && surf.last.len() == canvas.len() {
+            let differs = |y: usize| canvas[y * row_bytes..(y + 1) * row_bytes] != surf.last[y * row_bytes..(y + 1) * row_bytes];
+            let first = (0..ph as usize).find(|&y| differs(y));
+            first.map(|f| (f, (f..ph as usize).rev().find(|&y| differs(y)).unwrap_or(f)))
+        } else {
+            Some((0, ph as usize - 1))
+        };
+        if kind != Kind::Background {
+            surf.last.clear();
+            surf.last.extend_from_slice(canvas);
+        }
         let ws = surf.layer.wl_surface();
-        ws.damage_buffer(0, 0, pw as i32, ph as i32);
-        ws.frame(&self.qh, ws.clone());
-        if buffer.attach_to(ws).is_ok() {
-            surf.layer.commit();
-            surf.waiting_frame = true;
+        if std::env::var_os("RIVET_SHELL_TIMING").is_some() {
+            eprintln!("draw {:?} {}x{}: ui {:.1} ms, tessellate {:.1} ms, buffer {:.1} ms, raster {:.1} ms, all {:.1} ms, rows {:?}", kind, pw, ph, t_ui.as_secs_f64() * 1e3, t_tess.as_secs_f64() * 1e3, t_buf.as_secs_f64() * 1e3, t_r0.elapsed().as_secs_f64() * 1e3, t_u0.elapsed().as_secs_f64() * 1e3, rows);
+        }
+        match rows {
+            Some((y0, y1)) => {
+                ws.damage_buffer(0, y0 as i32, pw as i32, (y1 - y0 + 1) as i32);
+                ws.frame(&self.qh, ws.clone());
+                if buffer.attach_to(ws).is_ok() {
+                    surf.layer.commit();
+                    surf.waiting_frame = true;
+                }
+            }
+            // Nothing changed on screen: nothing to send.
+            None => drop(buffer),
         }
         // Animations and hover effects ask to be drawn again soon.
         let delay = out.viewport_output.get(&ViewportId::ROOT).map(|v| v.repaint_delay).unwrap_or(Duration::MAX);

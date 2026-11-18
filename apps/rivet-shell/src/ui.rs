@@ -556,6 +556,8 @@ fn calc_text(v: f64) -> String {
 }
 
 fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: bool, m: &mut Model, kit: &mut Kit) {
+    // A steady cursor: a blinking one redraws the whole launcher twice a second.
+    ui.visuals_mut().text_cursor.blink = false;
     let v = ui.visuals().clone();
     let id = egui::Id::unique("launcher-search");
     let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The launcher keeps up with typing: drawing is several times faster (plain shapes take the fast
+  path, see-through ones blend two channels at a time), only the changed rows go to the
+  compositor, the cursor doesn't blink, and the launcher is made ready at the start.
 - Quick settings in the Rivet apps' own look: a title row with toolbar buttons, folding
   sections like Rivet Files' sidebar, thin sliders, toggles that light up like a selected item,
   what's playing as a row, the notifications as a list.
