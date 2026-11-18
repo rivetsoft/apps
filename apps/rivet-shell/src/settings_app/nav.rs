@@ -12,8 +12,8 @@ pub(super) const GROUPS: &[(&str, &[Page])] = &[("Look", &[Page::Wallpaper, Page
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
     match page {
-        Page::Wallpaper => "The wallpaper, and the colors made from it",
-        Page::Appearance => "Light or dark, the accent, text size, and how panels and windows look",
+        Page::Wallpaper => "The picture behind everything, and how a new one comes in",
+        Page::Appearance => "Colors, text, and how panels and windows look",
         Page::Panel => "The bars along the screen's edges, and what's on each",
         Page::Dock => "Pinned and open apps along the bottom",
         Page::Widgets => "The clock and the system's readings on the desktop",

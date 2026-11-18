@@ -20,7 +20,7 @@ fn ui_font(size: f32) -> egui::FontId {
 
 /// The items with options.
 pub fn has_options(id: &str) -> bool {
-    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power")
+    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings")
 }
 
 fn tip(id: &str) -> &'static str {
@@ -35,6 +35,7 @@ fn tip(id: &str) -> &'static str {
         "brightness" => "How the brightness shows",
         "battery" => "How the battery shows",
         "power" => "How the power menu shows",
+        "quick-settings" => "The quick settings' symbol",
         _ => "Options",
     }
 }
@@ -64,7 +65,7 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
     popup.show(|ui| {
         ui.set_width(WIDTH);
         ui.spacing_mut().item_spacing = Vec2::new(8.0, 6.0);
-        head(ui, id, accent);
+        head(ui, id, accent, s.quick_icon);
         match id {
             "launcher" => launcher(ui, s, accent),
             "clock" => clock(ui, s),
@@ -119,6 +120,11 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
                 note(ui, "It turns red at 15% when not charging, whatever it shows.");
             }
             "power" => power(ui, s, accent),
+            "quick-settings" => {
+                section(ui, "Symbol");
+                let choices: Vec<(crate::config::QuickIcon, &str)> = crate::config::QuickIcon::ALL.iter().map(|c| (*c, c.label())).collect();
+                tiles(ui, &mut s.quick_icon, &choices, accent, |p, r, c, col| glyph::quick(p, r.center(), col, c));
+            }
             _ => {}
         }
     });
@@ -126,13 +132,13 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
 }
 
 /// The card's top: the item's symbol in a tinted disc, its name, and a rule under them.
-fn head(ui: &mut egui::Ui, id: &str, accent: Color32) {
+fn head(ui: &mut egui::Ui, id: &str, accent: Color32, quick: crate::config::QuickIcon) {
     let v = ui.visuals().clone();
     let (r, _) = ui.allocate_exact_size(Vec2::new(WIDTH, 36.0), Sense::hover());
     let p = ui.painter();
     let c = Pos2::new(r.left() + 17.0, r.center().y);
     p.circle_filled(c, 17.0, mix(v.window_fill, accent, 0.16));
-    glyph::item(p, id, c, accent, accent);
+    glyph::item(p, id, c, accent, accent, quick);
     p.text(Pos2::new(r.left() + 44.0, r.top() + 10.0), Align2::LEFT_CENTER, label(id), ui_font(14.5), v.strong_text_color());
     p.text(Pos2::new(r.left() + 44.0, r.top() + 27.0), Align2::LEFT_CENTER, "Panel item options", ui_font(11.5), v.weak_text_color());
     ui.add_space(6.0);

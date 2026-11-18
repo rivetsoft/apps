@@ -157,7 +157,7 @@ impl FtpApp {
                                     section(ui, "Desktop colors", &mut |ui| {
                                         ui.checkbox(&mut self.s.follow_desktop_colors, "Follow desktop colors");
                                         ui.add_space(6.0);
-                                        match (&pal, self.s.follow_desktop_colors) {
+                                        match (&pal, rivet_look::palette::follows(pal.as_ref(), self.s.follow_desktop_colors)) {
                                             (Some(p), true) => {
                                                 ui.horizontal(|ui| {
                                                     ui.spacing_mut().item_spacing.x = 6.0;
@@ -167,15 +167,14 @@ impl FtpApp {
                                                         ui.painter().rect_stroke(r, r_xs(), Stroke::new(1.0, weak), egui::StrokeKind::Inside);
                                                     }
                                                     ui.add_space(4.0);
-                                                    let name = p.source.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                                                    ui.label(egui::RichText::new(format!("from {name}")).small().color(weak)).on_hover_text(p.source.display().to_string());
+                                                    ui.label(egui::RichText::new(p.source_label()).small().color(weak)).on_hover_text(p.source.display().to_string());
                                                 });
                                             }
                                             (None, true) => hint(ui, "No desktop color file was found, so the style and accent below are used."),
                                             _ => hint(ui, "The style and accent below are used."),
                                         }
                                     });
-                                    let manual = !self.s.follow_desktop_colors || pal.is_none();
+                                    let manual = rivet_look::palette::shown(pal.as_ref(), self.s.follow_desktop_colors).is_none();
                                     section(ui, "Style and accent", &mut |ui| {
                                         grid(ui, "ftp-look", &mut |ui| {
                                             ui.label("Style");
@@ -650,7 +649,7 @@ impl FtpApp {
 
     /// The look, from the settings and (when followed) the desktop's colors.
     pub(super) fn look(&self) -> (theme::Mode, Color32, Option<&palette::Palette>) {
-        let pal = if self.s.follow_desktop_colors { self.palette.as_ref() } else { None };
+        let pal = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors);
         let a = self.s.accent;
         let accent = pal.and_then(|p| p.accent).unwrap_or(Color32::from_rgb(a[0], a[1], a[2]));
         (self.s.theme, accent, pal)

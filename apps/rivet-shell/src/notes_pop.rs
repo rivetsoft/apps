@@ -69,7 +69,7 @@ pub fn height(m: &Model, ctx: &egui::Context) -> f32 {
 
 pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
-    let accent = kit.accent(m.s);
+    let accent = kit.tone(m.s, crate::style::Slot::Notify);
     let (fg, weak) = (v.text_color(), v.weak_text_color());
     let w = ui.available_width();
     let mut acts: Vec<Act> = Vec::new();

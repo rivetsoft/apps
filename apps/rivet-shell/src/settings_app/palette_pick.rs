@@ -8,7 +8,7 @@ use rivet_look::schemes::{SCHEMES, Scheme};
 use rivet_look::theme::r_md;
 
 use super::panel_editor::segmented;
-use super::{SettingsApp, hint, section};
+use super::SettingsApp;
 
 const TILE_W: f32 = 148.0;
 const TILE_H: f32 = 58.0;
@@ -27,14 +27,9 @@ fn font(size: f32) -> egui::FontId {
 }
 
 impl SettingsApp {
-    pub(super) fn palette_section(&mut self, ui: &mut egui::Ui) {
-        section(ui, "Palette", &mut |ui| {
-            hint(ui, if self.s.matugen {
-                "Ready-made colors for the shell and every Rivet app. The colors come from the wallpaper now; choosing a palette turns that off."
-            } else {
-                "Ready-made colors for the shell and every Rivet app, in place of ones made from the wallpaper."
-            });
-            ui.add_space(10.0);
+    /// The palettes as tiles, under a filter; a click chooses one.
+    pub(super) fn palette_tiles(&mut self, ui: &mut egui::Ui) {
+        {
             let id = egui::Id::unique("palette-show");
             let mut show = ui.data(|d| d.get_temp::<Show>(id)).unwrap_or(Show::All);
             segmented(ui, &mut show, &[(Show::All, "All"), (Show::Dark, "Dark"), (Show::Light, "Light")]);
@@ -42,13 +37,11 @@ impl SettingsApp {
             ui.add_space(10.0);
 
             let chosen = Scheme::by_name(&self.s.palette).map(|s| s.name);
-            let list: Vec<Option<&Scheme>> = std::iter::once(None)
-                .chain(SCHEMES.iter().filter(|s| match show {
-                    Show::All => true,
-                    Show::Dark => s.dark,
-                    Show::Light => !s.dark,
-                }).map(Some))
-                .collect();
+            let list: Vec<Option<&Scheme>> = SCHEMES.iter().filter(|s| match show {
+                Show::All => true,
+                Show::Dark => s.dark,
+                Show::Light => !s.dark,
+            }).map(Some).collect();
             // Whole tiles across the card, sharing what's left over.
             let room = ui.available_width();
             let cols = (((room + GAP) / (TILE_W + GAP)).floor() as usize).max(1);
@@ -102,6 +95,6 @@ impl SettingsApp {
             if let Some(name) = pick {
                 self.s.choose_palette(name);
             }
-        });
+        }
     }
 }

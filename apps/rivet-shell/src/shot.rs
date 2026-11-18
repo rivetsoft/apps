@@ -124,6 +124,14 @@ impl ShotApp {
             // "system", or a custom icon's name or path.
             (s.launcher_icon, s.launcher_custom) = if l == "system" { (crate::config::LauncherIcon::System, String::new()) } else { (crate::config::LauncherIcon::Custom, l) };
         }
+        if let Some(n) = std::env::var("RIVET_SHELL_SURFACE").ok().and_then(|h| u32::from_str_radix(&h, 16).ok()) {
+            let c = Some([(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+            (s.surface_dark, s.surface_light) = (c, c);
+        }
+        s.surface_tint = std::env::var("RIVET_SHELL_TINT").is_ok();
+        if let Ok(i) = std::env::var("RIVET_SHELL_ICONS") {
+            s.icon_theme = i;
+        }
         if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
             s.look = crate::style::Style::parse(&l, '=', ';');
         }
@@ -178,6 +186,14 @@ impl ShotApp {
         // RIVET_SHELL_SIZE=48:10: the first panel's thickness, and the room between its items.
         if let (Some((a, b)), Some(p)) = (std::env::var("RIVET_SHELL_SIZE").ok().and_then(|v| v.split_once(':').map(|(a, b)| (a.parse().ok(), b.parse().ok()))), s.panels.first_mut()) {
             (p.size, p.spacing) = (a, b);
+        }
+        // RIVET_SHELL_QUICK=toggles: the quick settings item's symbol.
+        if let Ok(q) = std::env::var("RIVET_SHELL_QUICK") {
+            s.quick_icon = crate::config::QuickIcon::from(&q);
+        }
+        // RIVET_SHELL_COLORS=2: how much the secondary and tertiary colours are used.
+        if let Some(n) = std::env::var("RIVET_SHELL_COLORS").ok().and_then(|n| n.parse().ok()) {
+            s.color_use = n;
         }
         // RIVET_SHELL_SPACER=40: a spacer that size after the first panel's first item.
         if let (Some(n), Some(p)) = (std::env::var("RIVET_SHELL_SPACER").ok().and_then(|n| n.parse::<u32>().ok()), s.panels.first_mut()) {

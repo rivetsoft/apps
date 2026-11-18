@@ -17,6 +17,9 @@ pub struct LiveLook {
     checked: f64,
     key: Option<String>,
     fonts_set: bool,
+    /// The app's own colours for dark and for light, and what they were made for (see `set_own`).
+    own: [Option<palette::Palette>; 2],
+    own_key: String,
     /// The fonts last loaded by `set_fonts` (interface, editor, monospace).
     font_key: Option<(String, String, String)>,
 }
@@ -99,6 +102,30 @@ impl LiveLook {
         ctx.set_fonts(defs);
     }
 
+    /// Colours of the app's own, for its dark style and its light one, shown in place of any
+    /// desktop palette (both None: none). `make` runs only when `key` changes.
+    pub fn set_own(&mut self, key: &str, make: impl FnOnce() -> [Option<palette::Palette>; 2]) {
+        if self.own_key != key {
+            self.own_key = key.to_string();
+            self.own = make();
+            self.key = None;
+        }
+    }
+
+    fn has_own(&self) -> bool {
+        self.own.iter().any(|p| p.is_some())
+    }
+
+    /// The app's own palette for the mode in effect.
+    fn own_palette(&self, ctx: &egui::Context, mode: theme::Mode) -> Option<&palette::Palette> {
+        let dark = match mode {
+            theme::Mode::Dark => true,
+            theme::Mode::Light => false,
+            theme::Mode::System => ctx.system_theme().map(|t| t == egui::Theme::Dark).unwrap_or_else(palette::prefers_dark),
+        };
+        self.own[if dark { 0 } else { 1 }].as_ref()
+    }
+
     pub fn new() -> LiveLook {
         let (pal, watched) = palette::load();
         LiveLook { palette: pal, watched: watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect(), ..Default::default() }
@@ -111,7 +138,11 @@ impl LiveLook {
 
     /// The accent in use: the desktop's when followed, else the chosen one.
     pub fn accent(&self, c: &Choice) -> Color32 {
-        let pal = if c.follow_desktop_colors { self.palette.as_ref() } else { None };
+        // The app's own colours: its own accent (a colour file written from them may be a moment old).
+        if self.has_own() {
+            return Color32::from_rgb(c.accent[0], c.accent[1], c.accent[2]);
+        }
+        let pal = palette::shown(self.palette.as_ref(), c.follow_desktop_colors);
         pal.and_then(|p| p.accent).unwrap_or(Color32::from_rgb(c.accent[0], c.accent[1], c.accent[2]))
     }
 
@@ -132,16 +163,16 @@ impl LiveLook {
         if live && (now - self.checked >= 2.0 || self.checked == 0.0) {
             self.checked = now;
             if self.watched.iter().any(|(p, t)| mtime(p) != *t) {
-                *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), checked: now, ..LiveLook::new() };
+                *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), own: std::mem::take(&mut self.own), own_key: std::mem::take(&mut self.own_key), checked: now, ..LiveLook::new() };
             }
-            if c.follow_desktop_colors {
-                ctx.request_repaint_after(std::time::Duration::from_secs(2));
-            }
+            // Also when not following: a palette chosen in Rivet is taken up all the same.
+            ctx.request_repaint_after(std::time::Duration::from_secs(2));
         }
         let size = if c.text_size > 0.0 { c.text_size } else { fonts::desktop_font_cached().map(|(_, pt)| fonts::points_to_ui(pt)).unwrap_or(fonts::BASE_SIZE) };
         fonts::set_scale(size / fonts::BASE_SIZE);
         let accent = self.accent(c);
-        let pal = if c.follow_desktop_colors { self.palette.as_ref() } else { None };
+        let pal = if self.has_own() { self.own_palette(ctx, c.mode) } else { palette::shown(self.palette.as_ref(), c.follow_desktop_colors) }.cloned();
+        let pal = pal.as_ref();
         let key = format!("{:?}{accent:?}{pal:?}{size}", c.mode);
         if self.key.as_ref() == Some(&key) {
             return;

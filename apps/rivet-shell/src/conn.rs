@@ -171,7 +171,6 @@ fn foot(ui: &mut egui::Ui, m: &mut Model, app: &str, label: &str) {
 // ------------------------------------------------------------------ Wi-Fi
 
 pub fn network(ui: &mut egui::Ui, ask: &mut Option<(String, String)>, m: &mut Model, kit: &mut Kit) {
-    let accent = kit.accent(m.s);
     let v = ui.visuals().clone();
     ui.spacing_mut().item_spacing.y = 0.0;
     let r = m.extra.radios.clone();
@@ -184,7 +183,8 @@ pub fn network(ui: &mut egui::Ui, ask: &mut Option<(String, String)>, m: &mut Mo
         (Net::Wired, _) => "Wired".into(),
         _ => "Not connected".into(),
     };
-    let (tool, flipped) = head(ui, "Wi-Fi", &sub, on, accent);
+    let (tool, flipped) = head(ui, "Wi-Fi", &sub, on, kit.tone(m.s, crate::style::Slot::Toggle));
+    let accent = kit.tone(m.s, crate::style::Slot::Active);
     if flipped {
         m.acts.push(Act::Wifi(!on.unwrap_or(false)));
     }
@@ -282,7 +282,6 @@ fn password_row(ui: &mut egui::Ui, ask: &mut Option<(String, String)>, m: &mut M
 // ------------------------------------------------------------------ Bluetooth
 
 pub fn bluetooth(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
-    let accent = kit.accent(m.s);
     ui.spacing_mut().item_spacing.y = 0.0;
     let r = m.extra.radios.clone();
     let on = m.status.bluetooth;
@@ -295,7 +294,8 @@ pub fn bluetooth(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         Some(true) if connected > 1 => format!("{connected} devices connected"),
         Some(true) => "On".into(),
     };
-    let (tool, flipped) = head(ui, "Bluetooth", &sub, on, accent);
+    let (tool, flipped) = head(ui, "Bluetooth", &sub, on, kit.tone(m.s, crate::style::Slot::Toggle));
+    let accent = kit.tone(m.s, crate::style::Slot::Active);
     if flipped {
         m.acts.push(Act::Bluetooth(!on.unwrap_or(false)));
     }

@@ -1204,7 +1204,7 @@ impl RivetApp {
                         section(ui, "Desktop colors", &mut |ui| {
                     changed |= ui.checkbox(&mut self.s.follow_desktop_colors, egui::RichText::new("Follow desktop colors").strong()).changed();
                     ui.add_space(6.0);
-                    match (&self.palette, self.s.follow_desktop_colors) {
+                    match (&self.palette, palette::follows(self.palette.as_ref(), self.s.follow_desktop_colors)) {
                         (Some(p), true) => {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 6.0;
@@ -1214,8 +1214,7 @@ impl RivetApp {
                                     ui.painter().rect_stroke(r, super::r_xs(), Stroke::new(1.0, weak), egui::StrokeKind::Inside);
                                 }
                                 ui.add_space(4.0);
-                                let name = p.source.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                                ui.label(egui::RichText::new(format!("from {name}")).small().color(weak)).on_hover_text(p.source.display().to_string());
+                                ui.label(egui::RichText::new(p.source_label()).small().color(weak)).on_hover_text(p.source.display().to_string());
                             });
                         }
                         (None, true) => hint(ui, "No desktop color file found"),
@@ -1234,7 +1233,7 @@ impl RivetApp {
                         }
                     });
                         });
-                        let manual = !(self.s.follow_desktop_colors && self.palette.is_some());
+                        let manual = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors).is_none();
                         section(ui, "Style and accent", &mut |ui| {
                             egui::Grid::new("prefs-look").num_columns(2).spacing([24.0, 18.0]).min_col_width(120.0).show(ui, |ui| {
                         ui.label("Style");
@@ -1316,7 +1315,7 @@ impl RivetApp {
                             ui.horizontal(|ui| {
                                 use crate::settings::IconColor;
                                 let primary = super::accent_color(&self.s);
-                                let pal = if self.s.follow_desktop_colors { self.palette.clone() } else { None };
+                                let pal = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors).cloned();
                                 for choice in IconColor::ALL {
                                     let sw = match choice {
                                         IconColor::Primary => primary,

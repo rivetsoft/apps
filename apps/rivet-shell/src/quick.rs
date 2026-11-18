@@ -209,6 +209,8 @@ fn slider_row(ui: &mut egui::Ui, which: u8, value: u32, muted: bool, draw: &dyn 
 pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let accent = kit.accent(m.s);
+    use crate::style::Slot;
+    let (toggle, slide, playing) = (kit.tone(m.s, Slot::Toggle), kit.tone(m.s, Slot::Slider), kit.tone(m.s, Slot::Dot));
     let (fg, weak) = (v.text_color(), v.weak_text_color());
     let w = ui.available_width();
     let mut acts: Vec<Act> = Vec::new();
@@ -241,12 +243,12 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
         match name {
             "Sound and Display" => {
                 if let Some((vol, muted)) = m.status.volume
-                    && let Some(nv) = slider_row(ui, 0, vol, muted, &|p, c, col| glyph::speaker(p, c + Vec2::new(2.0, 0.0), muted, col), Some((Act::Mute, if muted { "Unmute" } else { "Mute" })), drag, accent, &mut acts)
+                    && let Some(nv) = slider_row(ui, 0, vol, muted, &|p, c, col| glyph::speaker(p, c + Vec2::new(2.0, 0.0), muted, col), Some((Act::Mute, if muted { "Unmute" } else { "Mute" })), drag, slide, &mut acts)
                 {
                     acts.push(Act::SetVolume(nv));
                 }
                 if let Some(b) = m.status.brightness
-                    && let Some(nv) = slider_row(ui, 1, b, false, &|p, c, col| glyph::sun(p, c, col), None, drag, accent, &mut acts)
+                    && let Some(nv) = slider_row(ui, 1, b, false, &|p, c, col| glyph::sun(p, c, col), None, drag, slide, &mut acts)
                 {
                     acts.push(Act::SetBrightness(nv));
                 }
@@ -260,13 +262,14 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                         let resp = ui.interact(r, egui::Id::unique(("quick-toggle", t.title)), Sense::click());
                         // On: lit like a selected item in the apps; off: a quiet row.
                         if t.on {
-                            let (fill, stroke) = selected_tile(&v, v.panel_fill);
+                            // In the accent as every Rivet app's; in the toggles' own colour when they have one.
+                            let (fill, stroke) = if toggle == accent { selected_tile(&v, v.panel_fill) } else { (mix(v.panel_fill, toggle, 0.2), Stroke::new(1.0, mix(v.panel_fill, toggle, 0.6))) };
                             ui.painter().rect_filled(r, r_md(), if resp.hovered() { mix(fill, fg, 0.05) } else { fill });
                             ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
                         } else {
                             ui.painter().rect_filled(r, r_md(), mix(v.panel_fill, fg, if resp.hovered() { 0.09 } else { 0.04 }));
                         }
-                        let icol = if t.on { accent } else { weak };
+                        let icol = if t.on { toggle } else { weak };
                         (t.glyph)(ui.painter(), Pos2::new(r.left() + 22.0, r.center().y), icol, t.on);
                         let tcol = if t.on { v.strong_text_color() } else { fg };
                         ui.painter().text(Pos2::new(r.left() + 44.0, r.center().y - 9.0), Align2::LEFT_CENTER, t.title, ui_font(13.0), tcol);
@@ -303,7 +306,7 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                 let Some(md) = m.status.media.clone() else { continue };
                 let (r, _) = ui.allocate_exact_size(Vec2::new(w, MEDIA), Sense::hover());
                 let p = ui.painter().clone();
-                glyph::play(&p, Pos2::new(r.left() + 16.0, r.center().y), !md.playing, accent);
+                glyph::play(&p, Pos2::new(r.left() + 16.0, r.center().y), !md.playing, playing);
                 let tw = r.width() - 150.0;
                 let g = one_line(&p, if md.title.is_empty() { "Playing" } else { &md.title }, ui_font(13.5), v.strong_text_color(), tw);
                 p.galley(Pos2::new(r.left() + 38.0, r.top() + 10.0), g, v.strong_text_color());

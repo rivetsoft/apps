@@ -823,7 +823,7 @@ impl RivetApp {
     /// The theme's three colors: primary (accent), secondary and tertiary.
     fn theme_trio(&self) -> (Color32, Color32, Color32) {
         let primary = accent_color(&self.s);
-        let pal = if self.s.follow_desktop_colors { self.palette.as_ref() } else { None };
+        let pal = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors);
         (
             primary,
             pal.and_then(|p| p.secondary).unwrap_or_else(|| crate::builtin_icons::derive_secondary(primary)),
@@ -835,7 +835,7 @@ impl RivetApp {
     fn icon_base_color(&self) -> Color32 {
         use crate::settings::IconColor;
         let primary = accent_color(&self.s);
-        let pal = if self.s.follow_desktop_colors { self.palette.as_ref() } else { None };
+        let pal = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors);
         match self.s.icon_color {
             IconColor::Primary => primary,
             IconColor::Secondary => pal.and_then(|p| p.secondary).unwrap_or_else(|| crate::builtin_icons::derive_secondary(primary)),
@@ -870,7 +870,7 @@ impl RivetApp {
     }
 
     fn apply_visuals(&mut self, ctx: &egui::Context) {
-        let pal = if self.s.follow_desktop_colors { self.palette.clone() } else { None };
+        let pal = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors).cloned();
         let key = format!("{:?}{:?}{:?}{}{}", self.s.theme, self.s.accent, pal, crate::fonts::scale(), self.s.terminal);
         if self.applied_visuals.as_ref() == Some(&key) {
             return;

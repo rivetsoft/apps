@@ -1125,9 +1125,9 @@ impl Shell {
         // Only what changed changes: surfaces are reshaped in place (never torn down and made
         // again, which makes them flash and moves the windows twice), and only the surfaces that
         // show a setting are drawn again.
-        let look = old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size;
+        let look = old.color_use != s.color_use || old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size || old.icon_theme != s.icon_theme || old.palette != s.palette || old.surface_dark != s.surface_dark || old.surface_light != s.surface_light || old.surface_tint != s.surface_tint;
         let pictures = old.wallpaper != s.wallpaper || old.wallpaper_screens != s.wallpaper_screens;
-        let colours = old.matugen_picture() != s.matugen_picture() || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type || old.matugen_contrast != s.matugen_contrast || (s.matugen && !old.matugen);
+        let colours = old.matugen_picture() != s.matugen_picture() || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type || old.matugen_contrast != s.matugen_contrast || (s.makes_colors() && !old.makes_colors());
         let panels_changed = old.panels != s.panels;
         if old.plugins != s.plugins {
             self.plugins.sync(&s.plugins);
@@ -1138,7 +1138,7 @@ impl Shell {
         if old.color_mode != s.color_mode {
             self.event("style", &[("mode", if s.color_mode == rivet_look::theme::Mode::Dark { "dark" } else { "light" })]);
         }
-        let panel_content = old.launcher_icon != s.launcher_icon || old.launcher_custom != s.launcher_custom || old.tray_color != s.tray_color || old.tray_passive != s.tray_passive || old.vol_show != s.vol_show || old.vol_scroll != s.vol_scroll || old.bright_show != s.bright_show || old.bright_scroll != s.bright_scroll || old.batt_show != s.batt_show || old.batt_hide_full != s.batt_hide_full || old.clock_format != s.clock_format || old.ai_bar != s.ai_bar || old.ai_pins != s.ai_pins || old.ai_left != s.ai_left || old.ws_style != s.ws_style || old.ws_names != s.ws_names || old.ws_hide_empty != s.ws_hide_empty || old.ws_scroll != s.ws_scroll || old.notifications != s.notifications;
+        let panel_content = old.quick_icon != s.quick_icon || old.launcher_icon != s.launcher_icon || old.launcher_custom != s.launcher_custom || old.tray_color != s.tray_color || old.tray_passive != s.tray_passive || old.vol_show != s.vol_show || old.vol_scroll != s.vol_scroll || old.bright_show != s.bright_show || old.bright_scroll != s.bright_scroll || old.batt_show != s.batt_show || old.batt_hide_full != s.batt_hide_full || old.clock_format != s.clock_format || old.ai_bar != s.ai_bar || old.ai_pins != s.ai_pins || old.ai_left != s.ai_left || old.ws_style != s.ws_style || old.ws_names != s.ws_names || old.ws_hide_empty != s.ws_hide_empty || old.ws_scroll != s.ws_scroll || old.notifications != s.notifications;
         let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps || old.dock_hide != s.dock_hide;
         if old.notifications != s.notifications {
             self.set_notifications();
@@ -1198,7 +1198,7 @@ impl Shell {
         if path.as_os_str().is_empty() || !path.is_file() {
             return;
         }
-        if run_matugen && self.s.matugen {
+        if run_matugen && self.s.makes_colors() {
             let tx = self.tx.clone();
             crate::wall::run_matugen(&path, self.s.color_mode, &self.s.scheme_type, self.s.matugen_contrast, move |r| {
                 let _ = tx.send(Msg::Matugen(r));
@@ -1627,7 +1627,7 @@ impl Shell {
                 self.change_settings(|s| {
                     s.color_mode = mode;
                     // Without matugen making the colours, the style itself follows.
-                    if !(s.matugen && !s.matugen_picture().is_empty()) || s.theme != rivet_look::theme::Mode::System {
+                    if !(s.makes_colors() && !s.matugen_picture().is_empty()) || s.theme != rivet_look::theme::Mode::System {
                         s.theme = mode;
                     }
                 });

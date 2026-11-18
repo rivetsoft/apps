@@ -343,7 +343,7 @@ pub fn apply_now(comp: Compositor, s: &Settings) -> Result<(), String> {
 pub fn shell_look(s: &Settings) -> ([u8; 3], bool) {
     let live = rivet_look::live::LiveLook::new();
     let a = live.accent(&s.choice());
-    let pal = if s.follow_desktop_colors { live.palette() } else { None };
+    let pal = rivet_look::palette::shown(live.palette(), s.follow_desktop_colors);
     let dark = pal.map(|p| p.is_dark()).unwrap_or(s.theme != rivet_look::theme::Mode::Light);
     ([a.r(), a.g(), a.b()], dark)
 }

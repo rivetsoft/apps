@@ -145,7 +145,7 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
 }
 
 /// A strip of the theme's colours, as the look editor uses them.
-fn palette_strip(ui: &mut egui::Ui, colors: &Roles) {
+pub(super) fn palette_strip(ui: &mut egui::Ui, colors: &Roles) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         for (role, name) in [(colors.primary, "Primary"), (colors.secondary, "Secondary"), (colors.tertiary, "Tertiary")] {
@@ -161,16 +161,6 @@ impl SettingsApp {
         let colors = Roles::new(&self.look, &self.s);
         section(ui, "Panels and dock", &mut |ui| {
             hint(ui, "Every panel and the dock look like this, unless one is given its own look (on the Panels and Dock pages).");
-            ui.add_space(6.0);
-            palette_strip(ui, &colors);
-            hint(
-                ui,
-                if self.s.follow_desktop_colors {
-                    "The desktop's colours (matugen); without secondary or tertiary colours there, they're made from the primary."
-                } else {
-                    "Made from the accent: secondary is a quieter primary, tertiary a neighbouring hue."
-                },
-            );
             ui.add_space(8.0);
             editor(ui, "shell-look-base", &mut self.s.look, BASE, "Default", &colors, true);
         });

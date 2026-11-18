@@ -129,7 +129,13 @@ pub struct Group {
     pub show: u32,
     /// The background fades along the panel to a darker shade of its colour.
     pub gradient: bool,
+    /// How tall its background is (how wide, on a side panel), in points. None: it follows the
+    /// panel, as tall as the panel's items.
+    pub height: Option<u32>,
 }
+
+/// The least a group's own height can be.
+pub const GROUP_MIN: u32 = 12;
 
 /// The shade a group's gradient fades to: the colour, darker.
 pub fn darker(c: [u8; 3]) -> [u8; 3] {
@@ -150,6 +156,9 @@ impl Group {
         if self.gradient {
             t.push_str("/fade:true");
         }
+        if let Some(h) = self.height {
+            t.push_str(&format!("/h:{h}"));
+        }
         t
     }
     pub fn parse(v: &str) -> Group {
@@ -162,6 +171,7 @@ impl Group {
                 "fg" => g.fg = Paint::parse(x),
                 "show" => g.show = x.trim().parse().unwrap_or(0).min(12),
                 "fade" => g.gradient = x.trim() == "true",
+                "h" => g.height = x.trim().parse::<u32>().ok().map(|h| h.clamp(GROUP_MIN, *SIZE.end())),
                 _ => {}
             }
         }
@@ -489,8 +499,8 @@ mod tests {
         assert_eq!((spacer("spacer:24"), spacer("spacer"), spacer("spacer:9999"), spacer("spacers"), label("spacer:24").as_str()), (Some(24), Some(16), Some(600), None, "Spacer"));
         // Groups: kept in the panel's line; an item joins beside the group's others.
         let mut g = PanelCfg::default();
-        g.groups.push(Group { items: list(&["volume", "brightness"]), bg: Some(Paint::Primary), fg: Paint::Custom([255, 0, 128]), show: 1, gradient: true });
-        g.groups.push(Group { items: list(&["clock"]), bg: None, fg: Paint::Tertiary, show: 0, gradient: false });
+        g.groups.push(Group { items: list(&["volume", "brightness"]), bg: Some(Paint::Primary), fg: Paint::Custom([255, 0, 128]), show: 1, gradient: true, height: Some(30) });
+        g.groups.push(Group { items: list(&["clock"]), bg: None, fg: Paint::Tertiary, show: 0, gradient: false, height: None });
         g.fuse = true;
         (g.offset, g.gap) = (Some(14), Some(0));
         assert_eq!((g.height(), g.bar_rect(Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 50.0)))), (50.0, Rect::from_min_max(Pos2::new(14.0, 14.0), Pos2::new(986.0, 50.0))));

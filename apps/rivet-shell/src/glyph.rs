@@ -39,6 +39,38 @@ pub fn gear(p: &egui::Painter, c: Pos2, col: Color32) {
     }
 }
 
+/// The quick settings item's symbol, as chosen.
+pub fn quick(p: &egui::Painter, c: Pos2, col: Color32, icon: crate::config::QuickIcon) {
+    use crate::config::QuickIcon;
+    match icon {
+        QuickIcon::Sliders => sliders(p, c, col),
+        QuickIcon::Gear => gear(p, c, col),
+        // Two switches: the upper one on (filled, knob to the right), the lower one off.
+        QuickIcon::Toggles => {
+            let s = Stroke::new(1.5, col);
+            let size = Vec2::new(15.0, 7.0);
+            let on = Rect::from_center_size(c + Vec2::new(0.0, -4.5), size);
+            let off = Rect::from_center_size(c + Vec2::new(0.0, 4.5), size);
+            p.rect_filled(on, 3.5, col);
+            p.circle_filled(on.right_center() - Vec2::new(3.5, 0.0), 2.0, Color32::from_black_alpha(150));
+            p.rect_stroke(off.shrink(0.75), 2.75, s, egui::StrokeKind::Middle);
+            p.circle_filled(off.left_center() + Vec2::new(3.5, 0.0), 1.5, col);
+        }
+        // Four tiles, the first lit.
+        QuickIcon::Tiles => {
+            let s = Stroke::new(1.5, col);
+            for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0), (1.0, 1.0)] {
+                let r = Rect::from_center_size(c + Vec2::new(dx * 4.5, dy * 4.5), Vec2::splat(7.0));
+                if dx < 0.0 && dy < 0.0 {
+                    p.rect_filled(r, 1.5, col);
+                } else {
+                    p.rect_stroke(r.shrink(0.75), 0.75, s, egui::StrokeKind::Middle);
+                }
+            }
+        }
+    }
+}
+
 /// Three sliders: quick settings.
 pub fn sliders(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.6, col);
@@ -314,7 +346,7 @@ pub fn plugin(p: &egui::Painter, c: Pos2, col: Color32) {
 }
 
 /// A panel item's symbol, by id.
-pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32) {
+pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32, quick_icon: crate::config::QuickIcon) {
     match id {
         "launcher" => grid(p, c, col),
         "workspaces" => pills(p, c, col, accent),
@@ -329,7 +361,7 @@ pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32)
         "ai" => spark(p, c, col),
         "battery" => battery(p, c, 70, false, col, accent),
         "notifications" => bell(p, c, col, false),
-        "quick-settings" => sliders(p, c, col),
+        "quick-settings" => quick(p, c, col, quick_icon),
         "power" => power(p, c, col),
         "tray" => tray(p, c, col, accent),
         "dock" => dock(p, c, col, accent),

@@ -342,7 +342,7 @@ impl SettingsApp {
                                 for (dx, dy) in [(0.0, -4.0), (0.0, 0.0), (0.0, 4.0), (4.0, -4.0), (4.0, 0.0), (4.0, 4.0)] {
                                     p.circle_filled(Pos2::new(r.left() + 10.0 + dx, r.center().y + dy), 1.2, v.weak_text_color());
                                 }
-                                glyph::item(p, id, Pos2::new(r.left() + 34.0, r.center().y), v.text_color(), accent);
+                                glyph::item(p, id, Pos2::new(r.left() + 34.0, r.center().y), v.text_color(), accent, settings.quick_icon);
                                 let g = crate::ui::one_line(p, &label(id), ui_font(13.0), v.text_color(), r.width() - 132.0);
                                 p.galley(Pos2::new(r.left() + 52.0, r.center().y - g.size().y / 2.0), g, v.text_color());
                             };
@@ -464,7 +464,7 @@ impl SettingsApp {
                                 let col = if on { v.weak_text_color().gamma_multiply(0.6) } else { v.text_color() };
                                 let c = Pos2::new(r.left() + 22.0, r.center().y);
                                 ui.painter().circle_filled(c, 14.0, mix(v.panel_fill, if on { v.text_color() } else { accent }, if on { 0.05 } else { 0.14 }));
-                                glyph::item(ui.painter(), id, c, col, if on { col } else { accent });
+                                glyph::item(ui.painter(), id, c, col, if on { col } else { accent }, settings.quick_icon);
                                 // "Added" at the row's end, for the ones on the panel.
                                 let end = if on {
                                     let g = ui.painter().layout_no_wrap("Added".into(), ui_font(11.0), v.weak_text_color());
@@ -574,38 +574,43 @@ fn swatch(g: &Group, colors: &Roles, v: &egui::Visuals) -> (Color32, Color32) {
     (bg, paint(g.fg).unwrap_or(if solid { crate::ui::on(bg) } else { v.text_color() }))
 }
 
-/// A row of colour choices for a group; `none`: what leaving it to the shell is called here
-/// (and, for a background, "None" comes first).
+/// A row of colour choices for a group, as dots (their names on hover) after the worded
+/// ones: "None" for a background, then `auto` (what leaving it to the shell is called here).
+/// The last is any colour, from a picker.
 fn paints(ui: &mut egui::Ui, id: (usize, usize, &str), value: &mut Option<Paint>, with_none: bool, auto: &str, colors: &Roles) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
         if with_none && ui.selectable_label(value.is_none(), "None").clicked() {
             *value = None;
         }
-        let surface = ui.visuals().panel_fill;
-        for (p, name, col) in [(Paint::Auto, auto, None), (Paint::Surface, "Surface", Some(surface)), (Paint::Primary, "Primary", Some(colors.primary)), (Paint::Secondary, "Secondary", Some(colors.secondary)), (Paint::Tertiary, "Tertiary", Some(colors.tertiary))] {
-            let on = *value == Some(p);
-            let text = egui::RichText::new(match col {
-                Some(_) => format!("●  {name}"),
-                None => name.to_string(),
-            });
-            let resp = ui.selectable_label(on, text);
-            // The dot in the colour itself.
-            if let Some(c) = col {
-                let at = Pos2::new(resp.rect.left() + ui.spacing().button_padding.x + 5.0, resp.rect.center().y);
-                ui.painter().circle_filled(at, 6.0, c);
-                ui.painter().circle_stroke(at, 6.0, Stroke::new(1.0, mix(c, ui.visuals().text_color(), 0.35)));
+        if ui.selectable_label(*value == Some(Paint::Auto), auto).clicked() {
+            *value = Some(Paint::Auto);
+        }
+        ui.add_space(4.0);
+        let v = ui.visuals().clone();
+        for (p, name, col) in [(Paint::Surface, "Surface", v.panel_fill), (Paint::Primary, "Primary", colors.primary), (Paint::Secondary, "Secondary", colors.secondary), (Paint::Tertiary, "Tertiary", colors.tertiary)] {
+            let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+            ui.painter().circle_filled(r.center(), 8.5, col);
+            ui.painter().circle_stroke(r.center(), 8.5, Stroke::new(1.0, mix(col, v.text_color(), 0.35)));
+            if *value == Some(p) {
+                ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, v.strong_text_color()));
             }
-            if resp.clicked() {
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(name).clicked() {
                 *value = Some(p);
             }
         }
+        // Any colour: the picker shows the one chosen, or starts from the primary.
         let custom = matches!(value, Some(Paint::Custom(_)));
-        if ui.selectable_label(custom, "Custom").clicked() && !custom {
-            *value = Some(Paint::Custom([colors.primary.r(), colors.primary.g(), colors.primary.b()]));
+        let mut rgb = match value {
+            Some(Paint::Custom(c)) => *c,
+            _ => [colors.primary.r(), colors.primary.g(), colors.primary.b()],
+        };
+        let resp = ui.push_id(id, |ui| ui.color_edit_button_srgb(&mut rgb)).inner.on_hover_text("Any color");
+        if custom {
+            ui.painter().rect_stroke(resp.rect.expand(2.0), r_sm(), Stroke::new(2.0, v.strong_text_color()), egui::StrokeKind::Outside);
         }
-        if let Some(Paint::Custom(rgb)) = value {
-            ui.push_id(id, |ui| ui.color_edit_button_srgb(rgb));
+        if resp.changed() {
+            *value = Some(Paint::Custom(rgb));
         }
     });
 }
@@ -617,44 +622,83 @@ impl SettingsApp {
         let v = ui.visuals().clone();
         let p = &mut self.s.panels[sel];
         p.tidy_groups();
+        let (bar, side) = (p.bar().round() as u32, p.vertical());
         super::section(ui, "Groups", &mut |ui| {
             if p.groups.is_empty() {
                 hint(ui, "Items can be grouped: a group's items share a background and take its colours, and it can show its first few and fold the rest behind an arrow. Point at an item above and click its ring to start one.");
                 return;
             }
-            hint(ui, "A group's items that sit side by side share its background. Click an item's numbered chip above to move it between groups.");
-            ui.add_space(4.0);
+            hint(ui, "Choose a group to change it. To move an item between groups, click its numbered chip in the list above.");
+            ui.add_space(6.0);
             ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape").on_hover_text("Two groups with backgrounds, side by side on the panel, join with no gap between them");
-            let mut remove = None;
-            for (g, group) in p.groups.iter_mut().enumerate() {
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
+            ui.add_space(12.0);
+            // The groups as tabs, each in its own colours; one's settings show at a time.
+            let sel_id = egui::Id::unique(("shell-group-sel", sel));
+            let mut g = ui.data(|d| d.get_temp::<usize>(sel_id)).unwrap_or(0).min(p.groups.len() - 1);
+            // Checks: RIVET_SHELL_GROUP=2 shows the second group's settings.
+            if crate::config::NO_SAVE.load(std::sync::atomic::Ordering::Relaxed) && let Some(n) = std::env::var("RIVET_SHELL_GROUP").ok().and_then(|n| n.parse::<usize>().ok()) {
+                g = n.saturating_sub(1).min(p.groups.len() - 1);
+            }
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(12.0, 12.0);
+                ui.add_space(3.0);
+                for (i, group) in p.groups.iter().enumerate() {
                     let (bg, fg) = swatch(group, &colors, &v);
-                    let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
-                    ui.painter().circle_filled(r.center(), 10.0, bg);
-                    ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(1.0, mix(bg, v.text_color(), 0.25)));
-                    ui.painter().text(r.center(), Align2::CENTER_CENTER, (g + 1).to_string(), ui_font(11.5), fg);
-                    ui.label(egui::RichText::new(format!("Group {}", g + 1)).strong());
-                    ui.label(egui::RichText::new(group.items.iter().map(|i| label(i)).collect::<Vec<_>>().join(", ")).color(v.weak_text_color()).size(12.5));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Ungroup").on_hover_text("The items stay on the panel").clicked() {
-                            remove = Some(g);
-                        }
-                    });
-                });
+                    let names = group.items.iter().map(|i| label(i)).collect::<Vec<_>>().join(", ");
+                    let text = crate::ui::one_line(ui.painter(), &format!("{}   {names}", i + 1), ui_font(12.5), fg, 230.0);
+                    let cut = text.elided;
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(text.size().x + 24.0, 30.0), Sense::click());
+                    let on = i == g;
+                    let p = ui.painter();
+                    p.rect_filled(r, r_md(), bg);
+                    p.rect_stroke(r, r_md(), Stroke::new(1.0, mix(bg, v.text_color(), if resp.hovered() { 0.5 } else { 0.22 })), egui::StrokeKind::Inside);
+                    // The chosen one: a ring around it, clear of its own colours.
+                    if on {
+                        p.rect_stroke(r.expand(3.0), r_md() + 3, Stroke::new(2.0, v.strong_text_color()), egui::StrokeKind::Inside);
+                    }
+                    p.galley(Pos2::new(r.left() + 12.0, r.center().y - text.size().y / 2.0), text, fg);
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let resp = if cut { resp.on_hover_text(names) } else { resp };
+                    if resp.clicked() {
+                        g = i;
+                    }
+                }
+            });
+            ui.data_mut(|d| d.insert_temp(sel_id, g));
+            ui.add_space(12.0);
+            let mut remove = None;
+            {
+                let group = &mut p.groups[g];
                 super::grid(ui, &format!("shell-group-{sel}-{g}"), &mut |ui| {
                     ui.label("Background");
-                    paints(ui, (sel, g, "bg"), &mut group.bg, true, "Soft", &colors);
+                    ui.horizontal(|ui| {
+                        paints(ui, (sel, g, "bg"), &mut group.bg, true, "Soft", &colors);
+                        if group.bg.is_some() {
+                            ui.add_space(8.0);
+                            ui.checkbox(&mut group.gradient, "Fade").on_hover_text("A gradient along the panel: from the background's colour to a darker one made from it");
+                        }
+                    });
                     ui.end_row();
-                    if group.bg.is_some() {
-                        ui.label("");
-                        ui.checkbox(&mut group.gradient, "Fade to a darker shade").on_hover_text("A gradient along the panel: from the background's colour to a darker one made from it");
-                        ui.end_row();
-                    }
                     ui.label("Text");
                     let mut fg = Some(group.fg);
                     paints(ui, (sel, g, "fg"), &mut fg, false, "Automatic", &colors);
                     group.fg = fg.unwrap_or_default();
+                    ui.end_row();
+                    ui.label(if side { "Width" } else { "Height" });
+                    ui.horizontal(|ui| {
+                        let mut own = group.height.is_some();
+                        segmented(ui, &mut own, &[(false, "The panel's"), (true, "Its own")]);
+                        match (own, group.height) {
+                            (false, _) => group.height = None,
+                            // Starting from what it has now: the panel's items' height.
+                            (true, None) => group.height = Some(bar.saturating_sub(8).max(crate::panels::GROUP_MIN)),
+                            (true, Some(_)) => {}
+                        }
+                        if let Some(h) = group.height.as_mut() {
+                            *h = (*h).clamp(crate::panels::GROUP_MIN, bar.max(crate::panels::GROUP_MIN));
+                            ui.add(egui::Slider::new(h, crate::panels::GROUP_MIN..=bar.max(crate::panels::GROUP_MIN)).suffix(" pt")).on_hover_text("Up to the panel's own, where it fills the panel edge to edge");
+                        }
+                    });
                     ui.end_row();
                     ui.label("Shows");
                     ui.horizontal(|ui| {
@@ -674,6 +718,10 @@ impl SettingsApp {
                     });
                     ui.end_row();
                 });
+                ui.add_space(10.0);
+                if ui.button(format!("Ungroup {}", g + 1)).on_hover_text("The items stay on the panel").clicked() {
+                    remove = Some(g);
+                }
             }
             if let Some(g) = remove {
                 p.groups.remove(g);

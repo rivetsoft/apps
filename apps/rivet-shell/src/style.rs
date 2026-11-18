@@ -160,6 +160,43 @@ impl Style {
     }
 }
 
+/// What a coloured part of the shell is, which decides the colour it takes once the shell is
+/// set to use more than the primary (`Settings::color_use`: 0 primary only, 1 some, 2 a lot).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Slot {
+    /// A switch or a quick setting that's on.
+    Toggle,
+    /// Notifications: the bell's dot, a notification's own symbol, Do Not Disturb.
+    Notify,
+    /// The second and third of a set of bars (the system widget's memory and battery).
+    Bar2,
+    Bar3,
+    /// A slider's filled part (volume, brightness, the on-screen display).
+    Slider,
+    /// The thing in use in a list (the Wi-Fi network joined, the sound device, a Bluetooth device).
+    Active,
+    /// A running app's dot, and what's playing.
+    Dot,
+}
+
+/// How much the shell uses the secondary and tertiary colours.
+pub const COLOR_USE_MAX: u8 = 2;
+
+impl Slot {
+    pub fn role(self, color_use: u8) -> Role {
+        let (from, role) = match self {
+            Slot::Toggle => (1, Role::Secondary),
+            Slot::Notify => (1, Role::Tertiary),
+            Slot::Bar2 => (1, Role::Secondary),
+            Slot::Bar3 => (1, Role::Tertiary),
+            Slot::Slider => (2, Role::Secondary),
+            Slot::Active => (2, Role::Secondary),
+            Slot::Dot => (2, Role::Tertiary),
+        };
+        if color_use >= from { role } else { Role::Primary }
+    }
+}
+
 impl Settings {
     /// Appearance's look for the shell's surfaces.
     pub fn base_look(&self) -> Resolved {
@@ -188,11 +225,16 @@ impl Roles {
     pub fn new(look: &LiveLook, s: &Settings) -> Roles {
         let choice = s.choice();
         let primary = look.accent(&choice);
-        let pal = if choice.follow_desktop_colors { look.palette() } else { None };
+        let pal = rivet_look::palette::shown(look.palette(), choice.follow_desktop_colors);
         let hsva = Hsva::from(primary);
         let secondary = pal.and_then(|p| p.secondary).unwrap_or_else(|| Color32::from(Hsva { s: hsva.s * 0.4, ..hsva }));
         let tertiary = pal.and_then(|p| p.tertiary).unwrap_or_else(|| Color32::from(Hsva { h: (hsva.h + 1.0 / 6.0).fract(), s: hsva.s * 0.6, v: hsva.v * 0.85, ..hsva }));
         Roles { primary, secondary, tertiary }
+    }
+
+    /// A part's colour, by how much the shell uses the secondary and tertiary.
+    pub fn tone(&self, slot: Slot, color_use: u8) -> Color32 {
+        self.get(slot.role(color_use), self.primary)
     }
 
     /// A role's colour (`surface`: what Surface stands for).
@@ -237,6 +279,26 @@ pub fn inner_radius(look: &Resolved, pad: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What this session's theme gives (`cargo test live_roles -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn live_roles() {
+        let s = Settings::load();
+        let look = LiveLook::new();
+        let r = Roles::new(&look, &s);
+        let pal = look.palette();
+        println!("primary {:?}\nsecondary {:?} (from the theme: {})\ntertiary {:?} (from the theme: {})\ncolor_use {}", r.primary, r.secondary, pal.is_some_and(|p| p.secondary.is_some()), r.tertiary, pal.is_some_and(|p| p.tertiary.is_some()), s.color_use);
+    }
+
+    #[test]
+    fn slots_take_more_colours_as_asked() {
+        for s in [Slot::Toggle, Slot::Notify, Slot::Bar2, Slot::Bar3, Slot::Slider, Slot::Active, Slot::Dot] {
+            assert_eq!(s.role(0), Role::Primary);
+            assert_ne!(s.role(2), Role::Primary);
+        }
+        assert_eq!((Slot::Toggle.role(1), Slot::Slider.role(1), Slot::Slider.role(2)), (Role::Secondary, Role::Primary, Role::Secondary));
+    }
 
     #[test]
     fn cascades_and_round_trips() {

@@ -166,7 +166,7 @@ impl FtpApp {
             self.palette = pal;
             self.palette_watch = watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect();
         }
-        if self.s.follow_desktop_colors && self.shot.is_none() {
+        if self.shot.is_none() {
             ctx.request_repaint_after(std::time::Duration::from_secs(2));
         }
     }

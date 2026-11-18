@@ -35,21 +35,24 @@ pub const INDEX: &[Entry] = &[
     e(Page::Wallpaper, "Wallpaper", "Wallpaper folder", "directory pictures path choose picker browse recent"),
     e(Page::Wallpaper, "Wallpaper", "Choose a picture", "file picker browse any image"),
     e(Page::Wallpaper, "Wallpaper", "No wallpaper", "plain background solid colour color none"),
-    e(Page::Wallpaper, "Colors from the wallpaper", "Colors from the wallpaper", "matugen colours dynamic material you scheme generate"),
-    e(Page::Wallpaper, "Colors from the wallpaper", "Color scheme: dark or light", "matugen colours mode theme"),
-    e(Page::Wallpaper, "Colors from the wallpaper", "Color scheme style", "matugen tonal spot vibrant expressive monochrome rainbow fidelity neutral content fruit salad"),
+    e(Page::Appearance, "Colors", "Colors from the wallpaper", "matugen colours dynamic material you scheme generate"),
+    e(Page::Appearance, "Colors", "Color scheme: dark or light", "matugen colours mode theme"),
+    e(Page::Appearance, "Colors", "Color scheme style", "matugen tonal spot vibrant expressive monochrome rainbow fidelity neutral content fruit salad"),
     e(Page::Wallpaper, "Wallpaper", "Wallpaper per screen", "monitor output display each different own picture multi"),
     e(Page::Wallpaper, "Transition", "Wallpaper transition", "animation fade wipe slide grow duration change effect"),
-    e(Page::Wallpaper, "Colors from the wallpaper", "Color contrast", "matugen colours stronger softer"),
-    e(Page::Wallpaper, "Colors from the wallpaper", "Screen the colors are made from", "matugen colours primary monitor output extract source"),
-    e(Page::Wallpaper, "Colors from the wallpaper", "Add Rivet's colors to matugen", "template config install"),
+    e(Page::Appearance, "Colors", "Color contrast", "matugen colours stronger softer"),
+    e(Page::Appearance, "Colors", "Screen the colors are made from", "matugen colours primary monitor output extract source"),
+    e(Page::Appearance, "Colors", "Add Rivet's colors to matugen", "template config install"),
     // Appearance
-    e(Page::Appearance, "Style and accent", "Follow desktop colors", "matugen colours system"),
-    e(Page::Appearance, "Style and accent", "Light or dark style", "theme mode dark light system appearance"),
-    e(Page::Appearance, "Style and accent", "Accent color", "colour highlight tint"),
-    e(Page::Appearance, "Palette", "Color palette", "colours scheme theme preset built-in nord dracula gruvbox catppuccin solarized tokyo night one dark without matugen"),
-    e(Page::Appearance, "Style and accent", "Font", "typeface family text lettering"),
-    e(Page::Appearance, "Style and accent", "Text size", "font scale bigger smaller large small zoom"),
+    e(Page::Appearance, "Colors", "Where the colors come from", "wallpaper palette accent follow desktop colours matugen system source theme"),
+    e(Page::Appearance, "Colors", "Light or dark style", "theme mode dark light system appearance"),
+    e(Page::Appearance, "Colors", "Accent color", "colour highlight tint"),
+    e(Page::Appearance, "Colors", "Color palette", "colours scheme theme preset built-in nord dracula gruvbox catppuccin solarized tokyo night one dark without matugen"),
+    e(Page::Appearance, "Colors", "Surface color", "background colour surface black slate navy paper custom own tint base"),
+    e(Page::Appearance, "Icons", "Icon theme", "icons apps tray papirus adwaita breeze system installed set"),
+    e(Page::Appearance, "Colour use", "Secondary and tertiary colours", "other colourful colorful palette how much accent only some a lot"),
+    e(Page::Appearance, "Text", "Font", "typeface family text lettering"),
+    e(Page::Appearance, "Text", "Text size", "font scale bigger smaller large small zoom"),
     e(Page::Appearance, "Panels and dock", "Panel and dock look", "corners radius rounded opacity transparency outline border"),
     e(Page::Appearance, "Panels and dock", "Panel popups float or attach", "popup widget float floating attached adhere joined drawer calendar quick settings menu"),
     e(Page::Appearance, "Panels and dock", "Panel and dock colors", "background tint primary secondary tertiary highlight colour"),
@@ -90,6 +93,7 @@ pub const INDEX: &[Entry] = &[
     // Widgets
     e(Page::Launcher, "Layout", "Launcher as a grid or a list", "apps menu view rows icons tiles"),
     e(Page::Launcher, "Layout", "Launcher in the middle or from the panel", "center centre attach affix panel position place where opens"),
+    item("quick-settings", "Quick settings symbol", "icon sliders switches toggles tiles gear control center"),
     e(Page::Launcher, "Text", "Launcher font", "typeface family text lettering own"),
     e(Page::Launcher, "Layout", "Launcher size", "small medium large width height bigger"),
     e(Page::Launcher, "Layout", "Launcher icon size", "apps icons bigger smaller"),
@@ -315,7 +319,7 @@ mod tests {
     #[test]
     fn sections_exist() {
         // Every card an entry points to is one a page draws (checked against the source).
-        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs")].concat();
+        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs")].concat();
         for en in INDEX.iter().filter(|e| !e.section.is_empty()) {
             assert!(src.contains(&format!("section(ui, \"{}\"", en.section)), "no card titled {}", en.section);
         }

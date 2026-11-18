@@ -233,11 +233,18 @@ pub enum Face {
     Launcher,
 }
 
+/// The icon theme in use: the chosen one, else the desktop's.
+pub fn icon_theme(s: &Settings) -> IconTheme {
+    if s.icon_theme.is_empty() { IconTheme::new(&rivet_look::icons::detect_system_theme()) } else { IconTheme::new(&s.icon_theme) }
+}
+
 pub struct Kit {
     pub look: LiveLook,
     /// Set before `begin`.
     pub face: Face,
     pub icons: IconTheme,
+    /// The icon theme setting `icons` was made for (empty: the desktop's).
+    icon_key: String,
     /// Tray icons made from apps' pixels (by item, icon and recolouring).
     pub tray_tex: std::collections::HashMap<(String, u64, bool), egui::TextureHandle>,
     live: bool,
@@ -245,13 +252,19 @@ pub struct Kit {
 
 impl Kit {
     pub fn new(live: bool) -> Kit {
-        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), tray_tex: Default::default(), face: Face::Base, live }
+        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), face: Face::Base, live }
     }
 
     /// Call first in every frame of the surface.
     pub fn begin(&mut self, ctx: &egui::Context, s: &Settings) {
         self.look.set_fonts(ctx, s.font_for(self.face), "", "");
+        s.set_surfaces(&mut self.look);
         self.look.frame(ctx, &s.choice(), self.live);
+        if s.icon_theme != self.icon_key {
+            self.icon_key = s.icon_theme.clone();
+            self.icons = icon_theme(s);
+            self.tray_tex.clear();
+        }
         let v = ctx.global_style().visuals.clone();
         let accent = self.look.accent(&s.choice());
         self.icons.set_builtin(Some(rivet_look::builtin_icons::BuiltinColors { accent, bg: v.extreme_bg_color, fg: v.text_color(), dark: v.dark_mode }));
@@ -259,6 +272,12 @@ impl Kit {
 
     pub fn accent(&self, s: &Settings) -> Color32 {
         self.look.accent(&s.choice())
+    }
+
+    /// A part's colour: the accent, or the theme's secondary or tertiary where the shell is
+    /// set to use them.
+    pub fn tone(&self, s: &Settings, slot: crate::style::Slot) -> Color32 {
+        crate::style::Roles::new(&self.look, s).tone(slot, s.color_use)
     }
 
     fn own_icon(&mut self, ctx: &egui::Context, icon: &str, size: u32) -> Option<egui::TextureHandle> {
@@ -539,6 +558,8 @@ pub fn ago(at: DateTime<Local>) -> String {
 pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let look = m.s.dock_look();
     let (v, accent) = crate::style::visuals(ui.visuals(), &look, &crate::style::Roles::new(&kit.look, m.s));
+    // The dots take the tertiary when the shell uses it (and the dock has no highlight of its own).
+    let dot = if m.s.dock_look.highlight.is_none() && m.s.look.highlight.is_none() { kit.tone(m.s, crate::style::Slot::Dot) } else { accent };
     *ui.visuals_mut() = v.clone();
     let hover_r = crate::style::inner_radius(&look, DOCK_PAD - 3.0);
     let full = ui.max_rect();
@@ -580,7 +601,7 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         }
         // Open: a dot under it.
         if m.s.dock_running && (!pinned || is_running(a, &m.status.running)) {
-            p.circle_filled(Pos2::new(r.center().x, body.bottom() - 4.0), 2.5, accent);
+            p.circle_filled(Pos2::new(r.center().x, body.bottom() - 4.0), 2.5, dot);
         }
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         if resp.secondary_clicked() {
@@ -630,7 +651,8 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         card(&p, r, &v, 0.82, r_lg());
         let txt = v.text_color();
         let weak = v.weak_text_color();
-        let row = |label: &str, value: String, frac: f32, yy: f32| {
+        let (bar2, bar3) = (kit.tone(m.s, crate::style::Slot::Bar2), kit.tone(m.s, crate::style::Slot::Bar3));
+        let row = |label: &str, value: String, frac: f32, yy: f32, accent: Color32| {
             p.text(Pos2::new(r.left() + 16.0, yy), Align2::LEFT_CENTER, label, ui_font(12.5), weak);
             p.text(Pos2::new(r.right() - 16.0, yy), Align2::RIGHT_CENTER, value, ui_font(12.5), txt);
             let bar = Rect::from_min_size(Pos2::new(r.left() + 16.0, yy + 10.0), Vec2::new(r.width() - 32.0, 5.0));
@@ -638,12 +660,12 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
             p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac.clamp(0.0, 1.0), bar.height())), 3.0, accent);
         };
         let st = m.status;
-        row("Processor", format!("{:.0}%", st.cpu), st.cpu / 100.0, r.top() + 22.0);
+        row("Processor", format!("{:.0}%", st.cpu), st.cpu / 100.0, r.top() + 22.0, accent);
         let (used, total) = st.mem;
         let gb = |b: u64| b as f32 / (1u64 << 30) as f32;
-        row("Memory", format!("{:.1} of {:.0} GB", gb(used), gb(total)), if total > 0 { used as f32 / total as f32 } else { 0.0 }, r.top() + 58.0);
+        row("Memory", format!("{:.1} of {:.0} GB", gb(used), gb(total)), if total > 0 { used as f32 / total as f32 } else { 0.0 }, r.top() + 58.0, bar2);
         match st.battery {
-            Some((pct, charging)) => row("Battery", format!("{pct}%{}", if charging { ", charging" } else { "" }), pct as f32 / 100.0, r.top() + 94.0),
+            Some((pct, charging)) => row("Battery", format!("{pct}%{}", if charging { ", charging" } else { "" }), pct as f32 / 100.0, r.top() + 94.0, bar3),
             None => {
                 let up = crate::sys::uptime();
                 p.text(Pos2::new(r.left() + 16.0, r.top() + 94.0), Align2::LEFT_CENTER, "Up for", ui_font(12.5), weak);

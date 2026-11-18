@@ -35,7 +35,7 @@ pub fn cards_height(notes: &[Note]) -> f32 {
 /// Notifications in the corner, newest on top.
 pub fn cards(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
-    let accent = kit.accent(m.s);
+    let accent = kit.tone(m.s, crate::style::Slot::Notify);
     let full = ui.max_rect();
     let p = ui.painter().clone();
     let mut y = full.top() + CARD_PAD;
@@ -125,7 +125,7 @@ fn note_body(ui: &mut egui::Ui, p: &egui::Painter, n: &Note, r: Rect, m: &mut Mo
 pub fn osd(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let Some((kind, value, muted)) = m.extra.osd else { return };
     let v = ui.visuals().clone();
-    let accent = kit.accent(m.s);
+    let accent = kit.tone(m.s, crate::style::Slot::Slider);
     let r = ui.max_rect().shrink(8.0);
     let p = ui.painter().clone();
     card(&p, r, &v, 0.97, (r.height() / 2.0) as u8);

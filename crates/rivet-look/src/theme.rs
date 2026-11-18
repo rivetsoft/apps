@@ -8,11 +8,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::palette::{self, Palette, mix};
 
 /// The accent colours every Rivet app offers, with their names.
-pub const ACCENTS: [([u8; 3], &str); 7] = [
+pub const ACCENTS: [([u8; 3], &str); 9] = [
     ([0x35, 0x84, 0xe4], "Blue"),
     ([0x5e, 0x9c, 0x3c], "Green"),
     ([0x1f, 0x9e, 0x9a], "Teal"),
     ([0x91, 0x41, 0xac], "Purple"),
+    ([0xd5, 0x3f, 0x8c], "Pink"),
+    ([0xe5, 0xa5, 0x0a], "Yellow"),
     ([0xe6, 0x61, 0x00], "Orange"),
     ([0xc0, 0x1c, 0x28], "Red"),
     ([0x77, 0x76, 0x7b], "Grey"),

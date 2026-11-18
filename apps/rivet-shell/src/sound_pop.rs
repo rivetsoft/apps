@@ -155,7 +155,8 @@ fn device_rows(ui: &mut egui::Ui, list: &[Device], input: bool, accent: Color32,
 }
 
 pub fn popup(ui: &mut egui::Ui, drag: &mut Option<(u64, u32)>, m: &mut Model, kit: &mut Kit) {
-    let accent = kit.accent(m.s);
+    let active = kit.tone(m.s, crate::style::Slot::Active);
+    let accent = kit.tone(m.s, crate::style::Slot::Slider);
     let v = ui.visuals().clone();
     ui.spacing_mut().item_spacing.y = 0.0;
     let a: Audio = m.extra.audio.clone();
@@ -191,7 +192,7 @@ pub fn popup(ui: &mut egui::Ui, drag: &mut Option<(u64, u32)>, m: &mut Model, ki
         }
         if !a.outputs.is_empty() {
             section(ui, "Output");
-            device_rows(ui, &a.outputs, false, accent, &mut acts);
+            device_rows(ui, &a.outputs, false, active, &mut acts);
             ui.add_space(GAP);
         }
         if !a.inputs.is_empty() {
@@ -201,7 +202,7 @@ pub fn popup(ui: &mut egui::Ui, drag: &mut Option<(u64, u32)>, m: &mut Model, ki
             } else {
                 ui.add_space(SLIDER);
             }
-            device_rows(ui, &a.inputs, true, accent, &mut acts);
+            device_rows(ui, &a.inputs, true, active, &mut acts);
             ui.add_space(GAP);
         }
         if !a.apps.is_empty() {

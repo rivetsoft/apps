@@ -5,10 +5,10 @@
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
-use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::icons::IconTheme;
 use rivet_look::live::LiveLook;
-use rivet_look::theme::{ACCENTS, Mode, r_md, r_xs, selected_tile};
+use rivet_look::theme::{Mode, r_md, r_xs, selected_tile};
 use rivet_look::{fonts, palette};
 use rivet_xdg::launch::DesktopApp;
 
@@ -23,6 +23,8 @@ mod look_opts;
 mod font_pick;
 mod wallpaper;
 mod idle_lock;
+mod colors;
+mod icon_pick;
 mod palette_pick;
 mod panel_editor;
 mod plugins;
@@ -51,7 +53,7 @@ impl Page {
     const ALL: [Page; 11] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::About];
     fn label(self) -> &'static str {
         match self {
-            Page::Wallpaper => "Theme",
+            Page::Wallpaper => "Wallpaper",
             Page::Appearance => "Appearance",
             Page::Panel => "Panels",
             Page::Dock => "Dock",
@@ -71,7 +73,14 @@ pub struct SettingsApp {
     /// The Displays page's screens and what's being changed.
     disp: displays::State,
     look: LiveLook,
+    /// The settings file's time when last read or written here, and when it was last looked at:
+    /// a change from elsewhere (the shell's own, `rivet-shell msg wallpaper random`) is taken in,
+    /// not written over.
+    s_mtime: Option<std::time::SystemTime>,
+    s_checked: f64,
     icons: IconTheme,
+    /// The icon theme setting `icons` was made for.
+    icon_key: String,
     page: Page,
     apps: Vec<DesktopApp>,
     /// The wallpaper folder's pictures and thumbnails.
@@ -147,6 +156,10 @@ impl SettingsApp {
             if let (Some((a, b)), Some(p)) = (std::env::var("RIVET_SHELL_SIZE").ok().and_then(|v| v.split_once(':').map(|(a, b)| (a.parse().ok(), b.parse().ok()))), s.panels.first_mut()) {
                 (p.size, p.spacing) = (a, b);
             }
+            // RIVET_SHELL_COLORS=2: how much the secondary and tertiary colours are used.
+            if let Some(n) = std::env::var("RIVET_SHELL_COLORS").ok().and_then(|n| n.parse().ok()) {
+                s.color_use = n;
+            }
             // RIVET_SHELL_EDGE=left, RIVET_SHELL_LEN=60, RIVET_SHELL_HIDE=auto shape the first panel.
             if let (Ok(e), Some(p)) = (std::env::var("RIVET_SHELL_EDGE"), s.panels.first_mut()) {
                 p.edge = crate::config::Edge::from(&e);
@@ -170,6 +183,15 @@ impl SettingsApp {
                 p.zones[2].insert(0, id);
             }
             // Checks: a chosen palette (its file isn't written in checks; `rivet-shell palette` does that).
+            // Checks: an icon theme, by name.
+            if let Ok(i) = std::env::var("RIVET_SHELL_ICONS") {
+                s.icon_theme = i;
+            }
+            // Checks: the shell's own surface colour, dark and light alike (rrggbb).
+            if let Some(n) = std::env::var("RIVET_SHELL_SURFACE").ok().and_then(|h| u32::from_str_radix(&h, 16).ok()) {
+                let c = Some([(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+                (s.surface_dark, s.surface_light) = (c, c);
+            }
             if let Ok(p) = std::env::var("RIVET_SHELL_PALETTE") {
                 s.choose_palette(&p);
             }
@@ -198,7 +220,10 @@ impl SettingsApp {
         SettingsApp {
             s,
             look: LiveLook::new(),
+            s_mtime: crate::config::mtime(),
+            s_checked: 0.0,
             icons: IconTheme::new(&rivet_look::icons::detect_system_theme()),
+            icon_key: String::new(),
             page,
             apps,
             picker: Default::default(),
@@ -281,8 +306,28 @@ impl eframe::App for SettingsApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let live = self.shot.is_none();
+        // Changed from elsewhere since it was read here: read it again (twice a second, and not
+        // mid-press, when a change of this window's own may be on its way).
+        let now = ctx.input(|i| i.time);
+        if live && now - self.s_checked >= 0.5 && !ctx.input(|i| i.pointer.any_down()) {
+            self.s_checked = now;
+            let m = crate::config::mtime();
+            if m != self.s_mtime {
+                self.s_mtime = m;
+                self.s = Settings::load();
+            }
+        }
+        if live {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
         self.look.set_fonts(&ctx, &self.s.font, "", "");
+        self.s.set_surfaces(&mut self.look);
         self.look.frame(&ctx, &self.s.choice(), live);
+        if self.s.icon_theme != self.icon_key {
+            self.icon_key = self.s.icon_theme.clone();
+            self.icons = crate::ui::icon_theme(&self.s);
+            self.preview_kit = None;
+        }
         let v = ctx.global_style().visuals.clone();
         let accent = self.look.accent(&self.s.choice());
         self.icons.set_builtin(Some(rivet_look::builtin_icons::BuiltinColors { accent, bg: v.extreme_bg_color, fg: v.text_color(), dark: v.dark_mode }));
@@ -389,12 +434,9 @@ impl eframe::App for SettingsApp {
                 });
             });
         });
-        // One source of colours at a time: the wallpaper's, turned on, ends a chosen palette.
-        if self.s.matugen && !before.matugen {
-            self.s.palette.clear();
-        }
         if self.s != before {
             self.s.save();
+            self.s_mtime = crate::config::mtime();
             // The shell looks for changes twice a second; tell it, so a change shows at once.
             if self.shot.is_none() {
                 let _ = crate::ipc::send("changed");
@@ -425,60 +467,7 @@ impl SettingsApp {
     }
 
     fn wallpaper_page(&mut self, ui: &mut egui::Ui, accent: Color32) {
-        section(ui, "Colors from the wallpaper", &mut |ui| {
-            ui.checkbox(&mut self.s.matugen, "Make the desktop's colors from the wallpaper (matugen)");
-            hint(ui, "When the wallpaper changes, matugen makes a color scheme from it, and every app that follows matugen (the Rivet apps included) changes with it.");
-            ui.add_space(10.0);
-            ui.add_enabled_ui(self.s.matugen, |ui| {
-                grid(ui, "shell-matugen", &mut |ui| {
-                    ui.label("Scheme");
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.s.color_mode, Mode::Dark, "Dark");
-                        ui.selectable_value(&mut self.s.color_mode, Mode::Light, "Light");
-                    });
-                    ui.end_row();
-                    ui.label("Style");
-                    let shown = self.s.scheme_type.trim_start_matches("scheme-").replace('-', " ");
-                    egui::ComboBox::from_id_salt("shell-scheme-type").selected_text(shown).width(200.0).show_ui(ui, |ui| {
-                        for t in ["tonal-spot", "content", "expressive", "fidelity", "fruit-salad", "monochrome", "neutral", "rainbow", "vibrant"] {
-                            ui.selectable_value(&mut self.s.scheme_type, format!("scheme-{t}"), t.replace('-', " "));
-                        }
-                    });
-                    ui.end_row();
-                    ui.label("Contrast");
-                    ui.horizontal(|ui| {
-                        ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).on_hover_text("Lower for softer colors, higher for stronger ones; 0 is the scheme as designed");
-                        if self.s.matugen_contrast != 0.0 && ui.small_button("Reset").clicked() {
-                            self.s.matugen_contrast = 0.0;
-                        }
-                    });
-                    ui.end_row();
-                    // With pictures per screen: whose picture the colors come from.
-                    if !self.s.wallpaper_screens.is_empty() || self.screens.len() > 1 {
-                        ui.label("Made from");
-                        let shown = if self.s.matugen_screen.is_empty() { "The shared picture".to_string() } else { format!("{}'s picture", self.s.matugen_screen) };
-                        egui::ComboBox::from_id_salt("shell-matugen-screen").selected_text(shown).width(200.0).show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.s.matugen_screen, String::new(), "The shared picture");
-                            for name in self.wall_screens() {
-                                let own = self.s.has_own_wallpaper(&name);
-                                ui.selectable_value(&mut self.s.matugen_screen, name.clone(), if own { format!("{name}'s picture") } else { format!("{name} (shows the shared picture)") });
-                            }
-                        });
-                        ui.end_row();
-                    }
-                });
-                ui.add_space(8.0);
-                if ui.button("Add Rivet's Colors to matugen").on_hover_text("Adds Rivet's template to matugen's config, so matugen writes the color file Rivet apps read").clicked() {
-                    self.note = Some(match palette::install_matugen_template() {
-                        Ok(m) => m,
-                        Err(e) => format!("Couldn't update matugen's config: {e}"),
-                    });
-                }
-                if let Some(n) = &self.note {
-                    hint(ui, n);
-                }
-            });
-        });
+        self.picture_section(ui, accent);
         section(ui, "Transition", &mut |ui| {
             grid(ui, "shell-wall-transition", &mut |ui| {
                 ui.label("A new picture");
@@ -503,42 +492,47 @@ impl SettingsApp {
                 Transition::Grow => "The new picture opens from the middle in a circle.",
             });
         });
-        self.picture_section(ui, accent);
     }
 
     fn appearance_page(&mut self, ui: &mut egui::Ui) {
-        section(ui, "Style and accent", &mut |ui| {
-            ui.checkbox(&mut self.s.follow_desktop_colors, "Follow desktop colors (matugen)");
+        self.colors_section(ui);
+        section(ui, "Colour use", &mut |ui| {
+            hint(ui, "How much the shell uses the theme's secondary and tertiary colours beside the accent.");
             ui.add_space(8.0);
-            let manual = !self.s.follow_desktop_colors;
-            grid(ui, "shell-look", &mut |ui| {
-                ui.label("Style");
-                ui.add_enabled_ui(manual, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.s.theme, Mode::System, "Follow system");
-                        ui.selectable_value(&mut self.s.theme, Mode::Light, "Light");
-                        ui.selectable_value(&mut self.s.theme, Mode::Dark, "Dark");
-                    });
-                });
-                ui.end_row();
-                ui.label("Accent");
-                ui.add_enabled_ui(manual, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 8.0;
-                        for (c, name) in ACCENTS {
-                            let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
-                            let col = Color32::from_rgb(c[0], c[1], c[2]);
-                            ui.painter().circle_filled(r.center(), 9.0, if manual { col } else { col.gamma_multiply(0.4) });
-                            if self.s.accent == c {
-                                ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, ui.visuals().strong_text_color()));
-                            }
-                            if resp.on_hover_text(name).clicked() && manual {
-                                self.s.accent = c;
+            panel_editor::segmented(ui, &mut self.s.color_use, &[(0, "Accent Only"), (1, "Some"), (2, "A Lot")]);
+            ui.add_space(6.0);
+            hint(ui, match self.s.color_use {
+                0 => "Everything lit is in the accent.",
+                1 => "Switches and quick settings that are on take the secondary colour; notifications the tertiary; the system widget's bars one each.",
+                _ => "As Some, and sliders and the thing in use in a list take the secondary; running apps' dots and what's playing the tertiary.",
+            });
+            // Where the two colours come from: the theme, or (without them there) the accent.
+            let from_theme = self.s.follow_desktop_colors && self.look.palette().is_some_and(|p| p.secondary.is_some() && p.tertiary.is_some());
+            if self.s.color_use > 0 && self.s.follow_desktop_colors && palette::matugen_template_outdated() {
+                ui.add_space(8.0);
+                hint(ui, "matugen's template for Rivet is an older one that leaves out the secondary and tertiary colours, so they're being made from the accent and look close to it.");
+                ui.add_space(4.0);
+                if ui.button("Update the Template").on_hover_text("Rewrites Rivet's template in matugen's folder, then makes the colours again").clicked() {
+                    self.note = Some(match palette::install_matugen_template() {
+                        Ok(_) => {
+                            let pic = std::path::PathBuf::from(self.s.matugen_picture());
+                            if self.s.makes_colors() && pic.is_file() {
+                                crate::wall::run_matugen(&pic, self.s.color_mode, &self.s.scheme_type, self.s.matugen_contrast, |_| {});
+                                "The template was updated and the colours are being made again.".to_string()
+                            } else {
+                                "The template was updated; the colours follow the next time matugen runs.".to_string()
                             }
                         }
+                        Err(e) => format!("Couldn't update matugen's template: {e}"),
                     });
-                });
-                ui.end_row();
+                }
+            } else if self.s.color_use > 0 && !from_theme {
+                ui.add_space(8.0);
+                hint(ui, "This theme gives no secondary or tertiary colour, so they're made from the accent: a quieter one, and a neighbouring hue.");
+            }
+        });
+        section(ui, "Text", &mut |ui| {
+            grid(ui, "shell-text", &mut |ui| {
                 ui.label("Font");
                 ui.horizontal(|ui| {
                     font_pick::font_pick(ui, "shell-font", &mut self.s.font, &format!("Like the desktop ({})", font_pick::desktop_name()));
@@ -561,7 +555,7 @@ impl SettingsApp {
                 ui.end_row();
             });
         });
-        self.palette_section(ui);
+        self.icons_section(ui);
         self.look_section(ui);
         self.window_look_section(ui);
     }

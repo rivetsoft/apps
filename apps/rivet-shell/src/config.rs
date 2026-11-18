@@ -283,6 +283,41 @@ impl WsStyle {
     }
 }
 
+/// The quick settings item's symbol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum QuickIcon {
+    #[default]
+    Sliders,
+    /// Two switches, one on.
+    Toggles,
+    /// Four tiles, one lit.
+    Tiles,
+    Gear,
+}
+
+impl QuickIcon {
+    pub const ALL: [QuickIcon; 4] = [QuickIcon::Sliders, QuickIcon::Toggles, QuickIcon::Tiles, QuickIcon::Gear];
+    pub fn name(self) -> &'static str {
+        match self {
+            QuickIcon::Sliders => "sliders",
+            QuickIcon::Toggles => "toggles",
+            QuickIcon::Tiles => "tiles",
+            QuickIcon::Gear => "gear",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            QuickIcon::Sliders => "Sliders",
+            QuickIcon::Toggles => "Switches",
+            QuickIcon::Tiles => "Tiles",
+            QuickIcon::Gear => "Gear",
+        }
+    }
+    pub fn from(v: &str) -> QuickIcon {
+        QuickIcon::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+}
+
 /// The launcher item's symbol.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum LauncherIcon {
@@ -402,8 +437,17 @@ pub struct Settings {
     // ---- the look (as every Rivet app)
     pub theme: Mode,
     pub accent: [u8; 3],
+    /// The shell's own background colour in its dark style and in its light one (None: the
+    /// usual greys). With the style and accent, when the colours aren't the desktop's or a palette's.
+    pub surface_dark: Option<[u8; 3]>,
+    pub surface_light: Option<[u8; 3]>,
+    /// The surface takes a little of the accent, so it changes with it.
+    pub surface_tint: bool,
     pub follow_desktop_colors: bool,
     pub text_size: f32,
+    /// How much the shell uses the theme's secondary and tertiary colours: 0 the primary
+    /// only, 1 some (switches, notifications, the widget's bars), 2 a lot (sliders, dots…).
+    pub color_use: u8,
     /// The interface's font, a family's name (empty: the desktop's); the launcher's own
     /// (empty: this one). A panel's own is in its settings.
     pub font: String,
@@ -433,6 +477,8 @@ pub struct Settings {
     /// A built-in palette for the desktop's colours, by name (one of `rivet_look::schemes`;
     /// empty: none). For when matugen isn't making them: only one of the two is on.
     pub palette: String,
+    /// The icon theme for apps' and the tray's icons, by its folder's name (empty: the desktop's).
+    pub icon_theme: String,
     /// matugen's light or dark scheme.
     pub color_mode: Mode,
     /// matugen's scheme type (`-t`), e.g. scheme-tonal-spot.
@@ -473,6 +519,8 @@ pub struct Settings {
     pub tray_color: TrayColor,
     /// The launcher item's symbol, and the custom one (an icon's name, or a picture's path).
     pub launcher_icon: LauncherIcon,
+    /// The quick settings item's symbol.
+    pub quick_icon: QuickIcon,
     pub launcher_custom: String,
     pub tray_passive: bool,
     // ---- notifications, on-screen display, night light
@@ -549,8 +597,12 @@ impl Default for Settings {
         Settings {
             theme: Mode::System,
             accent: [0xe6, 0x61, 0x00],
+            surface_dark: None,
+            surface_light: None,
+            surface_tint: false,
             follow_desktop_colors: true,
             text_size: 0.0,
+            color_use: 1,
             font: String::new(),
             launcher_font: String::new(),
             look: crate::style::Style::default(),
@@ -565,6 +617,7 @@ impl Default for Settings {
             matugen_contrast: 0.0,
             matugen: true,
             palette: String::new(),
+            icon_theme: String::new(),
             color_mode: Mode::Dark,
             scheme_type: "scheme-tonal-spot".into(),
             panels: vec![PanelCfg::default()],
@@ -588,6 +641,7 @@ impl Default for Settings {
             power_hide: Vec::new(),
             tray_color: TrayColor::Own,
             launcher_icon: LauncherIcon::Grid,
+            quick_icon: QuickIcon::Sliders,
             launcher_custom: String::new(),
             tray_passive: true,
             notifications: true,
@@ -652,6 +706,16 @@ pub fn path() -> PathBuf {
 }
 
 /// When the settings file last changed (to notice the Settings window's changes).
+/// `#rrggbb` as a colour (anything else: none).
+fn rgb_from(v: &str) -> Option<[u8; 3]> {
+    let n = u32::from_str_radix(v.strip_prefix('#').filter(|h| h.len() == 6)?, 16).ok()?;
+    Some([(n >> 16) as u8, (n >> 8) as u8, n as u8])
+}
+
+fn rgb_text(c: Option<[u8; 3]>) -> String {
+    c.map(|[r, g, b]| format!("#{r:02x}{g:02x}{b:02x}")).unwrap_or_default()
+}
+
 pub fn mtime() -> Option<std::time::SystemTime> {
     std::fs::metadata(path()).and_then(|m| m.modified()).ok()
 }
@@ -737,8 +801,12 @@ impl Settings {
                         self.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
                     }
                 }
+                "surface_dark" => self.surface_dark = rgb_from(v),
+                "surface_light" => self.surface_light = rgb_from(v),
+                "surface_tint" => self.surface_tint = b,
                 "follow_desktop_colors" => self.follow_desktop_colors = b,
                 "text_size" => self.text_size = v.parse::<f32>().unwrap_or(0.0).clamp(0.0, 24.0),
+                "color_use" => self.color_use = v.parse::<u8>().unwrap_or(1).min(crate::style::COLOR_USE_MAX),
                 "font" => self.font = font_name(v),
                 "launcher_font" => self.launcher_font = font_name(v),
                 "wallpaper" => self.wallpaper = v.to_string(),
@@ -746,6 +814,7 @@ impl Settings {
                 "wallpaper_dirs" => self.wallpaper_dirs = v.split('\t').filter(|x| !x.is_empty()).map(String::from).collect(),
                 "matugen" => self.matugen = b,
                 "palette" => self.palette = v.to_string(),
+                "icon_theme" => self.icon_theme = v.to_string(),
                 "wall_transition" => self.wall_transition = Transition::from(v),
                 "wall_transition_ms" => self.wall_transition_ms = v.parse::<u32>().unwrap_or(600).clamp(100, 5000),
                 "matugen_screen" => self.matugen_screen = v.to_string(),
@@ -793,6 +862,7 @@ impl Settings {
                 "power_hide" => self.power_hide = v.split(',').filter(|x| !x.is_empty()).map(String::from).collect(),
                 "tray_color" => self.tray_color = TrayColor::from(v),
                 "launcher_icon" => self.launcher_icon = LauncherIcon::from(v),
+                "quick_icon" => self.quick_icon = QuickIcon::from(v),
                 "launcher_custom" => self.launcher_custom = v.to_string(),
                 "tray_passive" => self.tray_passive = b,
                 "notifications" => self.notifications = b,
@@ -904,7 +974,7 @@ impl Settings {
             self.dock_hide.name(),
             self.panels.len(),
         );
-        t.push_str(&format!("wall_transition={}\nwall_transition_ms={}\nmatugen_screen={}\nmatugen_contrast={}\npalette={}\n", self.wall_transition.name(), self.wall_transition_ms, one(&self.matugen_screen), self.matugen_contrast, one(&self.palette)));
+        t.push_str(&format!("wall_transition={}\nwall_transition_ms={}\nmatugen_screen={}\nmatugen_contrast={}\npalette={}\nicon_theme={}\nsurface_dark={}\nsurface_light={}\nsurface_tint={}\n", self.wall_transition.name(), self.wall_transition_ms, one(&self.matugen_screen), self.matugen_contrast, one(&self.palette), one(&self.icon_theme), rgb_text(self.surface_dark), rgb_text(self.surface_light), self.surface_tint));
         for (name, pic) in &self.wallpaper_screens {
             t.push_str(&format!("wallpaper.{}={}\n", one(name), one(pic)));
         }
@@ -913,7 +983,9 @@ impl Settings {
         }
         t.push_str(&format!("power_style={}\npower_confirm={}\npower_hide={}\n", self.power_style.name(), self.power_confirm, self.power_hide.join(",")));
         t.push_str(&format!("tray_color={}\ntray_passive={}\n", self.tray_color.name(), self.tray_passive));
+        t.push_str(&format!("color_use={}\n", self.color_use));
         t.push_str(&format!("font={}\nlauncher_font={}\n", font_name(&self.font), font_name(&self.launcher_font)));
+        t.push_str(&format!("quick_icon={}\n", self.quick_icon.name()));
         t.push_str(&format!("launcher_icon={}\nlauncher_custom={}\n", self.launcher_icon.name(), self.launcher_custom.replace('\n', "")));
         t.push_str(&format!("wallpaper_dirs={}\n", self.wallpaper_dirs.iter().map(|d| d.replace(['\t', '\n'], " ")).collect::<Vec<_>>().join("\t")));
         t.push_str(&format!("look={}\ndock_look={}\n", self.look.text('=', ';'), self.dock_look.text('=', ';')));
@@ -973,22 +1045,76 @@ impl Settings {
         if std::fs::write(&tmp, self.text()).is_ok() {
             let _ = std::fs::rename(&tmp, &p);
         }
-        // The chosen palette, as the colour file every Rivet app reads (none: no such file).
-        let css = rivet_look::schemes::Scheme::by_name(&self.palette).map(|s| s.palette_css());
+        // The chosen palette, or the shell's own style and accent, as the colour file every Rivet
+        // app reads (the colours are the desktop's: no such file).
+        let css = rivet_look::schemes::Scheme::by_name(&self.palette).map(|s| s.palette_css()).or_else(|| {
+            let dark = match self.theme {
+                Mode::Dark => true,
+                Mode::Light => false,
+                Mode::System => rivet_look::palette::prefers_dark(),
+            };
+            self.own_colors().then(|| self.own_css(dark))
+        });
         if let Err(e) = rivet_look::palette::set_chosen(css.as_deref()) {
             eprintln!("rivet-shell: the palette's colors: {e}");
         }
     }
 
-    /// Choose a built-in palette (empty: none). One shows at a time, so choosing one stops the
-    /// colours being made from the wallpaper; the shell follows it, in its light or dark.
+    /// The usual surface greys, dark and light.
+    pub const SURFACES: [[u8; 3]; 2] = [[0x30, 0x30, 0x30], [0xea, 0xea, 0xec]];
+
+    /// The shell's own surface colour in its dark style or its light one: the chosen one (else
+    /// the usual grey), with a little of the accent when tinted. None: the usual, untouched.
+    pub fn surface(&self, dark: bool) -> Option<eframe::egui::Color32> {
+        use eframe::egui::Color32;
+        let own = if dark { self.surface_dark } else { self.surface_light };
+        if own.is_none() && !self.surface_tint {
+            return None;
+        }
+        let [r, g, b] = own.unwrap_or(Self::SURFACES[if dark { 0 } else { 1 }]);
+        let base = Color32::from_rgb(r, g, b);
+        if !self.surface_tint {
+            return Some(base);
+        }
+        let [r, g, b] = self.accent;
+        Some(rivet_look::palette::mix(base, Color32::from_rgb(r, g, b), if dark { 0.12 } else { 0.07 }))
+    }
+
+    /// Are the colours the shell's own (its style, accent and surface), not the desktop's or a palette's?
+    pub fn own_colors(&self) -> bool {
+        self.palette.is_empty() && !self.follow_desktop_colors
+    }
+
+    /// The shell's own colours as a colour file's text, for its dark style or its light one.
+    pub fn own_css(&self, dark: bool) -> String {
+        let [r, g, b] = self.accent;
+        rivet_look::palette::own_css(dark, eframe::egui::Color32::from_rgb(r, g, b), self.surface(dark))
+    }
+
+    /// Give a look the shell's own colours, when those are the ones in use.
+    pub fn set_surfaces(&self, look: &mut rivet_look::live::LiveLook) {
+        if !self.own_colors() {
+            look.set_own("", || [None, None]);
+            return;
+        }
+        let key = format!("{:?}{:?}{:?}{}", self.accent, self.surface_dark, self.surface_light, self.surface_tint);
+        look.set_own(&key, || [rivet_look::palette::from_css(&self.own_css(true)), rivet_look::palette::from_css(&self.own_css(false))]);
+    }
+
+    /// Does the shell make the colours from the wallpaper (with matugen)? Only when that's where
+    /// the colours come from: not with a palette chosen, nor with the shell's own style and accent.
+    pub fn makes_colors(&self) -> bool {
+        self.matugen && self.palette.is_empty() && self.follow_desktop_colors
+    }
+
+    /// Choose a built-in palette (empty: none). The shell follows it, in its light or dark; while
+    /// one is chosen no colours are made from the wallpaper (see `makes_colors`).
     pub fn choose_palette(&mut self, name: &str) {
         let Some(sc) = rivet_look::schemes::Scheme::by_name(name) else {
             self.palette.clear();
             return;
         };
         self.palette = sc.name.to_string();
-        self.matugen = false;
         self.follow_desktop_colors = true;
         self.color_mode = if sc.dark { Mode::Dark } else { Mode::Light };
     }

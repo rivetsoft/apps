@@ -286,7 +286,7 @@ impl TermApp {
                 // The desktop palette's own secondary and tertiary when following it (a new
                 // wallpaper changes all three), else ones made from the accent.
                 let a = self.accent();
-                let pal = self.palette().filter(|_| self.s.follow_desktop_colors);
+                let pal = self.palette().filter(|p| rivet_look::palette::follows(Some(p), self.s.follow_desktop_colors));
                 let s = pal.as_ref().and_then(|p| p.secondary).unwrap_or_else(|| rivet_look::builtin_icons::derive_secondary(a));
                 let t = pal.as_ref().and_then(|p| p.tertiary).unwrap_or_else(|| rivet_look::builtin_icons::derive_tertiary(a));
                 TermColors::from_theme_trio(v.extreme_bg_color, v.text_color(), [a, s, t])

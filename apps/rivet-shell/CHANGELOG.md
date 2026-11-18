@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Settings → Panels → Groups shows one group at a time: the groups are tabs in their own
+  colors, and the chosen one's settings sit under them, with colors as swatches.
+- The shell uses the theme's secondary and tertiary colours, as much as Appearance's "Colour
+  use" says: Accent Only; Some (switches and quick settings that are on, notifications, the
+  system widget's bars), the default; or A Lot (also sliders, the thing in use in a list,
+  running apps' dots, what's playing).
+- The style, accent and surface chosen in Settings → Appearance are followed by every Rivet
+  app, like a palette or the wallpaper's colors are.
+- A panel group's height follows the panel, or is its own: from 12 points up to the panel's
+  whole height, where the group fills the panel edge to edge (its width, on a side panel).
+- The Quick Settings panel item's symbol can be sliders (as before), switches, tiles or a gear
+  (its options in Settings, Panels).
+- Settings → Appearance → Colors → Style and accent has a Surface row: the shell's background
+  color, on a scale of contrast (Black to Soft; White to Grey in the light style) or any
+  color. Dark and light keep one each (`surface_dark=`, `surface_light=`). "Tint the surface
+  with the accent" makes it follow the accent (`surface_tint=`).
+- Settings → Appearance → Icons: the icon themes installed on the system, to choose the one
+  the dock, launcher, panels and tray take their icons from (the desktop's own by default). In
+  the settings file: `icon_theme=`.
+- Settings: the Theme page is now Wallpaper (the picture and its transition), and Appearance
+  starts with one Colors card that asks where the colors come from: the wallpaper (matugen and
+  its options), a palette, or the shell's own style and accent. Only the chosen one's settings
+  show. Font and text size have a Text card of their own. matugen now runs only when the colors
+  come from the wallpaper.
+- Palettes, for a desktop without matugen: Settings → Appearance → Colors → A palette lists the built-in
+  color schemes (the ones Rivet Edit and Rivet Terminal color code with: Nord, Dracula, Gruvbox,
+  Catppuccin, Tokyo Night and the rest). The chosen one colors the shell and every Rivet app,
+  in place of colors made from the wallpaper. `rivet-shell palette NAME` (or `none`) does the
+  same; `rivet-shell palette` lists them. In the settings file: `palette=`.
 - The shell comes back by itself after a crash: `rivet-shell` now watches the shell proper and
   starts it again (giving up after six crashes in a row soon after starting). Panics, the lock
   screen's too, are written to `~/.local/state/rivet-shell/crash.log` with where they happened.

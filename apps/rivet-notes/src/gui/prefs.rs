@@ -151,7 +151,7 @@ impl NotesApp {
                                 Page::Appearance => {
                                     section(ui, "Desktop colors", &mut |ui| {
                                         ui.checkbox(&mut self.s.follow_desktop_colors, "Follow desktop colors");
-                                        match (&pal, self.s.follow_desktop_colors) {
+                                        match (&pal, rivet_look::palette::follows(pal.as_ref(), self.s.follow_desktop_colors)) {
                                             (Some(p), true) => {
                                                 ui.add_space(4.0);
                                                 ui.horizontal(|ui| {
@@ -161,15 +161,14 @@ impl NotesApp {
                                                         ui.painter().rect_filled(r, rivet_look::theme::r_xs(), c);
                                                         ui.painter().rect_stroke(r, rivet_look::theme::r_xs(), Stroke::new(1.0, weak), egui::StrokeKind::Inside);
                                                     }
-                                                    let name = p.source.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                                                    ui.label(egui::RichText::new(format!("from {name}")).small().color(weak));
+                                                    ui.label(egui::RichText::new(p.source_label()).small().color(weak));
                                                 });
                                             }
                                             (None, true) => hint(ui, "No desktop color file was found, so the style and accent below are used."),
                                             _ => hint(ui, "The style and accent below are used."),
                                         }
                                     });
-                                    let manual = !self.s.follow_desktop_colors || pal.is_none();
+                                    let manual = rivet_look::palette::shown(pal.as_ref(), self.s.follow_desktop_colors).is_none();
                                     section(ui, "Style and accent", &mut |ui| {
                                         grid(ui, "notes-look", &mut |ui| {
                                             ui.label("Style");

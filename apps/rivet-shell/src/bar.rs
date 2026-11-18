@@ -485,10 +485,19 @@ fn layout(ui: &mut egui::Ui, b: &mut Bar, cfg: &PanelCfg, bar: Rect) {
         while k < cells.len() {
             let g = cells[k].2;
             let n = if g.is_some() { cells[k..].iter().take_while(|c| c.2 == g).count() } else { 1 };
+            // A group with a height of its own: its background that tall (the panel's whole
+            // height at most), and its items no taller.
+            let own = g.and_then(|g| cfg.groups.get(g)).and_then(|g| g.height).map(|h| (h as f32).min(cfg.bar()));
+            if let Some(h) = own {
+                for c in &mut cells[k..k + n] {
+                    c.1 = across(c.1, h.min(th), vert);
+                }
+            }
             let run = &cells[k..k + n];
             let back = g.and_then(|g| cfg.groups.get(g)).filter(|g| g.bg.is_some()).map(|_| {
                 let all = run.iter().fold(run[0].1, |a, c| a.union(c.1));
-                if vert { all.expand2(Vec2::new(0.0, GROUP_IN)) } else { all.expand2(Vec2::new(GROUP_IN, 0.0)) }
+                let all = if vert { all.expand2(Vec2::new(0.0, GROUP_IN)) } else { all.expand2(Vec2::new(GROUP_IN, 0.0)) };
+                own.map_or(all, |h| across(all, h, vert))
             });
             runs.push((k..k + n, g, back, [true, true]));
             k += n;
@@ -519,7 +528,7 @@ fn layout(ui: &mut egui::Ui, b: &mut Bar, cfg: &PanelCfg, bar: Rect) {
             let (bg, gv, gaccent) = group_look(b, group);
             if let (Some(bg), Some(back)) = (bg, back) {
                 // Rounded at its own ends, square where it meets a neighbour.
-                let r = b.group_r.round() as u8;
+                let r = b.group_r.min(if vert { back.width() } else { back.height() } / 2.0).round() as u8;
                 let (s, e) = (if round[0] { r } else { 0 }, if round[1] { r } else { 0 });
                 let radius = if vert { egui::CornerRadius { nw: s, ne: s, sw: e, se: e } } else { egui::CornerRadius { nw: s, sw: s, ne: e, se: e } };
                 if group.gradient {
@@ -637,6 +646,12 @@ const GROUP_PAD: &str = "group-pad";
 const GROUP_MORE: &str = "group-more:";
 /// How far a group's background reaches past its items.
 const GROUP_IN: f32 = 4.0;
+
+/// `r` made `size` across the panel (its height on a bar, its width on a side panel), about its
+/// middle.
+fn across(r: Rect, size: f32, vert: bool) -> Rect {
+    if vert { Rect::from_center_size(r.center(), Vec2::new(size, r.height())) } else { Rect::from_center_size(r.center(), Vec2::new(r.width(), size)) }
+}
 
 /// The group a zone's item is drawn in.
 fn group_at(cfg: &PanelCfg, id: &str) -> Option<usize> {
@@ -1079,7 +1094,9 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             glyph::bell(&p, r.center(), fg, ex.dnd);
             let n = ex.notes.len();
             if n > 0 && !ex.dnd {
-                p.circle_filled(r.center() + Vec2::new(6.0, -6.0), 3.5, accent);
+                // The tertiary when the shell uses it (and this panel has no highlight of its own).
+                let own = b.m.s.look.highlight.is_some() || b.m.s.panels.get(b.idx).is_some_and(|c| c.look.highlight.is_some());
+                p.circle_filled(r.center() + Vec2::new(6.0, -6.0), 3.5, if own { accent } else { b.roles.tone(style::Slot::Notify, b.m.s.color_use) });
             }
             let tip = if ex.dnd { "Do not disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
             if resp.on_hover_text(tip).clicked() {
@@ -1089,7 +1106,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
         }
         "quick-settings" => {
             let resp = b.button(ui, r, id);
-            glyph::sliders(&p, r.center(), fg);
+            glyph::quick(&p, r.center(), fg, b.m.s.quick_icon);
             if resp.on_hover_text("Quick settings").clicked() {
                 let a = b.control(b.at(r));
                 b.acts.push(a);
