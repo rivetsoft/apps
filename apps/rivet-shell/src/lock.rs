@@ -161,6 +161,7 @@ fn background(path: &str, w: u32, h: u32, blur: bool) -> Option<Vec<u8>> {
 
 /// Lock the session (or, with `preview`, only show the lock screen) until the password is given.
 pub fn run(preview: bool) -> std::process::ExitCode {
+    crate::guard::log_panics();
     match run_inner(preview) {
         Ok(code) => std::process::ExitCode::from(code),
         Err(e) => {

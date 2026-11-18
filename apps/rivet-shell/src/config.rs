@@ -16,27 +16,233 @@ pub enum Edge {
     #[default]
     Top,
     Bottom,
+    Left,
+    Right,
 }
 
-/// When the dock hides.
+impl Edge {
+    pub const ALL: [Edge; 4] = [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right];
+    pub fn name(self) -> &'static str {
+        match self {
+            Edge::Top => "top",
+            Edge::Bottom => "bottom",
+            Edge::Left => "left",
+            Edge::Right => "right",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Edge::Top => "Top",
+            Edge::Bottom => "Bottom",
+            Edge::Left => "Left",
+            Edge::Right => "Right",
+        }
+    }
+    pub fn from(v: &str) -> Edge {
+        Edge::ALL.into_iter().find(|e| e.name() == v).unwrap_or_default()
+    }
+    /// A panel on it runs down the screen's side.
+    pub fn vertical(self) -> bool {
+        matches!(self, Edge::Left | Edge::Right)
+    }
+}
+
+/// Where along its edge a panel shorter than the edge sits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Along {
+    Start,
+    #[default]
+    Center,
+    End,
+}
+
+impl Along {
+    pub fn name(self) -> &'static str {
+        match self {
+            Along::Start => "start",
+            Along::Center => "center",
+            Along::End => "end",
+        }
+    }
+    pub fn from(v: &str) -> Along {
+        match v {
+            "start" => Along::Start,
+            "end" => Along::End,
+            _ => Along::Center,
+        }
+    }
+}
+
+/// How the launcher shows the apps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LaunchView {
+    /// Icons in rows, each over its name.
+    #[default]
+    Grid,
+    /// A row for each app.
+    List,
+}
+
+impl LaunchView {
+    pub fn from(v: &str) -> LaunchView {
+        if v == "list" { LaunchView::List } else { LaunchView::Grid }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            LaunchView::Grid => "grid",
+            LaunchView::List => "list",
+        }
+    }
+}
+
+/// Where the launcher opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LaunchPlace {
+    /// In the middle of the screen.
+    #[default]
+    Center,
+    /// From a panel, like the panel's other popups: the one it was opened from, else the
+    /// screen's first.
+    Panel,
+}
+
+impl LaunchPlace {
+    pub fn from(v: &str) -> LaunchPlace {
+        if v == "panel" { LaunchPlace::Panel } else { LaunchPlace::Center }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            LaunchPlace::Center => "center",
+            LaunchPlace::Panel => "panel",
+        }
+    }
+}
+
+/// How big the launcher is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LaunchSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl LaunchSize {
+    pub fn from(v: &str) -> LaunchSize {
+        match v {
+            "small" => LaunchSize::Small,
+            "large" => LaunchSize::Large,
+            _ => LaunchSize::Medium,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            LaunchSize::Small => "small",
+            LaunchSize::Medium => "medium",
+            LaunchSize::Large => "large",
+        }
+    }
+}
+
+/// When the dock, or a panel, hides.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum DockHide {
     /// Always shown.
     #[default]
     Never,
-    /// Slides away; comes back when the pointer reaches the screen's bottom edge.
+    /// Slides away; comes back when the pointer reaches its edge of the screen.
     Auto,
     /// Shown while the workspace has no windows; else like Auto.
     Smart,
 }
 
 impl DockHide {
+    pub fn from(v: &str) -> DockHide {
+        match v {
+            "auto" => DockHide::Auto,
+            "smart" => DockHide::Smart,
+            _ => DockHide::Never,
+        }
+    }
     pub fn name(self) -> &'static str {
         match self {
             DockHide::Never => "never",
             DockHide::Auto => "auto",
             DockHide::Smart => "smart",
         }
+    }
+}
+
+/// How one wallpaper gives way to the next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Transition {
+    None,
+    /// The new picture fades in over the old.
+    #[default]
+    Fade,
+    /// A soft edge sweeps across.
+    Wipe,
+    /// The new picture pushes the old one off.
+    Slide,
+    /// A circle opens from the middle.
+    Grow,
+}
+
+impl Transition {
+    pub const ALL: [Transition; 5] = [Transition::None, Transition::Fade, Transition::Wipe, Transition::Slide, Transition::Grow];
+    pub fn name(self) -> &'static str {
+        match self {
+            Transition::None => "none",
+            Transition::Fade => "fade",
+            Transition::Wipe => "wipe",
+            Transition::Slide => "slide",
+            Transition::Grow => "grow",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Transition::None => "None",
+            Transition::Fade => "Fade",
+            Transition::Wipe => "Wipe",
+            Transition::Slide => "Slide",
+            Transition::Grow => "Grow",
+        }
+    }
+    pub fn from(v: &str) -> Transition {
+        Transition::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+}
+
+/// How the power menu shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PowerStyle {
+    /// A list under the item.
+    #[default]
+    Menu,
+    /// Large tiles in the middle of the screen.
+    Grid,
+    /// A row of symbols under the item.
+    Row,
+}
+
+impl PowerStyle {
+    pub const ALL: [PowerStyle; 3] = [PowerStyle::Menu, PowerStyle::Grid, PowerStyle::Row];
+    pub fn name(self) -> &'static str {
+        match self {
+            PowerStyle::Menu => "menu",
+            PowerStyle::Grid => "grid",
+            PowerStyle::Row => "row",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            PowerStyle::Menu => "Menu",
+            PowerStyle::Grid => "Large Grid",
+            PowerStyle::Row => "Row",
+        }
+    }
+    pub fn from(v: &str) -> PowerStyle {
+        PowerStyle::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
     }
 }
 
@@ -50,15 +256,18 @@ pub enum WsStyle {
     Dots,
     /// Just the numbers or names; the active one coloured and underlined.
     Numbers,
+    /// Squares with rounded corners, all one size; the active one coloured.
+    Squares,
 }
 
 impl WsStyle {
-    pub const ALL: [WsStyle; 3] = [WsStyle::Pills, WsStyle::Dots, WsStyle::Numbers];
+    pub const ALL: [WsStyle; 4] = [WsStyle::Pills, WsStyle::Squares, WsStyle::Dots, WsStyle::Numbers];
     pub fn name(self) -> &'static str {
         match self {
             WsStyle::Pills => "pills",
             WsStyle::Dots => "dots",
             WsStyle::Numbers => "numbers",
+            WsStyle::Squares => "squares",
         }
     }
     pub fn label(self) -> &'static str {
@@ -66,10 +275,113 @@ impl WsStyle {
             WsStyle::Pills => "Pills",
             WsStyle::Dots => "Dots",
             WsStyle::Numbers => "Numbers",
+            WsStyle::Squares => "Squares",
         }
     }
     pub fn from(v: &str) -> WsStyle {
         WsStyle::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+}
+
+/// The launcher item's symbol.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum LauncherIcon {
+    /// A grid of dots.
+    #[default]
+    Grid,
+    /// The system's logo (the distribution's), from the icon theme.
+    System,
+    /// An icon by name, or a picture.
+    Custom,
+}
+
+impl LauncherIcon {
+    pub const ALL: [LauncherIcon; 3] = [LauncherIcon::Grid, LauncherIcon::System, LauncherIcon::Custom];
+    pub fn name(self) -> &'static str {
+        match self {
+            LauncherIcon::Grid => "grid",
+            LauncherIcon::System => "system",
+            LauncherIcon::Custom => "custom",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            LauncherIcon::Grid => "Grid",
+            LauncherIcon::System => "System",
+            LauncherIcon::Custom => "Custom",
+        }
+    }
+    pub fn from(v: &str) -> LauncherIcon {
+        LauncherIcon::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+}
+
+/// How the tray shows apps' icons.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum TrayColor {
+    /// As the apps draw them.
+    #[default]
+    Own,
+    /// One colour, the panel's text colour (their shapes kept).
+    Text,
+    /// One colour, the panel's highlight colour.
+    Highlight,
+}
+
+impl TrayColor {
+    pub const ALL: [TrayColor; 3] = [TrayColor::Own, TrayColor::Text, TrayColor::Highlight];
+    pub fn name(self) -> &'static str {
+        match self {
+            TrayColor::Own => "own",
+            TrayColor::Text => "text",
+            TrayColor::Highlight => "highlight",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            TrayColor::Own => "Their Colors",
+            TrayColor::Text => "Like the Panel",
+            TrayColor::Highlight => "Highlight",
+        }
+    }
+    pub fn from(v: &str) -> TrayColor {
+        TrayColor::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+}
+
+/// What a level item (volume, brightness, battery) shows in the panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Show {
+    /// Its icon and its percent.
+    #[default]
+    Both,
+    /// Just the icon (the percent is in its tooltip).
+    Icon,
+    /// Just the percent.
+    Text,
+}
+
+impl Show {
+    pub const ALL: [Show; 3] = [Show::Both, Show::Icon, Show::Text];
+    pub fn name(self) -> &'static str {
+        match self {
+            Show::Both => "both",
+            Show::Icon => "icon",
+            Show::Text => "text",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            Show::Both => "Icon & Percent",
+            Show::Icon => "Icon",
+            Show::Text => "Percent",
+        }
+    }
+    pub fn from(v: &str) -> Show {
+        Show::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+    pub fn text(self) -> bool {
+        self != Show::Icon
     }
 }
 
@@ -80,6 +392,11 @@ pub enum Side {
     Right,
 }
 
+/// A font family's name as it's kept in the settings file (nothing that ends a value there).
+pub fn font_name(v: &str) -> String {
+    v.replace([';', '=', '\n', '\t'], "").trim().to_string()
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     // ---- the look (as every Rivet app)
@@ -87,13 +404,35 @@ pub struct Settings {
     pub accent: [u8; 3],
     pub follow_desktop_colors: bool,
     pub text_size: f32,
+    /// The interface's font, a family's name (empty: the desktop's); the launcher's own
+    /// (empty: this one). A panel's own is in its settings.
+    pub font: String,
+    pub launcher_font: String,
+    /// The panels' and the dock's look (each can change any of it).
+    pub look: crate::style::Style,
     // ---- wallpaper and colours
     /// The picture on the desktop (empty: a plain background in the theme's colours).
     pub wallpaper: String,
     /// Where the Settings window looks for pictures.
     pub wallpaper_dir: String,
+    /// Folders chosen before, the latest first.
+    pub wallpaper_dirs: Vec<String>,
+    /// Screens with a picture of their own (output name, picture); the rest show `wallpaper`.
+    pub wallpaper_screens: Vec<(String, String)>,
+    /// The screens as set in Settings, Displays (empty: left to the compositor's config).
+    pub displays: Vec<crate::displays::Display>,
+    /// How a new wallpaper comes in, and for how long (milliseconds).
+    pub wall_transition: Transition,
+    pub wall_transition_ms: u32,
+    /// The screen whose picture the colours are made from (none: the shared picture).
+    pub matugen_screen: String,
+    /// matugen's contrast, −1 to 1 (0: as designed).
+    pub matugen_contrast: f32,
     /// Run matugen when the wallpaper changes, so every app takes its colours.
     pub matugen: bool,
+    /// A built-in palette for the desktop's colours, by name (one of `rivet_look::schemes`;
+    /// empty: none). For when matugen isn't making them: only one of the two is on.
+    pub palette: String,
     /// matugen's light or dark scheme.
     pub color_mode: Mode,
     /// matugen's scheme type (`-t`), e.g. scheme-tonal-spot.
@@ -116,6 +455,26 @@ pub struct Settings {
     pub ai_left: bool,
     /// Limits pinned to the panel, as "provider:limit name" (none: the most used one shows).
     pub ai_pins: Vec<String>,
+    /// The volume, brightness and battery items: what each shows, and whether scrolling over
+    /// volume or brightness changes it; the battery can be left out while it's charged.
+    pub vol_show: Show,
+    pub vol_scroll: bool,
+    pub bright_show: Show,
+    pub bright_scroll: bool,
+    pub batt_show: Show,
+    pub batt_hide_full: bool,
+    /// The power menu: its style, whether log out, restart and shut down ask for a second
+    /// click, and the actions left out (lock, suspend, logout, restart, shutdown).
+    pub power_style: PowerStyle,
+    pub power_confirm: bool,
+    pub power_hide: Vec<String>,
+    /// The tray: apps' icons in their own colours or recoloured, and whether icons that say
+    /// they're idle ("passive") show too.
+    pub tray_color: TrayColor,
+    /// The launcher item's symbol, and the custom one (an icon's name, or a picture's path).
+    pub launcher_icon: LauncherIcon,
+    pub launcher_custom: String,
+    pub tray_passive: bool,
     // ---- notifications, on-screen display, night light
     /// Be the notification service (cards in the corner, a history in the control center).
     pub notifications: bool,
@@ -123,6 +482,18 @@ pub struct Settings {
     pub osd: bool,
     /// Show Caps Lock and Num Lock turning on and off there too.
     pub osd_keys: bool,
+    /// The launcher: a grid or a list, its size, its icons' size (the grid's; a list's are
+    /// two thirds of it), whether sums are answered, and whether the screen dims behind it.
+    /// The plugins turned on (their folders' names), and the person's own commands for the
+    /// shell's events (event, command), by event.
+    pub plugins: Vec<String>,
+    pub hooks: Vec<(String, String)>,
+    pub launch_view: LaunchView,
+    pub launch_place: LaunchPlace,
+    pub launch_size: LaunchSize,
+    pub launch_icon: u32,
+    pub launch_calc: bool,
+    pub launch_dim: bool,
     /// Night light's warmth, in kelvin.
     pub night_kelvin: u32,
     // ---- the compositor's window look (comp.rs): set by an included overrides file
@@ -165,6 +536,8 @@ pub struct Settings {
     pub dock_open_apps: bool,
     /// Whether and when the dock slides out of the way.
     pub dock_hide: DockHide,
+    /// The dock's own look, over Appearance's.
+    pub dock_look: crate::style::Style,
     // ---- desktop widgets
     pub widget_clock: bool,
     pub widget_system: bool,
@@ -178,9 +551,20 @@ impl Default for Settings {
             accent: [0xe6, 0x61, 0x00],
             follow_desktop_colors: true,
             text_size: 0.0,
+            font: String::new(),
+            launcher_font: String::new(),
+            look: crate::style::Style::default(),
             wallpaper: String::new(),
             wallpaper_dir: default_wallpaper_dir(),
+            wallpaper_dirs: Vec::new(),
+            wallpaper_screens: Vec::new(),
+            displays: Vec::new(),
+            wall_transition: Transition::Fade,
+            wall_transition_ms: 600,
+            matugen_screen: String::new(),
+            matugen_contrast: 0.0,
             matugen: true,
+            palette: String::new(),
             color_mode: Mode::Dark,
             scheme_type: "scheme-tonal-spot".into(),
             panels: vec![PanelCfg::default()],
@@ -193,9 +577,30 @@ impl Default for Settings {
             ai_bar: "auto".into(),
             ai_left: false,
             ai_pins: Vec::new(),
+            vol_show: Show::Both,
+            vol_scroll: true,
+            bright_show: Show::Both,
+            bright_scroll: true,
+            batt_show: Show::Both,
+            batt_hide_full: false,
+            power_style: PowerStyle::Menu,
+            power_confirm: true,
+            power_hide: Vec::new(),
+            tray_color: TrayColor::Own,
+            launcher_icon: LauncherIcon::Grid,
+            launcher_custom: String::new(),
+            tray_passive: true,
             notifications: true,
             osd: true,
             osd_keys: true,
+            plugins: Vec::new(),
+            hooks: Vec::new(),
+            launch_view: LaunchView::Grid,
+            launch_place: LaunchPlace::Center,
+            launch_size: LaunchSize::Medium,
+            launch_icon: 42,
+            launch_calc: true,
+            launch_dim: true,
             night_kelvin: 4000,
             comp_on: false,
             comp_gaps_in: 6,
@@ -222,6 +627,7 @@ impl Default for Settings {
             dock_running: true,
             dock_open_apps: true,
             dock_hide: DockHide::Never,
+            dock_look: crate::style::Style::default(),
             widget_clock: true,
             widget_system: true,
             widget_side: Side::Left,
@@ -294,6 +700,23 @@ impl Settings {
             let v = v.trim();
             let b = v == "true";
             let k = k.trim();
+            if let Some(name) = k.strip_prefix("wallpaper.").filter(|n| !n.is_empty()) {
+                self.set_wallpaper_on(name, v);
+                continue;
+            }
+            if let Some(name) = k.strip_prefix("display.").filter(|n| !n.is_empty()) {
+                self.displays.retain(|d| d.name != name);
+                self.displays.push(crate::displays::Display::parse(name, v));
+                continue;
+            }
+            if let Some(ev) = k.strip_prefix("hook.").filter(|n| !n.is_empty()) {
+                self.hooks.retain(|(e, _)| e != ev);
+                if !v.trim().is_empty() {
+                    self.hooks.push((ev.to_string(), v.trim().to_string()));
+                    self.hooks.sort();
+                }
+                continue;
+            }
             if let Some(n) = k.strip_prefix("panel.").and_then(|n| n.parse::<usize>().ok()) {
                 panels.push((n, PanelCfg::parse(v)));
                 continue;
@@ -316,9 +739,17 @@ impl Settings {
                 }
                 "follow_desktop_colors" => self.follow_desktop_colors = b,
                 "text_size" => self.text_size = v.parse::<f32>().unwrap_or(0.0).clamp(0.0, 24.0),
+                "font" => self.font = font_name(v),
+                "launcher_font" => self.launcher_font = font_name(v),
                 "wallpaper" => self.wallpaper = v.to_string(),
                 "wallpaper_dir" => self.wallpaper_dir = v.to_string(),
+                "wallpaper_dirs" => self.wallpaper_dirs = v.split('\t').filter(|x| !x.is_empty()).map(String::from).collect(),
                 "matugen" => self.matugen = b,
+                "palette" => self.palette = v.to_string(),
+                "wall_transition" => self.wall_transition = Transition::from(v),
+                "wall_transition_ms" => self.wall_transition_ms = v.parse::<u32>().unwrap_or(600).clamp(100, 5000),
+                "matugen_screen" => self.matugen_screen = v.to_string(),
+                "matugen_contrast" => self.matugen_contrast = v.parse::<f32>().unwrap_or(0.0).clamp(-1.0, 1.0),
                 "color_mode" => self.color_mode = if v == "light" { Mode::Light } else { Mode::Dark },
                 "scheme_type" => self.scheme_type = v.to_string(),
                 "panel_count" => count = v.parse().ok(),
@@ -351,6 +782,19 @@ impl Settings {
                 "ai_bar" => self.ai_bar = if v.is_empty() { "auto".into() } else { v.to_string() },
                 "ai_left" => self.ai_left = b,
                 "ai_pins" => self.ai_pins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
+                "vol_show" => self.vol_show = Show::from(v),
+                "vol_scroll" => self.vol_scroll = b,
+                "bright_show" => self.bright_show = Show::from(v),
+                "bright_scroll" => self.bright_scroll = b,
+                "batt_show" => self.batt_show = Show::from(v),
+                "batt_hide_full" => self.batt_hide_full = b,
+                "power_style" => self.power_style = PowerStyle::from(v),
+                "power_confirm" => self.power_confirm = b,
+                "power_hide" => self.power_hide = v.split(',').filter(|x| !x.is_empty()).map(String::from).collect(),
+                "tray_color" => self.tray_color = TrayColor::from(v),
+                "launcher_icon" => self.launcher_icon = LauncherIcon::from(v),
+                "launcher_custom" => self.launcher_custom = v.to_string(),
+                "tray_passive" => self.tray_passive = b,
                 "notifications" => self.notifications = b,
                 "osd" => self.osd = b,
                 "comp_on" => self.comp_on = b,
@@ -372,6 +816,13 @@ impl Settings {
                 "lock_blur" => self.lock_blur = b,
                 "lock_power" => self.lock_power = b,
                 "osd_keys" => self.osd_keys = b,
+                "plugins" => self.plugins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
+                "launch_view" => self.launch_view = LaunchView::from(v),
+                "launch_place" => self.launch_place = LaunchPlace::from(v),
+                "launch_size" => self.launch_size = LaunchSize::from(v),
+                "launch_icon" => self.launch_icon = v.parse::<u32>().unwrap_or(42).clamp(24, 64),
+                "launch_calc" => self.launch_calc = b,
+                "launch_dim" => self.launch_dim = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
                 "dock_open_apps" => self.dock_open_apps = b,
                 "dock_hide" => {
@@ -382,6 +833,8 @@ impl Settings {
                     }
                 }
                 "dock" => self.dock = b,
+                "look" => self.look = crate::style::Style::parse(v, '=', ';'),
+                "dock_look" => self.dock_look = crate::style::Style::parse(v, '=', ';'),
                 "dock_apps" => self.dock_apps = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "dock_icon" => self.dock_icon = v.parse::<f32>().unwrap_or(44.0).clamp(24.0, 96.0),
                 "dock_reserve" => self.dock_reserve = b,
@@ -412,7 +865,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\nvol_show={}\nvol_scroll={}\nbright_show={}\nbright_scroll={}\nbatt_show={}\nbatt_hide_full={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -430,6 +883,12 @@ impl Settings {
             one(&self.ai_bar),
             self.ai_left,
             self.ai_pins.join(","),
+            self.vol_show.name(),
+            self.vol_scroll,
+            self.bright_show.name(),
+            self.bright_scroll,
+            self.batt_show.name(),
+            self.batt_hide_full,
             self.dock,
             self.dock_apps.join(","),
             self.dock_icon,
@@ -445,6 +904,19 @@ impl Settings {
             self.dock_hide.name(),
             self.panels.len(),
         );
+        t.push_str(&format!("wall_transition={}\nwall_transition_ms={}\nmatugen_screen={}\nmatugen_contrast={}\npalette={}\n", self.wall_transition.name(), self.wall_transition_ms, one(&self.matugen_screen), self.matugen_contrast, one(&self.palette)));
+        for (name, pic) in &self.wallpaper_screens {
+            t.push_str(&format!("wallpaper.{}={}\n", one(name), one(pic)));
+        }
+        for d in &self.displays {
+            t.push_str(&format!("display.{}={}\n", one(&d.name), d.text()));
+        }
+        t.push_str(&format!("power_style={}\npower_confirm={}\npower_hide={}\n", self.power_style.name(), self.power_confirm, self.power_hide.join(",")));
+        t.push_str(&format!("tray_color={}\ntray_passive={}\n", self.tray_color.name(), self.tray_passive));
+        t.push_str(&format!("font={}\nlauncher_font={}\n", font_name(&self.font), font_name(&self.launcher_font)));
+        t.push_str(&format!("launcher_icon={}\nlauncher_custom={}\n", self.launcher_icon.name(), self.launcher_custom.replace('\n', "")));
+        t.push_str(&format!("wallpaper_dirs={}\n", self.wallpaper_dirs.iter().map(|d| d.replace(['\t', '\n'], " ")).collect::<Vec<_>>().join("\t")));
+        t.push_str(&format!("look={}\ndock_look={}\n", self.look.text('=', ';'), self.dock_look.text('=', ';')));
         t.push_str(&format!(
             "comp_on={}\ncomp_gaps_in={}\ncomp_gaps_out={}\ncomp_border={}\ncomp_radius={}\ncomp_accent_borders={}\ncomp_inactive_opacity={}\ncomp_shadows={}\n",
             self.comp_on, self.comp_gaps_in, self.comp_gaps_out, self.comp_border, self.comp_radius, self.comp_accent_borders, self.comp_inactive_opacity, self.comp_shadows
@@ -454,10 +926,39 @@ impl Settings {
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
         ));
         t.push_str(&format!("osd_keys={}\n", self.osd_keys));
+        t.push_str(&format!("launch_view={}\nlaunch_place={}\nlaunch_size={}\nlaunch_icon={}\nlaunch_calc={}\nlaunch_dim={}\n", self.launch_view.name(), self.launch_place.name(), self.launch_size.name(), self.launch_icon, self.launch_calc, self.launch_dim));
+        t.push_str(&format!("plugins={}\n", self.plugins.join(",")));
+        for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
+            t.push_str(&format!("hook.{ev}={}\n", one(cmd)));
+        }
         for (i, p) in self.panels.iter().enumerate() {
             t.push_str(&format!("panel.{i}={}\n", p.text()));
         }
         t
+    }
+
+    /// The picture a screen shows: its own, else the shared one.
+    pub fn wallpaper_on(&self, output: &str) -> &str {
+        self.wallpaper_screens.iter().find(|(n, _)| n == output && !output.is_empty()).map(|(_, p)| p.as_str()).unwrap_or(&self.wallpaper)
+    }
+
+    /// Whether a screen has a picture of its own.
+    pub fn has_own_wallpaper(&self, output: &str) -> bool {
+        self.wallpaper_screens.iter().any(|(n, _)| n == output)
+    }
+
+    /// Give a screen its own picture (an empty one: back to the shared picture).
+    pub fn set_wallpaper_on(&mut self, output: &str, picture: &str) {
+        self.wallpaper_screens.retain(|(n, _)| n != output);
+        if !picture.is_empty() {
+            self.wallpaper_screens.push((output.to_string(), picture.to_string()));
+            self.wallpaper_screens.sort();
+        }
+    }
+
+    /// The picture the colours are made from.
+    pub fn matugen_picture(&self) -> &str {
+        self.wallpaper_on(&self.matugen_screen)
     }
 
     pub fn save(&self) {
@@ -472,6 +973,34 @@ impl Settings {
         if std::fs::write(&tmp, self.text()).is_ok() {
             let _ = std::fs::rename(&tmp, &p);
         }
+        // The chosen palette, as the colour file every Rivet app reads (none: no such file).
+        let css = rivet_look::schemes::Scheme::by_name(&self.palette).map(|s| s.palette_css());
+        if let Err(e) = rivet_look::palette::set_chosen(css.as_deref()) {
+            eprintln!("rivet-shell: the palette's colors: {e}");
+        }
+    }
+
+    /// Choose a built-in palette (empty: none). One shows at a time, so choosing one stops the
+    /// colours being made from the wallpaper; the shell follows it, in its light or dark.
+    pub fn choose_palette(&mut self, name: &str) {
+        let Some(sc) = rivet_look::schemes::Scheme::by_name(name) else {
+            self.palette.clear();
+            return;
+        };
+        self.palette = sc.name.to_string();
+        self.matugen = false;
+        self.follow_desktop_colors = true;
+        self.color_mode = if sc.dark { Mode::Dark } else { Mode::Light };
+    }
+
+    /// The font a surface's text is in (a family's name; empty: the desktop's).
+    pub fn font_for(&self, face: crate::ui::Face) -> &str {
+        let own = match face {
+            crate::ui::Face::Base => "",
+            crate::ui::Face::Panel(i) => self.panels.get(i).map(|p| p.font.as_str()).unwrap_or(""),
+            crate::ui::Face::Launcher => &self.launcher_font,
+        };
+        if own.is_empty() { &self.font } else { own }
     }
 
     pub fn choice(&self) -> rivet_look::live::Choice {
@@ -485,8 +1014,11 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
+        (s.wallpaper_screens, s.wall_transition, s.wall_transition_ms, s.matugen_screen, s.matugen_contrast) = (vec![("DP-2".into(), "/p/two.png".into())], Transition::Grow, 900, "DP-2".into(), 0.5);
+        assert_eq!((s.wallpaper_on("DP-2"), s.wallpaper_on("DP-1"), s.matugen_picture()), ("/p/two.png", "/p/a b.jpg", "/p/two.png"));
+        (s.power_style, s.power_confirm, s.power_hide) = (PowerStyle::Grid, false, vec!["suspend".into(), "logout".into()]);
         s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();
         t.parse(&s.text());
@@ -499,6 +1031,23 @@ mod tests {
     }
 
     #[test]
+    fn fonts_round_trip_and_cascade() {
+        use crate::ui::Face;
+        let mut s = Settings { font: "Inter".into(), launcher_font: "DejaVu Serif".into(), ..Settings::default() };
+        s.panels.push(PanelCfg { font: "Maple Mono NF".into(), ..PanelCfg::new_bottom() });
+        let mut t = Settings::default();
+        t.parse(&s.text());
+        assert_eq!(s, t);
+        assert_eq!(t.font_for(Face::Base), "Inter");
+        assert_eq!(t.font_for(Face::Panel(0)), "Inter");
+        assert_eq!(t.font_for(Face::Panel(1)), "Maple Mono NF");
+        assert_eq!(t.font_for(Face::Launcher), "DejaVu Serif");
+        t.launcher_font.clear();
+        assert_eq!(t.font_for(Face::Launcher), "Inter");
+        assert_eq!(Settings::default().font_for(Face::Panel(0)), "");
+    }
+
+    #[test]
     fn comp_round_trips() {
         let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, ..Settings::default() };
         let mut t = Settings::default();
@@ -508,7 +1057,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, plugins: vec!["disk".into()], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

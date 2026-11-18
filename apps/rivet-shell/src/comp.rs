@@ -17,6 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::config::Settings;
+use crate::displays::Display;
 use crate::sys::Compositor;
 
 /// What the overrides set.
@@ -113,7 +114,7 @@ fn hex(c: [u8; 3]) -> String {
     format!("{:02x}{:02x}{:02x}", c[0], c[1], c[2])
 }
 
-const HEADER: &str = "Rivet Shell's window look. Written by Rivet Shell (Settings, Appearance): changes here are replaced.";
+const HEADER: &str = "Rivet Shell's window look and displays. Written by Rivet Shell (Settings: Appearance, Displays): changes here are replaced.";
 
 /// The overrides file's text (`look` None: turned off, a comment only).
 pub fn render(format: Format, look: Option<&Look>) -> String {
@@ -124,7 +125,7 @@ pub fn render(format: Format, look: Option<&Look>) -> String {
     };
     let mut t = format!("{comment} {HEADER}\n");
     let Some(l) = look else {
-        t.push_str(&format!("{comment} Turned off.\n"));
+        t.push_str(&format!("{comment} The window look is turned off.\n"));
         return t;
     };
     let op = format!("{:.2}", l.inactive_opacity);
@@ -215,8 +216,8 @@ pub fn included(t: &Target) -> bool {
 
 /// Add the include to the main config (a copy kept first), and write our file before it so
 /// the include never points at nothing.
-pub fn add_include(t: &Target, look: Option<&Look>) -> Result<(), String> {
-    write_ours(t, look)?;
+pub fn add_include(t: &Target, look: Option<&Look>, displays: &[Display]) -> Result<(), String> {
+    write_ours(t, look, displays)?;
     if included(t) {
         return Ok(());
     }
@@ -257,7 +258,7 @@ fn with_include(t: &Target, text: &str) -> String {
     } else {
         "#"
     };
-    out.push_str(&format!("\n{c} Rivet Shell's window look (Settings, Appearance). Last, so it wins.\n{line}\n"));
+    out.push_str(&format!("\n{c} Rivet Shell's window look and displays (Settings). Last, so it wins.\n{line}\n"));
     out
 }
 
@@ -305,8 +306,8 @@ fn write_atomic(p: &Path, text: &str) -> Result<(), String> {
 }
 
 /// Write our file when it would change; true when it did.
-fn write_ours(t: &Target, look: Option<&Look>) -> Result<bool, String> {
-    let text = render(t.format, look);
+fn write_ours(t: &Target, look: Option<&Look>, displays: &[Display]) -> Result<bool, String> {
+    let text = format!("{}{}", render(t.format, look), crate::displays::render(t.format, displays));
     if std::fs::read_to_string(&t.ours).is_ok_and(|old| old == text) {
         return Ok(false);
     }
@@ -322,11 +323,11 @@ fn write_ours(t: &Target, look: Option<&Look>) -> Result<bool, String> {
 /// shell never wrote the file and the look is off.
 pub fn apply(comp: Compositor, s: &Settings, accent: [u8; 3], dark: bool) -> Result<(), String> {
     let Some(t) = target(comp) else { return Ok(()) };
-    if !s.comp_on && !t.ours.exists() {
+    if !s.comp_on && s.displays.is_empty() && !t.ours.exists() {
         return Ok(());
     }
     let look = s.comp_on.then(|| Look::from(s, accent, dark));
-    if write_ours(&t, look.as_ref())? && included(&t) {
+    if write_ours(&t, look.as_ref(), &s.displays)? && included(&t) {
         reload(comp);
     }
     Ok(())
@@ -400,8 +401,8 @@ mod tests {
         let t = Target { comp: Compositor::Niri, format: Format::Kdl, main: dir.join("config.kdl"), ours: dir.join("rivet-shell.kdl") };
         std::fs::write(&t.main, "layout {\n    gaps 4\n}\n").unwrap();
         assert!(!included(&t));
-        add_include(&t, Some(&look())).unwrap();
-        add_include(&t, Some(&look())).unwrap();
+        add_include(&t, Some(&look()), &[]).unwrap();
+        add_include(&t, Some(&look()), &[]).unwrap();
         let text = std::fs::read_to_string(&t.main).unwrap();
         assert_eq!(text.matches("include \"rivet-shell.kdl\"").count(), 1);
         assert!(included(&t) && t.ours.is_file() && dir.join("config.kdl.rivet-backup").is_file());

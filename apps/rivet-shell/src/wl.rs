@@ -6,6 +6,7 @@
 //! Each surface is an egui screen drawn in software (`rivet_kit::soft`) into shared memory: no
 //! GPU, and only when something changed.
 
+use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -102,8 +103,15 @@ struct Surf {
     /// The pointer is on it, or when it left.
     hovered: bool,
     left_at: Option<Instant>,
+    /// A panel's part that takes the pointer, as last set (None: all of it).
+    region: Option<[i32; 4]>,
     /// The last frame sent (to send only what changed).
     last: Vec<u8>,
+    // ---- a wallpaper surface's picture
+    /// The picture showing, the one it's coming in over, and when that began.
+    wall_now: Option<(PathBuf, Arc<Vec<u8>>)>,
+    wall_from: Option<Arc<Vec<u8>>>,
+    wall_at: Instant,
 }
 
 impl Surf {
@@ -116,7 +124,7 @@ impl Surf {
 struct WallCache {
     path: PathBuf,
     size: (u32, u32),
-    pixels: Vec<u8>,
+    pixels: Arc<Vec<u8>>,
 }
 
 pub struct Shell {
@@ -141,9 +149,15 @@ pub struct Shell {
     /// Sound devices and apps, read while the Sound popup is open.
     audio: crate::audio::AudioLive,
     audio_gen: u64,
+    plugins: crate::plugins::Plugins,
+    plugins_gen: u64,
+    /// The lock screen was up at the last look (for the lock and unlock events).
+    was_locked: bool,
     radio_gen: u64,
     ai: crate::ai::AiLive,
     ai_gen: u64,
+    tray: crate::tray::TrayLive,
+    tray_gen: u64,
     apps: Vec<rivet_xdg::launch::DesktopApp>,
     popup: Option<Popup>,
     comp: Compositor,
@@ -231,7 +245,19 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         }
     });
     let wake_tx = std::sync::Mutex::new(tx.clone());
+    let tray = crate::tray::TrayLive::new(move || {
+        if let Ok(t) = wake_tx.lock() {
+            let _ = t.send(Msg::Wake);
+        }
+    });
+    let wake_tx = std::sync::Mutex::new(tx.clone());
     let audio = crate::audio::start(move || {
+        if let Ok(t) = wake_tx.lock() {
+            let _ = t.send(Msg::Wake);
+        }
+    });
+    let wake_tx = std::sync::Mutex::new(tx.clone());
+    let plugins = crate::plugins::Plugins::new(move || {
         if let Ok(t) = wake_tx.lock() {
             let _ = t.send(Msg::Wake);
         }
@@ -260,9 +286,14 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         radio,
         audio,
         audio_gen: 0,
+        plugins,
+        plugins_gen: 0,
+        was_locked: false,
         radio_gen: 0,
         ai,
         ai_gen: 0,
+        tray,
+        tray_gen: 0,
         apps: load_apps(),
         popup: None,
         comp,
@@ -301,6 +332,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     shell.set_notifications();
     shell.set_ai();
     shell.apply_comp();
+    shell.plugins.sync(&shell.s.plugins.clone());
+    shell.event("start", &[]);
     let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle: LoopHandle<Shell> = event_loop.handle();
     WaylandSource::new(conn, queue).insert(handle.clone()).map_err(|e| e.to_string())?;
@@ -428,6 +461,9 @@ impl Shell {
             dirty: true,
             waiting_frame: false,
             repaint_at: None,
+            wall_now: None,
+            wall_from: None,
+            wall_at: Instant::now(),
             ctx,
             kit,
             tex,
@@ -440,6 +476,7 @@ impl Shell {
             collapsed: false,
             hovered: false,
             left_at: None,
+            region: None,
             last: Vec::new(),
         }
     }
@@ -533,8 +570,24 @@ impl Shell {
         }
     }
 
+    /// Something happened that plugins and the person's hooks may want to hear of.
+    fn event(&self, name: &str, data: &[(&str, &str)]) {
+        let ev = crate::plugins::Event::new(name, data);
+        self.plugins.emit(&ev);
+        if let Some((_, cmd)) = self.s.hooks.iter().find(|(e, _)| e == name) {
+            crate::plugins::run_hook(cmd, &ev);
+        }
+    }
+
     /// A step of idle reached (`on`), or the person is back.
     fn idle(&mut self, st: Stage, on: bool) {
+        let stage = match st {
+            Stage::Dim => "dim",
+            Stage::Lock => "lock",
+            Stage::ScreenOff => "screen-off",
+            Stage::Suspend => "suspend",
+        };
+        self.event(if on { "idle" } else { "active" }, &[("stage", stage)]);
         match (st, on) {
             (Stage::Dim, true) => {
                 if self.dim_at.is_none() {
@@ -622,7 +675,7 @@ impl Shell {
         self.surfs.retain(|sf| sf.kind != Kind::Panel || new.get(sf.idx).is_some_and(|c| c.on(&sf.output_name)));
         for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Panel) {
             let (a, b) = (old.get(sf.idx), &new[sf.idx]);
-            if a.is_none_or(|a| a.edge != b.edge || a.floating != b.floating) {
+            if a.is_none_or(|a| a.edge != b.edge || a.floating != b.floating || a.hide != b.hide || a.height() != b.height()) {
                 shape_panel(&sf.layer, b);
                 sf.layer.commit();
                 sf.dirty = true;
@@ -715,10 +768,20 @@ impl Shell {
     /// The AI item's readings run while a panel shows it.
     fn set_ai(&self) {
         self.ai.set(self.s.panels.iter().any(|p| p.has("ai")), &self.s.ai_providers);
+        // The tray starts once a panel has it (and then keeps apps' icons registered).
+        if self.s.panels.iter().any(|p| p.has("tray")) {
+            self.tray.start();
+        }
     }
 
     fn close_popup(&mut self) {
-        self.popup = None;
+        if self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::TrayMenu { .. })) {
+            self.tray.run(crate::tray::Job::CloseMenu);
+        }
+        if self.popup.take().is_some_and(|p| p.join.is_some()) {
+            // The panel it was joined to gets its outline back.
+            self.redraw_kinds(&[Kind::Panel]);
+        }
         self.radio.want(crate::radio::NONE);
         self.audio.want(false);
         if let Some(i) = self.surfs.iter().position(|s| s.kind == Kind::Popup) {
@@ -750,6 +813,7 @@ impl Shell {
                 }
             }
             Msg::Note(NoteMsg::New(n)) => {
+                self.event("notification", &[("app", &n.app), ("summary", &n.summary), ("body", &n.body), ("urgency", ["low", "normal", "critical"][n.urgency.min(2) as usize])]);
                 // Do Not Disturb keeps them off the screen (all but the urgent), not out of the history.
                 let card = !self.dnd || n.urgency >= 2;
                 self.notes.add(n, card);
@@ -806,6 +870,8 @@ impl Shell {
                     ("unlock", _) => self.locker.unlock(),
                     ("settings", _) => open_settings(),
                     ("reload", _) => self.reload_settings(true),
+                    // The Settings window saved: take it now rather than at the next tick.
+                    ("changed", _) => self.reload_settings(false),
                     ("wallpaper", "random" | "next" | "previous") => {
                         // A picture from the wallpaper folder (the Settings window's), on a thread:
                         // a big folder takes a moment to list.
@@ -832,15 +898,16 @@ impl Shell {
                 self.loading.retain(|(p, s)| !(*p == path && *s == size));
                 if let Some(pixels) = pixels {
                     self.walls.retain(|w| !(w.path == path && w.size == size));
-                    self.walls.push(WallCache { path, size, pixels });
+                    self.walls.push(WallCache { path, size, pixels: Arc::new(pixels) });
                 }
                 for s in self.surfs.iter_mut().filter(|s| s.kind == Kind::Background) {
                     s.dirty = true;
                 }
             }
             Msg::Matugen(r) => {
-                if let Err(e) = r {
-                    eprintln!("rivet-shell: matugen: {e}");
+                match r {
+                    Err(e) => eprintln!("rivet-shell: matugen: {e}"),
+                    Ok(()) => self.event("colors", &[]),
                 }
             }
         }
@@ -868,6 +935,7 @@ impl Shell {
         let mut pop = Popup::launcher("");
         let mut acts = Vec::new();
         let out = ctx.run_ui(raw, |ui| {
+            kit.face = ui::Face::Launcher;
             kit.begin(ui.ctx(), &self.s);
             let mut m = Model { s: &self.s, status: &status, extra: &extra, apps: &self.apps, compositor: self.comp, output: "", acts: &mut acts };
             ui::popup(ui, &mut pop, &mut m, &mut kit);
@@ -885,6 +953,11 @@ impl Shell {
         }
         self.prewarm();
         self.locker.check(&self.s);
+        let locked = self.locker.running();
+        if locked != self.was_locked {
+            self.was_locked = locked;
+            self.event(if locked { "lock" } else { "unlock" }, &[]);
+        }
         self.set_media_awake();
         let now = Instant::now();
         // The colour files' dates only (reading them again is the surfaces' job, when they change).
@@ -926,6 +999,17 @@ impl Shell {
 
     /// The status thread read something new: draw again only the surfaces that show it.
     fn status_changed(&mut self) {
+        let pg = self.plugins.generation();
+        if pg != self.plugins_gen {
+            self.plugins_gen = pg;
+            self.redraw_kinds(&[Kind::Panel, Kind::Popup]);
+        }
+        let tg = self.tray.generation();
+        if tg != self.tray_gen {
+            self.tray_gen = tg;
+            let pop = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::TrayMenu { .. }));
+            self.redraw_kinds(if pop { &[Kind::Panel, Kind::Popup] } else { &[Kind::Panel] });
+        }
         let ag = self.ai.generation();
         if ag != self.ai_gen {
             self.ai_gen = ag;
@@ -959,8 +1043,18 @@ impl Shell {
         self.bg_key = bg_key;
         // Likewise the panel and the dock (open apps).
         let prev = std::mem::replace(&mut self.prev_status, st.clone());
+        let front = |s: &sys::Status| s.workspaces.iter().find(|w| w.active).map(|w| (w.key.clone(), w.label.clone()));
+        if let Some((key, name)) = front(&st).filter(|f| Some(f) != front(&prev).as_ref()) {
+            self.event("workspace", &[("key", &key), ("name", &name)]);
+        }
+        if st.media != prev.media {
+            let md = st.media.clone().unwrap_or_default();
+            self.event("media", &[("title", &md.title), ("artist", &md.artist), ("player", &md.player), ("playing", if md.playing { "true" } else { "false" })]);
+        }
         let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness || (bg_changed && self.s.panels.iter().any(|p| p.has("system")));
         let dock_changed = st.running != prev.running;
+        // The dock item in a panel shows open apps too.
+        let panel_changed = panel_changed || (dock_changed && self.s.panels.iter().any(|p| p.has("dock")));
         let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Network { .. } | PopupKind::Bluetooth));
         let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.profile != prev.profile;
         for s in &mut self.surfs {
@@ -1032,9 +1126,19 @@ impl Shell {
         // again, which makes them flash and moves the windows twice), and only the surfaces that
         // show a setting are drawn again.
         let look = old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size;
-        let wall_changed = old.wallpaper != s.wallpaper || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type;
+        let pictures = old.wallpaper != s.wallpaper || old.wallpaper_screens != s.wallpaper_screens;
+        let colours = old.matugen_picture() != s.matugen_picture() || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type || old.matugen_contrast != s.matugen_contrast || (s.matugen && !old.matugen);
         let panels_changed = old.panels != s.panels;
-        let panel_content = old.clock_format != s.clock_format || old.ai_bar != s.ai_bar || old.ai_pins != s.ai_pins || old.ai_left != s.ai_left || old.ws_style != s.ws_style || old.ws_names != s.ws_names || old.ws_hide_empty != s.ws_hide_empty || old.ws_scroll != s.ws_scroll || old.notifications != s.notifications;
+        if old.plugins != s.plugins {
+            self.plugins.sync(&s.plugins);
+        }
+        if old.wallpaper != s.wallpaper {
+            self.event("wallpaper", &[("path", &s.wallpaper)]);
+        }
+        if old.color_mode != s.color_mode {
+            self.event("style", &[("mode", if s.color_mode == rivet_look::theme::Mode::Dark { "dark" } else { "light" })]);
+        }
+        let panel_content = old.launcher_icon != s.launcher_icon || old.launcher_custom != s.launcher_custom || old.tray_color != s.tray_color || old.tray_passive != s.tray_passive || old.vol_show != s.vol_show || old.vol_scroll != s.vol_scroll || old.bright_show != s.bright_show || old.bright_scroll != s.bright_scroll || old.batt_show != s.batt_show || old.batt_hide_full != s.batt_hide_full || old.clock_format != s.clock_format || old.ai_bar != s.ai_bar || old.ai_pins != s.ai_pins || old.ai_left != s.ai_left || old.ws_style != s.ws_style || old.ws_names != s.ws_names || old.ws_hide_empty != s.ws_hide_empty || old.ws_scroll != s.ws_scroll || old.notifications != s.notifications;
         let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps || old.dock_hide != s.dock_hide;
         if old.notifications != s.notifications {
             self.set_notifications();
@@ -1058,7 +1162,9 @@ impl Shell {
         if panels_changed {
             self.sync_panels(&old.panels);
         }
-        if panel_content {
+        // The dock item in a panel shares the dock's apps and settings.
+        let dock_item = s.panels.iter().any(|p| p.has("dock")) && (dock_shape || old.dock_running != s.dock_running);
+        if panel_content || dock_item {
             self.redraw_kinds(&[Kind::Panel]);
         }
         // The dock likewise.
@@ -1073,45 +1179,53 @@ impl Shell {
         if widgets || panels_changed {
             self.redraw_kinds(&[Kind::Background]);
         }
-        if wall_changed {
-            self.wallpaper_changed(true);
+        if pictures || colours {
+            self.wallpaper_changed(colours);
         }
     }
 
     /// The wallpaper setting changed (or the shell started): load it, and give matugen the new
     /// picture so every app takes its colours.
     fn wallpaper_changed(&mut self, run_matugen: bool) {
-        self.walls.clear();
+        // Pictures no screen shows any more are let go (the ones on screen stay, to fade from).
+        let settings = &self.s;
+        let shown: Vec<PathBuf> = self.surfs.iter().filter(|s| s.kind == Kind::Background).map(|s| PathBuf::from(settings.wallpaper_on(&s.output_name))).collect();
+        self.walls.retain(|w| shown.contains(&w.path));
         for s in self.surfs.iter_mut().filter(|s| s.kind == Kind::Background) {
             s.dirty = true;
         }
-        let path = PathBuf::from(&self.s.wallpaper);
-        if self.s.wallpaper.is_empty() || !path.is_file() {
+        let path = PathBuf::from(self.s.matugen_picture());
+        if path.as_os_str().is_empty() || !path.is_file() {
             return;
         }
         if run_matugen && self.s.matugen {
             let tx = self.tx.clone();
-            crate::wall::run_matugen(&path, self.s.color_mode, &self.s.scheme_type, move |r| {
+            crate::wall::run_matugen(&path, self.s.color_mode, &self.s.scheme_type, self.s.matugen_contrast, move |r| {
                 let _ = tx.send(Msg::Matugen(r));
             });
         }
     }
 
-    /// The docks show or slide away as the hide setting says: shown while the pointer is on one
-    /// (and a moment after it leaves) or its menu is open; with Smart, also while the screen's
-    /// workspace has no windows. Out of sight, a dock shrinks to a thin strip along the edge,
-    /// which the pointer reaching brings it back.
+    /// The docks and the panels show or slide away as their hide settings say: shown while the
+    /// pointer is on one (and a moment after it leaves) or a popup of its is open; with Smart,
+    /// also while the screen's workspace has no windows. Out of sight, a dock shrinks to a thin
+    /// strip along the edge, which the pointer reaching brings it back; a panel keeps its
+    /// surface and takes the pointer only along such a strip.
     fn update_docks(&mut self) {
-        let mode = self.s.dock_hide;
         let now = Instant::now();
         let menu = matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. }));
+        // A panel stays while a popup is open on its screen.
+        let popup_on = self.popup.as_ref().filter(|_| !menu).map(|p| p.output.clone());
         let (s, apps, running) = (&self.s, &self.apps, &self.prev_status.running);
         let workspaces = &self.prev_status.workspaces;
-        for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Dock) {
+        for sf in self.surfs.iter_mut().filter(|x| matches!(x.kind, Kind::Dock | Kind::Panel)) {
+            let dock = sf.kind == Kind::Dock;
+            let mode = if dock { s.dock_hide } else { s.panels.get(sf.idx).map(|p| p.hide).unwrap_or_default() };
             if sf.left_at.is_some_and(|t| now.duration_since(t) >= DOCK_LINGER) {
                 sf.left_at = None;
             }
-            let near = sf.hovered || sf.left_at.is_some() || menu;
+            let open = if dock { menu } else { popup_on.as_ref().is_some_and(|o| o.is_empty() || sf.output_name.is_empty() || *o == sf.output_name) };
+            let near = sf.hovered || sf.left_at.is_some() || open;
             // Windows on this screen's workspace (a compositor that doesn't say: as if there were).
             let here: Vec<_> = workspaces.iter().filter(|w| w.active && (w.output.is_empty() || sf.output_name.is_empty() || w.output == sf.output_name)).collect();
             let busy = here.is_empty() || here.iter().any(|w| w.busy);
@@ -1125,8 +1239,10 @@ impl Shell {
                 sf.collapsed = false;
                 sf.slide = 1.0;
                 sf.slide_at = now;
-                shape_dock(&sf.layer, s, apps, running, false);
-                sf.layer.commit();
+                if dock {
+                    shape_dock(&sf.layer, s, apps, running, false);
+                    sf.layer.commit();
+                }
                 sf.dirty = true;
                 continue;
             }
@@ -1140,8 +1256,10 @@ impl Shell {
             sf.slide_at = now;
             if !show && sf.slide >= 1.0 && !sf.collapsed {
                 sf.collapsed = true;
-                shape_dock(&sf.layer, s, apps, running, true);
-                sf.layer.commit();
+                if dock {
+                    shape_dock(&sf.layer, s, apps, running, true);
+                    sf.layer.commit();
+                }
                 sf.dirty = true;
             }
         }
@@ -1165,11 +1283,11 @@ impl Shell {
     }
 
     /// Which cached wallpaper fits this size (loading it in the background when none does).
-    fn wall_for(&mut self, size: (u32, u32)) -> Option<usize> {
-        if self.s.wallpaper.is_empty() {
+    fn wall_for(&mut self, output: &str, size: (u32, u32)) -> Option<usize> {
+        let path = PathBuf::from(self.s.wallpaper_on(output));
+        if path.as_os_str().is_empty() {
             return None;
         }
-        let path = PathBuf::from(&self.s.wallpaper);
         if let Some(i) = self.walls.iter().position(|w| w.path == path && w.size == size) {
             return Some(i);
         }
@@ -1198,7 +1316,12 @@ impl Shell {
         }
         let scale = self.surfs[i].scale;
         let (pw, ph) = self.surfs[i].physical();
-        let wall_idx = if kind == Kind::Background { self.wall_for((pw, ph)) } else { None };
+        let wall_idx = if kind == Kind::Background {
+            let name = self.surfs[i].output_name.clone();
+            self.wall_for(&name, (pw, ph))
+        } else {
+            None
+        };
         let night = self.night_ok.then(|| self.night.on());
         // Dimming: darker over a second and a half.
         let dim = self.dim_at.map(|t| (t.elapsed().as_secs_f32() / 1.5).min(1.0)).unwrap_or(0.0);
@@ -1213,12 +1336,49 @@ impl Shell {
             user: self.user.clone(),
             radios: if kind == Kind::Popup { self.radio.get() } else { Default::default() },
             audio: if kind == Kind::Popup { self.audio.get() } else { Default::default() },
+            plugins: if matches!(kind, Kind::Panel | Kind::Popup) { self.plugins.get() } else { Default::default() },
             ai: if matches!(kind, Kind::Panel | Kind::Popup) { self.ai.get() } else { Default::default() },
+            tray: if matches!(kind, Kind::Panel | Kind::Popup) { self.tray.get() } else { Default::default() },
+            join: if kind == Kind::Panel { self.popup.as_ref().filter(|p| p.output.is_empty() || p.output == self.surfs[i].output_name).and_then(|p| Some((p.attach?, p.join?.0, p.join?.1))) } else { None },
         };
-        let Shell { surfs, s: settings, apps, popup, comp, walls, .. } = self;
-        let wall: Option<&[u8]> = wall_idx.and_then(|i| walls.get(i)).map(|w| w.pixels.as_slice());
+        let join_was = self.popup.as_ref().and_then(|p| p.join);
+        let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, .. } = self;
         let surf = &mut surfs[i];
         surf.dirty = false;
+        if kind == Kind::Panel {
+            // A panel shorter than its edge, or hidden, takes the pointer only where it is (or
+            // along its strip); the rest of its surface lets clicks through.
+            let full = Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32));
+            let want = settings.panels.get(idx).and_then(|c| c.pointer_rect(full, surf.collapsed)).map(|r| [r.left() as i32, r.top() as i32, r.width().ceil() as i32, r.height().ceil() as i32]);
+            if want != surf.region {
+                surf.region = want;
+                match want.and_then(|q| smithay_client_toolkit::compositor::Region::new(&*compositor).ok().map(|r| (q, r))) {
+                    Some((q, region)) => {
+                        region.add(q[0], q[1], q[2], q[3]);
+                        surf.layer.wl_surface().set_input_region(Some(region.wl_region()));
+                    }
+                    None => surf.layer.wl_surface().set_input_region(None),
+                }
+                surf.layer.commit();
+            }
+        }
+        if kind == Kind::Background {
+            // A new picture, once it's read, comes in over the one showing (which stays up
+            // while the new one loads).
+            if settings.wallpaper_on(&surf.output_name).is_empty() {
+                (surf.wall_now, surf.wall_from) = (None, None);
+            } else if let Some(wc) = wall_idx.and_then(|i| walls.get(i))
+                && !surf.wall_now.as_ref().is_some_and(|(_, px)| Arc::ptr_eq(px, &wc.pixels))
+            {
+                let old = surf.wall_now.take();
+                let moves = settings.wall_transition != crate::config::Transition::None;
+                surf.wall_from = old.filter(|(p, px)| moves && *p != wc.path && px.len() == wc.pixels.len()).map(|(_, px)| px);
+                surf.wall_at = Instant::now();
+                surf.wall_now = Some((wc.path.clone(), wc.pixels.clone()));
+            }
+        }
+        let wall: Option<Arc<Vec<u8>>> = surf.wall_now.as_ref().map(|(_, px)| px.clone());
+        let mut wall_moving = false;
         let mut raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32))),
             time: Some(surf.start.elapsed().as_secs_f64()),
@@ -1236,12 +1396,24 @@ impl Shell {
         let mut plain = egui::Color32::from_rgb(30, 30, 34);
         let t_u0 = Instant::now();
         let out = surf.ctx.run_ui(raw, |ui| {
+            surf.kit.face = match kind {
+                Kind::Panel => ui::Face::Panel(idx),
+                Kind::Popup => popup.as_ref().map(|p| p.face()).unwrap_or_default(),
+                _ => ui::Face::Base,
+            };
             surf.kit.begin(ui.ctx(), settings);
             plain = ui.visuals().extreme_bg_color;
             let mut m = Model { s: settings, status: &status, extra: &extra, apps, compositor: *comp, output: &output_name, acts: &mut acts };
             match kind {
                 Kind::Background => ui::widgets(ui, &mut m, &mut surf.kit),
-                Kind::Panel => crate::bar::panel(ui, &mut m, &mut surf.kit, idx),
+                Kind::Panel => {
+                    // Slid part of the way off its edge (a hidden one shows nothing).
+                    if !collapsed {
+                        let by = settings.panels.get(idx).map(|c| c.slide(slide)).unwrap_or_default();
+                        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect().translate(by)));
+                        crate::bar::panel(&mut c, &mut m, &mut surf.kit, idx);
+                    }
+                }
                 Kind::Dock => {
                     // Slid part of the way out (a hidden one, down to its strip, shows nothing).
                     if !collapsed {
@@ -1277,7 +1449,19 @@ impl Shell {
         let Ok((buffer, canvas)) = surf.pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else { return };
         let t_buf = t_b0.elapsed();
         match (kind, wall) {
-            (Kind::Background, Some(px)) if px.len() == canvas.len() => canvas.copy_from_slice(px),
+            (Kind::Background, Some(px)) if px.len() == canvas.len() => {
+                let t = surf.wall_at.elapsed().as_secs_f32() * 1000.0 / settings.wall_transition_ms.max(1) as f32;
+                match surf.wall_from.as_ref().filter(|f| t < 1.0 && f.len() == px.len()) {
+                    Some(from) => {
+                        crate::wall::transition(settings.wall_transition, from, &px, canvas, pw as usize, t);
+                        wall_moving = true;
+                    }
+                    None => {
+                        surf.wall_from = None;
+                        canvas.copy_from_slice(&px);
+                    }
+                }
+            }
             (Kind::Background, _) => {
                 // No picture (yet): the theme's background, a little lighter at the top.
                 let (top, bottom) = (rivet_look::palette::mix(plain, egui::Color32::WHITE, 0.06), plain);
@@ -1326,12 +1510,19 @@ impl Shell {
         // Animations and hover effects ask to be drawn again soon.
         let delay = out.viewport_output.get(&ViewportId::ROOT).map(|v| v.repaint_delay).unwrap_or(Duration::MAX);
         surf.repaint_at = (delay < Duration::from_secs(1)).then(|| Instant::now() + delay.max(Duration::from_millis(16)));
+        if wall_moving {
+            surf.repaint_at = Some(Instant::now() + Duration::from_millis(16));
+        }
         if kind == Kind::Dim && dim < 1.0 {
             surf.repaint_at = Some(Instant::now() + Duration::from_millis(33));
         }
-        // A dock on its way in or out keeps moving.
-        if kind == Kind::Dock && surf.slide > 0.0 && !surf.collapsed {
+        // A dock or a panel on its way in or out keeps moving.
+        if matches!(kind, Kind::Dock | Kind::Panel) && surf.slide > 0.0 && !surf.collapsed {
             surf.repaint_at = Some(Instant::now() + Duration::from_millis(16));
+        }
+        // A popup that joined a panel (or moved along it): the panel opens its outline there.
+        if kind == Kind::Popup && self.popup.as_ref().and_then(|p| p.join) != join_was {
+            self.redraw_kinds(&[Kind::Panel]);
         }
         for a in acts {
             self.act(a);
@@ -1420,6 +1611,7 @@ impl Shell {
             Act::NightLight(on) => self.night.set(on, self.s.night_kelvin),
             Act::KeepAwake(on) => self.set_awake(on),
             Act::Dnd(on) => {
+                self.event("dnd", &[("on", if on { "true" } else { "false" })]);
                 self.dnd = on;
                 if on {
                     // Off the screen now, all but the urgent.
@@ -1435,7 +1627,7 @@ impl Shell {
                 self.change_settings(|s| {
                     s.color_mode = mode;
                     // Without matugen making the colours, the style itself follows.
-                    if !(s.matugen && !s.wallpaper.is_empty()) || s.theme != rivet_look::theme::Mode::System {
+                    if !(s.matugen && !s.matugen_picture().is_empty()) || s.theme != rivet_look::theme::Mode::System {
                         s.theme = mode;
                     }
                 });
@@ -1515,6 +1707,8 @@ impl Shell {
                 sys::power(self.comp, p);
             }
             Act::Settings => open_settings(),
+            Act::Tray(job) => self.tray.run(job),
+            Act::Plugin(id, ev) => self.plugins.send(&id, ev),
         }
         // What the shell keeps (notifications, toggles) shows in the panel and the popup; the
         // rest follows the status when it arrives.
@@ -1741,13 +1935,21 @@ delegate_pointer!(Shell);
 delegate_layer!(Shell);
 delegate_registry!(Shell);
 
-/// The panel's place and size: along the top or bottom edge, keeping windows clear of it.
+/// The panel's place and size: spanning its edge (a shorter one draws on part of that, and
+/// takes the pointer only there), keeping windows clear of it unless it hides.
 fn shape_panel(layer: &LayerSurface, p: &crate::panels::PanelCfg) {
-    let edge = if p.edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM };
-    layer.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
     let h = p.height() as u32;
-    layer.set_size(0, h);
-    layer.set_exclusive_zone(h as i32);
+    match p.edge {
+        Edge::Top | Edge::Bottom => {
+            layer.set_anchor(if p.edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM } | Anchor::LEFT | Anchor::RIGHT);
+            layer.set_size(0, h);
+        }
+        Edge::Left | Edge::Right => {
+            layer.set_anchor(if p.edge == Edge::Left { Anchor::LEFT } else { Anchor::RIGHT } | Anchor::TOP | Anchor::BOTTOM);
+            layer.set_size(h, 0);
+        }
+    }
+    layer.set_exclusive_zone(p.reserved() as i32);
 }
 
 /// The dock's size for its pinned apps, at the bottom, keeping windows clear of it when asked.

@@ -5,7 +5,9 @@
 //! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|notifications|dock-menu, RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
 //! RIVET_SHELL_OSD=1|caps (the volume or Caps Lock display), RIVET_SHELL_POPUP=sound, RIVET_SHELL_QUERY=text (typed into the launcher),
-//! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style); RIVET_SHELL_POPUP=ai also puts
+//! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style), RIVET_SHELL_LEVELS=both|icon|text
+//! (RIVET_SHELL_POWER=menu|grid|row: the power menu's style)
+//! (what volume, brightness and battery show); RIVET_SHELL_POPUP=ai also puts
 //! the AI item on the panel (RIVET_SHELL_AI_PINS=claude:5-hour,codex:Weekly pins limits).
 
 use std::time::Duration;
@@ -114,6 +116,17 @@ impl ShotApp {
             s.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
             s.follow_desktop_colors = false;
         }
+        // Checks: a look for the panels and dock (as in the settings file).
+        if let Ok(c) = std::env::var("RIVET_SHELL_TRAY") {
+            s.tray_color = crate::config::TrayColor::from(&c);
+        }
+        if let Ok(l) = std::env::var("RIVET_SHELL_LAUNCHER") {
+            // "system", or a custom icon's name or path.
+            (s.launcher_icon, s.launcher_custom) = if l == "system" { (crate::config::LauncherIcon::System, String::new()) } else { (crate::config::LauncherIcon::Custom, l) };
+        }
+        if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
+            s.look = crate::style::Style::parse(&l, '=', ';');
+        }
         if std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("ai") {
             let right = &mut s.panels[0].zones[2];
             let at = right.iter().position(|i| i == "network").unwrap_or(0);
@@ -122,16 +135,73 @@ impl ShotApp {
                 s.ai_pins = p.split(',').map(String::from).collect();
             }
         }
+        if let Ok(l) = std::env::var("RIVET_SHELL_LEVELS") {
+            let show = crate::config::Show::from(&l);
+            (s.vol_show, s.bright_show, s.batt_show) = (show, show, show);
+        }
+        if let Ok(p) = std::env::var("RIVET_SHELL_POWER") {
+            s.power_style = crate::config::PowerStyle::from(&p);
+        }
         if let Ok(w) = std::env::var("RIVET_SHELL_WS") {
             s.ws_style = crate::config::WsStyle::from(&w);
         }
-        if std::env::var("RIVET_SHELL_EDGE").as_deref() == Ok("bottom") {
-            s.panels[0].edge = Edge::Bottom;
+        if let Ok(e) = std::env::var("RIVET_SHELL_EDGE") {
+            s.panels[0].edge = Edge::from(&e);
+            if s.panels[0].vertical() {
+                s.dock = false;
+            }
+        }
+        // RIVET_SHELL_GROUPS="volume+brightness/bg:primary;network+bluetooth+battery/bg:auto/show:2": groups on the first panel.
+        if let Ok(g) = std::env::var("RIVET_SHELL_GROUPS") {
+            s.panels[0].groups = g.split(';').map(crate::panels::Group::parse).collect();
+            // RIVET_SHELL_FUSE=1: groups side by side join.
+            s.panels[0].fuse = std::env::var("RIVET_SHELL_FUSE").is_ok();
+        }
+        // RIVET_SHELL_LAUNCH=list:large:48:panel (view, size, icon size, place): the launcher's layout.
+        if let Ok(l) = std::env::var("RIVET_SHELL_LAUNCH") {
+            let mut it = l.split(':');
+            s.launch_view = crate::config::LaunchView::from(it.next().unwrap_or(""));
+            s.launch_size = crate::config::LaunchSize::from(it.next().unwrap_or(""));
+            s.launch_icon = it.next().and_then(|n| n.parse().ok()).unwrap_or(42);
+            s.launch_place = crate::config::LaunchPlace::from(it.next().unwrap_or(""));
+        }
+        if std::env::var("RIVET_SHELL_PLUGIN").as_deref() == Ok("1") {
+            // Before the power button (the start of the zone is what a narrow screen leaves out).
+            let at = s.panels[0].zones[2].len().saturating_sub(1);
+            s.panels[0].zones[2].insert(at, "plugin:disk".into());
+        }
+        // RIVET_SHELL_FONTS=base:panel:launcher sets the three fonts (a part left empty follows).
+        if let Ok(f) = std::env::var("RIVET_SHELL_FONTS") {
+            let mut it = f.split(':').map(str::to_string);
+            (s.font, s.launcher_font) = (it.next().unwrap_or_default(), { let p = it.next().unwrap_or_default(); if let Some(first) = s.panels.first_mut() { first.font = p; } it.next().unwrap_or_default() });
+        }
+        // RIVET_SHELL_SIZE=48:10: the first panel's thickness, and the room between its items.
+        if let (Some((a, b)), Some(p)) = (std::env::var("RIVET_SHELL_SIZE").ok().and_then(|v| v.split_once(':').map(|(a, b)| (a.parse().ok(), b.parse().ok()))), s.panels.first_mut()) {
+            (p.size, p.spacing) = (a, b);
+        }
+        // RIVET_SHELL_SPACER=40: a spacer that size after the first panel's first item.
+        if let (Some(n), Some(p)) = (std::env::var("RIVET_SHELL_SPACER").ok().and_then(|n| n.parse::<u32>().ok()), s.panels.first_mut()) {
+            p.zones[0].insert(1.min(p.zones[0].len()), format!("spacer:{n}"));
+        }
+        // RIVET_SHELL_SPACE=20:0: the first panel's offset from its edge, and its room before windows.
+        if let (Some((o, g)), Some(p)) = (std::env::var("RIVET_SHELL_SPACE").ok().and_then(|v| v.split_once(':').map(|(o, g)| (o.parse().ok(), g.parse().ok()))), s.panels.first_mut()) {
+            (p.offset, p.gap) = (o, g);
+        }
+        // RIVET_SHELL_LEN=60 (or 60:start): a shorter panel.
+        if let Ok(l) = std::env::var("RIVET_SHELL_LEN") {
+            let (n, along) = l.split_once(':').unwrap_or((&l, "center"));
+            s.panels[0].length = n.parse().unwrap_or(100);
+            s.panels[0].along = crate::config::Along::from(along);
         }
         if std::env::var("RIVET_SHELL_PANELS").as_deref() == Ok("2") {
             // A second panel along the bottom, edge to edge, with other items in its zones.
             let list = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
-            s.panels.push(crate::panels::PanelCfg { edge: Edge::Bottom, floating: false, screen: String::new(), zones: [list(&["workspaces", "window-title"]), list(&["media"]), list(&["system", "clock"])] });
+            s.panels.push(crate::panels::PanelCfg { edge: Edge::Bottom, floating: false, zones: [list(&["workspaces", "window-title"]), list(&["media"]), list(&["system", "clock"])], ..crate::panels::PanelCfg::bare() });
+            s.dock = false;
+        }
+        if std::env::var("RIVET_SHELL_PANEL_DOCK").as_deref() == Ok("1") {
+            // The dock as a panel item, in the left zone, and no dock of its own.
+            s.panels[0].zones[0].push("dock".into());
             s.dock = false;
         }
         let dir = std::env::temp_dir().join(format!("rivet-shell-shot-{}", std::process::id()));
@@ -139,19 +209,31 @@ impl ShotApp {
         let wall = crate::wall::demo_png(&dir).and_then(|p| crate::wall::thumbnail(&p, 1100)).map(|img| cc.egui_ctx.load_texture("demo-wallpaper", img, egui::TextureOptions::LINEAR));
         let _ = std::fs::remove_dir_all(&dir);
         let query = std::env::var("RIVET_SHELL_QUERY").unwrap_or_default();
+        // Checks: popups joined to the panel (with RIVET_SHELL_LOOK's `popups=attached`).
+        let attached = s.look.attach == Some(true);
         let popup = match std::env::var("RIVET_SHELL_POPUP").as_deref() {
-            Ok("launcher") => Some(Popup { kind: PopupKind::Launcher { query, sel: 0 }, anchor_x: 0.0, output: String::new(), focus: false, from: None }),
-            Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: 550.0, output: String::new(), focus: false, from: None }),
-            Ok("power") => Some(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: 1080.0, output: String::new(), focus: false, from: None }),
-            Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None }),
-            Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
-            Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
-            Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None }),
-            Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None }),
-            Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
-            Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None }),
+            Ok("launcher") => Some(Popup { kind: PopupKind::Launcher { query, sel: 0 }, anchor_x: 0.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: 550.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("power") => Some(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: 1080.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("plugin") => Some(Popup { kind: PopupKind::Plugin { id: "disk".into() }, anchor_x: 640.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("tray") => Some(Popup { kind: PopupKind::TrayMenu { key: ":1.chat/StatusNotifierItem".into(), path: Vec::new() }, anchor_x: 760.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("panel-dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-files".into(), pinned: true }, anchor_x: 330.0, output: String::new(), focus: false, from: Some((Edge::Top, if attached { 40.0 } else { 44.0 })), attach: attached.then_some(0), panel: Some(0), join: None }),
+            Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             _ => None,
         };
+        // Joined popups open from the first panel (a floating one along the top).
+        let popup = popup.map(|mut p| {
+            if attached && !matches!(p.kind, PopupKind::Launcher { .. }) && !(matches!(p.kind, PopupKind::DockMenu { .. }) && p.from.is_none()) {
+                (p.from, p.attach) = (Some((Edge::Top, crate::panels::reach(&s.panels, 0, "") - s.panels[0].gap())), Some(0));
+            }
+            p
+        });
         let mut apps = rivet_xdg::launch::all_apps();
         apps.sort_by_key(|a| a.name.to_lowercase());
         let notes = demo_notes();
@@ -172,6 +254,21 @@ impl ShotApp {
             radios: demo_radios(),
             ai: demo_ai(),
             audio: crate::audio::demo(),
+            join: None,
+            // RIVET_SHELL_PLUGIN=1: a plugin's item on the first panel (RIVET_SHELL_POPUP=plugin: its menu).
+            plugins: if on("RIVET_SHELL_PLUGIN") {
+                let row = |id: &str, label: &str, sub: &str| crate::plugins::MenuRow { id: id.into(), label: label.into(), sub: sub.into() };
+                vec![("disk".to_string(), crate::plugins::Item { name: "Disk Space".into(), text: "212 GB".into(), icon: "drive-harddisk".into(), tooltip: "212 GB free on /".into(), menu: vec![row("/", "/", "212 GB free of 476 GB"), row("/home", "/home", "640 GB free of 1.8 TB"), row("/boot", "/boot", "410 MB free of 1 GB")], ..Default::default() })]
+            } else {
+                Vec::new()
+            },
+            tray: {
+                let mut t = crate::tray::demo();
+                if popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::TrayMenu { .. })) {
+                    t.menu = Some((":1.chat/StatusNotifierItem".into(), Some(crate::tray::demo_menu())));
+                }
+                t
+            },
         };
         let mut status = demo_status();
         if popup.as_ref().is_some_and(|p| p.kind == PopupKind::Bluetooth) {
@@ -184,6 +281,8 @@ impl ShotApp {
 impl eframe::App for ShotApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        // One surface here, so one font: the launcher's when that's what's open, else the first panel's.
+        self.kit.face = self.popup.as_ref().map(|p| p.face()).filter(|f| *f == crate::ui::Face::Launcher).unwrap_or(crate::ui::Face::Panel(0));
         self.kit.begin(&ctx, &self.s);
         let full = ui.max_rect();
         let p = ui.painter().clone();
@@ -195,6 +294,7 @@ impl eframe::App for ShotApp {
                 p.rect_filled(full, 0.0, ui.visuals().extreme_bg_color);
             }
         }
+        self.extra.join = self.popup.as_ref().and_then(|p| Some((p.attach?, p.join?.0, p.join?.1)));
         let mut acts: Vec<Act> = Vec::new();
         let s = self.s.clone();
         let mut m = Model { s: &s, status: &self.status, extra: &self.extra, apps: &self.apps, compositor: Compositor::Niri, output: "", acts: &mut acts };
@@ -207,7 +307,14 @@ impl eframe::App for ShotApp {
         for (idx, p) in s.panels.iter().enumerate() {
             let reach = crate::panels::reach(&s.panels, idx, "");
             let h = p.height();
-            let r = if p.edge == Edge::Top { Rect::from_min_size(Pos2::new(full.left(), full.top() + reach - h), Vec2::new(full.width(), h)) } else { Rect::from_min_size(Pos2::new(full.left(), full.bottom() - reach), Vec2::new(full.width(), h)) };
+            // Side panels run between the top and bottom ones.
+            let (t, bt) = (full.top() + crate::panels::room(&s.panels, "", Edge::Top), full.bottom() - crate::panels::room(&s.panels, "", Edge::Bottom));
+            let r = match p.edge {
+                Edge::Top => Rect::from_min_size(Pos2::new(full.left(), full.top() + reach - h), Vec2::new(full.width(), h)),
+                Edge::Bottom => Rect::from_min_size(Pos2::new(full.left(), full.bottom() - reach), Vec2::new(full.width(), h)),
+                Edge::Left => Rect::from_min_max(Pos2::new(full.left() + reach - h, t), Pos2::new(full.left() + reach, bt)),
+                Edge::Right => Rect::from_min_max(Pos2::new(full.right() - reach, t), Pos2::new(full.right() - reach + h, bt)),
+            };
             at(r, &mut |ui, m, k| crate::bar::panel(ui, m, k, idx));
         }
         let top_room = crate::panels::room(&s.panels, "", Edge::Top);
@@ -229,6 +336,11 @@ impl eframe::App for ShotApp {
             at(r, &mut |ui, m, k| crate::cc::cards(ui, m, k));
         }
         if let Some(pop) = self.popup.as_mut() {
+            // From a side panel: beside it, a third of the way down.
+            if let Some(p) = s.panels.first().filter(|p| p.vertical()) && !matches!(pop.kind, PopupKind::Launcher { .. } | PopupKind::DockMenu { .. }) {
+                pop.from = Some((p.edge, crate::panels::reach(&s.panels, 0, "") + 4.0));
+                pop.anchor_x = full.height() / 3.0;
+            }
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(full));
             ui::popup(&mut child, pop, &mut m, &mut self.kit);
         }

@@ -2,10 +2,68 @@
 
 ## Unreleased
 
+- The shell comes back by itself after a crash: `rivet-shell` now watches the shell proper and
+  starts it again (giving up after six crashes in a row soon after starting). Panics, the lock
+  screen's too, are written to `~/.local/state/rivet-shell/crash.log` with where they happened.
+  `RIVET_SHELL_NO_WATCH=1` runs it unwatched, for a debugger.
+- A new wallpaper shows much sooner: scaling a picture to the screen is several times faster,
+  and the shell takes a change made in Settings at once rather than at its next check.
+- A panel's Look sets the bar's height (a side panel's width), 24 to 72 points, and the room
+  between its items, 0 to 24 points (36 and 2 as before by default).
+- Appearance sets the font the shell and its settings are written in (any installed family,
+  with a search; the desktop's by default). A panel can have its own (its Look), which its
+  popups share, and so can the launcher (the Launcher page).
+- A panel's Look sets how far a floating bar sits from the screen's edge, and how much room is
+  kept between the bar and windows (0 to 64 points each; 6 and 6 as before by default).
+- Workspaces can show as squares: rounded squares all one size, the active one in the accent
+  colour (the Workspaces item's options).
+- A panel's groups can fuse: two groups with backgrounds side by side join into one shape, each
+  keeping its own colour (Settings, Panels, Groups: "Groups that touch fuse into one shape").
+- A panel group's background and text can be Surface, the theme's own surface colour, beside
+  Primary, Secondary and Tertiary.
+- A panel group's background can be a gradient: it fades along the panel from its colour to a
+  darker shade made from it (Settings, Panels, Groups: "Fade to a darker shade").
+- A Spacer panel item: empty room between items, 2 to 600 points, set on its row in Settings,
+  Panels (drag the number, or click it to type). A panel takes as many as wanted.
+- Plugins and hooks. A plugin is a folder with a `plugin.conf` and a program in any language:
+  the shell runs it (every so often, or kept running), shows what it prints as a panel item
+  (`plugin:NAME`: text, an icon, a tooltip, a state's colour, a menu), and tells it of clicks
+  and of the shell's events (lock, unlock, idle, wallpaper, colors, style, notification, Do Not
+  Disturb, workspace, media). Official ones come with the shell, third-party ones go in
+  `~/.local/share/rivet-shell/plugins`; each is turned on in Settings, Plugins. Hooks run your
+  own command for any of those events (`hook.lock=playerctl pause`). Disk Space is the example
+  plugin; PLUGINS.md has the whole of it.
+- Settings has a Displays page: the screens drawn where they sit (drag one to move it; it snaps
+  to the others' edges), and each one's resolution, refresh rate, scale, rotation, variable
+  refresh rate and whether it's used. Apply writes them to the same overrides file as the
+  window look (`rivet-shell.kdl` for niri, `rivet-shell.conf` for Hyprland's hyprland.conf),
+  which the compositor's config includes, then asks whether to keep them and goes back after
+  15 seconds with no answer. "Leave the Screens to niri" takes them out again.
+- Settings has a Launcher page: the apps as a grid or a list, the launcher's size (small,
+  medium, large), its icons' size, whether sums are answered, and whether the screen dims
+  behind it.
+  It opens in the middle of the screen or from a panel: the one it was opened on, or with
+  a key the screen's first.
+- Settings' sidebar: the pages sit in groups (Look, Desktop, System) with their own symbols,
+  drawn in the accent colour, and in the text's colour on the chosen page. Each page has a line
+  under its title saying what it's for, and "Shell running" is a small pill.
+- Panel items can be grouped (Settings, Panels: point at an item and click its ring). A
+  group's items that sit side by side share a background, and take the group's background
+  and text colours: soft, the theme's primary, secondary or tertiary, or your own. A group
+  can show only its first few items and fold the rest behind an arrow on the panel.
+- Panels go on the left and right edges too. Down a side panel the items stack: a symbol sits
+  over its number, the clock breaks into lines, the window's title runs downward, and popups
+  open beside the panel. A panel can take part of its edge (20 to 100 percent of the screen's
+  width or height, placed at the start, middle or end), and can hide like the dock: Auto-hide,
+  or Smart hide while the workspace has windows (Settings, Panels: Length, Placed, Hide).
+  A panel that hides keeps no room from windows.
 - Notifications have their own panel, opened from the bell (`rivet-shell msg notifications`):
   grouped by app, newest first, a line or two of each, Do Not Disturb and Clear All at the top,
   and a Clear for one app's. Clicking one the app can open opens it. Quick settings no longer
   lists them, and has a little more room.
+- Settings: the Wallpaper page is now Theme. The colors and the transition come first; the
+  Wallpaper card shows the picture in use, and "Change…" opens the chooser (folder, recent
+  folders, the pictures) in a popover.
 - A Sound popup from the volume item (click; middle-click still mutes): the output's volume and
   every output to choose from (speakers, headphones, Bluetooth, screens, network speakers;
   ones with nothing plugged in are left out), the same for microphones, and each app playing
@@ -13,6 +71,15 @@
   PulseAudio) only while it's open; `rivet-shell msg sound` opens it, and the mixer app
   (pavucontrol) when installed. Caps Lock and Num Lock show on screen as they turn on and off,
   beside volume and brightness (Settings, Notifications).
+- Wallpaper: a picture per screen (Settings, Wallpaper: choose a screen, then a picture; the
+  rest show the shared one), and a transition when the picture changes (fade, wipe, slide or
+  grow, 0.2 to 3 seconds). The old picture stays up while the new one loads. Colors from the
+  wallpaper gain a contrast setting and, with several screens, which screen's picture they're
+  made from.
+- The Power item has options (its gear in Settings, Panels): the menu as a list, a compact row
+  of symbols, or large tiles in the middle of the screen with your name and the uptime;
+  whether log out, restart and shut down ask for a second click; and which actions show. Each
+  action has its own symbol.
 - Idle and the lock screen. As the computer sits untouched the shell dims the screen, locks,
   turns the screens off and suspends, each after its own time (Settings, Idle & Lock), holding
   off while an app inhibits idle, Keep Awake is on, or music or a video plays. It locks before
@@ -21,6 +88,10 @@
   blurred wallpaper, the time, your picture or initial, and suspend, restart and shut down
   (two clicks); if it stops while locked, the shell starts it again. Another locker
   (hyprlock, swaylock) can be used instead; `rivet-shell lock --preview` tries the look.
+- Panel items share one spacing: the same room inside each item's ends and between a symbol
+  and its text, so the battery no longer runs into its percent. The window title and the
+  workspaces keep a little room around them, the System item has a symbol, items sit on whole
+  pixels (sharper symbols), and muting no longer shifts the items beside the volume.
 - The compositor is detected (niri, Hyprland, mango, Sway), and mango is supported like the
   others: its tags as workspaces, open apps, the window title, log out. Appearance has a Window
   Look card: gaps, border, rounded corners, unfocused opacity, shadows, and borders in the
@@ -35,6 +106,15 @@
   opens the popup.
 - Pin any AI limit to the panel from its popup (several, from several providers); the AI
   item then shows each, such as "5h 34%  wk 78%".
+- Search the settings from the top of the Settings window's sidebar (Ctrl+F): results show
+  as you type, with where each one is; the arrow keys and Enter pick one. A result opens its
+  page and outlines its card, or opens a panel item's options. Escape clears the search.
+- Volume, brightness and battery have settings: show the icon and percent, just the icon or
+  just the percent; scroll to change volume or brightness (on by default); hide the battery
+  while it's charged.
+- The items' settings cards (the gear on an item's row in Settings, Panels) are redone: a
+  header with the item's symbol, choices drawn as they look in the panel, switches instead of
+  checkboxes. The clock takes a custom strftime pattern too, checked as it's typed.
 - The workspaces item has settings: pills, dots or numbers; names or numbers; hide empty
   workspaces; scroll to switch.
 - The launcher keeps up with typing: drawing is several times faster (plain shapes take the fast

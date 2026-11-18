@@ -11,7 +11,7 @@ use rivet_look::icons::IconTheme;
 use rivet_look::live::LiveLook;
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_lg, r_md, r_sm};
-use rivet_look::{fonts, quick};
+use rivet_look::fonts;
 use rivet_xdg::launch::DesktopApp;
 
 use crate::config::{Edge, Settings, Side};
@@ -81,13 +81,17 @@ pub enum PopupKind {
     Notifications,
     /// Sound devices and apps (`drag`: a volume being dragged).
     Sound { drag: Option<(u64, u32)> },
+    /// A plugin's menu.
+    Plugin { id: String },
+    /// A tray icon's menu: its item, and the submenus opened (outermost first).
+    TrayMenu { key: String, path: Vec<i32> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Popup {
     pub kind: PopupKind,
-    /// Where it opens from (x on its screen, in points), under the panel button; for the dock's
-    /// menu, from the screen's middle.
+    /// Where it opens from (x on its screen, in points), under the panel button (from a side
+    /// panel: y, beside the button); for the dock's menu, from the screen's middle.
     pub anchor_x: f32,
     /// Its screen's name (empty: whichever the compositor picks).
     pub output: String,
@@ -95,14 +99,30 @@ pub struct Popup {
     /// The panel it opens from: that panel's edge, and how far from the edge to open (None:
     /// opened by a key, so under the screen's top panels, or over its bottom ones).
     pub from: Option<(Edge, f32)>,
+    /// The panel it's joined to (its popups set to open attached): no gap, square corners on
+    /// the panel's side, and the panel's colours.
+    pub attach: Option<usize>,
+    /// The panel it was opened from (its font is that panel's).
+    pub panel: Option<usize>,
+    /// Where along that panel it's joined just now (screen points), once drawn: the panel
+    /// leaves its outline and shadow out there, so the two are one shape.
+    pub join: Option<(f32, f32)>,
 }
 
 impl Popup {
+    /// Whose font it's in: the launcher's, else the panel's it was opened from.
+    pub fn face(&self) -> Face {
+        match (&self.kind, self.panel) {
+            (PopupKind::Launcher { .. }, _) => Face::Launcher,
+            (_, Some(i)) => Face::Panel(i),
+            _ => Face::Base,
+        }
+    }
     pub fn launcher(output: &str) -> Popup {
         Popup::at(PopupKind::Launcher { query: String::new(), sel: 0 }, 0.0, output)
     }
     pub fn at(kind: PopupKind, anchor_x: f32, output: &str) -> Popup {
-        Popup { kind, anchor_x, output: output.to_string(), focus: true, from: None }
+        Popup { kind, anchor_x, output: output.to_string(), focus: true, from: None, attach: None, panel: None, join: None }
     }
     /// Whether it needs the keyboard (the launcher's search; Esc for the others).
     pub fn wants_keyboard(&self) -> bool {
@@ -142,6 +162,12 @@ pub struct Extra {
     pub ai: crate::ai::Quotas,
     /// Sound devices and apps (while the Sound popup is open).
     pub audio: crate::audio::Audio,
+    /// Apps' tray icons, and the open tray menu.
+    pub tray: crate::tray::Tray,
+    /// What the plugins that are on show.
+    pub plugins: crate::plugins::Items,
+    /// A popup joined to a panel: the panel, and where along it (screen points).
+    pub join: Option<(usize, f32, f32)>,
 }
 
 /// What the person asked for, done by whoever runs the shell.
@@ -189,23 +215,42 @@ pub enum Act {
     Copy(String),
     Power(Power),
     Settings,
+    /// Something for a tray icon's app (a click, its menu…).
+    Tray(crate::tray::Job),
+    /// Something for a plugin: a click on its item, a row of its menu.
+    Plugin(String, crate::plugins::Event),
 }
 
 /// Each surface's look: colours and fonts (following the desktop), and icons.
+/// Whose font a surface's text is in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Face {
+    /// Appearance's.
+    #[default]
+    Base,
+    /// A panel's (and its popups'), when it has its own.
+    Panel(usize),
+    Launcher,
+}
+
 pub struct Kit {
     pub look: LiveLook,
+    /// Set before `begin`.
+    pub face: Face,
     pub icons: IconTheme,
+    /// Tray icons made from apps' pixels (by item, icon and recolouring).
+    pub tray_tex: std::collections::HashMap<(String, u64, bool), egui::TextureHandle>,
     live: bool,
 }
 
 impl Kit {
     pub fn new(live: bool) -> Kit {
-        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), live }
+        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), tray_tex: Default::default(), face: Face::Base, live }
     }
 
     /// Call first in every frame of the surface.
     pub fn begin(&mut self, ctx: &egui::Context, s: &Settings) {
-        self.look.set_fonts(ctx, "", "", "");
+        self.look.set_fonts(ctx, s.font_for(self.face), "", "");
         self.look.frame(ctx, &s.choice(), self.live);
         let v = ctx.global_style().visuals.clone();
         let accent = self.look.accent(&s.choice());
@@ -224,6 +269,36 @@ impl Kit {
         } else {
             self.icons.texture(ctx, &[icon], size)
         }
+    }
+
+    /// The launcher item's icon, when it isn't the grid: the system's logo (as /etc/os-release
+    /// names it, else the icon theme's usual names for one), or the custom icon or picture.
+    pub fn launcher_icon(&mut self, ctx: &egui::Context, s: &Settings, px: f32) -> Option<egui::TextureHandle> {
+        use crate::config::LauncherIcon;
+        let size = (px * ctx.pixels_per_point()).round() as u32;
+        match s.launcher_icon {
+            LauncherIcon::Grid => None,
+            LauncherIcon::Custom => {
+                let c = s.launcher_custom.trim();
+                let path = crate::wall::expand(c);
+                if path.is_absolute() { self.icons.texture_from_path(ctx, &path, size) } else { self.own_icon(ctx, c, size) }
+            }
+            LauncherIcon::System => {
+                static LOGO: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+                let logo = LOGO.get_or_init(|| {
+                    let text = std::fs::read_to_string("/etc/os-release").or_else(|_| std::fs::read_to_string("/usr/lib/os-release")).unwrap_or_default();
+                    text.lines().find_map(|l| l.strip_prefix("LOGO=")).map(|v| v.trim().trim_matches('"').to_string()).unwrap_or_default()
+                });
+                let names: Vec<&str> = [logo.as_str(), "distributor-logo", "start-here"].into_iter().filter(|n| !n.is_empty()).collect();
+                self.icons.texture(ctx, &names, size)
+            }
+        }
+    }
+
+    /// An icon by its name in the icon theme, or a picture's path (a plugin's).
+    pub fn named_icon(&mut self, ctx: &egui::Context, icon: &str, px: f32) -> Option<egui::TextureHandle> {
+        let size = (px * ctx.pixels_per_point()).round() as u32;
+        self.own_icon(ctx, icon, size)
     }
 
     pub fn app_icon(&mut self, ctx: &egui::Context, app: &DesktopApp, px: f32) -> Option<egui::TextureHandle> {
@@ -275,11 +350,159 @@ pub fn on(fill: Color32) -> Color32 {
 
 /// A see-through card in the panel's colour, with a soft shadow.
 pub fn card(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>) {
+    surface(p, r, v, alpha, radius, true);
+}
+
+/// A card with or without its outline (the panels and the dock, as their look asks).
+pub fn surface(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>, border: bool) {
+    surface_open(p, r, v, alpha, radius, border, None);
+}
+
+/// The clips that leave out a stretch (`lo` to `hi` along it) of `r`'s `side`, and all beyond it.
+fn around(clip: Rect, r: Rect, side: Edge, lo: f32, hi: f32) -> [Rect; 3] {
+    let (mut a, mut b, mut mid) = (clip, clip, clip);
+    if side.vertical() {
+        (a.max.y, b.min.y, mid.min.y, mid.max.y) = (lo, hi, lo, hi);
+        if side == Edge::Left { mid.min.x = r.left() + 1.5 } else { mid.max.x = r.right() - 1.5 }
+    } else {
+        (a.max.x, b.min.x, mid.min.x, mid.max.x) = (lo, hi, lo, hi);
+        if side == Edge::Top { mid.min.y = r.top() + 1.5 } else { mid.max.y = r.bottom() - 1.5 }
+    }
+    [a, b, mid]
+}
+
+/// A surface whose outline and shadow leave out a stretch of one side (`open`: the side, and
+/// from where to where along it, and how far in from those the popup's flares end: the
+/// shadow stays beside the flares), where a popup joins it.
+pub fn surface_open(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>, border: bool, open: Option<(Edge, f32, f32, f32)>) {
     let radius: egui::CornerRadius = radius.into();
     let shadow = egui::Shadow { offset: [0, 2], blur: 14, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
-    p.add(shadow.as_shape(r, radius));
-    p.rect_filled(r, radius, v.panel_fill.gamma_multiply(alpha));
-    p.rect_stroke(r, radius, Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08).gamma_multiply(alpha)), egui::StrokeKind::Inside);
+    let stroke = Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08).gamma_multiply(alpha));
+    match open {
+        None => {
+            p.add(shadow.as_shape(r, radius));
+            p.rect_filled(r, radius, v.panel_fill.gamma_multiply(alpha));
+            if border {
+                p.rect_stroke(r, radius, stroke, egui::StrokeKind::Inside);
+            }
+        }
+        Some((side, lo, hi, flare)) => {
+            let clips = around(p.clip_rect(), r, side, lo, hi);
+            // The shadow: beside the popup as ever; along it, as if the surface went on under
+            // the popup (a shadow thins toward its edge, which would show as a lighter band).
+            let [a, b, mut mid] = around(p.clip_rect(), r, side, lo + flare, hi - flare);
+            for c in [a, b] {
+                p.with_clip_rect(c).add(shadow.as_shape(r, radius));
+            }
+            let mut on = r;
+            match side {
+                Edge::Top => (mid.min.y, on.min.y) = (r.top(), r.top() - 60.0),
+                Edge::Bottom => (mid.max.y, on.max.y) = (r.bottom(), r.bottom() + 60.0),
+                Edge::Left => (mid.min.x, on.min.x) = (r.left(), r.left() - 60.0),
+                Edge::Right => (mid.max.x, on.max.x) = (r.right(), r.right() + 60.0),
+            }
+            p.with_clip_rect(mid).add(shadow.as_shape(on, egui::CornerRadius::ZERO));
+            p.rect_filled(r, radius, v.panel_fill.gamma_multiply(alpha));
+            if border {
+                for c in clips {
+                    p.with_clip_rect(c).rect_stroke(r, radius, stroke, egui::StrokeKind::Inside);
+                }
+            }
+        }
+    }
+}
+
+/// A popup joined to its panel along `edge` (the panel's): no outline or shadow where they
+/// meet, flaring out into the panel with rounded corners of `flare` points (the look's
+/// radius), as see-through as the panel at the join and fading to solid.
+fn joined(p: &egui::Painter, full: Rect, rect: Rect, edge: Edge, v: &egui::Visuals, look: &crate::style::Resolved, flare: f32) {
+    let mut cr: egui::CornerRadius = r_lg().into();
+    let (mut clip, mut line) = (full, full);
+    let depth = if edge.vertical() { rect.width() } else { rect.height() };
+    // As see-through as the panel for `hold` points from the join, then solid over `fade` more.
+    let room = (depth - cr.nw as f32 - 2.0).max(0.0);
+    let hold = 44.0f32.min(room * 0.3).round();
+    let fade = 130.0f32.min(room - hold).max(0.0).round();
+    // The band of the popup from `a` to `b` points off the join.
+    let band = |a: f32, b: f32| match edge {
+        Edge::Top => Rect::from_min_max(Pos2::new(rect.left(), rect.top() + a), Pos2::new(rect.right(), rect.top() + b)),
+        Edge::Bottom => Rect::from_min_max(Pos2::new(rect.left(), rect.bottom() - b), Pos2::new(rect.right(), rect.bottom() - a)),
+        Edge::Left => Rect::from_min_max(Pos2::new(rect.left() + a, rect.top()), Pos2::new(rect.left() + b, rect.bottom())),
+        Edge::Right => Rect::from_min_max(Pos2::new(rect.right() - b, rect.top()), Pos2::new(rect.right() - a, rect.bottom())),
+    };
+    let (grad, rest) = (band(hold, hold + fade), band(hold + fade, depth));
+    match edge {
+        Edge::Top => ((cr.nw, cr.ne), clip.min.y, line.min.y) = ((0, 0), rect.top(), rect.top() + 1.5),
+        Edge::Bottom => ((cr.sw, cr.se), clip.max.y, line.max.y) = ((0, 0), rect.bottom(), rect.bottom() - 1.5),
+        Edge::Left => ((cr.nw, cr.sw), clip.min.x, line.min.x) = ((0, 0), rect.left(), rect.left() + 1.5),
+        Edge::Right => ((cr.ne, cr.se), clip.max.x, line.max.x) = ((0, 0), rect.right(), rect.right() - 1.5),
+    }
+    let shadow = egui::Shadow { offset: [0, 2], blur: 14, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
+    // Its shadow as if it went on under the panel, so it doesn't thin toward the join.
+    let mut under = rect;
+    match edge {
+        Edge::Top => under.min.y -= 60.0,
+        Edge::Bottom => under.max.y += 60.0,
+        Edge::Left => under.min.x -= 60.0,
+        Edge::Right => under.max.x += 60.0,
+    }
+    p.with_clip_rect(clip).add(shadow.as_shape(under, cr));
+    let (near, far) = (v.panel_fill.gamma_multiply(look.opacity), v.panel_fill.gamma_multiply(look.opacity.max(0.98)));
+    p.rect_filled(band(0.0, hold), 0.0, near);
+    let mut mesh = egui::Mesh::default();
+    for c in [grad.left_top(), grad.right_top(), grad.right_bottom(), grad.left_bottom()] {
+        let at_join = match edge {
+            Edge::Top => c.y == grad.top(),
+            Edge::Bottom => c.y == grad.bottom(),
+            Edge::Left => c.x == grad.left(),
+            Edge::Right => c.x == grad.right(),
+        };
+        mesh.colored_vertex(c, if at_join { near } else { far });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    p.add(egui::Shape::mesh(mesh));
+    p.rect_filled(rest, cr, far);
+    let stroke = Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08).gamma_multiply(look.opacity));
+    if flare >= 1.0 {
+        // Along the join and away from it, to the screen.
+        let at = |a: f32, d: f32| match edge {
+            Edge::Top => Pos2::new(a, rect.top() + d),
+            Edge::Bottom => Pos2::new(a, rect.bottom() - d),
+            Edge::Left => Pos2::new(rect.left() + d, a),
+            Edge::Right => Pos2::new(rect.right() - d, a),
+        };
+        let (lo, hi) = if edge.vertical() { (rect.top(), rect.bottom()) } else { (rect.left(), rect.right()) };
+        // Each side: the corner, then a quarter circle from the panel out to the popup's side.
+        for (corner, out) in [(lo, -1.0f32), (hi, 1.0)] {
+            let arc = |r: f32| (0..=12).map(move |i| i as f32 / 12.0 * std::f32::consts::FRAC_PI_2).map(move |t| (corner + out * (flare - r * t.sin()), flare - r * t.cos()));
+            // A fan from the corner (its thin tip along the panel would trip the smoothing of
+            // a filled path), fading with the popup.
+            let mut fan = egui::Mesh::default();
+            fan.colored_vertex(at(corner, 0.0), near);
+            for (a, d) in arc(flare) {
+                let t = if fade > 0.0 { ((d - hold) / fade).clamp(0.0, 1.0) } else { 1.0 };
+                fan.colored_vertex(at(a, d), v.panel_fill.gamma_multiply(look.opacity + (look.opacity.max(0.98) - look.opacity) * t));
+            }
+            for i in 1..fan.vertices.len() as u32 - 1 {
+                fan.add_triangle(0, i, i + 1);
+            }
+            p.add(egui::Shape::mesh(fan));
+            if look.border {
+                // The outline, half a point inside the shape (as the panel's and the popup's).
+                p.add(egui::Shape::line(arc(flare + 0.5).map(|(a, d)| at(a, d)).collect(), stroke));
+                match edge {
+                    Edge::Top => line.min.y = rect.top() + flare,
+                    Edge::Bottom => line.max.y = rect.bottom() - flare,
+                    Edge::Left => line.min.x = rect.left() + flare,
+                    Edge::Right => line.max.x = rect.right() - flare,
+                }
+            }
+        }
+    }
+    if look.border {
+        p.with_clip_rect(line).rect_stroke(rect, cr, stroke, egui::StrokeKind::Inside);
+    }
 }
 
 pub fn hover_fill(p: &egui::Painter, r: Rect, v: &egui::Visuals) {
@@ -314,14 +537,16 @@ pub fn ago(at: DateTime<Local>) -> String {
 // ------------------------------------------------------------------ the dock
 
 pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
-    let v = ui.visuals().clone();
-    let accent = kit.accent(m.s);
+    let look = m.s.dock_look();
+    let (v, accent) = crate::style::visuals(ui.visuals(), &look, &crate::style::Roles::new(&kit.look, m.s));
+    *ui.visuals_mut() = v.clone();
+    let hover_r = crate::style::inner_radius(&look, DOCK_PAD - 3.0);
     let full = ui.max_rect();
     let items = dock_items(m.s, m.apps, &m.status.running);
     let size = m.s.dock_icon;
     let body_h = size + DOCK_PAD * 2.0;
     let body = Rect::from_min_size(Pos2::new(full.left() + MARGIN, full.bottom() - MARGIN - body_h), Vec2::new(full.width() - MARGIN * 2.0, body_h));
-    card(ui.painter(), body, &v, 0.9, r_lg());
+    surface(ui.painter(), body, &v, look.opacity, crate::style::radius(&look), look.border);
     let p = ui.painter().clone();
     let mut x = body.left() + DOCK_PAD;
     let mut label: Option<(String, f32)> = None;
@@ -341,7 +566,7 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         let lift = if resp.hovered() { -4.0 } else { 0.0 };
         let r2 = r.translate(Vec2::new(0.0, lift));
         if resp.hovered() {
-            p.rect_filled(r.expand(3.0), r_md(), mix(v.panel_fill, v.text_color(), 0.08));
+            p.rect_filled(r.expand(3.0), hover_r, mix(v.panel_fill, v.text_color(), 0.08));
             label = Some((a.name.clone(), r.center().x));
         }
         match kit.app_icon(ui.ctx(), a, size) {
@@ -384,7 +609,8 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let full = ui.max_rect();
     let top = full.top() + crate::panels::room(&m.s.panels, m.output, Edge::Top) + 24.0;
     let w = 280.0;
-    let x = if m.s.widget_side == Side::Left { full.left() + 28.0 } else { full.right() - 28.0 - w };
+    let side = |e: Edge| crate::panels::room(&m.s.panels, m.output, e);
+    let x = if m.s.widget_side == Side::Left { full.left() + side(Edge::Left) + 28.0 } else { full.right() - side(Edge::Right) - 28.0 - w };
     let mut y = top;
     let p = ui.painter().clone();
     let fg = Color32::WHITE;
@@ -429,36 +655,123 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
 
 // ------------------------------------------------------------------ popups
 
+const PLUGIN_ROW: f32 = 44.0;
+
+fn plugin_menu_height(m: &Model, id: &str) -> f32 {
+    let rows = crate::plugins::item(&m.extra.plugins, id).map(|i| i.menu.len()).unwrap_or(0);
+    28.0 + 34.0 + rows.max(1) as f32 * (PLUGIN_ROW + 2.0)
+}
+
+/// A plugin's menu: its name, then the rows it gave; a click tells the plugin which.
+fn plugin_menu(ui: &mut egui::Ui, id: &str, m: &mut Model) {
+    let v = ui.visuals().clone();
+    let Some(item) = crate::plugins::item(&m.extra.plugins, id).cloned() else {
+        m.acts.push(Act::Close);
+        return;
+    };
+    ui.spacing_mut().item_spacing.y = 2.0;
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::hover());
+    ui.painter().text(Pos2::new(r.left() + 4.0, r.center().y - 2.0), Align2::LEFT_CENTER, &item.name, ui_font(14.5), v.strong_text_color());
+    if !item.text.is_empty() {
+        ui.painter().text(Pos2::new(r.right() - 4.0, r.center().y - 2.0), Align2::RIGHT_CENTER, &item.text, ui_font(12.5), v.weak_text_color());
+    }
+    egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
+        for row in &item.menu {
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), PLUGIN_ROW), Sense::click());
+            if resp.hovered() {
+                hover_fill(ui.painter(), r, &v);
+            }
+            let p = ui.painter();
+            if row.sub.is_empty() {
+                let g = one_line(p, &row.label, ui_font(13.5), v.text_color(), r.width() - 20.0);
+                p.galley(Pos2::new(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, v.text_color());
+            } else {
+                let g = one_line(p, &row.label, ui_font(13.5), v.text_color(), r.width() - 20.0);
+                p.galley(Pos2::new(r.left() + 10.0, r.top() + 5.0), g, v.text_color());
+                let g = one_line(p, &row.sub, ui_font(11.5), v.weak_text_color(), r.width() - 20.0);
+                p.galley(Pos2::new(r.left() + 10.0, r.top() + 24.0), g, v.weak_text_color());
+            }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                m.acts.push(Act::Plugin(id.to_string(), crate::plugins::Event::new("menu", &[("id", &row.id)])));
+                m.acts.push(Act::Close);
+            }
+        }
+        if item.menu.is_empty() {
+            ui.label(egui::RichText::new("Nothing to show").color(v.weak_text_color()));
+        }
+    });
+}
+
 /// A popup over the whole screen: its card, and a click anywhere else closes it.
 pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let full = ui.max_rect();
     let top_room = crate::panels::room(&m.s.panels, m.output, Edge::Top);
     let bottom_room = crate::panels::room(&m.s.panels, m.output, Edge::Bottom);
+    // The launcher set to open from a panel, opened by a key: from the screen's first panel.
+    let is_launcher = matches!(pop.kind, PopupKind::Launcher { .. });
+    if is_launcher
+        && m.s.launch_place == crate::config::LaunchPlace::Panel
+        && pop.from.is_none()
+        && let Some((idx, from, attach, at)) = crate::launcher::home(m.s, m.output)
+    {
+        (pop.from, pop.attach, pop.anchor_x) = (Some(from), attach.then_some(idx), at);
+    }
+    // Else (or with no panel on this screen) it's in the middle.
+    let centred_launcher = is_launcher && (m.s.launch_place == crate::config::LaunchPlace::Center || pop.from.is_none());
     // Where it opens: under (or over) the panel it came from; else under the top panels, or
     // over the bottom ones when there are only those.
     let (edge, inset) = pop.from.unwrap_or(if top_room == 0.0 && bottom_room > 0.0 { (Edge::Bottom, bottom_room + 4.0) } else { (Edge::Top, top_room + if top_room > 0.0 { 4.0 } else { MARGIN }) });
     let below = top_room + if top_room > 0.0 { 4.0 } else { MARGIN };
+    // Clear of the side panels. From a side panel a popup opens beside it, with the room
+    // between the top and bottom panels for its height.
+    let left = full.left() + crate::panels::room(&m.s.panels, m.output, Edge::Left) + MARGIN;
+    let right = full.right() - crate::panels::room(&m.s.panels, m.output, Edge::Right) - MARGIN;
+    let beside = edge.vertical();
+    let (edge_in, inset) = if beside { (inset, top_room + bottom_room + MARGIN) } else { (0.0, inset) };
     // Esc while a Wi-Fi password is being typed only stops that.
     let esc = ui.input(|i| i.key_pressed(Key::Escape)) && !matches!(pop.kind, PopupKind::Network { ask: Some(_) });
     let size = match &pop.kind {
-        PopupKind::Launcher { .. } => Vec2::new(620.0f32.min(full.width() - 40.0), 480.0f32.min(full.height() - 120.0)),
+        PopupKind::Launcher { .. } => {
+            let size = crate::launcher::size(m.s, full);
+            if centred_launcher { size } else { Vec2::new(size.x, size.y.min(full.height() - inset - MARGIN - 8.0)) }
+        }
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
-        PopupKind::Power { .. } => Vec2::new(240.0, 238.0),
+        PopupKind::Power { .. } => crate::power_ui::size(m.s),
         PopupKind::Control { .. } => Vec2::new(408.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Notifications => Vec2::new(crate::notes_pop::WIDTH, crate::notes_pop::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Plugin { id } => Vec2::new(300.0, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::TrayMenu { path, .. } => Vec2::new(260.0, crate::tray_ui::menu_height(m, path).min(full.height() - inset - MARGIN - 8.0)),
     };
+    let mut anchored = false;
+    // Joined to a panel, it stays along the straight part of the panel's side (clear of
+    // rounded corners), where it fits.
+    let straight = pop.attach.and_then(|i| {
+        let c = m.s.panels.get(i)?;
+        let area = if c.vertical() { Rect::from_min_max(Pos2::new(full.left(), full.top() + top_room), Pos2::new(full.right(), full.bottom() - bottom_room)) } else { full };
+        let bar = c.bar_rect(area);
+        // Its own flare into the panel takes the look's radius again.
+        let r = crate::style::radius(&m.s.panel_look(i)).nw as f32;
+        let rad = if c.floating { r * 2.0 } else { r };
+        Some(if c.vertical() { (bar.top() + rad, bar.bottom() - rad) } else { (bar.left() + rad, bar.right() - rad) })
+    });
     let rect = match pop.kind {
-        PopupKind::Launcher { .. } => {
+        PopupKind::Launcher { .. } if centred_launcher => {
             // A soft dim behind the launcher.
-            ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(70));
+            if m.s.launch_dim {
+                ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(70));
+            }
             Rect::from_min_size(Pos2::new(full.center().x - size.x / 2.0, full.top() + (full.height() * 0.16).max(below + 10.0)), size)
         }
-        PopupKind::DockMenu { .. } => {
+        PopupKind::Power { .. } if crate::power_ui::centred(m.s) => {
+            ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(90));
+            Rect::from_center_size(full.center(), size)
+        }
+        PopupKind::DockMenu { .. } if pop.from.is_none() => {
             // Above the dock, over the icon.
             let items = dock_items(m.s, m.apps, &m.status.running);
             let (_, room) = dock_size(m.s, &items);
@@ -468,10 +781,20 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         }
         _ => {
             // No button to open under (asked by `rivet-shell msg`): the middle.
+            anchored = true;
             let ax = if pop.anchor_x.is_nan() { full.center().x } else { pop.anchor_x };
-            let x = (ax - size.x / 2.0).clamp(full.left() + MARGIN, full.right() - MARGIN - size.x);
-            let y = if edge == Edge::Top { full.top() + inset } else { full.bottom() - inset - size.y };
-            Rect::from_min_size(Pos2::new(x, y), size)
+            if beside {
+                let x = if edge == Edge::Left { full.left() + edge_in } else { full.right() - edge_in - size.x };
+                let (lo, hi) = (full.top() + top_room + MARGIN, full.bottom() - bottom_room - MARGIN - size.y);
+                let ay = if pop.anchor_x.is_nan() { full.center().y } else { pop.anchor_x };
+                let (lo, hi) = straight.filter(|(a, b)| b - a >= size.y).map(|(a, b)| (a, b - size.y)).unwrap_or((lo, hi));
+                Rect::from_min_size(Pos2::new(x, (ay - size.y / 2.0).clamp(lo, hi.max(lo)).round()), size)
+            } else {
+                let (left, right) = straight.filter(|(a, b)| b - a >= size.x).unwrap_or((left, right));
+                let x = (ax - size.x / 2.0).clamp(left, (right - size.x).max(left)).round();
+                let y = if edge == Edge::Top { full.top() + inset } else { full.bottom() - inset - size.y };
+                Rect::from_min_size(Pos2::new(x, y), size)
+            }
         }
     };
     // Outside the card: close.
@@ -480,9 +803,24 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     if (back.clicked() || back.secondary_clicked()) && outside || esc {
         m.acts.push(Act::Close);
     }
-    card(ui.painter(), rect, &v, 0.98, r_lg());
+    match pop.attach.filter(|_| anchored && pop.from.is_some()) {
+        Some(idx) => {
+            // Joined to its panel: in the panel's colours and as see-through, square where they meet, and no
+            // shadow cast back over the panel.
+            let look = m.s.panel_look(idx);
+            let (pv, _) = crate::style::visuals(&v, &look, &crate::style::Roles::new(&kit.look, m.s));
+            let flare = crate::style::radius(&look).nw as f32;
+            joined(ui.painter(), full, rect, edge, &pv, &look, flare);
+            *ui.visuals_mut() = pv;
+            pop.join = Some(if beside { (rect.top() - flare, rect.bottom() + flare) } else { (rect.left() - flare, rect.right() + flare) });
+        }
+        None => {
+            pop.join = None;
+            card(ui.painter(), rect, &v, 0.98, r_lg());
+        }
+    }
     let pad = match pop.kind {
-        PopupKind::DockMenu { .. } => 6.0,
+        PopupKind::DockMenu { .. } | PopupKind::TrayMenu { .. } => 6.0,
         PopupKind::Control { .. } => crate::quick::PAD,
         PopupKind::Notifications => crate::notes_pop::PAD,
         _ => 14.0,
@@ -490,9 +828,9 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(pad)).layout(egui::Layout::top_down(egui::Align::Min)));
     let focus = std::mem::take(&mut pop.focus);
     match &mut pop.kind {
-        PopupKind::Launcher { query, sel } => launcher(&mut child, query, sel, focus, m, kit),
+        PopupKind::Launcher { query, sel } => crate::launcher::launcher(&mut child, query, sel, focus, m, kit),
         PopupKind::Calendar { month } => calendar(&mut child, month, kit.accent(m.s)),
-        PopupKind::Power { confirm } => power_menu(&mut child, confirm, m),
+        PopupKind::Power { confirm } => crate::power_ui::menu(&mut child, confirm, m),
         PopupKind::Control { drag } => crate::quick::quick_settings(&mut child, drag, m, kit),
         PopupKind::DockMenu { app, pinned } => dock_menu(&mut child, app, *pinned, m),
         PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
@@ -500,6 +838,8 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
         PopupKind::Notifications => crate::notes_pop::popup(&mut child, m, kit),
         PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
+        PopupKind::TrayMenu { key, path } => crate::tray_ui::menu(&mut child, key, path, m),
+        PopupKind::Plugin { id } => plugin_menu(&mut child, id, m),
     }
 }
 
@@ -590,116 +930,13 @@ pub fn calc(q: &str) -> Option<f64> {
     (p.i == p.t.len() && v.is_finite()).then_some(v)
 }
 
-fn calc_text(v: f64) -> String {
+pub fn calc_text(v: f64) -> String {
     if v.fract() == 0.0 && v.abs() < 1e15 {
         format!("{v:.0}")
     } else {
         let s = format!("{v:.10}");
         s.trim_end_matches('0').trim_end_matches('.').to_string()
     }
-}
-
-fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: bool, m: &mut Model, kit: &mut Kit) {
-    // A steady cursor: a blinking one redraws the whole launcher twice a second.
-    ui.visuals_mut().text_cursor.blink = false;
-    let v = ui.visuals().clone();
-    let id = egui::Id::unique("launcher-search");
-    let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
-        ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text("Search apps, or type a sum…").desired_width(f32::INFINITY))
-    });
-    let resp = field.inner;
-    if focus || !resp.has_focus() {
-        resp.request_focus();
-    }
-    if resp.changed() {
-        *sel = 0;
-    }
-    ui.add_space(12.0);
-    let accent = kit.accent(m.s);
-    let enter = ui.input(|i| i.key_pressed(Key::Enter));
-    // A sum: its answer, and Enter copies it.
-    if let Some(answer) = calc(query) {
-        let text = calc_text(answer);
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 52.0), Sense::click());
-        ui.painter().rect_filled(r, r_md(), accent.gamma_multiply(0.22));
-        ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
-        ui.painter().text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, format!("= {text}"), ui_font(20.0), v.strong_text_color());
-        ui.painter().text(Pos2::new(r.right() - 16.0, r.center().y), Align2::RIGHT_CENTER, "Enter to copy", ui_font(12.0), v.weak_text_color());
-        if enter || resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            m.acts.push(Act::Copy(text));
-        }
-        return;
-    }
-    // The apps: best matches first when searching, else by name.
-    let mut ranked: Vec<(i32, &DesktopApp)> = m.apps.iter().filter_map(|a| quick::fuzzy_score(&a.name, query).map(|s| (s, a))).collect();
-    if !query.is_empty() {
-        ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
-    }
-    let cols = ((ui.available_width() + 6.0) / 104.0).floor().max(1.0) as usize;
-    let (up, down, left, right) = ui.input_mut(|i| {
-        (
-            i.consume_key(egui::Modifiers::NONE, Key::ArrowUp),
-            i.consume_key(egui::Modifiers::NONE, Key::ArrowDown),
-            i.consume_key(egui::Modifiers::NONE, Key::ArrowLeft) && query.is_empty(),
-            i.consume_key(egui::Modifiers::NONE, Key::ArrowRight) && query.is_empty(),
-        )
-    });
-    let n = ranked.len();
-    if n > 0 {
-        if down {
-            *sel = (*sel + cols).min(n - 1);
-        }
-        if up {
-            *sel = sel.saturating_sub(cols);
-        }
-        if right {
-            *sel = (*sel + 1).min(n - 1);
-        }
-        if left {
-            *sel = sel.saturating_sub(1);
-        }
-        *sel = (*sel).min(n - 1);
-    }
-    if enter && let Some((_, a)) = ranked.get(*sel) {
-        m.acts.push(Act::Launch(a.id.clone()));
-    }
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        egui::Grid::new("launcher-grid").spacing([6.0, 6.0]).show(ui, |ui| {
-            for (k, (_, a)) in ranked.iter().enumerate() {
-                let (r, resp) = ui.allocate_exact_size(Vec2::new(98.0, 92.0), Sense::click());
-                // Only what's in view is drawn (and only its icons made).
-                if ui.is_rect_visible(r) {
-                    if k == *sel {
-                        ui.painter().rect_filled(r, r_md(), accent.gamma_multiply(0.22));
-                        ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
-                    } else if resp.hovered() {
-                        hover_fill(ui.painter(), r, &v);
-                    }
-                    let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 30.0), Vec2::splat(42.0));
-                    if let Some(t) = kit.app_icon(ui.ctx(), a, 42.0) {
-                        ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
-                    }
-                    let mut job = egui::text::LayoutJob::single_section(a.name.clone(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
-                    job.wrap = egui::text::TextWrapping { max_width: r.width() - 8.0, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
-                    job.halign = egui::Align::Center;
-                    let g = ui.painter().layout_job(job);
-                    ui.painter().galley(Pos2::new(r.center().x, r.top() + 58.0), g, v.text_color());
-                }
-                if k == *sel && (up || down || left || right) {
-                    ui.scroll_to_rect(r, None);
-                }
-                if resp.clicked() {
-                    m.acts.push(Act::Launch(a.id.clone()));
-                }
-                if (k + 1) % cols == 0 {
-                    ui.end_row();
-                }
-            }
-        });
-        if ranked.is_empty() {
-            ui.label(egui::RichText::new("No apps match").color(v.weak_text_color()));
-        }
-    });
 }
 
 fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
@@ -748,30 +985,6 @@ fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
             v.text_color()
         };
         p.text(c, Align2::CENTER_CENTER, (d + 1).to_string(), ui_font(13.0), col);
-    }
-}
-
-fn power_menu(ui: &mut egui::Ui, confirm: &mut Option<Power>, m: &mut Model) {
-    let v = ui.visuals().clone();
-    let danger = rivet_look::theme::status(ui.ctx()).danger;
-    for (pw, label, sure) in [(Power::Lock, "Lock", false), (Power::Suspend, "Suspend", false), (Power::LogOut, "Log Out", true), (Power::Restart, "Restart", true), (Power::ShutDown, "Shut Down", true)] {
-        let asking = *confirm == Some(pw);
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 38.0), Sense::click());
-        if asking {
-            ui.painter().rect_filled(r, r_md(), danger.gamma_multiply(0.2));
-        } else if resp.hovered() {
-            hover_fill(ui.painter(), r, &v);
-        }
-        let text = if asking { format!("{label}? Click again") } else { label.to_string() };
-        ui.painter().text(Pos2::new(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, text, ui_font(14.0), if asking { danger } else { v.text_color() });
-        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-            if sure && !asking {
-                *confirm = Some(pw);
-            } else {
-                m.acts.push(Act::Power(pw));
-            }
-        }
-        ui.add_space(4.0);
     }
 }
 

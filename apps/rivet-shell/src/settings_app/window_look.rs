@@ -68,7 +68,7 @@ impl SettingsApp {
                     if ui.button(format!("Add the Include to {}", name(&t.main))).clicked() {
                         let (accent, dark) = comp::shell_look(s);
                         let look = comp::Look::from(s, accent, dark);
-                        msg = Some(comp::add_include(t, Some(&look)).map(|_| format!("Added. The original is kept as {}.rivet-backup.", name(&t.main))));
+                        msg = Some(comp::add_include(t, Some(&look), &s.displays).map(|_| format!("Added. The original is kept as {}.rivet-backup.", name(&t.main))));
                         ctx.data_mut(|d| d.remove::<(f64, bool)>(key));
                     }
                     hint(ui, &format!("One line at its end ({}), so these settings win over the ones above it. A copy of the file is kept first.{}", comp::include_line(t), if t.comp == Compositor::Niri { " Needs niri 25.11 or later." } else { "" }));

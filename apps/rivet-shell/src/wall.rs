@@ -2,6 +2,10 @@
 //! it so the desktop's colours (and so every Rivet app's) follow the picture.
 
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{Receiver, channel};
+use std::time::SystemTime;
+
+use eframe::egui;
 
 use rivet_look::theme::Mode;
 
@@ -70,20 +74,71 @@ fn choose(list: &[PathBuf], now: &Path, how: &str, seed: u64) -> Option<PathBuf>
 /// A picture scaled to cover `w`×`h` (cropping what overflows, centred), as BGRA bytes for a
 /// Wayland buffer.
 pub fn cover_bgra(path: &Path, w: u32, h: u32) -> Option<Vec<u8>> {
-    let img = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?;
-    let (iw, ih) = (img.width().max(1), img.height().max(1));
-    let scale = (w as f32 / iw as f32).max(h as f32 / ih as f32);
-    let (sw, sh) = (((iw as f32 * scale).ceil() as u32).max(w), ((ih as f32 * scale).ceil() as u32).max(h));
-    let resized = img.resize_exact(sw, sh, image::imageops::FilterType::Triangle).to_rgba8();
-    let (x0, y0) = ((sw - w) / 2, (sh - h) / 2);
-    let mut out = Vec::with_capacity((w * h * 4) as usize);
-    for y in 0..h {
-        for x in 0..w {
-            let p = resized.get_pixel(x + x0, y + y0).0;
-            out.extend_from_slice(&[p[2], p[1], p[0], 255]);
+    let img = image::ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?.into_rgba8();
+    let (iw, ih) = (img.width(), img.height());
+    rivet_kit::scale::cover_bgra(img.into_raw(), iw, ih, w, h)
+}
+
+/// One frame of a wallpaper giving way to the next: `from` and `to` (BGRA, `w` wide) mixed into
+/// `out`, `t` of the way through (0 to 1).
+pub fn transition(kind: crate::config::Transition, from: &[u8], to: &[u8], out: &mut [u8], w: usize, t: f32) {
+    use crate::config::Transition as T;
+    if from.len() != to.len() || out.len() != to.len() || w == 0 || t >= 1.0 || kind == T::None {
+        out.copy_from_slice(&to[..out.len().min(to.len())]);
+        return;
+    }
+    let t = t.max(0.0);
+    // Quick at first, settling at the end.
+    let e = 1.0 - (1.0 - t).powi(3);
+    let h = to.len() / (w * 4);
+    let row = w * 4;
+    let mix = |out: &mut [u8], a: &[u8], b: &[u8], k: u32| {
+        for ((o, a), b) in out.iter_mut().zip(a).zip(b) {
+            *o = ((*a as u32 * (256 - k) + *b as u32 * k) >> 8) as u8;
+        }
+    };
+    match kind {
+        T::None => {}
+        T::Fade => mix(out, from, to, ((t * t * (3.0 - 2.0 * t)) * 256.0) as u32),
+        T::Wipe => {
+            // The edge runs left to right, soft over an eighth of the width.
+            let soft = (w / 8).max(1);
+            let edge = (e * (w + soft) as f32) as usize;
+            let (x0, x1) = (edge.saturating_sub(soft).min(w), edge.min(w));
+            for y in 0..h {
+                let (o, a, b) = (&mut out[y * row..(y + 1) * row], &from[y * row..(y + 1) * row], &to[y * row..(y + 1) * row]);
+                o[..x0 * 4].copy_from_slice(&b[..x0 * 4]);
+                o[x1 * 4..].copy_from_slice(&a[x1 * 4..]);
+                for x in x0..x1 {
+                    let k = ((edge - x) * 256 / soft).min(256) as u32;
+                    mix(&mut o[x * 4..x * 4 + 4], &a[x * 4..x * 4 + 4], &b[x * 4..x * 4 + 4], k);
+                }
+            }
+        }
+        T::Slide => {
+            // The new picture comes in from the right, pushing the old one out.
+            let off = ((e * w as f32) as usize).min(w) * 4;
+            for y in 0..h {
+                let (o, a, b) = (&mut out[y * row..(y + 1) * row], &from[y * row..(y + 1) * row], &to[y * row..(y + 1) * row]);
+                o[..row - off].copy_from_slice(&a[off..]);
+                o[row - off..].copy_from_slice(&b[..off]);
+            }
+        }
+        T::Grow => {
+            let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+            let r = e * (cx * cx + cy * cy).sqrt();
+            for y in 0..h {
+                let (o, a, b) = (&mut out[y * row..(y + 1) * row], &from[y * row..(y + 1) * row], &to[y * row..(y + 1) * row]);
+                o.copy_from_slice(a);
+                let dy = y as f32 + 0.5 - cy;
+                if dy.abs() < r {
+                    let half = (r * r - dy * dy).sqrt();
+                    let (x0, x1) = ((cx - half).max(0.0) as usize, ((cx + half) as usize).min(w));
+                    o[x0 * 4..x1 * 4].copy_from_slice(&b[x0 * 4..x1 * 4]);
+                }
+            }
         }
     }
-    Some(out)
 }
 
 /// A small copy for choosing from (RGBA, longest side `px`).
@@ -94,11 +149,14 @@ pub fn thumbnail(path: &Path, px: u32) -> Option<eframe::egui::ColorImage> {
 }
 
 /// The arguments matugen gets for a picture.
-pub fn matugen_args(path: &Path, mode: Mode, scheme: &str) -> Vec<String> {
+pub fn matugen_args(path: &Path, mode: Mode, scheme: &str, contrast: f32) -> Vec<String> {
     let mode = if mode == Mode::Light { "light" } else { "dark" };
     let mut a = vec!["image".to_string(), path.to_string_lossy().into_owned(), "-m".into(), mode.into()];
     if !scheme.is_empty() {
         a.extend(["-t".into(), scheme.to_string()]);
+    }
+    if contrast.abs() > 0.004 {
+        a.push(format!("--contrast={:.2}", contrast.clamp(-1.0, 1.0)));
     }
     a.push("-q".into());
     a
@@ -111,9 +169,9 @@ pub fn matugen_args(path: &Path, mode: Mode, scheme: &str) -> Vec<String> {
 /// DankMaterialShell's `dank16` (a sixteen-colour terminal palette): they're made here from the
 /// picture's own colours and passed in too, so such templates work and matugen doesn't stop
 /// halfway (it stops at the first template that fails, leaving the rest unwritten).
-pub fn run_matugen(path: &Path, mode: Mode, scheme: &str, done: impl FnOnce(Result<(), String>) + Send + 'static) {
-    let mut args = matugen_args(path, mode, scheme);
-    let probe: Vec<String> = matugen_args(path, mode, scheme).into_iter().filter(|a| a != "-q").chain(["--dry-run".into(), "--json".into(), "hex".into()]).collect();
+pub fn run_matugen(path: &Path, mode: Mode, scheme: &str, contrast: f32, done: impl FnOnce(Result<(), String>) + Send + 'static) {
+    let mut args = matugen_args(path, mode, scheme, contrast);
+    let probe: Vec<String> = matugen_args(path, mode, scheme, contrast).into_iter().filter(|a| a != "-q").chain(["--dry-run".into(), "--json".into(), "hex".into()]).collect();
     std::thread::spawn(move || {
         // The picture's colours first (nothing written), to make the extra palettes from.
         let colours = std::process::Command::new("matugen").args(&probe).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok().filter(|o| o.status.success()).and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok());
@@ -243,6 +301,189 @@ pub fn demo_png(dir: &Path) -> Option<PathBuf> {
     Some(p)
 }
 
+// ------------------------------------------------------------------ choosing a picture
+
+/// A picture folder's pictures, listed on a thread and listed again only when the folder (or a
+/// folder right inside it) changes, with thumbnails from the desktop's shared cache
+/// (`~/.cache/thumbnails`, as file managers keep it): made once, then read back. Settings'
+/// Wallpaper page uses it, and a wallpaper popup on the panel can too.
+pub struct Gallery {
+    dir: PathBuf,
+    /// The folder and its folders' modified times when last listed.
+    stamp: Vec<(PathBuf, Option<SystemTime>)>,
+    pictures: Vec<Picture>,
+    listing: Option<Receiver<(PathBuf, Vec<Picture>, Vec<(PathBuf, Option<SystemTime>)>)>>,
+    /// Whether the folder has been listed at least once (vs. still being read).
+    listed: bool,
+    checked: f64,
+    thumbs: Option<rivet_media::thumbs::Thumbnailer>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Picture {
+    pub path: PathBuf,
+    pub mtime: Option<SystemTime>,
+    pub size: u64,
+}
+
+impl Picture {
+    pub fn name(&self) -> String {
+        self.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+    fn mime(&self) -> &'static str {
+        match self.path.extension().and_then(|x| x.to_str()).map(str::to_lowercase).as_deref() {
+            Some("png") => "image/png",
+            Some("webp") => "image/webp",
+            _ => "image/jpeg",
+        }
+    }
+}
+
+/// How often the folder is checked for changes, in seconds.
+const RECHECK: f64 = 2.0;
+
+fn stamp_of(dir: &Path, list: &[Picture]) -> Vec<(PathBuf, Option<SystemTime>)> {
+    let mut dirs: Vec<PathBuf> = vec![dir.to_path_buf()];
+    for p in list {
+        if let Some(d) = p.path.parent()
+            && !dirs.iter().any(|x| x == d)
+        {
+            dirs.push(d.to_path_buf());
+        }
+    }
+    // Folders inside without pictures count too (one gaining pictures changes its time).
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() && !dirs.contains(&p) && !e.file_name().to_string_lossy().starts_with('.') {
+            dirs.push(p);
+        }
+    }
+    dirs.into_iter().map(|d| {
+        let t = std::fs::metadata(&d).and_then(|m| m.modified()).ok();
+        (d, t)
+    }).collect()
+}
+
+fn mtimes(stamp: &[(PathBuf, Option<SystemTime>)]) -> Vec<Option<SystemTime>> {
+    stamp.iter().map(|(d, _)| std::fs::metadata(d).and_then(|m| m.modified()).ok()).collect()
+}
+
+impl Default for Gallery {
+    fn default() -> Self {
+        Gallery { dir: PathBuf::new(), stamp: Vec::new(), pictures: Vec::new(), listing: None, listed: false, checked: 0.0, thumbs: None }
+    }
+}
+
+impl Gallery {
+    /// Shows `dir` (listing it when it's new or has changed). Call every frame it's shown.
+    pub fn frame(&mut self, ctx: &egui::Context, dir: &Path) {
+        if dir != self.dir {
+            self.dir = dir.to_path_buf();
+            self.pictures.clear();
+            self.stamp.clear();
+            self.listed = false;
+            self.relist(ctx);
+        }
+        if let Some(rx) = &self.listing
+            && let Ok((d, list, stamp)) = rx.try_recv()
+        {
+            self.listing = None;
+            if d == self.dir {
+                self.pictures = list;
+                self.stamp = stamp;
+                self.listed = true;
+            }
+        }
+        let now = ctx.input(|i| i.time);
+        if self.listing.is_none() && now - self.checked >= RECHECK {
+            self.checked = now;
+            // Only the folders' times: cheap, so it's done here.
+            let changed = self.stamp.is_empty() || mtimes(&self.stamp) != self.stamp.iter().map(|s| s.1).collect::<Vec<_>>();
+            if changed {
+                self.relist(ctx);
+            }
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(RECHECK));
+        let thumbs = self.thumbs.get_or_insert_with(|| rivet_media::thumbs::Thumbnailer::new(ctx.clone()));
+        thumbs.poll(ctx);
+    }
+
+    /// Lists the folder again now (e.g. a "Refresh" button).
+    pub fn relist(&mut self, ctx: &egui::Context) {
+        let (tx, rx) = channel();
+        let dir = self.dir.clone();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let list: Vec<Picture> = pictures(&dir)
+                .into_iter()
+                .take(MAX_PICTURES)
+                .map(|path| {
+                    let m = std::fs::metadata(&path).ok();
+                    Picture { mtime: m.as_ref().and_then(|m| m.modified().ok()), size: m.map(|m| m.len()).unwrap_or(0), path }
+                })
+                .collect();
+            let stamp = stamp_of(&dir, &list);
+            let _ = tx.send((dir, list, stamp));
+            ctx.request_repaint();
+        });
+        self.listing = Some(rx);
+    }
+
+    pub fn pictures(&self) -> &[Picture] {
+        &self.pictures
+    }
+
+    /// Still reading the folder for the first time.
+    pub fn loading(&self) -> bool {
+        !self.listed
+    }
+
+    /// A picture's thumbnail, once it's ready.
+    pub fn thumb(&mut self, p: &Picture) -> Option<egui::TextureHandle> {
+        self.thumbs.as_mut()?.get(&p.path, p.size, p.mime(), p.mtime)
+    }
+}
+
+/// The most pictures a folder shows.
+const MAX_PICTURES: usize = 2000;
+
+/// `~/x` and `$HOME/x` to a full path.
+pub fn expand(path: &str) -> PathBuf {
+    let path = path.trim();
+    let home = rivet_xdg::places::home();
+    if path == "~" {
+        return home;
+    }
+    match path.strip_prefix("~/").or_else(|| path.strip_prefix("$HOME/")) {
+        Some(rest) => home.join(rest),
+        None => PathBuf::from(path),
+    }
+}
+
+/// A path for people: the home folder as `~`.
+pub fn short(path: &Path) -> String {
+    let home = rivet_xdg::places::home();
+    match path.strip_prefix(&home) {
+        Ok(rest) if rest.as_os_str().is_empty() => "~".into(),
+        Ok(rest) => format!("~/{}", rest.display()),
+        Err(_) => path.display().to_string(),
+    }
+}
+
+/// Folders that usually hold wallpapers, the ones that exist: the pictures folder's
+/// Wallpapers, the pictures folder, the desktop's own backgrounds.
+pub fn suggested_dirs() -> Vec<PathBuf> {
+    let pics = rivet_xdg::places::user_dirs().pictures.unwrap_or_else(rivet_xdg::places::home);
+    let mut out: Vec<PathBuf> = ["Wallpapers", "Wallpaper", "wallpapers", "wallpaper"].iter().map(|n| pics.join(n)).collect();
+    out.push(pics);
+    out.push(rivet_xdg::places::data_home().join("backgrounds"));
+    out.push(PathBuf::from("/usr/share/backgrounds"));
+    out.push(PathBuf::from("/usr/share/wallpapers"));
+    out.retain(|d| d.is_dir());
+    out.dedup();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +504,24 @@ mod tests {
     }
 
     #[test]
+    fn transitions_start_old_and_end_new() {
+        use crate::config::Transition;
+        let (w, h) = (16usize, 6usize);
+        let (from, to) = (vec![10u8; w * h * 4], vec![200u8; w * h * 4]);
+        for kind in Transition::ALL {
+            let mut out = vec![0u8; w * h * 4];
+            transition(kind, &from, &to, &mut out, w, 1.0);
+            assert_eq!(out, to, "{kind:?} ends on the new picture");
+            if kind != Transition::None {
+                transition(kind, &from, &to, &mut out, w, 0.0);
+                assert_eq!(out, from, "{kind:?} starts on the old picture");
+                transition(kind, &from, &to, &mut out, w, 0.5);
+                assert!(out != from && out != to, "{kind:?} is part way at the middle");
+            }
+        }
+    }
+
+    #[test]
     fn covers_and_lists() {
         let dir = std::env::temp_dir().join(format!("rivet-shell-wall-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("more")).unwrap();
@@ -271,10 +530,13 @@ mod tests {
         std::fs::write(dir.join("notes.txt"), "x").unwrap();
         let list = pictures(&dir);
         assert_eq!(list.len(), 2);
+        assert_eq!(expand("~/Pictures"), rivet_xdg::places::home().join("Pictures"));
+        assert_eq!(short(&rivet_xdg::places::home().join("a b")), "~/a b");
         let px = cover_bgra(&p, 100, 100).unwrap();
         assert_eq!(px.len(), 100 * 100 * 4);
         assert!(px.as_chunks::<4>().0.iter().all(|p| p[3] == 255));
-        assert_eq!(matugen_args(Path::new("/w.png"), Mode::Light, "scheme-vibrant"), ["image", "/w.png", "-m", "light", "-t", "scheme-vibrant", "-q"]);
+        assert_eq!(matugen_args(Path::new("/w.png"), Mode::Light, "scheme-vibrant", 0.0), ["image", "/w.png", "-m", "light", "-t", "scheme-vibrant", "-q"]);
+        assert_eq!(matugen_args(Path::new("/w.png"), Mode::Dark, "", -0.5), ["image", "/w.png", "-m", "dark", "--contrast=-0.50", "-q"]);
         // A palette for templates that expect dank16, with or without custom colours.
         let c = serde_json::json!({ "primary": { "dark": "#ccbeff", "light": "#625690" }, "red": { "dark": "#ff8080", "light": "#a01010" } });
         let d = dank16(&c);

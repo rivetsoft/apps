@@ -106,6 +106,32 @@ impl Scheme {
         }
     }
 
+    /// The scheme as a desktop palette, in the form the colour files take (`palette::load` reads
+    /// it): surfaces a step apart from the background, the function colour as the accent, the
+    /// keyword and type colours as the secondary and tertiary.
+    pub fn palette_css(&self) -> String {
+        let (bg, fg, accent) = (self.bg(), self.fg(), rgb(self.function));
+        let on = if crate::palette::luminance(accent) > 0.6 { Color32::BLACK } else { Color32::WHITE };
+        let hex = |c: Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+        let mut t = format!("/* Rivet colors: {} */\n", self.name);
+        for (name, c) in [
+            ("accent_bg_color", accent),
+            ("accent_fg_color", on),
+            ("window_bg_color", mix(bg, fg, 0.05)),
+            ("window_fg_color", fg),
+            ("headerbar_bg_color", mix(bg, fg, 0.05)),
+            ("sidebar_bg_color", mix(bg, fg, 0.03)),
+            ("view_bg_color", bg),
+            ("view_fg_color", fg),
+            ("popover_bg_color", mix(bg, fg, 0.1)),
+            ("secondary", rgb(self.keyword)),
+            ("tertiary", rgb(self.type_)),
+        ] {
+            t.push_str(&format!("@define-color {name} {};\n", hex(c)));
+        }
+        t
+    }
+
     /// The look of the editor's area: its background, text, faint text, selection and cursor.
     pub fn visuals(&self, base: &egui::Visuals) -> egui::Visuals {
         let mut v = if self.dark { egui::Visuals::dark() } else { egui::Visuals::light() };
@@ -150,6 +176,9 @@ mod tests {
             let l = |c: Color32| c.r() as u32 + c.g() as u32 + c.b() as u32;
             assert_eq!(l(s.fg()) > l(s.bg()), s.dark, "{}", s.name);
         }
+        // As a desktop palette, each reads back in its own mode with its colours.
+        let one = Scheme::by_name("One Light").unwrap();
+        assert!(one.palette_css().contains("@define-color view_bg_color #fafafa;\n@define-color view_fg_color #383a42;"));
         let names: std::collections::HashSet<&str> = SCHEMES.iter().map(|s| s.name).collect();
         assert_eq!(names.len(), SCHEMES.len());
     }

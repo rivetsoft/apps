@@ -177,10 +177,17 @@ pub fn x(p: &egui::Painter, c: Pos2, r: f32, col: Color32) {
     p.line_segment([c + Vec2::new(r, -r), c + Vec2::new(-r, r)], s);
 }
 
+pub fn check(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.8, col);
+    p.line_segment([c + Vec2::new(-4.5, 0.0), c + Vec2::new(-1.5, 3.0)], s);
+    p.line_segment([c + Vec2::new(-1.5, 3.0), c + Vec2::new(4.5, -3.5)], s);
+}
+
+/// A battery, 20 wide with its tip, centred on `c`.
 pub fn battery(p: &egui::Painter, c: Pos2, pct: u32, charging: bool, col: Color32, accent: Color32) {
-    let body = Rect::from_center_size(c, Vec2::new(18.0, 10.0));
-    p.rect_stroke(body, 2.0, Stroke::new(1.4, col), egui::StrokeKind::Inside);
-    p.rect_filled(Rect::from_min_size(Pos2::new(body.right() + 0.5, c.y - 2.5), Vec2::new(2.0, 5.0)), 1.0, col);
+    let body = Rect::from_center_size(c - Vec2::new(1.0, 0.0), Vec2::new(17.0, 10.0));
+    p.rect_stroke(body, 2.5, Stroke::new(1.5, col), egui::StrokeKind::Inside);
+    p.rect_filled(Rect::from_min_size(Pos2::new(body.right() + 1.0, c.y - 2.5), Vec2::new(2.0, 5.0)), 1.0, col);
     let inner = body.shrink(2.5);
     let w = inner.width() * (pct as f32 / 100.0).clamp(0.05, 1.0);
     p.rect_filled(Rect::from_min_size(inner.min, Vec2::new(w, inner.height())), 1.0, if charging { accent } else { col });
@@ -281,6 +288,24 @@ pub fn pills(p: &egui::Painter, c: Pos2, col: Color32, accent: Color32) {
     p.circle_filled(c + Vec2::new(8.5, 0.0), 2.6, col);
 }
 
+/// The system tray: an up chevron over a row of three small app squares.
+pub fn tray(p: &egui::Painter, c: Pos2, col: Color32, accent: Color32) {
+    let s = Stroke::new(1.6, col);
+    p.line_segment([c + Vec2::new(-4.0, -3.0), c + Vec2::new(0.0, -7.0)], s);
+    p.line_segment([c + Vec2::new(0.0, -7.0), c + Vec2::new(4.0, -3.0)], s);
+    for (i, dx) in [-6.0f32, 0.0, 6.0].into_iter().enumerate() {
+        p.rect_filled(Rect::from_center_size(c + Vec2::new(dx, 4.0), Vec2::splat(4.5)), 1.2, if i == 1 { accent } else { col });
+    }
+}
+
+/// A dock: three app squares on a shelf.
+pub fn dock(p: &egui::Painter, c: Pos2, col: Color32, accent: Color32) {
+    for (i, dx) in [-6.0f32, 0.0, 6.0].into_iter().enumerate() {
+        p.rect_filled(Rect::from_center_size(c + Vec2::new(dx, -1.5), Vec2::splat(4.5)), 1.2, if i == 0 { accent } else { col });
+    }
+    p.line_segment([c + Vec2::new(-9.0, 3.5), c + Vec2::new(9.0, 3.5)], Stroke::new(1.6, col));
+}
+
 /// A puzzle piece of sorts: a plugin.
 pub fn plugin(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.5, col);
@@ -302,10 +327,20 @@ pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32)
         "network" => wifi(p, c, col),
         "bluetooth" => bluetooth(p, c, col, true),
         "ai" => spark(p, c, col),
-        "battery" => battery(p, c - Vec2::new(1.0, 0.0), 70, false, col, accent),
+        "battery" => battery(p, c, 70, false, col, accent),
         "notifications" => bell(p, c, col, false),
         "quick-settings" => sliders(p, c, col),
         "power" => power(p, c, col),
+        "tray" => tray(p, c, col, accent),
+        "dock" => dock(p, c, col, accent),
+        s if s.starts_with("spacer") => {
+            // Room between two ends.
+            let st = Stroke::new(1.5, col);
+            for x in [-6.5, 6.5] {
+                p.line_segment([c + Vec2::new(x, -5.0), c + Vec2::new(x, 5.0)], st);
+            }
+            p.line_segment([c + Vec2::new(-3.5, 0.0), c + Vec2::new(3.5, 0.0)], Stroke::new(1.5, col.gamma_multiply(0.55)));
+        }
         _ => plugin(p, c, col),
     }
 }

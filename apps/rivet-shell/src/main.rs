@@ -8,24 +8,35 @@ mod auth;
 mod bar;
 mod cc;
 mod comp;
+mod displays;
 mod config;
 mod conn;
+mod dock_ui;
 mod glyph;
+mod guard;
 mod idle;
 mod ipc;
+mod launcher;
 mod lock;
 mod lock_ui;
 mod notes;
 mod notes_pop;
 mod panels;
+mod plugins;
+mod portal;
+mod power_ui;
 mod quick;
 mod radio;
 mod settings_app;
 mod shot;
 mod sound_pop;
+mod style;
 mod sys;
+mod tray;
+mod tray_ui;
 mod ui;
 mod wall;
+mod wall_pick;
 mod wl;
 
 use std::path::PathBuf;
@@ -37,6 +48,8 @@ Usage:
   rivet-shell                       Start the shell in this Wayland session
   rivet-shell settings              The settings window
   rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
+  rivet-shell palette [NAME|none]   Use a built-in palette for the colors instead (no name:
+                                    list them)
   rivet-shell ai                    AI plan usage, as the panel's AI item reads it
   rivet-shell lock                  Lock the screen (the shell does this itself when idle
                                     and before sleep); --preview shows it without locking
@@ -137,7 +150,7 @@ fn main() -> ExitCode {
             };
             let s = config::Settings::load();
             let (tx, rx) = std::sync::mpsc::channel();
-            wall::run_matugen(&pic, s.color_mode, &s.scheme_type, move |r| {
+            wall::run_matugen(&pic, s.color_mode, &s.scheme_type, s.matugen_contrast, move |r| {
                 let _ = tx.send(r);
             });
             match rx.recv() {
@@ -151,6 +164,28 @@ fn main() -> ExitCode {
                 }
                 Err(_) => ExitCode::FAILURE,
             }
+        }
+        Some("palette") => {
+            use rivet_look::schemes::{SCHEMES, Scheme};
+            let name = args[1..].join(" ");
+            if name.is_empty() {
+                for s in &SCHEMES {
+                    println!("{}", s.name);
+                }
+                return ExitCode::SUCCESS;
+            }
+            let mut s = config::Settings::load();
+            if name.eq_ignore_ascii_case("none") {
+                s.choose_palette("");
+            } else if Scheme::by_name(&name).is_some() {
+                s.choose_palette(&name);
+            } else {
+                eprintln!("rivet-shell: no palette named \"{name}\" (rivet-shell palette lists them)");
+                return ExitCode::FAILURE;
+            }
+            s.save();
+            let _ = ipc::send("changed");
+            ExitCode::SUCCESS
         }
         Some("msg") => {
             let line = args[1..].join(" ");
@@ -179,6 +214,16 @@ fn main() -> ExitCode {
             if ipc::running() {
                 eprintln!("rivet-shell: already running in this session (rivet-shell msg quit stops it)");
                 return ExitCode::FAILURE;
+            }
+            // The watcher: it starts the shell proper, and again if that one crashes
+            // (RIVET_SHELL_NO_WATCH=1 runs the shell directly, for a debugger).
+            if !guard::is_child() && std::env::var_os("RIVET_SHELL_NO_WATCH").is_none() {
+                return guard::watch();
+            }
+            guard::log_panics();
+            // A check of the watcher: RIVET_SHELL_CRASH=1 stops the shell as a bug would.
+            if std::env::var_os("RIVET_SHELL_CRASH").is_some() {
+                panic!("asked to crash (RIVET_SHELL_CRASH)");
             }
             let (tx, rx) = calloop::channel::channel::<wl::Msg>();
             let itx = tx.clone();

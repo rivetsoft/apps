@@ -8,10 +8,10 @@ use rivet_look::palette::mix;
 use rivet_look::theme::{r_lg, r_md, r_sm, selected_tile};
 
 use super::{SettingsApp, hint};
-use crate::config::Edge;
+use crate::config::{Along, DockHide, Edge};
 use crate::glyph;
-use crate::config::WsStyle;
-use crate::panels::{ITEMS, PanelCfg, ZONES, label};
+use crate::panels::{Group, ITEMS, MIN_LENGTH, Paint, PanelCfg, ZONES, ZONES_DOWN, label};
+use crate::style::Roles;
 
 /// A change to make after drawing (the lists can't change while they're drawn).
 enum Op {
@@ -23,13 +23,20 @@ enum Op {
     /// Panel; from zone and place; to zone and place (before the item now there).
     MoveItem(usize, (usize, usize), (usize, usize)),
     RemoveItem(usize, usize, usize),
+    /// Panel, zone, place: the item there becomes this one (a spacer's size is in its id).
+    SetItem(usize, usize, usize, String),
     AddItem(usize, usize, String),
+    /// Panel, item: into this group (None: out of its group), or a new one.
+    Group(usize, String, Option<usize>),
+    NewGroup(usize, String),
 }
 
 /// What's held while an item is dragged: its zone and place.
 #[derive(Clone, Copy, PartialEq)]
 struct Held(usize, usize);
 
+/// The Add Item list's width.
+const ADD_W: f32 = 330.0;
 const ROW: f32 = 38.0;
 
 fn ui_font(size: f32) -> egui::FontId {
@@ -37,24 +44,25 @@ fn ui_font(size: f32) -> egui::FontId {
 }
 
 fn place(p: &PanelCfg) -> String {
-    let edge = if p.edge == Edge::Top { "Top" } else { "Bottom" };
+    let edge = p.edge.label();
     let screen = if p.screen.is_empty() { "every screen".to_string() } else { p.screen.clone() };
     format!("{edge} · {screen}")
 }
 
 /// A row of segmented choices (like the Edge and Style switches).
-fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[(T, &str)]) {
+pub(super) fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[(T, &str)]) {
     let v = ui.visuals().clone();
     let accent = v.selection.bg_fill;
     let h = 30.0;
     let widths: Vec<f32> = choices.iter().map(|(_, t)| ui.painter().layout_no_wrap(t.to_string(), ui_font(13.0), v.text_color()).size().x + 28.0).collect();
-    let (r, _) = ui.allocate_exact_size(Vec2::new(widths.iter().sum::<f32>() + 4.0, h), Sense::hover());
+    let (r, whole) = ui.allocate_exact_size(Vec2::new(widths.iter().sum::<f32>() + 4.0, h), Sense::hover());
     ui.painter().rect_filled(r, r_md(), mix(v.extreme_bg_color, v.text_color(), 0.06));
     let mut x = r.left() + 2.0;
     for ((val, text), w) in choices.iter().zip(widths) {
         let cell = Rect::from_min_size(Pos2::new(x, r.top() + 2.0), Vec2::new(w, h - 4.0));
         x += w;
-        let resp = ui.interact(cell, ui.scope_id().with(("seg", text)), Sense::click());
+        // Named after this switch: two on a card can share a choice's name ("Left").
+        let resp = ui.interact(cell, whole.id.with(("seg", text)), Sense::click());
         let on = *value == *val;
         if on {
             ui.painter().rect_filled(cell, r_sm(), accent);
@@ -92,8 +100,16 @@ impl SettingsApp {
                 // A tiny screen with the bar along its edge.
                 let scr = Rect::from_center_size(Pos2::new(r.left() + 24.0, r.center().y), Vec2::new(26.0, 18.0));
                 ui.painter().rect_stroke(scr, 3.0, Stroke::new(1.2, v.weak_text_color()), egui::StrokeKind::Inside);
-                let bar_y = if p.edge == Edge::Top { scr.top() + 3.0 } else { scr.bottom() - 6.0 };
-                ui.painter().rect_filled(Rect::from_min_size(Pos2::new(scr.left() + 3.0, bar_y), Vec2::new(scr.width() - 6.0, 3.0)), 1.0, accent);
+                // As long as its length, where it sits along the edge.
+                let mini = PanelCfg { floating: false, ..p.clone() };
+                let inside = scr.shrink(3.0);
+                let strip = match p.edge {
+                    Edge::Top => Rect::from_min_size(inside.min, Vec2::new(inside.width(), 3.0)),
+                    Edge::Bottom => Rect::from_min_size(Pos2::new(inside.left(), inside.bottom() - 3.0), Vec2::new(inside.width(), 3.0)),
+                    Edge::Left => Rect::from_min_size(inside.min, Vec2::new(3.0, inside.height())),
+                    Edge::Right => Rect::from_min_size(Pos2::new(inside.right() - 3.0, inside.top()), Vec2::new(3.0, inside.height())),
+                };
+                ui.painter().rect_filled(mini.bar_rect(strip), 1.0, accent);
                 ui.painter().text(Pos2::new(r.left() + 46.0, r.top() + 15.0), Align2::LEFT_CENTER, format!("Panel {}", i + 1), ui_font(13.5), v.strong_text_color());
                 ui.painter().text(Pos2::new(r.left() + 46.0, r.top() + 33.0), Align2::LEFT_CENTER, place(p), ui_font(11.5), v.weak_text_color());
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -109,6 +125,15 @@ impl SettingsApp {
             }
         });
         ui.add_space(16.0);
+        if let Some(note) = self.note_panel.clone() {
+            ui.horizontal(|ui| {
+                hint(ui, &note);
+                if ui.small_button("OK").clicked() {
+                    self.note_panel = None;
+                }
+            });
+            ui.add_space(10.0);
+        }
         if n == 0 {
             hint(ui, "No panels. Add one to put the clock, the launcher and the rest along an edge of the screen.");
         } else {
@@ -117,6 +142,10 @@ impl SettingsApp {
             self.place_card(ui, sel, &mut ops);
             ui.add_space(20.0);
             self.zones(ui, sel, &mut ops);
+            ui.add_space(20.0);
+            self.groups_card(ui, sel);
+            ui.add_space(20.0);
+            self.panel_look_section(ui, sel);
         }
         for op in ops {
             match op {
@@ -135,12 +164,13 @@ impl SettingsApp {
         let ctx = ui.ctx().clone();
         let p = self.s.panels[sel].clone();
         let w = ui.available_width();
-        // Drawn as on a screen at least 1200 points wide, then shrunk to fit.
-        let virt_w = w.max(1200.0);
-        let scale = w / virt_w;
         let ph = p.height();
-        let back_h = (ph + 34.0) * scale + 10.0;
-        let (r, _) = ui.allocate_exact_size(Vec2::new(w, back_h), Sense::hover());
+        let down = p.vertical();
+        // Drawn as on a screen at least 1200 points wide, then shrunk to fit; a side panel, as
+        // on a small screen (1024 by 640) at half its size.
+        let (virt_w, scale) = if down { (1024.0f32.min(w / 0.5), 0.5) } else { (w.max(1200.0), w / w.max(1200.0)) };
+        let back_h = if down { 640.0 * scale + 10.0 } else { (ph + 34.0) * scale + 10.0 };
+        let (r, _) = ui.allocate_exact_size(Vec2::new(virt_w * scale, back_h), Sense::hover());
         let accent = ui.visuals().selection.bg_fill;
         let base = mix(accent, Color32::from_rgb(20, 22, 30), 0.72);
         // A soft gradient, like a wallpaper, under the bar.
@@ -162,8 +192,12 @@ impl SettingsApp {
         let mut acts = Vec::new();
         // The panel on its own layer, scaled down onto the preview.
         let layer = LayerId::new(ui.layer_id().order, Id::unique("shell-panel-preview"));
-        let y = if p.edge == Edge::Top { 0.0 } else { (back_h - 10.0) / scale - ph };
-        let virt = Rect::from_min_size(Pos2::new(0.0, y + 5.0 / scale), Vec2::new(virt_w, ph));
+        let y = if p.edge == Edge::Bottom { (back_h - 10.0) / scale - ph } else { 0.0 };
+        let virt = match p.edge {
+            Edge::Left => Rect::from_min_size(Pos2::new(5.0 / scale, 5.0 / scale), Vec2::new(ph, 640.0)),
+            Edge::Right => Rect::from_min_size(Pos2::new(virt_w - 5.0 / scale - ph, 5.0 / scale), Vec2::new(ph, 640.0)),
+            _ => Rect::from_min_size(Pos2::new(0.0, y + 5.0 / scale), Vec2::new(virt_w, ph)),
+        };
         let mut s = self.s.clone();
         // Shown on the screen it's for.
         s.panels = vec![p.clone()];
@@ -188,7 +222,7 @@ impl SettingsApp {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
                 ui.label("Position");
-                segmented(ui, &mut p.edge, &[(Edge::Top, "Top"), (Edge::Bottom, "Bottom")]);
+                segmented(ui, &mut p.edge, &[(Edge::Top, "Top"), (Edge::Bottom, "Bottom"), (Edge::Left, "Left"), (Edge::Right, "Right")]);
                 ui.add_space(12.0);
                 ui.label("Style");
                 segmented(ui, &mut p.floating, &[(true, "Floating"), (false, "Edge to Edge")]);
@@ -205,6 +239,34 @@ impl SettingsApp {
                     }
                 });
             });
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
+                ui.label("Length");
+                let mut len = p.length.clamp(MIN_LENGTH, 100);
+                let of = if p.vertical() { "the screen's height" } else { "the screen's width" };
+                if ui.add(egui::Slider::new(&mut len, MIN_LENGTH..=100).suffix("%")).on_hover_text(format!("How much of {of} the panel takes")).changed() {
+                    p.length = len;
+                }
+                if p.length < 100 {
+                    ui.add_space(12.0);
+                    ui.label("Placed");
+                    let names = if p.vertical() { ["Top", "Middle", "Bottom"] } else { ["Left", "Center", "Right"] };
+                    segmented(ui, &mut p.along, &[(Along::Start, names[0]), (Along::Center, names[1]), (Along::End, names[2])]);
+                }
+            });
+            ui.add_space(10.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
+                ui.label("Hide");
+                segmented(ui, &mut p.hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-hide"), (DockHide::Smart, "Smart hide")]);
+            });
+            let edge = p.edge.label().to_lowercase();
+            match p.hide {
+                DockHide::Never => {}
+                DockHide::Auto => hint(ui, &format!("The panel slides away and windows use its room; move the pointer to the screen's {edge} edge to bring it back.")),
+                DockHide::Smart => hint(ui, &format!("The panel shows while the workspace has no windows, and slides away once it has some; the screen's {edge} edge brings it back (niri, Hyprland; elsewhere like Auto-hide).")),
+            }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
@@ -245,12 +307,16 @@ impl SettingsApp {
         let panel = self.s.panels[sel].clone();
         let gap = 10.0;
         let col_w = (ui.available_width() - gap * 2.0) / 3.0;
-        let clock_format = &mut self.s.clock_format;
-        let (ws_style, ws_names, ws_hide_empty, ws_scroll) = (&mut self.s.ws_style, &mut self.s.ws_names, &mut self.s.ws_hide_empty, &mut self.s.ws_scroll);
-        let (ai_providers, ai_bar, ai_left, ai_pins) = (&mut self.s.ai_providers, &mut self.s.ai_bar, &mut self.s.ai_left, &mut self.s.ai_pins);
+        let colors = Roles::new(&self.look, &self.s);
+        let enabled_plugins = self.s.plugins.clone();
+        let settings = &mut self.s;
+        // Checks: RIVET_SHELL_ITEM_OPTS=volume opens that item's options.
+        // A search opens an item's options once.
+        let force_open = self.shot.as_ref().and_then(|_| std::env::var("RIVET_SHELL_ITEM_OPTS").ok()).or_else(|| self.open_item.take());
+        let shot_add = self.shot.is_some() && std::env::var("RIVET_SHELL_ADD_ITEM").is_ok_and(|v| v == "1");
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
-            for (z, zone) in ZONES.iter().enumerate() {
+            for (z, zone) in (if panel.vertical() { ZONES_DOWN } else { ZONES }).iter().enumerate() {
                 ui.allocate_ui_with_layout(Vec2::new(col_w, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                     ui.set_width(col_w);
                     let fr = egui::Frame::NONE.fill(v.faint_bg_color).corner_radius(r_lg()).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
@@ -277,7 +343,7 @@ impl SettingsApp {
                                     p.circle_filled(Pos2::new(r.left() + 10.0 + dx, r.center().y + dy), 1.2, v.weak_text_color());
                                 }
                                 glyph::item(p, id, Pos2::new(r.left() + 34.0, r.center().y), v.text_color(), accent);
-                                let g = crate::ui::one_line(p, &label(id), ui_font(13.0), v.text_color(), r.width() - 80.0);
+                                let g = crate::ui::one_line(p, &label(id), ui_font(13.0), v.text_color(), r.width() - 132.0);
                                 p.galley(Pos2::new(r.left() + 52.0, r.center().y - g.size().y / 2.0), g, v.text_color());
                             };
                             if me {
@@ -291,8 +357,9 @@ impl SettingsApp {
                                 continue;
                             }
                             draw(ui.painter(), r, false);
-                            let tip = ITEMS.iter().find(|x| x.0 == id).map(|x| x.2).unwrap_or("Not part of the shell yet");
-                            // Remove (and for the clock, how it shows), on the right.
+                            let size = crate::panels::spacer(id);
+                            let tip = ITEMS.iter().find(|x| x.0 == id || (size.is_some() && x.0 == "spacer")).map(|x| x.2).unwrap_or("Not part of the shell yet");
+                            // Remove, and the item's options (a gear) when it has some, on the right.
                             let xr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.center().y), Vec2::splat(24.0));
                             let x_resp = ui.interact(xr, ui.scope_id().with(("item-x", z, k)), Sense::click());
                             if resp.hovered() || x_resp.hovered() {
@@ -301,102 +368,70 @@ impl SettingsApp {
                                 }
                                 glyph::x(ui.painter(), xr.center(), 4.0, v.weak_text_color());
                             }
+                            let x_hot = x_resp.hovered();
                             if x_resp.on_hover_text("Take off the panel").clicked() {
                                 ops.push(Op::RemoveItem(sel, z, k));
                             }
-                            if id == "clock" {
-                                let gr = xr.translate(Vec2::new(-26.0, 0.0));
-                                let g_resp = ui.interact(gr, ui.scope_id().with(("item-gear", z, k)), Sense::click());
-                                if g_resp.hovered() {
-                                    ui.painter().circle_filled(gr.center(), 11.0, mix(v.panel_fill, v.text_color(), 0.12));
+                            // A spacer: its size, in the row.
+                            if let Some(n) = size {
+                                let mut to = n;
+                                let dr = Rect::from_center_size(xr.center() - Vec2::new(50.0, 0.0), Vec2::new(60.0, 22.0));
+                                // (In a child, so the rows below keep their places.)
+                                let mut at = ui.new_child(egui::UiBuilder::new().max_rect(dr).layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight)));
+                                if at.add(egui::DragValue::new(&mut to).range(crate::panels::SPACER).suffix(" pt").speed(1.0)).on_hover_text("How much room: drag, or click to type").changed() {
+                                    ops.push(Op::SetItem(sel, z, k, format!("spacer:{to}")));
                                 }
-                                glyph::gear(ui.painter(), gr.center(), v.weak_text_color());
-                                egui::Popup::menu(&g_resp).show(|ui| {
-                                    ui.label(egui::RichText::new("The clock shows").small().color(v.weak_text_color()));
-                                    for f in ["%H:%M", "%a %b %-d  %H:%M", "%A %-d %B  %H:%M", "%-I:%M %p", "%a %b %-d  %-I:%M %p", "%Y-%m-%d  %H:%M"] {
-                                        let shown = chrono::Local::now().format(f).to_string();
-                                        ui.selectable_value(clock_format, f.to_string(), shown);
-                                    }
-                                });
-                                g_resp.on_hover_text("How the clock shows");
+                                resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(tip);
+                                continue;
                             }
-                            if id == "workspaces" {
-                                let gr = xr.translate(Vec2::new(-26.0, 0.0));
-                                let g_resp = ui.interact(gr, ui.scope_id().with(("item-gear", z, k)), Sense::click());
-                                if g_resp.hovered() {
-                                    ui.painter().circle_filled(gr.center(), 11.0, mix(v.panel_fill, v.text_color(), 0.12));
+                            let has_opts = super::item_opts::has_options(id);
+                            if has_opts {
+                                let open = force_open.as_deref() == Some(id.as_str());
+                                super::item_opts::gear(ui, xr.center() - Vec2::new(26.0, 0.0), (z, k), id, settings, accent, open);
+                            }
+                            // Its group: a chip with the group's number in its colours; a ring
+                            // while the row is pointed at, to put it in one.
+                            let gr = Rect::from_center_size(xr.center() - Vec2::new(52.0, 0.0), Vec2::splat(24.0));
+                            let g_resp = ui.interact(gr, ui.scope_id().with(("item-group", z, k)), Sense::click());
+                            let mine = panel.group_of(id);
+                            match mine.and_then(|g| panel.groups.get(g).map(|x| (g, x))) {
+                                Some((g, group)) => {
+                                    let (bg, fg) = swatch(group, &colors, &v);
+                                    ui.painter().circle_filled(gr.center(), 9.5, bg);
+                                    ui.painter().circle_stroke(gr.center(), 9.5, Stroke::new(1.0, mix(bg, v.text_color(), if g_resp.hovered() { 0.6 } else { 0.25 })));
+                                    ui.painter().text(gr.center(), Align2::CENTER_CENTER, (g + 1).to_string(), ui_font(11.0), fg);
                                 }
-                                glyph::gear(ui.painter(), gr.center(), v.weak_text_color());
-                                egui::Popup::menu(&g_resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-                                    ui.set_min_width(220.0);
-                                    ui.label(egui::RichText::new("Style").small().color(v.weak_text_color()));
-                                    ui.horizontal(|ui| {
-                                        for st in WsStyle::ALL {
-                                            ui.selectable_value(ws_style, st, st.label());
-                                        }
-                                    });
-                                    ui.add_space(4.0);
-                                    if *ws_style != WsStyle::Dots {
-                                        ui.label(egui::RichText::new("Each shows its").small().color(v.weak_text_color()));
-                                        ui.horizontal(|ui| {
-                                            ui.selectable_value(ws_names, true, "Name").on_hover_text("Its name when it has one, else its number");
-                                            ui.selectable_value(ws_names, false, "Number");
-                                        });
-                                        ui.add_space(4.0);
-                                    }
-                                    ui.checkbox(ws_hide_empty, "Hide empty workspaces").on_hover_text("Workspaces with no windows are left out (the one you're on always shows)");
-                                    ui.checkbox(ws_scroll, "Scroll to switch workspaces");
-                                });
-                                g_resp.on_hover_text("How the workspaces show");
-                            }
-                            if id == "ai" {
-                                let gr = xr.translate(Vec2::new(-26.0, 0.0));
-                                let g_resp = ui.interact(gr, ui.scope_id().with(("item-gear", z, k)), Sense::click());
-                                if g_resp.hovered() {
-                                    ui.painter().circle_filled(gr.center(), 11.0, mix(v.panel_fill, v.text_color(), 0.12));
+                                None if resp.hovered() || x_hot || g_resp.hovered() => {
+                                    let col = if g_resp.hovered() { v.text_color() } else { v.weak_text_color() };
+                                    ui.painter().circle_stroke(gr.center(), 8.0, Stroke::new(1.2, col));
+                                    ui.painter().circle_filled(gr.center(), 2.0, col);
                                 }
-                                glyph::gear(ui.painter(), gr.center(), v.weak_text_color());
-                                egui::Popup::menu(&g_resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
-                                    ui.set_min_width(260.0);
-                                    ui.label(egui::RichText::new("Read the usage of").small().color(v.weak_text_color()));
-                                    for (pid, pname) in crate::ai::PROVIDERS {
-                                        let mut on = ai_providers.iter().any(|x| x == pid);
-                                        if ui.checkbox(&mut on, *pname).changed() {
-                                            if on {
-                                                ai_providers.push(pid.to_string());
-                                                // Kept in the providers' order.
-                                                ai_providers.sort_by_key(|x| crate::ai::PROVIDERS.iter().position(|p| p.0 == x));
-                                            } else {
-                                                ai_providers.retain(|x| x != pid);
-                                            }
-                                        }
-                                    }
-                                    ui.add_space(4.0);
-                                    ui.label(egui::RichText::new("With nothing pinned (pin limits in the item's popup), the panel shows").small().color(v.weak_text_color()));
-                                    egui::ComboBox::from_id_salt("ai-bar").selected_text(if ai_bar == "auto" { "The most used limit" } else { crate::ai::name(ai_bar) }).show_ui(ui, |ui| {
-                                        ui.selectable_value(ai_bar, "auto".to_string(), "The most used limit");
-                                        for (pid, pname) in crate::ai::PROVIDERS {
-                                            ui.selectable_value(ai_bar, pid.to_string(), format!("{pname}'s most used limit"));
-                                        }
-                                    });
-                                    let n = ai_pins.len();
-                                    if n > 0 && ui.button(format!("Unpin all {n}")).clicked() {
-                                        ai_pins.clear();
-                                    }
-                                    ui.add_space(4.0);
-                                    ui.horizontal(|ui| {
-                                        ui.selectable_value(ai_left, false, "Used");
-                                        ui.selectable_value(ai_left, true, "Left");
-                                    });
-                                    ui.add_space(6.0);
-                                    ui.label(
-                                        egui::RichText::new(format!("Claude, Codex and Grok use their own sign-ins. OpenRouter and DeepSeek take OPENROUTER_API_KEY and DEEPSEEK_API_KEY from the environment or {}.", crate::ai::env_file().display()))
-                                            .small()
-                                            .color(v.weak_text_color()),
-                                    );
-                                });
-                                g_resp.on_hover_text("What the AI item reads and shows");
+                                None => {}
                             }
+                            let group_tip = match mine {
+                                Some(g) => format!("In group {}", g + 1),
+                                None => "Put in a group".to_string(),
+                            };
+                            let g_resp = g_resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(group_tip);
+                            egui::Popup::menu(&g_resp).show(|ui| {
+                                ui.set_min_width(150.0);
+                                for (g, group) in panel.groups.iter().enumerate() {
+                                    let names = group.items.iter().filter(|i| *i != id).map(|i| label(i)).collect::<Vec<_>>().join(", ");
+                                    let text = if names.is_empty() { format!("Group {}", g + 1) } else { format!("Group {} · {names}", g + 1) };
+                                    if ui.selectable_label(mine == Some(g), text).clicked() {
+                                        ops.push(Op::Group(sel, id.clone(), Some(g)));
+                                        ui.close();
+                                    }
+                                }
+                                if ui.button("New group").clicked() {
+                                    ops.push(Op::NewGroup(sel, id.clone()));
+                                    ui.close();
+                                }
+                                if mine.is_some() && ui.button("Take out of its group").clicked() {
+                                    ops.push(Op::Group(sel, id.clone(), None));
+                                    ui.close();
+                                }
+                            });
                             resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(tip);
                         }
                         if panel.zones[z].is_empty() {
@@ -407,24 +442,89 @@ impl SettingsApp {
                         }
                         // Add.
                         let add = ui.add_sized([ui.available_width(), 30.0], egui::Button::new("+  Add Item"));
-                        egui::Popup::menu(&add).width(300.0).show(|ui| {
-                            ui.set_min_width(300.0);
-                            for (id, name, what) in ITEMS {
-                                let on = panel.has(id);
-                                let (r, resp) = ui.allocate_exact_size(Vec2::new(300.0, 42.0), if on { Sense::hover() } else { Sense::click() });
+                        // Checks: RIVET_SHELL_ADD_ITEM=1 opens the first zone's.
+                        let mut menu = egui::Popup::menu(&add).width(ADD_W + 16.0);
+                        if z == 0 && shot_add {
+                            menu = menu.open_memory(Some(egui::SetOpenCommand::Bool(true)));
+                        }
+                        menu.show(|ui| {
+                            ui.set_width(ADD_W + 16.0);
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            // One choice: its symbol, its name and a line about it, both kept
+                            // inside the row (the whole line shows on hover).
+                            let choice = |ui: &mut egui::Ui, id: &str, name: &str, what: &str, on: bool| -> bool {
+                                let w = ui.available_width();
+                                let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 44.0), if on { Sense::hover() } else { Sense::click() });
+                                if !ui.is_rect_visible(r) {
+                                    return false;
+                                }
                                 if !on && resp.hovered() {
                                     ui.painter().rect_filled(r, r_sm(), mix(v.panel_fill, v.text_color(), 0.09));
                                 }
                                 let col = if on { v.weak_text_color().gamma_multiply(0.6) } else { v.text_color() };
-                                glyph::item(ui.painter(), id, Pos2::new(r.left() + 18.0, r.center().y), col, if on { col } else { accent });
-                                ui.painter().text(Pos2::new(r.left() + 38.0, r.top() + 13.0), Align2::LEFT_CENTER, *name, ui_font(13.0), col);
-                                let sub = if on { "Already on this panel" } else { what };
-                                ui.painter().text(Pos2::new(r.left() + 38.0, r.top() + 30.0), Align2::LEFT_CENTER, sub, ui_font(11.5), v.weak_text_color());
-                                if !on && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                                    ops.push(Op::AddItem(sel, z, id.to_string()));
-                                    ui.close();
+                                let c = Pos2::new(r.left() + 22.0, r.center().y);
+                                ui.painter().circle_filled(c, 14.0, mix(v.panel_fill, if on { v.text_color() } else { accent }, if on { 0.05 } else { 0.14 }));
+                                glyph::item(ui.painter(), id, c, col, if on { col } else { accent });
+                                // "Added" at the row's end, for the ones on the panel.
+                                let end = if on {
+                                    let g = ui.painter().layout_no_wrap("Added".into(), ui_font(11.0), v.weak_text_color());
+                                    let at = Pos2::new(r.right() - 10.0 - g.size().x, r.center().y - g.size().y / 2.0);
+                                    let left = at.x;
+                                    ui.painter().galley(at, g, v.weak_text_color());
+                                    left - 8.0
+                                } else {
+                                    r.right() - 10.0
+                                };
+                                let x = r.left() + 46.0;
+                                let g = crate::ui::one_line(ui.painter(), name, ui_font(13.0), col, end - x);
+                                ui.painter().galley(Pos2::new(x, r.top() + 13.0 - g.size().y / 2.0), g, col);
+                                let sub = if on { v.weak_text_color().gamma_multiply(0.7) } else { v.weak_text_color() };
+                                let g = crate::ui::one_line(ui.painter(), what, ui_font(11.5), sub, end - x);
+                                let cut = g.elided;
+                                ui.painter().galley(Pos2::new(x, r.top() + 31.0 - g.size().y / 2.0), g, sub);
+                                let resp = if cut { resp.on_hover_text(what) } else { resp };
+                                !on && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+                            };
+                            let room = (ui.ctx().content_rect().height() - 120.0).clamp(180.0, 460.0);
+                            egui::ScrollArea::vertical().max_height(room).auto_shrink([false, true]).show(ui, |ui| {
+                                ui.set_width(ADD_W);
+                                // The ones that can be added first, then the ones already on the panel.
+                                let plugins = crate::plugins::found_cached();
+                                for added in [false, true] {
+                                    let mut any = false;
+                                    let mut head = |ui: &mut egui::Ui| {
+                                        if added && !std::mem::replace(&mut any, true) {
+                                            ui.add_space(6.0);
+                                            ui.label(egui::RichText::new("ON THIS PANEL").font(ui_font(10.5)).extra_letter_spacing(0.8).color(v.weak_text_color()));
+                                        }
+                                    };
+                                    for (id, name, what) in ITEMS {
+                                        // A panel takes as many spacers as wanted.
+                                        let on = *id != "spacer" && panel.has(id);
+                                        if on != added {
+                                            continue;
+                                        }
+                                        head(ui);
+                                        if choice(ui, id, name, what, on) {
+                                            ops.push(Op::AddItem(sel, z, if *id == "spacer" { "spacer:16".to_string() } else { id.to_string() }));
+                                            ui.close();
+                                        }
+                                    }
+                                    // The plugins turned on (Settings, Plugins), after the shell's own.
+                                    for m in plugins.iter().filter(|m| enabled_plugins.contains(&m.id)) {
+                                        let id = format!("plugin:{}", m.id);
+                                        if panel.has(&id) != added {
+                                            continue;
+                                        }
+                                        head(ui);
+                                        let what = if m.description.is_empty() { "A plugin" } else { m.description.as_str() };
+                                        if choice(ui, &id, &m.name, what, added) {
+                                            ops.push(Op::AddItem(sel, z, id));
+                                            ui.close();
+                                        }
+                                    }
                                 }
-                            }
+                            });
                         });
                         rows
                     });
@@ -449,7 +549,136 @@ impl SettingsApp {
             }
         });
         ui.add_space(14.0);
-        hint(ui, "Zones: Left starts at the panel's left end, Center sits in the middle, Right ends at its right end. Items that don't fit on a narrow screen are left out from the inner end. Plugins will add their own items here.");
+        if panel.vertical() {
+            hint(ui, "Zones: Top starts at the panel's top end, Middle sits in the middle, Bottom ends at its bottom end. Down a side panel a symbol sits over its number, the clock breaks into lines and the window's title runs downward; items that don't fit are left out from the inner end.");
+        } else {
+            hint(ui, "Zones: Left starts at the panel's left end, Center sits in the middle, Right ends at its right end. Items that don't fit on a narrow screen are left out from the inner end. Plugins will add their own items here.");
+        }
+    }
+}
+
+/// A group's colours as its chip and card show them: background (the panel's own when it has
+/// none) and text.
+fn swatch(g: &Group, colors: &Roles, v: &egui::Visuals) -> (Color32, Color32) {
+    let paint = |p: Paint| match p {
+        Paint::Auto => None,
+        Paint::Surface => Some(v.panel_fill),
+        Paint::Primary => Some(colors.primary),
+        Paint::Secondary => Some(colors.secondary),
+        Paint::Tertiary => Some(colors.tertiary),
+        Paint::Custom([r, g, b]) => Some(Color32::from_rgb(r, g, b)),
+    };
+    let soft = mix(v.panel_fill, v.text_color(), 0.14);
+    let bg = g.bg.map(|p| paint(p).unwrap_or(soft)).unwrap_or(v.panel_fill);
+    let solid = g.bg.is_some_and(|p| p != Paint::Auto);
+    (bg, paint(g.fg).unwrap_or(if solid { crate::ui::on(bg) } else { v.text_color() }))
+}
+
+/// A row of colour choices for a group; `none`: what leaving it to the shell is called here
+/// (and, for a background, "None" comes first).
+fn paints(ui: &mut egui::Ui, id: (usize, usize, &str), value: &mut Option<Paint>, with_none: bool, auto: &str, colors: &Roles) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        if with_none && ui.selectable_label(value.is_none(), "None").clicked() {
+            *value = None;
+        }
+        let surface = ui.visuals().panel_fill;
+        for (p, name, col) in [(Paint::Auto, auto, None), (Paint::Surface, "Surface", Some(surface)), (Paint::Primary, "Primary", Some(colors.primary)), (Paint::Secondary, "Secondary", Some(colors.secondary)), (Paint::Tertiary, "Tertiary", Some(colors.tertiary))] {
+            let on = *value == Some(p);
+            let text = egui::RichText::new(match col {
+                Some(_) => format!("●  {name}"),
+                None => name.to_string(),
+            });
+            let resp = ui.selectable_label(on, text);
+            // The dot in the colour itself.
+            if let Some(c) = col {
+                let at = Pos2::new(resp.rect.left() + ui.spacing().button_padding.x + 5.0, resp.rect.center().y);
+                ui.painter().circle_filled(at, 6.0, c);
+                ui.painter().circle_stroke(at, 6.0, Stroke::new(1.0, mix(c, ui.visuals().text_color(), 0.35)));
+            }
+            if resp.clicked() {
+                *value = Some(p);
+            }
+        }
+        let custom = matches!(value, Some(Paint::Custom(_)));
+        if ui.selectable_label(custom, "Custom").clicked() && !custom {
+            *value = Some(Paint::Custom([colors.primary.r(), colors.primary.g(), colors.primary.b()]));
+        }
+        if let Some(Paint::Custom(rgb)) = value {
+            ui.push_id(id, |ui| ui.color_edit_button_srgb(rgb));
+        }
+    });
+}
+
+impl SettingsApp {
+    /// The panel's groups: each one's items, colours, and how many show before the rest fold.
+    fn groups_card(&mut self, ui: &mut egui::Ui, sel: usize) {
+        let colors = Roles::new(&self.look, &self.s);
+        let v = ui.visuals().clone();
+        let p = &mut self.s.panels[sel];
+        p.tidy_groups();
+        super::section(ui, "Groups", &mut |ui| {
+            if p.groups.is_empty() {
+                hint(ui, "Items can be grouped: a group's items share a background and take its colours, and it can show its first few and fold the rest behind an arrow. Point at an item above and click its ring to start one.");
+                return;
+            }
+            hint(ui, "A group's items that sit side by side share its background. Click an item's numbered chip above to move it between groups.");
+            ui.add_space(4.0);
+            ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape").on_hover_text("Two groups with backgrounds, side by side on the panel, join with no gap between them");
+            let mut remove = None;
+            for (g, group) in p.groups.iter_mut().enumerate() {
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    let (bg, fg) = swatch(group, &colors, &v);
+                    let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
+                    ui.painter().circle_filled(r.center(), 10.0, bg);
+                    ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(1.0, mix(bg, v.text_color(), 0.25)));
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, (g + 1).to_string(), ui_font(11.5), fg);
+                    ui.label(egui::RichText::new(format!("Group {}", g + 1)).strong());
+                    ui.label(egui::RichText::new(group.items.iter().map(|i| label(i)).collect::<Vec<_>>().join(", ")).color(v.weak_text_color()).size(12.5));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.small_button("Ungroup").on_hover_text("The items stay on the panel").clicked() {
+                            remove = Some(g);
+                        }
+                    });
+                });
+                super::grid(ui, &format!("shell-group-{sel}-{g}"), &mut |ui| {
+                    ui.label("Background");
+                    paints(ui, (sel, g, "bg"), &mut group.bg, true, "Soft", &colors);
+                    ui.end_row();
+                    if group.bg.is_some() {
+                        ui.label("");
+                        ui.checkbox(&mut group.gradient, "Fade to a darker shade").on_hover_text("A gradient along the panel: from the background's colour to a darker one made from it");
+                        ui.end_row();
+                    }
+                    ui.label("Text");
+                    let mut fg = Some(group.fg);
+                    paints(ui, (sel, g, "fg"), &mut fg, false, "Automatic", &colors);
+                    group.fg = fg.unwrap_or_default();
+                    ui.end_row();
+                    ui.label("Shows");
+                    ui.horizontal(|ui| {
+                        let text = |n: u32| match n {
+                            0 => "All its items".to_string(),
+                            1 => "Its first item".to_string(),
+                            n => format!("Its first {n} items"),
+                        };
+                        egui::ComboBox::from_id_salt(("shell-group-show", sel, g)).selected_text(text(group.show)).width(160.0).show_ui(ui, |ui| {
+                            for n in 0..=6 {
+                                ui.selectable_value(&mut group.show, n, text(n));
+                            }
+                        });
+                        if group.show > 0 {
+                            ui.label(egui::RichText::new("the rest fold behind an arrow").color(v.weak_text_color()).size(12.0));
+                        }
+                    });
+                    ui.end_row();
+                });
+            }
+            if let Some(g) = remove {
+                p.groups.remove(g);
+            }
+        });
     }
 }
 
@@ -482,8 +711,20 @@ fn apply(panels: &mut Vec<PanelCfg>, op: Op) {
             let zone = &mut panels[p].zones[tz];
             zone.insert(tk.min(zone.len()), id);
         }
+        Op::SetItem(p, z, k, id) => {
+            if let Some(it) = panels[p].zones[z].get_mut(k) {
+                *it = id;
+            }
+        }
         Op::RemoveItem(p, z, k) => {
             panels[p].zones[z].remove(k);
+            panels[p].tidy_groups();
+        }
+        Op::Group(p, id, g) => panels[p].set_group(&id, g),
+        Op::NewGroup(p, id) => {
+            panels[p].groups.push(Group { bg: Some(Paint::Auto), ..Group::default() });
+            let g = panels[p].groups.len() - 1;
+            panels[p].set_group(&id, Some(g));
         }
         Op::AddItem(p, z, id) => panels[p].zones[z].push(id),
     }
@@ -515,5 +756,14 @@ mod tests {
         assert!(ps[0].has("system"));
         apply(&mut ps, Op::RemovePanel(0));
         assert_eq!(ps.len(), 2);
+        // A new group from one item; a second joins it; taking both off the panel ends it.
+        let mut ps = vec![PanelCfg::default()];
+        apply(&mut ps, Op::NewGroup(0, "volume".into()));
+        apply(&mut ps, Op::Group(0, "network".into(), Some(0)));
+        assert_eq!(ps[0].groups[0].items, ["volume", "network"]);
+        apply(&mut ps, Op::Group(0, "volume".into(), None));
+        let k = ps[0].zones[2].iter().position(|i| i == "network").unwrap();
+        apply(&mut ps, Op::RemoveItem(0, 2, k));
+        assert!(ps[0].groups.is_empty());
     }
 }

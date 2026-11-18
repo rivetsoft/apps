@@ -3,20 +3,30 @@
 //! shell notices the file change and follows.
 
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, channel};
+use std::sync::mpsc::Receiver;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::icons::IconTheme;
 use rivet_look::live::LiveLook;
-use rivet_look::theme::{ACCENTS, Mode, r_md, r_sm, r_xs, selected_tile};
+use rivet_look::theme::{ACCENTS, Mode, r_md, r_xs, selected_tile};
 use rivet_look::{fonts, palette};
 use rivet_xdg::launch::DesktopApp;
 
-use crate::config::{DockHide, Settings, Side};
+use crate::config::{DockHide, Settings, Side, Transition};
 use crate::ui::find_app;
 
+mod displays;
+mod item_opts;
+mod launcher;
+mod nav;
+mod look_opts;
+mod font_pick;
+mod wallpaper;
 mod idle_lock;
+mod palette_pick;
 mod panel_editor;
+mod plugins;
+mod search;
 mod window_look;
 
 pub const ICON_SVG: &str = include_str!("../data/rivet-shell.svg");
@@ -29,51 +39,47 @@ enum Page {
     Panel,
     Dock,
     Widgets,
+    Launcher,
     Notifications,
+    Displays,
     Idle,
+    Plugins,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 8] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Notifications, Page::Idle, Page::About];
+    const ALL: [Page; 11] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::About];
     fn label(self) -> &'static str {
         match self {
-            Page::Wallpaper => "Wallpaper",
+            Page::Wallpaper => "Theme",
             Page::Appearance => "Appearance",
             Page::Panel => "Panels",
             Page::Dock => "Dock",
             Page::Widgets => "Widgets",
+            Page::Launcher => "Launcher",
             Page::Notifications => "Notifications",
+            Page::Displays => "Displays",
             Page::Idle => "Idle & Lock",
+            Page::Plugins => "Plugins",
             Page::About => "About",
-        }
-    }
-    fn icons(self) -> &'static [&'static str] {
-        match self {
-            Page::Wallpaper => &["preferences-desktop-wallpaper-symbolic", "image-x-generic-symbolic", "folder-pictures-symbolic"],
-            Page::Appearance => &["preferences-desktop-appearance-symbolic", "applications-graphics-symbolic"],
-            Page::Panel => &["view-more-horizontal-symbolic", "open-menu-symbolic"],
-            Page::Dock => &["view-grid-symbolic", "view-app-grid-symbolic"],
-            Page::Widgets => &["view-compact-symbolic", "preferences-system-symbolic"],
-            Page::Notifications => &["preferences-system-notifications-symbolic", "notification-symbolic", "dialog-information-symbolic"],
-            Page::Idle => &["system-lock-screen-symbolic", "changes-prevent-symbolic", "preferences-desktop-screensaver-symbolic"],
-            Page::About => &["help-about-symbolic", "dialog-information-symbolic"],
         }
     }
 }
 
-type Thumb = (PathBuf, Option<egui::ColorImage>);
-
 pub struct SettingsApp {
     s: Settings,
+    /// The Displays page's screens and what's being changed.
+    disp: displays::State,
     look: LiveLook,
     icons: IconTheme,
     page: Page,
     apps: Vec<DesktopApp>,
-    pictures: Vec<PathBuf>,
-    thumbs: Vec<(PathBuf, Option<egui::TextureHandle>)>,
-    thumb_rx: Option<Receiver<Thumb>>,
-    listed_dir: String,
+    /// The wallpaper folder's pictures and thumbnails.
+    picker: crate::wall_pick::Picker,
+    /// The file picker's answer, on its way.
+    picking: Option<Receiver<(crate::portal::Pick, Result<Option<PathBuf>, String>)>>,
+    /// The screen pictures are being chosen for (none: every screen without its own).
+    wall_screen: String,
     add_filter: String,
     /// The screens panels can be put on (output names).
     screens: Vec<String>,
@@ -85,6 +91,14 @@ pub struct SettingsApp {
     shot: Option<rivet_kit::Shot>,
     /// Checks: a folder of demo pictures (never the person's).
     demo_dir: Option<PathBuf>,
+    /// The sidebar's search: what's typed, the result the arrow keys mark, the one last picked.
+    search: String,
+    search_sel: usize,
+    search_chosen: Option<&'static str>,
+    /// A panel item whose options to open (a search picked one of them).
+    open_item: Option<String>,
+    /// Said at the top of the Panels page (a search picked an item no panel has).
+    note_panel: Option<String>,
 }
 
 impl SettingsApp {
@@ -93,6 +107,7 @@ impl SettingsApp {
         let mut demo_dir = None;
         if shot.is_some() {
             crate::config::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
+            rivet_media::thumbs::NO_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
             s = Settings::default();
             let d = std::env::temp_dir().join(format!("rivet-shell-demo-{}", std::process::id()));
             let _ = std::fs::create_dir_all(&d);
@@ -115,13 +130,64 @@ impl SettingsApp {
             if std::env::var("RIVET_SHELL_PANELS").as_deref() == Ok("2") {
                 s.panels.push(crate::panels::PanelCfg { screen: "HDMI-A-1".into(), ..crate::panels::PanelCfg::new_bottom() });
             }
+            // RIVET_SHELL_SPACER=40: a spacer that size after the first panel's first item.
+            if let (Some(n), Some(p)) = (std::env::var("RIVET_SHELL_SPACER").ok().and_then(|n| n.parse::<u32>().ok()), s.panels.first_mut()) {
+                p.zones[0].insert(1.min(p.zones[0].len()), format!("spacer:{n}"));
+            }
+            // RIVET_SHELL_SPACE=20:0: the first panel's offset from its edge, and its room before windows.
+            if let (Some((o, g)), Some(p)) = (std::env::var("RIVET_SHELL_SPACE").ok().and_then(|v| v.split_once(':').map(|(o, g)| (o.parse().ok(), g.parse().ok()))), s.panels.first_mut()) {
+                (p.offset, p.gap) = (o, g);
+            }
+            // RIVET_SHELL_FONTS=base:panel:launcher sets the three fonts (a part left empty follows).
+            if let Ok(f) = std::env::var("RIVET_SHELL_FONTS") {
+                let mut it = f.split(':').map(str::to_string);
+                (s.font, s.launcher_font) = (it.next().unwrap_or_default(), { let p = it.next().unwrap_or_default(); if let Some(first) = s.panels.first_mut() { first.font = p; } it.next().unwrap_or_default() });
+            }
+            // RIVET_SHELL_SIZE=48:10: the first panel's thickness, and the room between its items.
+            if let (Some((a, b)), Some(p)) = (std::env::var("RIVET_SHELL_SIZE").ok().and_then(|v| v.split_once(':').map(|(a, b)| (a.parse().ok(), b.parse().ok()))), s.panels.first_mut()) {
+                (p.size, p.spacing) = (a, b);
+            }
+            // RIVET_SHELL_EDGE=left, RIVET_SHELL_LEN=60, RIVET_SHELL_HIDE=auto shape the first panel.
+            if let (Ok(e), Some(p)) = (std::env::var("RIVET_SHELL_EDGE"), s.panels.first_mut()) {
+                p.edge = crate::config::Edge::from(&e);
+            }
+            if let (Ok(l), Some(p)) = (std::env::var("RIVET_SHELL_LEN"), s.panels.first_mut()) {
+                p.length = l.parse().unwrap_or(100);
+            }
+            if let (Ok(h), Some(p)) = (std::env::var("RIVET_SHELL_HIDE"), s.panels.first_mut()) {
+                p.hide = DockHide::from(&h);
+            }
             demo_dir = Some(d);
+            // RIVET_SHELL_TEXT=15 sets the text size.
+            if let Some(pt) = std::env::var("RIVET_SHELL_TEXT").ok().and_then(|t| t.parse().ok()) {
+                s.text_size = pt;
+            }
+            // RIVET_SHELL_ITEM_OPTS=ID opens an item's options; it's put on the panel first.
+            if let Ok(id) = std::env::var("RIVET_SHELL_ITEM_OPTS")
+                && let Some(p) = s.panels.first_mut()
+                && !p.has(&id)
+            {
+                p.zones[2].insert(0, id);
+            }
+            // Checks: a chosen palette (its file isn't written in checks; `rivet-shell palette` does that).
+            if let Ok(p) = std::env::var("RIVET_SHELL_PALETTE") {
+                s.choose_palette(&p);
+            }
             match std::env::var("RIVET_SHELL_THEME").as_deref() {
                 Ok("light") => (s.theme, s.follow_desktop_colors) = (Mode::Light, false),
                 Ok("dark") => (s.theme, s.follow_desktop_colors) = (Mode::Dark, false),
                 _ => {}
             }
+            // Checks: groups on the first panel (as in its line of the settings file).
+            if let Ok(g) = std::env::var("RIVET_SHELL_GROUPS") {
+                s.panels[0].groups = g.split(';').map(crate::panels::Group::parse).collect();
+            }
+            // Checks: a look for the panels and dock (as in the settings file).
+            if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
+                s.look = crate::style::Style::parse(&l, '=', ';');
+            }
         }
+        let shot_mode = shot.is_some();
         let page = match std::env::var("RIVET_SHELL_PAGE").as_deref() {
             Ok(p) => Page::ALL.into_iter().find(|x| x.label().eq_ignore_ascii_case(p)).unwrap_or_default(),
             _ => Page::default(),
@@ -135,10 +201,9 @@ impl SettingsApp {
             icons: IconTheme::new(&rivet_look::icons::detect_system_theme()),
             page,
             apps,
-            pictures: Vec::new(),
-            thumbs: Vec::new(),
-            thumb_rx: None,
-            listed_dir: String::new(),
+            picker: Default::default(),
+            picking: None,
+            wall_screen: std::env::var("RIVET_SHELL_WALL_SCREEN").ok().filter(|_| shot.is_some()).unwrap_or_default(),
             add_filter: String::new(),
             screens: if shot.is_some() { vec!["DP-1".into(), "HDMI-A-1".into()] } else { crate::sys::screens(crate::sys::Compositor::detect()) },
             panel_sel: 0,
@@ -147,53 +212,19 @@ impl SettingsApp {
             app_icon: None,
             shot: shot.map(rivet_kit::Shot::new),
             demo_dir,
+            search: std::env::var("RIVET_SHELL_SEARCH").ok().filter(|_| shot_mode).unwrap_or_default(),
+            search_sel: 0,
+            search_chosen: None,
+            open_item: None,
+            note_panel: None,
+            disp: Default::default(),
         }
-    }
-
-    fn icon(&mut self, ctx: &egui::Context, names: &[&str], px: f32) -> Option<egui::TextureHandle> {
-        self.icons.texture(ctx, names, (px * ctx.pixels_per_point()).round() as u32)
     }
 
     fn app_texture(&mut self, ctx: &egui::Context, a: &DesktopApp, px: f32) -> Option<egui::TextureHandle> {
         let size = (px * ctx.pixels_per_point()).round() as u32;
         let own = if a.icon.starts_with('/') { self.icons.texture_from_path(ctx, std::path::Path::new(&a.icon), size) } else if a.icon.is_empty() { None } else { self.icons.texture(ctx, &[a.icon.as_str()], size) };
         own.or_else(|| self.icons.texture(ctx, &["application-x-executable"], size))
-    }
-
-    /// The wallpaper folder's pictures, their thumbnails made on a thread.
-    fn list_pictures(&mut self) {
-        if self.listed_dir == self.s.wallpaper_dir {
-            return;
-        }
-        self.listed_dir = self.s.wallpaper_dir.clone();
-        self.pictures = crate::wall::pictures(std::path::Path::new(&self.s.wallpaper_dir));
-        self.pictures.truncate(400);
-        self.thumbs = self.pictures.iter().map(|p| (p.clone(), None)).collect();
-        let (tx, rx) = channel();
-        let list = self.pictures.clone();
-        std::thread::spawn(move || {
-            for p in list {
-                let t = crate::wall::thumbnail(&p, 320);
-                if tx.send((p, t)).is_err() {
-                    return;
-                }
-            }
-        });
-        self.thumb_rx = Some(rx);
-    }
-
-    fn take_thumbs(&mut self, ctx: &egui::Context) {
-        let Some(rx) = &self.thumb_rx else { return };
-        let mut got = false;
-        while let Ok((p, img)) = rx.try_recv() {
-            got = true;
-            if let (Some(img), Some(slot)) = (img, self.thumbs.iter_mut().find(|(q, _)| *q == p)) {
-                slot.1 = Some(ctx.load_texture(format!("thumb-{}", p.display()), img, egui::TextureOptions::LINEAR));
-            }
-        }
-        if got || self.thumbs.iter().any(|t| t.1.is_none()) {
-            ctx.request_repaint_after(std::time::Duration::from_millis(60));
-        }
     }
 }
 
@@ -209,10 +240,11 @@ fn section(ui: &mut egui::Ui, title: &str, body: &mut dyn FnMut(&mut egui::Ui)) 
     let fill = ui.visuals().faint_bg_color;
     ui.label(egui::RichText::new(title).strong().size(14.5));
     ui.add_space(4.0);
-    egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 16)).show(ui, |ui| {
+    let fr = egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 16)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         body(ui);
     });
+    search::mark(ui, title, fr.response.rect);
     ui.add_space(22.0);
 }
 
@@ -249,7 +281,7 @@ impl eframe::App for SettingsApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let live = self.shot.is_none();
-        self.look.set_fonts(&ctx, "", "", "");
+        self.look.set_fonts(&ctx, &self.s.font, "", "");
         self.look.frame(&ctx, &self.s.choice(), live);
         let v = ctx.global_style().visuals.clone();
         let accent = self.look.accent(&self.s.choice());
@@ -258,46 +290,80 @@ impl eframe::App for SettingsApp {
             self.app_icon = rivet_look::icons::render_svg(ICON_SVG.as_bytes(), (96.0 * ctx.pixels_per_point()) as u32).map(|img| ctx.load_texture("rivet-shell-icon", img, egui::TextureOptions::LINEAR));
         }
         let before = self.s.clone();
-        let tab_icons: Vec<Option<egui::TextureHandle>> = Page::ALL.iter().map(|p| self.icon(&ctx, p.icons(), 16.0)).collect();
         let side_fill = palette::mix(v.window_fill, v.panel_fill, 0.6);
-        egui::Panel::left("shell-settings-pages").show_separator_line(false).resizable(false).exact_size(190.0).frame(egui::Frame::NONE.fill(side_fill).inner_margin(egui::Margin { left: 10, right: 10, top: 14, bottom: 8 })).show(ui, |ui| {
+        egui::Panel::left("shell-settings-pages").show_separator_line(false).resizable(false).exact_size(230.0).frame(egui::Frame::NONE.fill(side_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 14, bottom: 8 })).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 2.0;
-            for (i, p) in Page::ALL.iter().enumerate() {
-                if *p == Page::About {
-                    ui.add_space(10.0);
+            let field = search::field(ui, &mut self.search);
+            ui.add_space(10.0);
+            if !self.search.trim().is_empty() {
+                if field.changed() {
+                    self.search_sel = 0;
                 }
-                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
-                let sel = *p == self.page;
-                if sel {
-                    let (fill, stroke) = selected_tile(&v, side_fill);
-                    ui.painter().rect_filled(r, r_sm(), fill);
-                    ui.painter().rect_stroke(r, r_sm(), stroke, egui::StrokeKind::Inside);
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
+                let hits = search::find(&self.search);
+                egui::ScrollArea::vertical().id_salt("shell-search-results").auto_shrink([false, false]).show(ui, |ui| {
+                    if let Some(en) = search::results(ui, &hits, &mut self.search_sel, field.has_focus() || field.lost_focus(), self.search_chosen) {
+                        self.go(ui.ctx(), en);
+                    }
+                });
+                return;
+            }
+            self.search_chosen = None;
+            for (name, pages) in nav::GROUPS {
+                // A small heading over each group; About sits apart.
+                if name.is_empty() {
+                    ui.add_space(14.0);
+                } else {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
+                    ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
                 }
-                let fg = if sel { v.strong_text_color() } else { v.text_color() };
-                if let Some(t) = &tab_icons[i] {
-                    rivet_look::theme::paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(r.left() + 20.0, r.center().y), Vec2::splat(16.0)), fg);
-                }
-                ui.painter().text(Pos2::new(r.left() + 40.0, r.center().y), egui::Align2::LEFT_CENTER, p.label(), fonts::ui_font(13.5), fg);
-                if resp.clicked() {
-                    self.page = *p;
+                for p in *pages {
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+                    let sel = *p == self.page;
+                    if sel {
+                        let (fill, stroke) = selected_tile(&v, side_fill);
+                        ui.painter().rect_filled(r, r_md(), fill);
+                        ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
+                    } else if resp.hovered() {
+                        ui.painter().rect_filled(r, r_md(), palette::mix(side_fill, v.text_color(), 0.07));
+                    }
+                    // The symbol in the accent colour; on the chosen page, in the text's.
+                    let fg = if sel { v.strong_text_color() } else { v.text_color() };
+                    nav::icon(ui.painter(), *p, Pos2::new(r.left() + 21.0, r.center().y), if sel { fg } else { accent });
+                    ui.painter().text(Pos2::new(r.left() + 42.0, r.center().y), egui::Align2::LEFT_CENTER, p.label(), fonts::ui_font(13.5), fg);
+                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        self.page = *p;
+                    }
                 }
             }
         });
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(v.panel_fill)).show(ui, |ui| {
-            egui::ScrollArea::vertical().id_salt(("shell-page", self.page as u8)).auto_shrink([false, false]).show(ui, |ui| {
+            // Checks: RIVET_SHELL_SCROLL=600 shows the page scrolled that far down.
+            let mut area = egui::ScrollArea::vertical().id_salt(("shell-page", self.page as u8)).auto_shrink([false, false]);
+            if let Some(y) = self.shot.as_ref().and_then(|_| std::env::var("RIVET_SHELL_SCROLL").ok()).and_then(|y| y.parse::<f32>().ok()) {
+                area = area.vertical_scroll_offset(y);
+            }
+            area.show(ui, |ui| {
                 egui::Frame::NONE.inner_margin(egui::Margin { left: 26, right: 22, top: 18, bottom: 22 }).show(ui, |ui| {
                     ui.set_width(ui.available_width().max(380.0));
                     ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
                     ui.spacing_mut().button_padding = Vec2::new(10.0, 4.0);
                     if self.page != Page::About {
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(self.page.label()).size(20.0).strong());
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 3.0;
+                                ui.label(egui::RichText::new(self.page.label()).size(21.0).strong());
+                                ui.label(egui::RichText::new(nav::about(self.page)).size(12.5).color(v.weak_text_color()));
+                            });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 let running = self.shot.is_some() || crate::ipc::running();
                                 if running {
-                                    ui.label(egui::RichText::new("● Shell running").small().color(rivet_look::theme::status(ui.ctx()).success));
+                                    // A small pill: a dot and the word.
+                                    let ok = rivet_look::theme::status(ui.ctx()).success;
+                                    let g = ui.painter().layout_no_wrap("Shell running".into(), fonts::ui_font(11.5), ok);
+                                    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x + 30.0, 24.0), Sense::hover());
+                                    ui.painter().rect_filled(r, 12.0, palette::mix(v.panel_fill, ok, 0.13));
+                                    ui.painter().circle_filled(Pos2::new(r.left() + 12.0, r.center().y), 3.0, ok);
+                                    ui.painter().galley(Pos2::new(r.left() + 20.0, r.center().y - g.size().y / 2.0), g, ok);
                                 } else if ui.button("Start the Shell").on_hover_text("Run rivet-shell in this session").clicked()
                                     && let Ok(exe) = std::env::current_exe()
                                 {
@@ -305,7 +371,7 @@ impl eframe::App for SettingsApp {
                                 }
                             });
                         });
-                        ui.add_space(14.0);
+                        ui.add_space(18.0);
                     }
                     match self.page {
                         Page::Wallpaper => self.wallpaper_page(ui, accent),
@@ -313,15 +379,26 @@ impl eframe::App for SettingsApp {
                         Page::Panel => self.panel_page(ui),
                         Page::Dock => self.dock_page(ui),
                         Page::Widgets => self.widgets_page(ui),
+                        Page::Launcher => self.launcher_page(ui),
                         Page::Notifications => self.notifications_page(ui),
+                        Page::Displays => self.displays_page(ui, accent),
                         Page::Idle => self.idle_page(ui),
+                        Page::Plugins => self.plugins_page(ui),
                         Page::About => self.about_page(ui),
                     }
                 });
             });
         });
+        // One source of colours at a time: the wallpaper's, turned on, ends a chosen palette.
+        if self.s.matugen && !before.matugen {
+            self.s.palette.clear();
+        }
         if self.s != before {
             self.s.save();
+            // The shell looks for changes twice a second; tell it, so a change shows at once.
+            if self.shot.is_none() {
+                let _ = crate::ipc::send("changed");
+            }
         }
         if let Some(shot) = self.shot.as_mut() {
             shot.step(&ctx);
@@ -330,69 +407,24 @@ impl eframe::App for SettingsApp {
 }
 
 impl SettingsApp {
+    /// Open a search result: its page, its card (outlined a moment), or its panel item's options.
+    fn go(&mut self, ctx: &egui::Context, en: &'static search::Entry) {
+        self.page = en.page;
+        self.search_chosen = Some(en.title);
+        self.note_panel = None;
+        if let Some(id) = en.item {
+            if let Some(i) = self.s.panels.iter().position(|p| p.has(id)) {
+                self.panel_sel = i;
+                self.open_item = Some(id.to_string());
+            } else {
+                self.note_panel = Some(format!("{} isn't on a panel. Add it with \"Add Item\" to change how it shows.", crate::panels::label(id)));
+            }
+        } else if !en.section.is_empty() {
+            search::reveal(ctx, en.section);
+        }
+    }
+
     fn wallpaper_page(&mut self, ui: &mut egui::Ui, accent: Color32) {
-        let ctx = ui.ctx().clone();
-        self.list_pictures();
-        self.take_thumbs(&ctx);
-        section(ui, "Picture", &mut |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Folder");
-                let r = ui.add(egui::TextEdit::singleline(&mut self.s.wallpaper_dir).desired_width(ui.available_width() - 80.0));
-                if r.lost_focus() {
-                    self.listed_dir.clear();
-                }
-                if ui.button("Look").clicked() {
-                    self.listed_dir.clear();
-                }
-            });
-            ui.add_space(10.0);
-            if self.thumbs.is_empty() {
-                hint(ui, "No pictures in this folder (JPEG, PNG or WebP).");
-            }
-            let w = ui.available_width();
-            let cols = ((w + 10.0) / 170.0).floor().max(1.0) as usize;
-            let tw = (w - (cols as f32 - 1.0) * 10.0) / cols as f32;
-            let th = tw * 0.62;
-            let mut pick = None;
-            egui::Grid::new("shell-walls").spacing([10.0, 10.0]).show(ui, |ui| {
-                for (k, (p, t)) in self.thumbs.iter().enumerate() {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(tw, th), Sense::click());
-                    let on = self.s.wallpaper == p.to_string_lossy();
-                    match t {
-                        Some(t) => {
-                            // Cover the cell, cropping the picture's longer side.
-                            let ts = t.size_vec2();
-                            let (ax, ay) = (r.width() / r.height(), ts.x / ts.y);
-                            let uv = if ay > ax { let f = ax / ay; Rect::from_min_max(Pos2::new((1.0 - f) / 2.0, 0.0), Pos2::new((1.0 + f) / 2.0, 1.0)) } else { let f = ay / ax; Rect::from_min_max(Pos2::new(0.0, (1.0 - f) / 2.0), Pos2::new(1.0, (1.0 + f) / 2.0)) };
-                            ui.painter().add(egui::epaint::RectShape::filled(r, r_md(), Color32::WHITE).with_texture(t.id(), uv));
-                        }
-                        None => {
-                            ui.painter().rect_filled(r, r_md(), ui.visuals().faint_bg_color);
-                        }
-                    }
-                    if on {
-                        ui.painter().rect_stroke(r, r_md(), Stroke::new(3.0, accent), egui::StrokeKind::Inside);
-                    } else if resp.hovered() {
-                        ui.painter().rect_stroke(r, r_md(), Stroke::new(2.0, ui.visuals().text_color().gamma_multiply(0.5)), egui::StrokeKind::Inside);
-                    }
-                    if resp.on_hover_text(p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()).clicked() {
-                        pick = Some(p.clone());
-                    }
-                    if (k + 1) % cols == 0 {
-                        ui.end_row();
-                    }
-                }
-            });
-            if let Some(p) = pick {
-                self.s.wallpaper = p.to_string_lossy().into_owned();
-            }
-            if !self.s.wallpaper.is_empty() {
-                ui.add_space(8.0);
-                if ui.button("No Wallpaper (a plain background)").clicked() {
-                    self.s.wallpaper.clear();
-                }
-            }
-        });
         section(ui, "Colors from the wallpaper", &mut |ui| {
             ui.checkbox(&mut self.s.matugen, "Make the desktop's colors from the wallpaper (matugen)");
             hint(ui, "When the wallpaper changes, matugen makes a color scheme from it, and every app that follows matugen (the Rivet apps included) changes with it.");
@@ -413,6 +445,27 @@ impl SettingsApp {
                         }
                     });
                     ui.end_row();
+                    ui.label("Contrast");
+                    ui.horizontal(|ui| {
+                        ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).on_hover_text("Lower for softer colors, higher for stronger ones; 0 is the scheme as designed");
+                        if self.s.matugen_contrast != 0.0 && ui.small_button("Reset").clicked() {
+                            self.s.matugen_contrast = 0.0;
+                        }
+                    });
+                    ui.end_row();
+                    // With pictures per screen: whose picture the colors come from.
+                    if !self.s.wallpaper_screens.is_empty() || self.screens.len() > 1 {
+                        ui.label("Made from");
+                        let shown = if self.s.matugen_screen.is_empty() { "The shared picture".to_string() } else { format!("{}'s picture", self.s.matugen_screen) };
+                        egui::ComboBox::from_id_salt("shell-matugen-screen").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.s.matugen_screen, String::new(), "The shared picture");
+                            for name in self.wall_screens() {
+                                let own = self.s.has_own_wallpaper(&name);
+                                ui.selectable_value(&mut self.s.matugen_screen, name.clone(), if own { format!("{name}'s picture") } else { format!("{name} (shows the shared picture)") });
+                            }
+                        });
+                        ui.end_row();
+                    }
                 });
                 ui.add_space(8.0);
                 if ui.button("Add Rivet's Colors to matugen").on_hover_text("Adds Rivet's template to matugen's config, so matugen writes the color file Rivet apps read").clicked() {
@@ -426,6 +479,31 @@ impl SettingsApp {
                 }
             });
         });
+        section(ui, "Transition", &mut |ui| {
+            grid(ui, "shell-wall-transition", &mut |ui| {
+                ui.label("A new picture");
+                let choices: Vec<(Transition, &str)> = Transition::ALL.iter().map(|t| (*t, t.label())).collect();
+                panel_editor::segmented(ui, &mut self.s.wall_transition, &choices);
+                ui.end_row();
+                ui.label("Takes");
+                ui.add_enabled_ui(self.s.wall_transition != Transition::None, |ui| {
+                    let mut secs = self.s.wall_transition_ms as f32 / 1000.0;
+                    if ui.add(egui::Slider::new(&mut secs, 0.2..=3.0).step_by(0.1).suffix(" s")).changed() {
+                        self.s.wall_transition_ms = (secs * 1000.0).round() as u32;
+                    }
+                });
+                ui.end_row();
+            });
+            ui.add_space(6.0);
+            hint(ui, match self.s.wall_transition {
+                Transition::None => "The new picture replaces the old at once.",
+                Transition::Fade => "The new picture fades in over the old.",
+                Transition::Wipe => "A soft edge sweeps across, left to right.",
+                Transition::Slide => "The new picture comes in from the right, pushing the old one out.",
+                Transition::Grow => "The new picture opens from the middle in a circle.",
+            });
+        });
+        self.picture_section(ui, accent);
     }
 
     fn appearance_page(&mut self, ui: &mut egui::Ui) {
@@ -461,6 +539,14 @@ impl SettingsApp {
                     });
                 });
                 ui.end_row();
+                ui.label("Font");
+                ui.horizontal(|ui| {
+                    font_pick::font_pick(ui, "shell-font", &mut self.s.font, &format!("Like the desktop ({})", font_pick::desktop_name()));
+                    if !self.s.font.is_empty() && ui.small_button("Reset").clicked() {
+                        self.s.font.clear();
+                    }
+                });
+                ui.end_row();
                 ui.label("Text size");
                 ui.horizontal(|ui| {
                     if ui.selectable_label(self.s.text_size == 0.0, "Like the desktop").clicked() {
@@ -475,6 +561,8 @@ impl SettingsApp {
                 ui.end_row();
             });
         });
+        self.palette_section(ui);
+        self.look_section(ui);
         self.window_look_section(ui);
     }
 
@@ -560,6 +648,7 @@ impl SettingsApp {
                 ui.checkbox(&mut self.s.dock_open_apps, "Open apps that aren't pinned show too (right-click one to pin it)");
             });
         });
+        self.dock_look_section(ui);
         let pinned: Vec<(String, Option<DesktopApp>)> = self.s.dock_apps.iter().map(|id| (id.clone(), find_app(&self.apps, id).cloned())).collect();
         let icons: Vec<Option<egui::TextureHandle>> = pinned.iter().map(|(_, a)| a.as_ref().and_then(|a| self.app_texture(&ctx, a, 24.0))).collect();
         let mut op: Option<(usize, i32)> = None;
@@ -644,8 +733,12 @@ impl SettingsApp {
             ui.label(egui::RichText::new("Rivet Shell").size(22.0).strong());
             ui.label(egui::RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(weak));
             ui.add_space(14.0);
-            ui.set_max_width(420.0);
-            ui.add(egui::Label::new("A panel, dock, desktop widgets and wallpaper for Wayland compositors with the layer-shell protocol, in the Rivet apps' look.").halign(egui::Align::Center).wrap());
+            // The description in a column of its own, 420 points wide, in the page's middle.
+            let w = ui.available_width().min(420.0);
+            ui.allocate_ui_with_layout(Vec2::new(w, 0.0), egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.set_width(w);
+                ui.add(egui::Label::new("A panel, dock, desktop widgets and wallpaper for Wayland compositors with the layer-shell protocol, in the Rivet apps' look.").halign(egui::Align::Center).wrap());
+            });
             ui.add_space(10.0);
             let keys = egui::RichText::new("Bind a key to open the launcher:  rivet-shell msg launcher").font(fonts::ui_font(12.0)).color(weak);
             ui.label(keys);

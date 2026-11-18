@@ -5,31 +5,68 @@
 use chrono::Local;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
-use rivet_look::theme::r_lg;
 
-use crate::config::{Edge, WsStyle};
+use crate::config::{Edge, Show, WsStyle};
 use crate::glyph;
-use crate::panels::{BAR, MARGIN, PanelCfg};
+use crate::panels::PanelCfg;
 use crate::sys::Net;
-use crate::ui::{Act, Kit, Model, Popup, PopupKind, card, hover_fill, on, one_line, ui_font};
+use crate::style;
+use crate::ui::{Act, Kit, Model, Popup, PopupKind, on, one_line, ui_font};
 
-const GAP: f32 = 2.0;
+#[cfg(test)]
+const GAP: f32 = crate::panels::SPACING;
+/// An item with only a symbol.
+const SLOT: f32 = 30.0;
+/// Inside an item's ends, and between its symbol and its text.
+const PAD: f32 = 8.0;
+const ICON_GAP: f32 = 6.0;
+/// How wide the symbols are drawn (the battery, with its tip, a little wider).
+const ICON: f32 = 16.0;
+const BATT_ICON: f32 = 20.0;
+/// The launcher's icon, when it's a picture (the system's logo, or a custom one).
+const LAUNCHER_ICON: f32 = 20.0;
 /// Between zones.
 const ZONE_GAP: f32 = 14.0;
 /// The narrowest a squeezed item (window title, what's playing) gets before it's left out.
 const MIN_FLEX: f32 = 70.0;
+/// Down a side panel: a symbol with its number under it, and the smaller text used there.
+const STACK: f32 = 40.0;
+const SMALL: f32 = 10.5;
 
 /// What drawing an item needs.
 struct Bar<'a, 'b> {
     p: egui::Painter,
     v: egui::Visuals,
     accent: Color32,
+    /// Hover fills' corner radius, with the panel's corners.
+    hover_r: f32,
     cy: f32,
+    /// Down a side panel: items stack, around `cx`.
+    vert: bool,
+    cx: f32,
     idx: usize,
     /// Where this panel's popups open: its edge, and how far from it.
     from: (Edge, f32),
+    /// Its popups open joined to it.
+    attach: bool,
     m: &'a Model<'b>,
     acts: Vec<Act>,
+    /// The tray's icons, by item (made before drawing, as they need the surface's kit).
+    tray: Vec<(String, Option<egui::TextureHandle>)>,
+    /// The launcher's icon, when it isn't the grid (likewise).
+    launcher: Option<egui::TextureHandle>,
+    /// The dock item's apps and icons (likewise).
+    dock: crate::dock_ui::Icons,
+    /// Plugins' icons, by plugin (likewise).
+    plug_icons: Vec<(String, Option<egui::TextureHandle>)>,
+    /// The theme's colours, for groups painted in them, and a group's corner radius.
+    roles: style::Roles,
+    /// The theme's surface colour (the panel's own fill may be tinted or another colour).
+    surface: Color32,
+    group_r: f32,
+    /// Between items, and how thick an item's cell is (the bar less 4 either side).
+    gap: f32,
+    cell: f32,
 }
 
 impl Bar<'_, '_> {
@@ -39,9 +76,15 @@ impl Bar<'_, '_> {
     fn weak(&self) -> Color32 {
         self.v.weak_text_color()
     }
+    /// Where along the panel an item is: what its popup opens beside.
+    fn at(&self, r: Rect) -> f32 {
+        if self.vert { r.center().y } else { r.center().x }
+    }
     fn popup(&self, kind: PopupKind, x: f32) -> Act {
         let mut p = Popup::at(kind, x, self.m.output);
         p.from = Some(self.from);
+        p.attach = self.attach.then_some(self.idx);
+        p.panel = Some(self.idx);
         Act::Open(p)
     }
     fn control(&self, x: f32) -> Act {
@@ -51,7 +94,7 @@ impl Bar<'_, '_> {
     fn button(&self, ui: &mut egui::Ui, r: Rect, id: &str) -> egui::Response {
         let resp = ui.interact(r, egui::Id::unique(("panel", self.idx, id)), Sense::click());
         if resp.hovered() {
-            hover_fill(ui.painter(), r, &self.v);
+            ui.painter().rect_filled(r, self.hover_r, mix(self.v.panel_fill, self.v.text_color(), 0.09));
         }
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     }
@@ -64,42 +107,120 @@ impl Bar<'_, '_> {
 fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     let st = b.m.status;
     let s = b.m.s;
+    if let Some(pid) = id.strip_prefix("plugin:") {
+        return plugin_want(b, pid);
+    }
+    // Empty room, along the panel either way (less the gap either side of every item).
+    if let Some(n) = crate::panels::spacer(id) {
+        return Some(((n as f32 - b.gap * 2.0).max(0.0), false));
+    }
+    if b.vert {
+        return want_down(b, id);
+    }
     Some(match id {
-        "launcher" | "network" | "quick-settings" | "power" => (30.0, false),
-        "bluetooth" => (if st.bluetooth.is_some() { 30.0 } else { return None }, false),
+        "launcher" | "network" | "quick-settings" | "power" => (SLOT, false),
+        "bluetooth" => (if st.bluetooth.is_some() { SLOT } else { return None }, false),
         "ai" => {
             let parts = ai_parts(b);
-            (if parts.is_empty() { 30.0 } else { parts.iter().map(|p| ai_part_w(b, p)).sum::<f32>() + AI_SEP * (parts.len() - 1) as f32 + 16.0 }, false)
+            (if parts.is_empty() { SLOT } else { parts.iter().map(|p| ai_part_w(b, p)).sum::<f32>() + AI_SEP * (parts.len() - 1) as f32 + PAD * 2.0 }, false)
         }
-        "notifications" => (if b.m.extra.notifying { 30.0 } else { return None }, false),
+        "notifications" => (if b.m.extra.notifying { SLOT } else { return None }, false),
+        "dock" => (crate::dock_ui::width(&b.dock)?, false),
+        "tray" => {
+            let n = crate::tray_ui::shown(b.m).len();
+            (if n == 0 { return None } else { n as f32 * crate::tray_ui::SLOT + 4.0 }, false)
+        }
         "workspaces" => {
             let ws = workspaces_here(b);
             if ws.is_empty() {
                 return None;
             }
             let gap = ws_gap(s.ws_style);
-            (ws.iter().map(|w| ws_w(b, &ws_label(b, w), w.active) + gap).sum::<f32>() - gap, false)
+            (ws.iter().map(|w| ws_w(b, &ws_label(b, w), w.active) + gap).sum::<f32>() - gap + WS_PAD * 2.0, false)
         }
         "window-title" => {
             if st.window.is_empty() {
                 return None;
             }
-            (b.text_w(st.window.clone()).min(360.0), true)
+            (b.text_w(st.window.clone()).min(360.0) + PAD * 2.0, true)
         }
         "clock" => (b.p.layout_no_wrap(Local::now().format(&s.clock_format).to_string(), ui_font(13.5), b.fg()).size().x + 22.0, false),
         "media" => {
             let md = st.media.as_ref()?;
-            (b.text_w(media_text(md)).min(230.0) + 34.0, true)
+            (b.text_w(media_text(md)).min(230.0) + PAD * 2.0 + MEDIA_ICON + ICON_GAP, true)
         }
-        "system" => (b.text_w(system_text(b)) + 20.0, false),
-        "volume" => {
-            let (v, muted) = st.volume?;
-            (b.text_w(if muted { "Muted".into() } else { format!("{v}%") }) + 38.0, false)
+        "system" => (b.text_w(system_text(b)) + PAD * 2.0 + ICON + ICON_GAP, false),
+        "volume" => (level_w(b, s.vol_show, ICON, &volume_text(st.volume?, s.vol_show, false)), false),
+        "brightness" => (level_w(b, s.bright_show, ICON, &format!("{}%", st.brightness?)), false),
+        "battery" => {
+            let (pct, charging) = st.battery?;
+            if s.batt_hide_full && charging && pct >= 99 {
+                return None;
+            }
+            (level_w(b, s.batt_show, BATT_ICON, &format!("{pct}%")), false)
         }
-        "brightness" => (b.text_w(format!("{}%", st.brightness?)) + 38.0, false),
-        "battery" => (b.text_w(format!("{}%", st.battery?.0)) + 40.0, false),
         _ => return None,
     })
+}
+
+/// How tall an item wants to be down a side panel, where there's only the bar's width: symbols
+/// stack over their numbers, the clock breaks into lines, the window's title runs downward.
+fn want_down(b: &Bar, id: &str) -> Option<(f32, bool)> {
+    let st = b.m.status;
+    let s = b.m.s;
+    Some(match id {
+        "launcher" | "network" | "quick-settings" | "power" => (SLOT, false),
+        "bluetooth" => (if st.bluetooth.is_some() { SLOT } else { return None }, false),
+        "notifications" => (if b.m.extra.notifying { SLOT } else { return None }, false),
+        "ai" => {
+            let n = ai_parts(b).len();
+            (if n == 0 { SLOT } else { n as f32 * STACK + 4.0 * (n - 1) as f32 }, false)
+        }
+        "tray" => {
+            let n = crate::tray_ui::shown(b.m).len();
+            (if n == 0 { return None } else { n as f32 * crate::tray_ui::SLOT + 4.0 }, false)
+        }
+        "workspaces" => {
+            let ws = workspaces_here(b);
+            if ws.is_empty() {
+                return None;
+            }
+            let gap = ws_gap(s.ws_style);
+            (ws.iter().map(|w| ws_w(b, &ws_label(b, w), w.active) + gap).sum::<f32>() - gap + WS_PAD * 2.0, false)
+        }
+        "window-title" => {
+            if st.window.is_empty() {
+                return None;
+            }
+            (b.text_w(st.window.clone()).min(300.0) + PAD * 2.0, true)
+        }
+        "clock" => (clock_lines(&Local::now().format(&s.clock_format).to_string()).len() as f32 * CLOCK_LINE + 10.0, false),
+        "media" => (if st.media.is_some() { SLOT } else { return None }, false),
+        "system" => (STACK, false),
+        "volume" => (level_w(b, s.vol_show, ICON, &volume_text(st.volume?, s.vol_show, true)), false),
+        "brightness" => (level_w(b, s.bright_show, ICON, &format!("{}%", st.brightness?)), false),
+        "battery" => {
+            let (pct, charging) = st.battery?;
+            if s.batt_hide_full && charging && pct >= 99 {
+                return None;
+            }
+            (level_w(b, s.batt_show, BATT_ICON, &format!("{pct}%")), false)
+        }
+        _ => return None,
+    })
+}
+
+/// The clock down a side panel: a line for each part of the time ("14:05" as 14 over 05).
+fn clock_lines(text: &str) -> Vec<String> {
+    text.split(|c: char| c == ':' || c.is_whitespace()).filter(|p| !p.is_empty()).map(String::from).collect()
+}
+const CLOCK_LINE: f32 = 15.0;
+
+/// Text in the bar's width down a side panel: centred at `c`, made smaller when it's too wide.
+fn small(p: &egui::Painter, c: Pos2, text: &str, size: f32, col: Color32) {
+    let g = p.layout_no_wrap(text.to_string(), ui_font(size), col);
+    let g = if g.size().x > 27.0 { p.layout_no_wrap(text.to_string(), ui_font((size * 27.0 / g.size().x).max(7.5)), col) } else { g };
+    p.galley(c - g.size() / 2.0, g, col);
 }
 
 /// One part of the AI item: a provider's logo, a short name when several of its limits are
@@ -109,6 +230,57 @@ struct AiPart {
     tag: String,
     val: String,
     used: f32,
+}
+
+/// The volume's text. Beside its symbol (which shows the mute) it stays a percent, so muting
+/// doesn't move the panel's items; alone, it says "Muted".
+fn volume_text((v, muted): (u32, bool), show: Show, down: bool) -> String {
+    if muted && show == Show::Text && !down { "Muted".into() } else { format!("{v}%") }
+}
+
+/// A level item's width: its symbol alone, its percent alone, or both.
+fn level_w(b: &Bar, show: Show, icon_w: f32, text: &str) -> f32 {
+    if b.vert {
+        return match show {
+            Show::Icon => SLOT,
+            Show::Text => 24.0,
+            Show::Both => STACK,
+        };
+    }
+    match show {
+        Show::Icon => SLOT,
+        Show::Text => b.text_w(text.to_string()) + PAD * 2.0,
+        Show::Both => b.text_w(text.to_string()) + PAD * 2.0 + icon_w + ICON_GAP,
+    }
+}
+
+/// Draw a level item in `r`: its symbol (`icon_w` wide, drawn by `icon` around the point given)
+/// and its percent.
+fn level(p: &egui::Painter, r: Rect, down: bool, show: Show, icon_w: f32, text: &str, col: Color32, icon: impl FnOnce(Pos2)) {
+    let cy = r.center().y;
+    if down {
+        // The symbol over its number (no percent sign: there's no room).
+        let num = text.trim_end_matches('%');
+        match show {
+            Show::Icon => icon(r.center()),
+            Show::Text => small(p, r.center(), num, 12.0, col),
+            Show::Both => {
+                icon(Pos2::new(r.center().x, r.top() + 13.0));
+                small(p, Pos2::new(r.center().x, r.bottom() - 9.0), num, SMALL, col);
+            }
+        }
+        return;
+    }
+    match show {
+        Show::Icon => icon(r.center()),
+        Show::Both => icon(Pos2::new(r.left() + PAD + icon_w / 2.0, cy)),
+        Show::Text => {}
+    }
+    if show.text() {
+        let g = p.layout_no_wrap(text.to_string(), ui_font(12.5), col);
+        let x = if show == Show::Both { r.left() + PAD + icon_w + ICON_GAP } else { r.center().x - g.size().x / 2.0 };
+        p.galley(Pos2::new(x, cy - g.size().y / 2.0), g, col);
+    }
 }
 
 /// What the AI item shows: each pinned limit, else the most used limit alone.
@@ -127,13 +299,17 @@ fn ai_parts(b: &Bar) -> Vec<AiPart> {
         .collect()
 }
 
-const AI_LOGO: f32 = 16.0;
+const AI_LOGO: f32 = ICON;
+/// The play or pause symbol.
+const MEDIA_ICON: f32 = 12.0;
+/// Either side of the workspaces.
+const WS_PAD: f32 = 4.0;
 /// Between parts: room, a thin line, room.
 const AI_SEP: f32 = 17.0;
 
 fn ai_part_w(b: &Bar, part: &AiPart) -> f32 {
     let tw = |t: &str, size: f32| b.p.layout_no_wrap(t.to_string(), ui_font(size), b.fg()).size().x;
-    AI_LOGO + 5.0 + if part.tag.is_empty() { 0.0 } else { tw(&part.tag, 11.5) + 4.0 } + tw(&part.val, 12.5)
+    AI_LOGO + ICON_GAP + if part.tag.is_empty() { 0.0 } else { tw(&part.tag, 11.5) + 4.0 } + tw(&part.val, 12.5)
 }
 
 fn media_text(md: &crate::sys::Media) -> String {
@@ -154,12 +330,15 @@ fn workspaces_here<'a>(b: &Bar<'a, '_>) -> Vec<&'a crate::sys::Workspace> {
 
 /// What a workspace shows: its name when it has one (and names are wanted), else its number.
 fn ws_label(b: &Bar, w: &crate::sys::Workspace) -> String {
-    if b.m.s.ws_names && !w.label.is_empty() { w.label.clone() } else { w.key.clone() }
+    let named = b.m.s.ws_names && !w.label.is_empty();
+    // Down a side panel a name has to fit the bar's width.
+    if named && !(b.vert && b.text_w(w.label.clone()) > 20.0) { w.label.clone() } else { w.key.clone() }
 }
 
 fn ws_gap(style: WsStyle) -> f32 {
     match style {
         WsStyle::Pills => 4.0,
+        WsStyle::Squares => 3.0,
         WsStyle::Dots => 2.0,
         WsStyle::Numbers => 0.0,
     }
@@ -168,6 +347,14 @@ fn ws_gap(style: WsStyle) -> f32 {
 /// A workspace's width in the panel.
 fn ws_w(b: &Bar, label: &str, active: bool) -> f32 {
     let text = || b.p.layout_no_wrap(label.to_string(), ui_font(12.5), b.fg()).size().x;
+    if b.vert {
+        // How tall, down a side panel.
+        return match b.m.s.ws_style {
+            WsStyle::Pills => if active { 30.0 } else { 22.0 },
+            WsStyle::Dots => if active { 30.0 } else { 14.0 },
+            WsStyle::Numbers | WsStyle::Squares => 22.0,
+        };
+    }
     match b.m.s.ws_style {
         WsStyle::Pills => {
             if active { (text() + 26.0).max(38.0) } else { (text() + 14.0).max(24.0) }
@@ -176,13 +363,15 @@ fn ws_w(b: &Bar, label: &str, active: bool) -> f32 {
             if active { 30.0 } else { 14.0 }
         }
         WsStyle::Numbers => (text() + 14.0).max(22.0),
+        // Square unless a name needs more.
+        WsStyle::Squares => (text() + 10.0).max(22.0),
     }
 }
 
 /// Fit a zone's items into `room`: squeezable ones shrink first, then items are left out
 /// (from the end away from `keep_start`'s side).
-fn fit(items: &mut Vec<(String, f32, bool)>, room: f32, keep_start: bool) {
-    let total = |it: &Vec<(String, f32, bool)>| it.iter().map(|i| i.1).sum::<f32>() + GAP * it.len().saturating_sub(1) as f32;
+fn fit(items: &mut Vec<(String, f32, bool)>, room: f32, keep_start: bool, gap: f32) {
+    let total = |it: &Vec<(String, f32, bool)>| it.iter().map(|i| i.1).sum::<f32>() + gap * it.len().saturating_sub(1) as f32;
     let mut over = total(items) - room;
     for it in items.iter_mut().filter(|i| i.2) {
         if over <= 0.0 {
@@ -203,21 +392,46 @@ fn fit(items: &mut Vec<(String, f32, bool)>, room: f32, keep_start: bool) {
 
 pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
     let Some(cfg) = m.s.panels.get(idx).cloned() else { return };
-    let v = ui.visuals().clone();
+    let look = m.s.panel_look(idx);
+    let surface = ui.visuals().panel_fill;
+    let (v, accent) = style::visuals(ui.visuals(), &look, &style::Roles::new(&kit.look, m.s));
+    *ui.visuals_mut() = v.clone();
     let full = ui.max_rect();
     // The bar sits against its edge (a floating one with room around it).
-    let (bar, radius) = if cfg.floating {
-        let y = if cfg.edge == Edge::Top { full.top() + MARGIN } else { full.bottom() - MARGIN - BAR };
-        (Rect::from_min_size(Pos2::new(full.left() + MARGIN, y), Vec2::new(full.width() - MARGIN * 2.0, BAR)), egui::CornerRadius::from(r_lg()))
-    } else {
-        (full, egui::CornerRadius::ZERO)
-    };
-    card(ui.painter(), bar, &v, 0.94, radius);
+    let bar = cfg.bar_rect(full);
+    let radius = if cfg.floating { style::radius(&look) } else { egui::CornerRadius::ZERO };
+    // A side panel's surface is too narrow for hover text: it would wrap a word to a line.
+    // (Only on a panel's own surface, which is all panel: narrow, or flat.)
+    let screen = ui.ctx().content_rect();
+    if screen.width() < 100.0 || screen.height() < 100.0 {
+        let delay = if screen.width() < 100.0 { f32::INFINITY } else { 0.5 };
+        ui.ctx().all_styles_mut(|s| s.interaction.tooltip_delay = delay);
+    }
+    // A popup joined to it: no outline or shadow there (the popup's coordinates are the
+    // screen's; a side panel's surface starts under the top panels).
+    let open = m.extra.join.filter(|j| j.0 == idx).map(|(_, lo, hi)| {
+        let off = if cfg.vertical() { crate::panels::room(&m.s.panels, m.output, Edge::Top) - full.top() } else { 0.0 };
+        let side = match cfg.edge {
+            Edge::Top => Edge::Bottom,
+            Edge::Bottom => Edge::Top,
+            Edge::Left => Edge::Right,
+            Edge::Right => Edge::Left,
+        };
+        (side, lo - off, hi - off, style::radius(&look).nw as f32)
+    });
+    crate::ui::surface_open(ui.painter(), bar, &v, look.opacity, radius, look.border, open);
     let reach = crate::panels::reach(&m.s.panels, idx, m.output);
     let mut acts = Vec::new();
     {
-        let accent = kit.accent(m.s);
-        let mut b = Bar { p: ui.painter().clone(), v, accent, cy: bar.center().y, idx, from: (cfg.edge, reach + 4.0), m: &*m, acts: Vec::new() };
+        let hover_r = if cfg.floating { style::inner_radius(&look, 4.0) } else { rivet_look::theme::r_md() as f32 };
+        let mask = m.s.tray_color != crate::config::TrayColor::Own;
+        let tray = if cfg.has("tray") { crate::tray_ui::shown(m).into_iter().map(|it| (it.key.clone(), crate::tray_ui::texture(kit, ui.ctx(), it, mask))).collect() } else { Vec::new() };
+        let launcher = if cfg.has("launcher") { kit.launcher_icon(ui.ctx(), m.s, LAUNCHER_ICON) } else { None };
+        let dock = if cfg.has("dock") { crate::dock_ui::icons(kit, ui.ctx(), m) } else { Vec::new() };
+        let plug_icons = m.extra.plugins.iter().filter(|(id, it)| !it.icon.is_empty() && cfg.has(&format!("plugin:{id}"))).map(|(id, it)| (id.clone(), kit.named_icon(ui.ctx(), &it.icon, ICON))).collect();
+        let roles = style::Roles::new(&kit.look, m.s);
+        let group_r = if rivet_look::theme::square() { 0.0 } else if cfg.floating { (look.radius - 4.0).clamp(0.0, 14.0) } else { 8.0 };
+        let mut b = Bar { p: ui.painter().clone(), v, accent, hover_r, cy: bar.center().y, vert: cfg.vertical(), cx: bar.center().x, idx, from: (cfg.edge, if look.attach { reach - cfg.gap() } else { reach + 4.0 }), attach: look.attach, m: &*m, acts: Vec::new(), tray, dock, launcher, plug_icons, roles, surface, group_r, gap: cfg.spacing(), cell: (cfg.bar() - 8.0).max(12.0) };
         layout(ui, &mut b, &cfg, bar);
         acts.append(&mut b.acts);
     }
@@ -225,39 +439,320 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
 }
 
 fn layout(ui: &mut egui::Ui, b: &mut Bar, cfg: &PanelCfg, bar: Rect) {
-    let inner = bar.shrink2(Vec2::new(6.0, 0.0));
-    let measure = |b: &Bar, zone: &[String]| -> Vec<(String, f32, bool)> { zone.iter().filter_map(|id| want(b, id).map(|(w, f)| (id.clone(), w, f))).collect() };
-    let width = |it: &[(String, f32, bool)]| it.iter().map(|i| i.1).sum::<f32>() + GAP * it.len().saturating_sub(1) as f32;
+    // Along the panel: left to right, or top to bottom down a side panel.
+    let vert = b.vert;
+    let inner = if vert { bar.shrink2(Vec2::new(0.0, 6.0)) } else { bar.shrink2(Vec2::new(6.0, 0.0)) };
+    let (start, end) = if vert { (inner.top(), inner.bottom()) } else { (inner.left(), inner.right()) };
+    let room = end - start;
+    let (cx, cy, gap, th) = (b.cx, b.cy, b.gap, b.cell);
+    let cell = move |at: f32, len: f32| if vert { Rect::from_min_size(Pos2::new(cx - th / 2.0, at), Vec2::new(th, len)) } else { Rect::from_min_size(Pos2::new(at, cy - th / 2.0), Vec2::new(len, th)) };
+    let ctx = ui.ctx().clone();
+    let measure = |b: &Bar, zone: &[String]| -> Vec<(String, f32, bool)> { grouped(&ctx, b.idx, cfg, zone.iter().filter_map(|id| want(b, id).map(|(w, f)| (id.clone(), w.ceil(), f))).collect()) };
+    let width = |it: &[(String, f32, bool)]| it.iter().map(|i| i.1).sum::<f32>() + gap * it.len().saturating_sub(1) as f32;
     let mut left = measure(b, &cfg.zones[0]);
     let mut center = measure(b, &cfg.zones[1]);
     let mut right = measure(b, &cfg.zones[2]);
-    fit(&mut center, inner.width(), true);
+    fit(&mut center, room, true, gap);
     let cw = width(&center);
     let (lw, rw) = (width(&left), width(&right));
     let (left_room, right_room) = if center.is_empty() {
         // The two sides share the bar; the right keeps what it needs first.
-        let r = rw.min(inner.width());
-        ((inner.width() - r - ZONE_GAP).max(0.0), r.max(inner.width() - lw - ZONE_GAP))
+        let r = rw.min(room);
+        ((room - r - ZONE_GAP).max(0.0), r.max(room - lw - ZONE_GAP))
     } else {
-        let half = (inner.width() - cw) / 2.0 - ZONE_GAP;
+        let half = (room - cw) / 2.0 - ZONE_GAP;
         (half.max(0.0), half.max(0.0))
     };
-    fit(&mut left, left_room, true);
-    fit(&mut right, right_room, false);
-    let mut x = inner.left();
-    for (id, w, _) in &left {
-        draw(ui, b, id, Rect::from_min_size(Pos2::new(x, b.cy - 14.0), Vec2::new(*w, 28.0)));
-        x += w + GAP;
+    fit(&mut left, left_room, true, gap);
+    fit(&mut right, right_room, false, gap);
+    // Whole pixels, so the symbols' thin lines stay sharp.
+    for it in left.iter_mut().chain(&mut center).chain(&mut right) {
+        it.1 = it.1.floor();
     }
-    let mut x = inner.center().x - cw / 2.0;
-    for (id, w, _) in &center {
-        draw(ui, b, id, Rect::from_min_size(Pos2::new(x, b.cy - 14.0), Vec2::new(*w, 28.0)));
-        x += w + GAP;
+    let cw = width(&center);
+    for (zone, from) in [(&left, start), (&center, (start + room / 2.0 - cw / 2.0).round()), (&right, (end - width(&right)).round())] {
+        let mut x = from;
+        let mut cells: Vec<(&str, Rect, Option<usize>)> = Vec::new();
+        for (id, w, _) in zone {
+            if id != GROUP_PAD {
+                cells.push((id, cell(x, *w), group_at(cfg, id)));
+            }
+            x += w + gap;
+        }
+        // Each run of a group's items: its background, then the items in its colours.
+        let mut runs: Vec<(std::ops::Range<usize>, Option<usize>, Option<Rect>, [bool; 2])> = Vec::new();
+        let mut k = 0;
+        while k < cells.len() {
+            let g = cells[k].2;
+            let n = if g.is_some() { cells[k..].iter().take_while(|c| c.2 == g).count() } else { 1 };
+            let run = &cells[k..k + n];
+            let back = g.and_then(|g| cfg.groups.get(g)).filter(|g| g.bg.is_some()).map(|_| {
+                let all = run.iter().fold(run[0].1, |a, c| a.union(c.1));
+                if vert { all.expand2(Vec2::new(0.0, GROUP_IN)) } else { all.expand2(Vec2::new(GROUP_IN, 0.0)) }
+            });
+            runs.push((k..k + n, g, back, [true, true]));
+            k += n;
+        }
+        // Two groups' backgrounds side by side fuse: they meet half way, square where they do.
+        if cfg.fuse {
+            for i in 1..runs.len() {
+                let (a, b) = runs.split_at_mut(i);
+                let (a, b) = (a.last_mut().unwrap(), &mut b[0]);
+                if let (Some(ra), Some(rb)) = (a.2.as_mut(), b.2.as_mut()) {
+                    if vert {
+                        let mid = ((ra.bottom() + rb.top()) / 2.0).round();
+                        (ra.max.y, rb.min.y) = (mid, mid);
+                    } else {
+                        let mid = ((ra.right() + rb.left()) / 2.0).round();
+                        (ra.max.x, rb.min.x) = (mid, mid);
+                    }
+                    (a.3[1], b.3[0]) = (false, false);
+                }
+            }
+        }
+        for (range, g, back, round) in runs {
+            let run = &cells[range];
+            let Some(group) = g.and_then(|g| cfg.groups.get(g)) else {
+                draw(ui, b, run[0].0, run[0].1);
+                continue;
+            };
+            let (bg, gv, gaccent) = group_look(b, group);
+            if let (Some(bg), Some(back)) = (bg, back) {
+                // Rounded at its own ends, square where it meets a neighbour.
+                let r = b.group_r.round() as u8;
+                let (s, e) = (if round[0] { r } else { 0 }, if round[1] { r } else { 0 });
+                let radius = if vert { egui::CornerRadius { nw: s, ne: s, sw: e, se: e } } else { egui::CornerRadius { nw: s, sw: s, ne: e, se: e } };
+                if group.gradient {
+                    fade(&b.p, back, radius, bg, vert);
+                } else {
+                    b.p.rect_filled(back, radius, bg);
+                }
+            }
+            let panel_v = std::mem::replace(&mut b.v, gv.clone());
+            let panel_accent = std::mem::replace(&mut b.accent, gaccent);
+            let ui_v = std::mem::replace(ui.visuals_mut(), gv);
+            for (id, r, _) in run {
+                match id.strip_prefix(GROUP_MORE).and_then(|g| g.parse::<usize>().ok()) {
+                    Some(g) => more(ui, b, g, *r),
+                    None => draw(ui, b, id, *r),
+                }
+            }
+            b.v = panel_v;
+            b.accent = panel_accent;
+            *ui.visuals_mut() = ui_v;
+        }
     }
-    let mut x = inner.right() - width(&right);
-    for (id, w, _) in &right {
-        draw(ui, b, id, Rect::from_min_size(Pos2::new(x, b.cy - 14.0), Vec2::new(*w, 28.0)));
-        x += w + GAP;
+}
+
+/// A plugin's item, when it has something to show: its icon and text.
+fn plugin_item<'a>(b: &Bar<'a, '_>, pid: &str) -> Option<&'a crate::plugins::Item> {
+    crate::plugins::item(&b.m.extra.plugins, pid).filter(|it| !it.hidden && (!it.text.is_empty() || !it.icon.is_empty() || it.failed))
+}
+
+fn plugin_icon<'a>(b: &'a Bar, pid: &str) -> Option<&'a egui::TextureHandle> {
+    b.plug_icons.iter().find(|(i, _)| i == pid).and_then(|(_, t)| t.as_ref())
+}
+
+/// How long a plugin's text may run on the panel.
+const PLUGIN_TEXT: f32 = 240.0;
+
+fn plugin_want(b: &Bar, pid: &str) -> Option<(f32, bool)> {
+    let it = plugin_item(b, pid)?;
+    let icon = plugin_icon(b, pid).is_some();
+    if b.vert {
+        return Some((if icon && !it.text.is_empty() { STACK } else { SLOT }, false));
+    }
+    if it.text.is_empty() {
+        return Some((SLOT, false));
+    }
+    Some((b.text_w(it.text.clone()).min(PLUGIN_TEXT) + PAD * 2.0 + if icon { ICON + ICON_GAP } else { 0.0 }, false))
+}
+
+/// A plugin's item: its icon and text in its state's colour. A click opens its menu when it
+/// has one, and every click and scroll is told to the plugin.
+fn plugin_draw(ui: &mut egui::Ui, b: &mut Bar, pid: &str, r: Rect) {
+    let Some(it) = plugin_item(b, pid) else { return };
+    let resp = b.button(ui, r, &format!("plugin:{pid}"));
+    let sc = rivet_look::theme::status(ui.ctx());
+    let col = match it.state {
+        _ if it.failed => b.weak(),
+        crate::plugins::State::Normal => b.fg(),
+        crate::plugins::State::Accent => b.accent,
+        crate::plugins::State::Warning => sc.warning,
+        crate::plugins::State::Danger => sc.danger,
+    };
+    let p = b.p.clone();
+    let icon = plugin_icon(b, pid);
+    let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+    let text = if it.failed && it.text.is_empty() { "!" } else { it.text.as_str() };
+    if b.vert {
+        match icon {
+            Some(t) if !text.is_empty() => {
+                p.image(t.id(), Rect::from_center_size(Pos2::new(r.center().x, r.top() + 13.0), Vec2::splat(ICON)), uv, Color32::WHITE);
+                small(&p, Pos2::new(r.center().x, r.bottom() - 9.0), text, SMALL, col);
+            }
+            Some(t) => {
+                p.image(t.id(), Rect::from_center_size(r.center(), Vec2::splat(ICON)), uv, Color32::WHITE);
+            }
+            None => small(&p, r.center(), text, 12.0, col),
+        }
+    } else {
+        let mut x = r.left() + PAD;
+        if let Some(t) = icon {
+            let at = if text.is_empty() { r.center().x } else { x + ICON / 2.0 };
+            p.image(t.id(), Rect::from_center_size(Pos2::new(at, r.center().y), Vec2::splat(ICON)), uv, Color32::WHITE);
+            x += ICON + ICON_GAP;
+        }
+        if !text.is_empty() {
+            let g = one_line(&p, text, ui_font(12.5), col, r.right() - PAD - x + 1.0);
+            let at = if icon.is_none() { r.center().x - g.size().x / 2.0 } else { x };
+            p.galley(Pos2::new(at, r.center().y - g.size().y / 2.0), g, col);
+        }
+    }
+    let tip = if it.failed { format!("{} stopped", it.name) } else if it.tooltip.is_empty() { it.name.clone() } else { it.tooltip.clone() };
+    let has_menu = !it.menu.is_empty();
+    let hovered = resp.hovered();
+    let resp = resp.on_hover_text(tip);
+    let click = |button: &str| Act::Plugin(pid.to_string(), crate::plugins::Event::new("click", &[("button", button)]));
+    if resp.clicked() {
+        b.acts.push(click("left"));
+        if has_menu {
+            let a = b.popup(PopupKind::Plugin { id: pid.to_string() }, b.at(r));
+            b.acts.push(a);
+        }
+    } else if resp.middle_clicked() {
+        b.acts.push(click("middle"));
+    } else if resp.secondary_clicked() {
+        b.acts.push(click("right"));
+    }
+    let dy = if hovered { wheel(ui) } else { 0.0 };
+    if dy != 0.0 {
+        b.acts.push(Act::Plugin(pid.to_string(), crate::plugins::Event::new("scroll", &[("direction", if dy > 0.0 { "up" } else { "down" })])));
+    }
+}
+
+/// A space either side of a group's background, and the arrow that folds a group's items
+/// away ("group-more:" and the group's number): items the layout adds to a zone.
+const GROUP_PAD: &str = "group-pad";
+const GROUP_MORE: &str = "group-more:";
+/// How far a group's background reaches past its items.
+const GROUP_IN: f32 = 4.0;
+
+/// The group a zone's item is drawn in.
+fn group_at(cfg: &PanelCfg, id: &str) -> Option<usize> {
+    match id.strip_prefix(GROUP_MORE) {
+        Some(g) => g.parse().ok(),
+        None => cfg.group_of(id),
+    }
+}
+
+fn group_open_id(panel: usize, group: usize) -> egui::Id {
+    egui::Id::unique(("panel-group-open", panel, group))
+}
+
+/// A zone's measured items with its groups worked in: a group that shows only some of its
+/// items loses the rest (until its arrow is clicked) and gains the arrow, and a group with a
+/// background gets room at its ends.
+fn grouped(ctx: &egui::Context, panel: usize, cfg: &PanelCfg, items: Vec<(String, f32, bool)>) -> Vec<(String, f32, bool)> {
+    if cfg.groups.is_empty() {
+        return items;
+    }
+    let mut out = Vec::with_capacity(items.len() + 4);
+    let mut k = 0;
+    while k < items.len() {
+        let g = cfg.group_of(&items[k].0);
+        let n = items[k..].iter().take_while(|i| cfg.group_of(&i.0) == g).count();
+        let Some((gi, group)) = g.and_then(|g| cfg.groups.get(g).map(|x| (g, x))) else {
+            out.push(items[k].clone());
+            k += 1;
+            continue;
+        };
+        let run = &items[k..k + n];
+        k += n;
+        let pad = group.bg.is_some();
+        if pad {
+            out.push((GROUP_PAD.to_string(), GROUP_IN, false));
+        }
+        let show = group.show as usize;
+        if show > 0 && run.len() > show {
+            let open = ctx.data(|d| d.get_temp::<bool>(group_open_id(panel, gi))).unwrap_or(false);
+            out.extend(run[..if open { run.len() } else { show }].iter().cloned());
+            out.push((format!("{GROUP_MORE}{gi}"), 18.0, false));
+        } else {
+            out.extend(run.iter().cloned());
+        }
+        if pad {
+            out.push((GROUP_PAD.to_string(), GROUP_IN, false));
+        }
+    }
+    out
+}
+
+/// A group's gradient background: its colour fading along the panel to its darker shade.
+/// The rounded rectangle is tessellated as egui would a plain one (so its edge is as smooth),
+/// and each corner of the mesh then takes the gradient's colour where it is.
+fn fade(p: &egui::Painter, r: Rect, radius: egui::CornerRadius, bg: Color32, down: bool) {
+    let [dr, dg, db] = crate::panels::darker([bg.r(), bg.g(), bg.b()]);
+    let to = Color32::from_rgb(dr, dg, db);
+    let shape = egui::Shape::rect_filled(r, radius, Color32::WHITE);
+    let ctx = p.ctx();
+    let prims = ctx.tessellate(vec![egui::epaint::ClippedShape { clip_rect: p.clip_rect(), shape, transform_after_tessellation: egui::emath::TSTransform::IDENTITY }], ctx.pixels_per_point());
+    for prim in prims {
+        let egui::epaint::Primitive::Mesh(mut mesh) = prim.primitive else { continue };
+        for v in &mut mesh.vertices {
+            let t = if down { (v.pos.y - r.top()) / r.height().max(1.0) } else { (v.pos.x - r.left()) / r.width().max(1.0) };
+            // The smoothing's outer corners are see-through, and stay so.
+            v.color = mix(bg, to, t.clamp(0.0, 1.0)).gamma_multiply(v.color.a() as f32 / 255.0);
+        }
+        p.add(egui::Shape::mesh(mesh));
+    }
+}
+
+/// A group's colours: its background (None: none), the visuals its items draw with, and
+/// their highlight.
+fn group_look(b: &Bar, g: &crate::panels::Group) -> (Option<Color32>, egui::Visuals, Color32) {
+    use crate::panels::Paint;
+    let paint = |p: Paint| match p {
+        Paint::Auto => None,
+        Paint::Surface => Some(b.surface),
+        Paint::Primary => Some(b.roles.primary),
+        Paint::Secondary => Some(b.roles.secondary),
+        Paint::Tertiary => Some(b.roles.tertiary),
+        Paint::Custom([r, g, b]) => Some(Color32::from_rgb(r, g, b)),
+    };
+    let bg = g.bg.map(|p| paint(p).unwrap_or_else(|| mix(b.v.panel_fill, b.v.text_color(), 0.10)));
+    // With a gradient, text has to read on the middle of it.
+    let dark = bg.map(|c| crate::panels::darker([c.r(), c.g(), c.b()])).map(|[r, g, b]| Color32::from_rgb(r, g, b));
+    let fill = match (bg, dark) {
+        (Some(c), Some(d)) if g.gradient => mix(c, d, 0.5),
+        _ => bg.unwrap_or(b.v.panel_fill),
+    };
+    // Left to the shell, text reads on a painted background and stays the panel's otherwise.
+    let solid = g.bg.is_some_and(|p| p != Paint::Auto);
+    let fg = paint(g.fg).unwrap_or_else(|| if solid { on(fill) } else { b.v.text_color() });
+    let mut v = b.v.clone();
+    v.panel_fill = fill;
+    v.override_text_color = Some(fg);
+    v.weak_text_color = Some(mix(fg, fill, 0.35));
+    // A highlight that would vanish into the background takes the text's colour.
+    let far = |a: Color32, c: Color32| (a.r() as i32 - c.r() as i32).abs() + (a.g() as i32 - c.g() as i32).abs() + (a.b() as i32 - c.b() as i32).abs();
+    let accent = if far(b.accent, fill) < 120 { fg } else { b.accent };
+    (bg, v, accent)
+}
+
+/// The arrow at the end of a group that folds: shows the rest of its items, or hides them.
+fn more(ui: &mut egui::Ui, b: &mut Bar, group: usize, r: Rect) {
+    let id = group_open_id(b.idx, group);
+    let open = ui.ctx().data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let resp = b.button(ui, r, &format!("{GROUP_MORE}{group}"));
+    let c = r.center();
+    // Pointing along the panel: toward the hidden items, or back.
+    let d = if open { -1.0 } else { 1.0 };
+    let pts = if b.vert { vec![c + Vec2::new(-4.0, -2.0 * d), c + Vec2::new(0.0, 2.0 * d), c + Vec2::new(4.0, -2.0 * d)] } else { vec![c + Vec2::new(-2.0 * d, -4.0), c + Vec2::new(2.0 * d, 0.0), c + Vec2::new(-2.0 * d, 4.0)] };
+    b.p.add(egui::Shape::line(pts, egui::Stroke::new(1.6, if resp.hovered() { b.fg() } else { b.weak() })));
+    if resp.on_hover_text(if open { "Show fewer" } else { "Show the rest" }).clicked() {
+        ui.ctx().data_mut(|d| d.insert_temp(id, !open));
+        ui.ctx().request_repaint();
     }
 }
 
@@ -271,30 +766,46 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
     let p = b.p.clone();
     let st = b.m.status;
     let ex = b.m.extra;
+    if let Some(pid) = id.strip_prefix("plugin:") {
+        plugin_draw(ui, b, pid, r);
+        return;
+    }
+    // Down a side panel, the items with text draw another way.
+    if b.vert && draw_down(ui, b, id, r) {
+        return;
+    }
     match id {
         "launcher" => {
             let resp = b.button(ui, r, id);
-            glyph::grid(&p, r.center(), fg);
+            match &b.launcher {
+                Some(t) => {
+                    p.image(t.id(), Rect::from_center_size(r.center(), Vec2::splat(LAUNCHER_ICON)), Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                }
+                // The grid; also when the system's or the custom icon can't be found.
+                None => glyph::grid(&p, r.center(), fg),
+            }
             if resp.on_hover_text("Apps").clicked() {
-                let a = b.popup(PopupKind::Launcher { query: String::new(), sel: 0 }, r.center().x);
+                let a = b.popup(PopupKind::Launcher { query: String::new(), sel: 0 }, b.at(r));
                 b.acts.push(a);
             }
         }
         "workspaces" => {
             let style = b.m.s.ws_style;
             let ws = workspaces_here(b);
-            let mut x = r.left();
+            let mut x = if b.vert { r.top() } else { r.left() } + WS_PAD;
             for w in &ws {
                 let label = ws_label(b, w);
-                let pr = Rect::from_min_size(Pos2::new(x, cy - 11.0), Vec2::new(ws_w(b, &label, w.active), 22.0));
-                x = pr.right() + ws_gap(style);
-                if pr.right() > r.right() + 0.5 {
+                let len = ws_w(b, &label, w.active);
+                let (pw, ph) = (b.cell.min(24.0), b.cell.min(22.0));
+                let pr = if b.vert { Rect::from_min_size(Pos2::new(r.center().x - pw / 2.0, x), Vec2::new(pw, len)) } else { Rect::from_min_size(Pos2::new(x, cy - ph / 2.0), Vec2::new(len, ph)) };
+                x += len + ws_gap(style);
+                if if b.vert { pr.bottom() > r.bottom() + 0.5 } else { pr.right() > r.right() + 0.5 } {
                     break;
                 }
                 let resp = ui.interact(pr, egui::Id::unique(("ws", b.idx, &w.key, &w.output)), Sense::click());
                 let hot = resp.hovered();
                 match style {
-                    WsStyle::Pills => {
+                    WsStyle::Pills | WsStyle::Squares => {
                         let (fill, col) = if w.active {
                             (accent, on(accent))
                         } else if hot {
@@ -302,7 +813,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                         } else {
                             (mix(b.v.panel_fill, fg, if w.busy { 0.1 } else { 0.05 }), if w.busy { fg } else { weak })
                         };
-                        p.rect_filled(pr, 11.0, fill);
+                        p.rect_filled(if style == WsStyle::Squares && b.vert { Rect::from_center_size(pr.center(), Vec2::splat(22.0)) } else { pr }, if style == WsStyle::Squares { 6.0 } else { 11.0 }, fill);
                         // Laid out in its colour (a galley keeps the colour it was made with).
                         let g = p.layout_no_wrap(label.clone(), ui_font(12.5), col);
                         p.galley(pr.center() - g.size() / 2.0, g, col);
@@ -310,7 +821,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                     WsStyle::Dots => {
                         let c = pr.center();
                         if w.active {
-                            p.rect_filled(Rect::from_center_size(c, Vec2::new(22.0, 8.0)), 4.0, accent);
+                            p.rect_filled(Rect::from_center_size(c, if b.vert { Vec2::new(8.0, 22.0) } else { Vec2::new(22.0, 8.0) }), 4.0, accent);
                         } else if w.busy {
                             p.circle_filled(c, if hot { 4.5 } else { 3.75 }, if hot { fg } else { fg.gamma_multiply(0.75) });
                         } else {
@@ -363,8 +874,8 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             }
         }
         "window-title" => {
-            let g = one_line(&p, &st.window, ui_font(12.5), weak, r.width());
-            p.galley(Pos2::new(r.left(), cy - g.size().y / 2.0), g, weak);
+            let g = one_line(&p, &st.window, ui_font(12.5), weak, r.width() - PAD * 2.0);
+            p.galley(Pos2::new(r.left() + PAD, cy - g.size().y / 2.0), g, weak);
         }
         "clock" => {
             let now = Local::now();
@@ -372,61 +883,64 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let g = p.layout_no_wrap(now.format(&b.m.s.clock_format).to_string(), ui_font(13.5), fg);
             p.galley(r.center() - g.size() / 2.0, g, fg);
             if resp.on_hover_text(now.format("%A, %B %-d, %Y").to_string()).clicked() {
-                let a = b.popup(PopupKind::Calendar { month: 0 }, r.center().x);
+                let a = b.popup(PopupKind::Calendar { month: 0 }, b.at(r));
                 b.acts.push(a);
             }
         }
         "media" => {
             let Some(md) = &st.media else { return };
             let resp = b.button(ui, r, id);
-            glyph::play(&p, Pos2::new(r.left() + 14.0, cy), !md.playing, accent);
-            let g = one_line(&p, &media_text(md), ui_font(12.5), fg, r.width() - 34.0);
-            p.galley(Pos2::new(r.left() + 26.0, cy - g.size().y / 2.0), g, fg);
+            glyph::play(&p, Pos2::new(r.left() + PAD + MEDIA_ICON / 2.0, cy), !md.playing, accent);
+            let g = one_line(&p, &media_text(md), ui_font(12.5), fg, r.width() - PAD * 2.0 - MEDIA_ICON - ICON_GAP);
+            p.galley(Pos2::new(r.left() + PAD + MEDIA_ICON + ICON_GAP, cy - g.size().y / 2.0), g, fg);
             if resp.on_hover_text(format!("{} · click to {}", md.player, if md.playing { "pause" } else { "play" })).clicked() {
                 b.acts.push(Act::Media("play-pause"));
             }
         }
         "system" => {
             let resp = ui.interact(r, egui::Id::unique(("panel", b.idx, id)), Sense::hover());
+            glyph::chip(&p, Pos2::new(r.left() + PAD + ICON / 2.0, cy), fg);
             let g = p.layout_no_wrap(system_text(b), ui_font(12.5), fg);
-            p.galley(Pos2::new(r.left() + 10.0, cy - g.size().y / 2.0), g, fg);
+            p.galley(Pos2::new(r.left() + PAD + ICON + ICON_GAP, cy - g.size().y / 2.0), g, fg);
             resp.on_hover_text("Processor use · memory in use");
         }
         "volume" => {
             let Some((vol, muted)) = st.volume else { return };
             let col = if muted { weak } else { fg };
             let resp = b.button(ui, r, id);
-            glyph::speaker(&p, Pos2::new(r.left() + 15.0, cy), muted, col);
-            let g = p.layout_no_wrap(if muted { "Muted".into() } else { format!("{vol}%") }, ui_font(12.5), col);
-            p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, col);
-            if resp.hovered() {
+            let s = b.m.s;
+            level(&p, r, b.vert, s.vol_show, ICON, &volume_text((vol, muted), s.vol_show, b.vert), col, |c| glyph::speaker(&p, c, muted, col));
+            if s.vol_scroll && resp.hovered() {
                 let dy = wheel(ui);
                 if dy.abs() > 0.5 {
                     b.acts.push(Act::Volume(dy > 0.0));
                 }
             }
+            let now = if muted { "Muted".to_string() } else { format!("Volume {vol}%") };
+            let click = if muted { "unmute" } else { "mute" };
+            let tip = if s.vol_scroll { format!("{now} · click for sound devices · middle-click to {click} · scroll to change") } else { format!("{now} · click for sound devices · middle-click to {click}") };
             if resp.middle_clicked() {
                 b.acts.push(Act::Mute);
             }
-            if resp.on_hover_text("Click for sound devices · middle-click to mute · scroll to change").clicked() {
-                let a = b.popup(PopupKind::Sound { drag: None }, r.center().x);
+            if resp.on_hover_text(tip).clicked() {
+                let a = b.popup(PopupKind::Sound { drag: None }, b.at(r));
                 b.acts.push(a);
             }
         }
         "brightness" => {
             let Some(v) = st.brightness else { return };
             let resp = b.button(ui, r, id);
-            glyph::sun(&p, Pos2::new(r.left() + 15.0, cy), fg);
-            let g = p.layout_no_wrap(format!("{v}%"), ui_font(12.5), fg);
-            p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, fg);
-            if resp.hovered() {
+            let s = b.m.s;
+            level(&p, r, b.vert, s.bright_show, ICON, &format!("{v}%"), fg, |c| glyph::sun(&p, c, fg));
+            if s.bright_scroll && resp.hovered() {
                 let dy = wheel(ui);
                 if dy.abs() > 0.5 {
                     b.acts.push(Act::Brightness(dy > 0.0));
                 }
             }
-            if resp.on_hover_text("Brightness · scroll to change").clicked() {
-                let a = b.control(r.center().x);
+            let tip = if s.bright_scroll { format!("Brightness {v}% · scroll to change") } else { format!("Brightness {v}%") };
+            if resp.on_hover_text(tip).clicked() {
+                let a = b.control(b.at(r));
                 b.acts.push(a);
             }
         }
@@ -447,7 +961,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                 }
             };
             if resp.on_hover_text(format!("{tip} · click for networks")).clicked() {
-                let a = b.popup(PopupKind::Network { ask: None }, r.center().x);
+                let a = b.popup(PopupKind::Network { ask: None }, b.at(r));
                 b.acts.push(a);
             }
         }
@@ -464,7 +978,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                 busy_at = Some(lr.right_top());
             } else {
                 let sc = rivet_look::theme::status(ui.ctx());
-                let mut x = r.left() + 8.0;
+                let mut x = r.left() + PAD;
                 for (k, part) in parts.iter().enumerate() {
                     if k > 0 {
                         let lx = x + AI_SEP / 2.0 - 0.5;
@@ -476,7 +990,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                     if part.id == "claude" && busy_at.is_none() {
                         busy_at = Some(lr.right_top());
                     }
-                    x += AI_LOGO + 5.0;
+                    x += AI_LOGO + ICON_GAP;
                     if !part.tag.is_empty() {
                         let g = p.layout_no_wrap(part.tag.clone(), ui_font(11.5), weak);
                         p.galley(Pos2::new(x, cy - g.size().y / 2.0), g.clone(), weak);
@@ -506,7 +1020,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             }
             tip.push(format!("{} · click for details", if b.m.s.ai_left { "Left" } else { "Used" }));
             if resp.on_hover_text(tip.join("\n")).clicked() {
-                let a = b.popup(PopupKind::Ai, r.center().x);
+                let a = b.popup(PopupKind::Ai, b.at(r));
                 b.acts.push(a);
             }
         }
@@ -516,7 +1030,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             glyph::bluetooth(&p, r.center(), if on { fg } else { weak.gamma_multiply(0.6) }, on);
             let tip = if on { "Bluetooth on · click for devices" } else { "Bluetooth off · click for devices" };
             if resp.on_hover_text(tip).clicked() {
-                let a = b.popup(PopupKind::Bluetooth, r.center().x);
+                let a = b.popup(PopupKind::Bluetooth, b.at(r));
                 b.acts.push(a);
             }
         }
@@ -524,17 +1038,41 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let Some((pct, charging)) = st.battery else { return };
             let col = if pct <= 15 && !charging { rivet_look::theme::status(ui.ctx()).danger } else { fg };
             let resp = b.button(ui, r, id);
-            glyph::battery(&p, Pos2::new(r.left() + 16.0, cy), pct, charging, col, accent);
-            let g = p.layout_no_wrap(format!("{pct}%"), ui_font(12.5), col);
-            p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, col);
+            let show = b.m.s.batt_show;
+            // With no icon, the percent takes the accent while charging.
+            let tcol = if show == Show::Text && charging { accent } else { col };
+            level(&p, r, b.vert, show, BATT_ICON, &format!("{pct}%"), tcol, |c| glyph::battery(&p, c, pct, charging, col, accent));
             let mut tip = if charging { format!("Battery {pct}%, charging") } else { format!("Battery {pct}%") };
             if let Some(pr) = &st.profile {
                 tip.push_str(&format!(" · {}", pr.replace('-', " ")));
             }
             if resp.on_hover_text(tip).clicked() {
-                let a = b.control(r.center().x);
+                let a = b.control(b.at(r));
                 b.acts.push(a);
             }
+        }
+        "dock" => {
+            let popup = |kind: PopupKind, x: f32| b.popup(kind, x);
+            let mut acts = Vec::new();
+            crate::dock_ui::draw(ui, r, b.idx, b.m, &b.dock, accent, b.hover_r, &popup, &mut acts);
+            b.acts.append(&mut acts);
+        }
+        "tray" => {
+            let tint = crate::tray_ui::tint(b.m.s.tray_color, fg, accent);
+            let from = b.from;
+            let attach = b.attach.then_some(b.idx);
+            let idx = b.idx;
+            let output = b.m.output.to_string();
+            let popup = move |key: String, x: f32| {
+                let mut p = Popup::at(PopupKind::TrayMenu { key, path: Vec::new() }, x, &output);
+                p.from = Some(from);
+                p.attach = attach;
+                p.panel = Some(idx);
+                Act::Open(p)
+            };
+            let mut acts = Vec::new();
+            crate::tray_ui::draw(ui, r, b.vert, b.idx, b.m, &b.tray, tint, accent, b.hover_r, &popup, &mut acts);
+            b.acts.append(&mut acts);
         }
         "notifications" => {
             let resp = b.button(ui, r, id);
@@ -545,7 +1083,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             }
             let tip = if ex.dnd { "Do not disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
             if resp.on_hover_text(tip).clicked() {
-                let a = b.popup(PopupKind::Notifications, r.center().x);
+                let a = b.popup(PopupKind::Notifications, b.at(r));
                 b.acts.push(a);
             }
         }
@@ -553,7 +1091,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let resp = b.button(ui, r, id);
             glyph::sliders(&p, r.center(), fg);
             if resp.on_hover_text("Quick settings").clicked() {
-                let a = b.control(r.center().x);
+                let a = b.control(b.at(r));
                 b.acts.push(a);
             }
         }
@@ -561,12 +1099,78 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let resp = b.button(ui, r, id);
             glyph::power(&p, r.center(), fg);
             if resp.on_hover_text("Lock, suspend, restart, shut down").clicked() {
-                let a = b.popup(PopupKind::Power { confirm: None }, r.center().x);
+                let a = b.popup(PopupKind::Power { confirm: None }, b.at(r));
                 b.acts.push(a);
             }
         }
         _ => {}
     }
+}
+
+/// The items that draw another way down a side panel (false: drawn as on any panel).
+fn draw_down(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) -> bool {
+    let (fg, weak, accent) = (b.fg(), b.weak(), b.accent);
+    let p = b.p.clone();
+    let st = b.m.status;
+    let c = r.center();
+    match id {
+        "window-title" => {
+            // Running downward, read from the right.
+            let g = one_line(&p, &st.window, ui_font(12.5), weak, r.height() - PAD * 2.0);
+            let at = Pos2::new(c.x + g.size().y / 2.0, r.top() + PAD);
+            p.add(egui::epaint::TextShape::new(at, g, weak).with_angle(std::f32::consts::FRAC_PI_2));
+        }
+        "clock" => {
+            let now = Local::now();
+            let resp = b.button(ui, r, id);
+            let lines = clock_lines(&now.format(&b.m.s.clock_format).to_string());
+            let top = c.y - lines.len() as f32 * CLOCK_LINE / 2.0;
+            for (k, line) in lines.iter().enumerate() {
+                small(&p, Pos2::new(c.x, top + (k as f32 + 0.5) * CLOCK_LINE), line, 13.0, fg);
+            }
+            if resp.on_hover_text(now.format("%A, %B %-d, %Y").to_string()).clicked() {
+                let a = b.popup(PopupKind::Calendar { month: 0 }, b.at(r));
+                b.acts.push(a);
+            }
+        }
+        "media" => {
+            let Some(md) = &st.media else { return true };
+            let resp = b.button(ui, r, id);
+            glyph::play(&p, c, !md.playing, accent);
+            if resp.on_hover_text(format!("{} · {}", media_text(md), md.player)).clicked() {
+                b.acts.push(Act::Media("play-pause"));
+            }
+        }
+        "system" => {
+            glyph::chip(&p, Pos2::new(c.x, r.top() + 13.0), fg);
+            small(&p, Pos2::new(c.x, r.bottom() - 9.0), &format!("{:.0}", st.cpu), SMALL, fg);
+        }
+        "ai" => {
+            let parts = ai_parts(b);
+            if parts.is_empty() {
+                return false;
+            }
+            let resp = b.button(ui, r, id);
+            let sc = rivet_look::theme::status(ui.ctx());
+            let mut y = r.top();
+            for part in &parts {
+                let lr = Rect::from_center_size(Pos2::new(c.x, y + 13.0), Vec2::splat(AI_LOGO));
+                crate::ai_pop::logo(ui, &p, part.id, lr, fg);
+                if part.id == "claude" && b.m.extra.ai.claude_busy {
+                    p.circle_filled(lr.right_top() + Vec2::new(0.5, 1.5), 2.5, accent);
+                }
+                let col = if part.used >= 90.0 { sc.danger } else if part.used >= 75.0 { sc.warning } else { fg };
+                small(&p, Pos2::new(c.x, y + STACK - 9.0), part.val.trim_end_matches('%'), SMALL, col);
+                y += STACK + 4.0;
+            }
+            if resp.clicked() {
+                let a = b.popup(PopupKind::Ai, b.at(r));
+                b.acts.push(a);
+            }
+        }
+        _ => return false,
+    }
+    true
 }
 
 #[cfg(test)]
@@ -576,13 +1180,13 @@ mod tests {
     #[test]
     fn squeezes_then_leaves_out() {
         let mut z = vec![("a".to_string(), 30.0, false), ("title".to_string(), 300.0, true), ("b".to_string(), 30.0, false)];
-        fit(&mut z, 200.0, true);
+        fit(&mut z, 200.0, true, GAP);
         assert_eq!(z.len(), 3);
         assert!((z[1].1 - (200.0 - 60.0 - 2.0 * GAP)).abs() < 0.01);
-        fit(&mut z, 100.0, true);
+        fit(&mut z, 100.0, true, GAP);
         assert_eq!(z.iter().map(|i| i.0.as_str()).collect::<Vec<_>>(), ["a"]);
         let mut z = vec![("a".to_string(), 30.0, false), ("b".to_string(), 30.0, false)];
-        fit(&mut z, 40.0, false);
+        fit(&mut z, 40.0, false, GAP);
         assert_eq!(z[0].0, "b");
     }
 }

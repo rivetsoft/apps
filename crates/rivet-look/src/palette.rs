@@ -49,10 +49,42 @@ pub fn rivet_colors_file() -> PathBuf {
     places::config_home().join("rivet/colors.css")
 }
 
+/// The palette chosen in Rivet (one of the built-in schemes), for desktops without a colour
+/// generator. Only Rivet writes it; while it's there it comes before every other file.
+pub fn chosen_file() -> PathBuf {
+    places::config_home().join("rivet/palette.css")
+}
+
+/// Make `css` the chosen palette (None: no chosen palette, so the generated colours show
+/// again). Written only when it differs. True when something changed.
+pub fn set_chosen(css: Option<&str>) -> std::io::Result<bool> {
+    let p = chosen_file();
+    match css {
+        Some(css) => {
+            if std::fs::read_to_string(&p).is_ok_and(|now| now == css) {
+                return Ok(false);
+            }
+            if let Some(d) = p.parent() {
+                std::fs::create_dir_all(d)?;
+            }
+            let tmp = p.with_extension("tmp");
+            std::fs::write(&tmp, css)?;
+            std::fs::rename(&tmp, &p)?;
+            Ok(true)
+        }
+        None => match std::fs::remove_file(&p) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e),
+        },
+    }
+}
+
 /// Files that may hold desktop colours, most specific first.
 fn candidates() -> Vec<PathBuf> {
     let c = places::config_home();
     vec![
+        chosen_file(),
         rivet_colors_file(),
         c.join("gtk-4.0/gtk.css"),
         c.join("gtk-4.0/colors.css"),
@@ -414,7 +446,8 @@ pub fn load() -> (Option<Palette>, Vec<PathBuf>) {
         }
     }
     let gtk = source.as_ref().and_then(|src| build(&merged, src));
-    let rivet_file = user_layers.first().is_some_and(|(_, d)| !d.is_empty());
+    // Rivet's own files: the chosen palette and the one written for it.
+    let rivet_file = user_layers.iter().take(2).any(|(_, d)| !d.is_empty());
     // When were the generated GTK colours last written (theme defaults don't count)?
     let gtk_time = watched
         .iter()
