@@ -3,6 +3,7 @@
 
 mod ai;
 mod ai_pop;
+mod audio;
 mod auth;
 mod bar;
 mod cc;
@@ -20,6 +21,7 @@ mod quick;
 mod radio;
 mod settings_app;
 mod shot;
+mod sound_pop;
 mod sys;
 mod ui;
 mod wall;
@@ -38,7 +40,7 @@ Usage:
   rivet-shell lock                  Lock the screen (the shell does this itself when idle
                                     and before sleep); --preview shows it without locking
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
-                                    power, network, bluetooth, ai (each opens or closes it); volume up|down|mute|N,
+                                    power, network, bluetooth, ai, sound (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
                                     lock, unlock, settings, wallpaper PATH|random|next|previous,

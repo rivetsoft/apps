@@ -560,6 +560,45 @@ impl Drop for NightLight {
     }
 }
 
+/// Watch the keyboards' Caps Lock and Num Lock lights (/sys/class/leds, readable by anyone, so
+/// it works whichever window has the keyboard): `f(caps, on)` when one changes.
+pub fn watch_lock_keys(f: impl Fn(bool, bool) + Send + 'static) {
+    std::thread::Builder::new()
+        .name("rivet-shell lock keys".into())
+        .spawn(move || {
+            let read = |suffix: &str| -> Option<bool> {
+                let mut any = None;
+                for e in std::fs::read_dir("/sys/class/leds").ok()?.flatten() {
+                    if e.file_name().to_string_lossy().ends_with(suffix) {
+                        let on = std::fs::read_to_string(e.path().join("brightness")).ok().is_some_and(|t| t.trim() != "0");
+                        any = Some(any.unwrap_or(false) || on);
+                    }
+                }
+                any
+            };
+            let mut last = (read("::capslock"), read("::numlock"));
+            if last == (None, None) {
+                return;
+            }
+            loop {
+                std::thread::sleep(Duration::from_millis(120));
+                let now = (read("::capslock"), read("::numlock"));
+                if let (Some(a), Some(b)) = (last.0, now.0)
+                    && a != b
+                {
+                    f(true, b);
+                }
+                if let (Some(a), Some(b)) = (last.1, now.1)
+                    && a != b
+                {
+                    f(false, b);
+                }
+                last = now;
+            }
+        })
+        .ok();
+}
+
 /// Who's logged in: their full name (or login name).
 pub fn user_name() -> String {
     let login = std::env::var("USER").unwrap_or_default();

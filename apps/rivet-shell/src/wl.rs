@@ -54,6 +54,8 @@ pub enum Msg {
     Matugen(Result<(), String>),
     Note(NoteMsg),
     Apps(Vec<rivet_xdg::launch::DesktopApp>),
+    /// Caps Lock (else Num Lock) turned on or off.
+    LockKey { caps: bool, on: bool },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,6 +138,9 @@ pub struct Shell {
     last_gen: u64,
     /// Wi-Fi networks and Bluetooth devices, read while their popup is open.
     radio: crate::radio::RadioLive,
+    /// Sound devices and apps, read while the Sound popup is open.
+    audio: crate::audio::AudioLive,
+    audio_gen: u64,
     radio_gen: u64,
     ai: crate::ai::AiLive,
     ai_gen: u64,
@@ -225,6 +230,16 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
             let _ = t.send(Msg::Wake);
         }
     });
+    let wake_tx = std::sync::Mutex::new(tx.clone());
+    let audio = crate::audio::start(move || {
+        if let Ok(t) = wake_tx.lock() {
+            let _ = t.send(Msg::Wake);
+        }
+    });
+    let key_tx = tx.clone();
+    sys::watch_lock_keys(move |caps, on| {
+        let _ = key_tx.send(Msg::LockKey { caps, on });
+    });
     let mut shell = Shell {
         conn: conn.clone(),
         qh: qh.clone(),
@@ -243,6 +258,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         live,
         last_gen: 0,
         radio,
+        audio,
+        audio_gen: 0,
         radio_gen: 0,
         ai,
         ai_gen: 0,
@@ -676,6 +693,7 @@ impl Shell {
         if p.kind == PopupKind::Ai {
             self.ai.refresh(false);
         }
+        self.audio.want(matches!(p.kind, PopupKind::Sound { .. }));
         self.radio.want(match p.kind {
             PopupKind::Network { .. } => crate::radio::WIFI,
             PopupKind::Bluetooth => crate::radio::BT,
@@ -702,6 +720,7 @@ impl Shell {
     fn close_popup(&mut self) {
         self.popup = None;
         self.radio.want(crate::radio::NONE);
+        self.audio.want(false);
         if let Some(i) = self.surfs.iter().position(|s| s.kind == Kind::Popup) {
             let s = self.surfs.remove(i);
             self.spare = Some((s.ctx, s.kit, s.tex, s.start));
@@ -717,6 +736,11 @@ impl Shell {
     fn on_msg(&mut self, m: Msg) {
         match m {
             Msg::Wake => self.status_changed(),
+            Msg::LockKey { caps, on } => {
+                if self.s.osd_keys {
+                    self.show_osd(if caps { OsdKind::CapsLock } else { OsdKind::NumLock }, on as u32, false);
+                }
+            }
             Msg::Apps(apps) => {
                 let key = |l: &[rivet_xdg::launch::DesktopApp]| l.iter().map(|a| format!("{}\t{}\t{}", a.id, a.name, a.icon)).collect::<Vec<_>>();
                 if key(&apps) != key(&self.apps) {
@@ -753,6 +777,7 @@ impl Shell {
                     ("network" | "wifi", _) => self.open_popup(Popup::at(PopupKind::Network { ask: None }, right, "")),
                     ("bluetooth", _) => self.open_popup(Popup::at(PopupKind::Bluetooth, right, "")),
                     ("ai", _) => self.open_popup(Popup::at(PopupKind::Ai, right, "")),
+                    ("sound" | "audio", _) => self.open_popup(Popup::at(PopupKind::Sound { drag: None }, right, "")),
                     ("volume", "up" | "down") => self.act(Act::Volume(arg == "up")),
                     ("volume", "mute") => self.act(Act::Mute),
                     ("mic", "mute") => self.act(Act::MicMute),
@@ -905,6 +930,13 @@ impl Shell {
             self.ai_gen = ag;
             let pop = self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Ai);
             self.redraw_kinds(if pop { &[Kind::Panel, Kind::Popup] } else { &[Kind::Panel] });
+        }
+        let ag = self.audio.generation();
+        if ag != self.audio_gen {
+            self.audio_gen = ag;
+            if self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Sound { .. })) {
+                self.redraw_kinds(&[Kind::Popup]);
+            }
         }
         let rg = self.radio.generation();
         if rg != self.radio_gen {
@@ -1179,6 +1211,7 @@ impl Shell {
             osd: self.osd,
             user: self.user.clone(),
             radios: if kind == Kind::Popup { self.radio.get() } else { Default::default() },
+            audio: if kind == Kind::Popup { self.audio.get() } else { Default::default() },
             ai: if matches!(kind, Kind::Panel | Kind::Popup) { self.ai.get() } else { Default::default() },
         };
         let Shell { surfs, s: settings, apps, popup, comp, walls, .. } = self;
@@ -1369,6 +1402,10 @@ impl Shell {
                     s.ai_pins.push(key.replace(',', " "));
                 }
             }),
+            Act::Audio(job) => {
+                self.audio.run(job);
+                self.live.refresh(false);
+            }
             Act::Radio(job) => {
                 self.radio.run(job);
                 self.live.refresh(true);
@@ -1538,6 +1575,7 @@ impl LayerShellHandler for Shell {
         if self.surfs.iter().any(|s| &s.layer == layer && s.kind == Kind::Popup) {
             self.popup = None;
             self.radio.want(crate::radio::NONE);
+            self.audio.want(false);
         }
         self.surfs.retain(|s| &s.layer != layer);
     }

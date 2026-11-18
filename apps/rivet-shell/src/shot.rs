@@ -4,7 +4,7 @@
 //!
 //! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|dock-menu, RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
-//! RIVET_SHELL_OSD=1 (the volume display), RIVET_SHELL_QUERY=text (typed into the launcher),
+//! RIVET_SHELL_OSD=1|caps (the volume or Caps Lock display), RIVET_SHELL_POPUP=sound, RIVET_SHELL_QUERY=text (typed into the launcher),
 //! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style); RIVET_SHELL_POPUP=ai also puts
 //! the AI item on the panel (RIVET_SHELL_AI_PINS=claude:5-hour,codex:Weekly pins limits).
 
@@ -147,6 +147,7 @@ impl ShotApp {
             Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None }),
+            Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None }),
             _ => None,
         };
@@ -161,10 +162,15 @@ impl ShotApp {
             dnd: false,
             night: Some(true),
             awake: Some(false),
-            osd: on("RIVET_SHELL_OSD").then_some((OsdKind::Volume, 45, false)),
+            osd: match std::env::var("RIVET_SHELL_OSD").as_deref() {
+                Ok("1") => Some((OsdKind::Volume, 45, false)),
+                Ok("caps") => Some((OsdKind::CapsLock, 1, false)),
+                _ => None,
+            },
             user: "Sam Rivers".into(),
             radios: demo_radios(),
             ai: demo_ai(),
+            audio: crate::audio::demo(),
         };
         let mut status = demo_status();
         if popup.as_ref().is_some_and(|p| p.kind == PopupKind::Bluetooth) {

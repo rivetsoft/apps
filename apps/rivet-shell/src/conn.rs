@@ -101,7 +101,7 @@ fn text_button(ui: &mut egui::Ui, row: Rect, right: f32, id: &str, label: &str) 
 }
 
 /// The title row: name, a line under it, a switch, and toolbar buttons to the switch's left.
-fn head(ui: &mut egui::Ui, title: &str, sub: &str, switch_on: Option<bool>, accent: Color32) -> (Rect, bool) {
+pub(crate) fn head(ui: &mut egui::Ui, title: &str, sub: &str, switch_on: Option<bool>, accent: Color32) -> (Rect, bool) {
     let v = ui.visuals().clone();
     let w = ui.available_width();
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, HEAD), Sense::hover());
@@ -117,13 +117,13 @@ fn head(ui: &mut egui::Ui, title: &str, sub: &str, switch_on: Option<bool>, acce
 }
 
 /// A line of quiet text where a list would be.
-fn note(ui: &mut egui::Ui, text: &str) {
+pub(crate) fn note(ui: &mut egui::Ui, text: &str) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), NOTE), Sense::hover());
     ui.painter().text(Pos2::new(r.left() + 4.0, r.center().y), Align2::LEFT_CENTER, text, ui_font(12.5), ui.visuals().weak_text_color());
 }
 
 /// A list row's background and its two lines; returns the row and its response.
-fn row(ui: &mut egui::Ui, selected: bool, title: &str, sub: &str, sub_col: Option<Color32>, room_right: f32) -> (Rect, egui::Response) {
+pub(crate) fn row(ui: &mut egui::Ui, selected: bool, title: &str, sub: &str, sub_col: Option<Color32>, room_right: f32) -> (Rect, egui::Response) {
     let v = ui.visuals().clone();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -331,7 +331,7 @@ pub fn bluetooth(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     foot(ui, m, BT_APP, "Bluetooth Settings…");
 }
 
-fn section(ui: &mut egui::Ui, name: &str) {
+pub(crate) fn section(ui: &mut egui::Ui, name: &str) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), SECTION), Sense::hover());
     ui.painter().text(Pos2::new(r.left() + 4.0, r.center().y + 2.0), Align2::LEFT_CENTER, name, ui_font(12.0), ui.visuals().weak_text_color());
 }

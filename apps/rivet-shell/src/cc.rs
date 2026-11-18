@@ -130,11 +130,32 @@ pub fn osd(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let p = ui.painter().clone();
     card(&p, r, &v, 0.97, (r.height() / 2.0) as u8);
     let fg = v.text_color();
+    if matches!(kind, OsdKind::CapsLock | OsdKind::NumLock) {
+        // The key's symbol (lit in the accent when on), its name, and on or off.
+        let on = value != 0;
+        let c = Pos2::new(r.left() + 30.0, r.center().y);
+        let col = if on { accent } else { v.weak_text_color() };
+        let key = Rect::from_center_size(c, Vec2::splat(24.0));
+        p.rect_stroke(key, 5.0, egui::Stroke::new(1.6, col), egui::StrokeKind::Inside);
+        if kind == OsdKind::CapsLock {
+            // An arrow up over a bar: ⇪.
+            let s = egui::Stroke::new(1.6, col);
+            p.add(egui::Shape::closed_line(vec![c + Vec2::new(0.0, -7.0), c + Vec2::new(5.5, -1.0), c + Vec2::new(2.5, -1.0), c + Vec2::new(2.5, 3.0), c + Vec2::new(-2.5, 3.0), c + Vec2::new(-2.5, -1.0), c + Vec2::new(-5.5, -1.0)], s));
+            p.line_segment([c + Vec2::new(-2.5, 6.0), c + Vec2::new(2.5, 6.0)], s);
+        } else {
+            p.text(c, egui::Align2::CENTER_CENTER, "1", ui_font(13.0), col);
+        }
+        let name = if kind == OsdKind::CapsLock { "Caps Lock" } else { "Num Lock" };
+        p.text(Pos2::new(r.left() + 56.0, r.center().y), egui::Align2::LEFT_CENTER, name, ui_font(14.0), fg);
+        p.text(Pos2::new(r.right() - 20.0, r.center().y), egui::Align2::RIGHT_CENTER, if on { "On" } else { "Off" }, ui_font(13.0), if on { accent } else { v.weak_text_color() });
+        return;
+    }
     let c = Pos2::new(r.left() + 26.0, r.center().y);
     match kind {
         OsdKind::Volume => glyph::speaker(&p, c + Vec2::new(2.0, 0.0), muted, fg),
         OsdKind::Mic => glyph::mic(&p, c, fg, muted),
         OsdKind::Brightness => glyph::sun(&p, c, fg),
+        OsdKind::CapsLock | OsdKind::NumLock => {}
     }
     let text = if muted { "Muted".to_string() } else { format!("{value}%") };
     let g = p.layout_no_wrap(text, ui_font(13.0), fg);

@@ -489,6 +489,7 @@ impl SettingsApp {
         });
         section(ui, "On-screen display", &mut |ui| {
             ui.checkbox(&mut self.s.osd, "Show volume and brightness as they change");
+            ui.add_enabled(self.s.osd, egui::Checkbox::new(&mut self.s.osd_keys, "Show Caps Lock and Num Lock turning on and off"));
         });
         section(ui, "Night Light", &mut |ui| {
             grid(ui, "shell-night", &mut |ui| {

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A Sound popup from the volume item (click; middle-click still mutes): the output's volume and
+  every output to choose from (speakers, headphones, Bluetooth, screens, network speakers;
+  ones with nothing plugged in are left out), the same for microphones, and each app playing
+  with its own volume, mute and the output it plays on. Read with `pactl` (PipeWire or
+  PulseAudio) only while it's open; `rivet-shell msg sound` opens it, and the mixer app
+  (pavucontrol) when installed. Caps Lock and Num Lock show on screen as they turn on and off,
+  beside volume and brightness (Settings, Notifications).
 - Idle and the lock screen. As the computer sits untouched the shell dims the screen, locks,
   turns the screens off and suspends, each after its own time (Settings, Idle & Lock), holding
   off while an app inhibits idle, Keep Awake is on, or music or a video plays. It locks before

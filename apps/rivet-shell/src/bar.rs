@@ -405,8 +405,12 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                     b.acts.push(Act::Volume(dy > 0.0));
                 }
             }
-            if resp.on_hover_text("Click to mute · scroll to change").clicked() {
+            if resp.middle_clicked() {
                 b.acts.push(Act::Mute);
+            }
+            if resp.on_hover_text("Click for sound devices · middle-click to mute · scroll to change").clicked() {
+                let a = b.popup(PopupKind::Sound { drag: None }, r.center().x);
+                b.acts.push(a);
             }
         }
         "brightness" => {

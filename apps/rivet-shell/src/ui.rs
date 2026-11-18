@@ -77,6 +77,8 @@ pub enum PopupKind {
     Bluetooth,
     /// AI plans' usage.
     Ai,
+    /// Sound devices and apps (`drag`: a volume being dragged).
+    Sound { drag: Option<(u64, u32)> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -111,6 +113,9 @@ pub enum OsdKind {
     Volume,
     Mic,
     Brightness,
+    /// Caps Lock or Num Lock turned on (value 1) or off.
+    CapsLock,
+    NumLock,
 }
 
 /// What the shell itself keeps (not read from the computer): notifications and its toggles.
@@ -133,12 +138,16 @@ pub struct Extra {
     pub radios: crate::radio::Radios,
     /// AI plans' usage (while a panel shows the AI item).
     pub ai: crate::ai::Quotas,
+    /// Sound devices and apps (while the Sound popup is open).
+    pub audio: crate::audio::Audio,
 }
 
 /// What the person asked for, done by whoever runs the shell.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Act {
     Launch(String),
+    /// Sound devices and apps: choose, change the volume, mute, move.
+    Audio(crate::audio::Job),
     /// A program with no desktop entry, by name.
     Spawn(String),
     Workspace(String),
@@ -438,6 +447,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
     };
     let rect = match pop.kind {
         PopupKind::Launcher { .. } => {
@@ -480,6 +490,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
         PopupKind::Bluetooth => crate::conn::bluetooth(&mut child, m, kit),
         PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
+        PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
     }
 }
 

@@ -121,6 +121,8 @@ pub struct Settings {
     pub notifications: bool,
     /// Show volume and brightness changes in the middle of the screen's bottom.
     pub osd: bool,
+    /// Show Caps Lock and Num Lock turning on and off there too.
+    pub osd_keys: bool,
     /// Night light's warmth, in kelvin.
     pub night_kelvin: u32,
     // ---- the compositor's window look (comp.rs): set by an included overrides file
@@ -193,6 +195,7 @@ impl Default for Settings {
             ai_pins: Vec::new(),
             notifications: true,
             osd: true,
+            osd_keys: true,
             night_kelvin: 4000,
             comp_on: false,
             comp_gaps_in: 6,
@@ -368,6 +371,7 @@ impl Settings {
                 "lock_cmd" => self.lock_cmd = v.to_string(),
                 "lock_blur" => self.lock_blur = b,
                 "lock_power" => self.lock_power = b,
+                "osd_keys" => self.osd_keys = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
                 "dock_open_apps" => self.dock_open_apps = b,
                 "dock_hide" => {
@@ -449,6 +453,7 @@ impl Settings {
             "idle_on={}\nidle_dim={}\nidle_lock={}\nidle_screen_off={}\nidle_suspend={}\nidle_media={}\nlock_on_sleep={}\nlock_cmd={}\nlock_blur={}\nlock_power={}\n",
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
         ));
+        t.push_str(&format!("osd_keys={}\n", self.osd_keys));
         for (i, p) in self.panels.iter().enumerate() {
             t.push_str(&format!("panel.{i}={}\n", p.text()));
         }
@@ -503,7 +508,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);
