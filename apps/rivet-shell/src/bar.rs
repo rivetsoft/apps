@@ -66,6 +66,7 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     let s = b.m.s;
     Some(match id {
         "launcher" | "network" | "quick-settings" | "power" => (30.0, false),
+        "bluetooth" => (if st.bluetooth.is_some() { 30.0 } else { return None }, false),
         "notifications" => (if b.m.extra.notifying { 30.0 } else { return None }, false),
         "workspaces" => {
             let ws = workspaces_here(b);
@@ -322,8 +323,18 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                     "Not connected".to_string()
                 }
             };
+            if resp.on_hover_text(format!("{tip} · click for networks")).clicked() {
+                let a = b.popup(PopupKind::Network { ask: None }, r.center().x);
+                b.acts.push(a);
+            }
+        }
+        "bluetooth" => {
+            let Some(on) = st.bluetooth else { return };
+            let resp = b.button(ui, r, id);
+            glyph::bluetooth(&p, r.center(), if on { fg } else { weak.gamma_multiply(0.6) }, on);
+            let tip = if on { "Bluetooth on · click for devices" } else { "Bluetooth off · click for devices" };
             if resp.on_hover_text(tip).clicked() {
-                let a = b.control(r.center().x);
+                let a = b.popup(PopupKind::Bluetooth, r.center().x);
                 b.acts.push(a);
             }
         }

@@ -129,6 +129,9 @@ pub struct Shell {
     s_mtime: Option<SystemTime>,
     live: sys::Live,
     last_gen: u64,
+    /// Wi-Fi networks and Bluetooth devices, read while their popup is open.
+    radio: crate::radio::RadioLive,
+    radio_gen: u64,
     apps: Vec<rivet_xdg::launch::DesktopApp>,
     popup: Option<Popup>,
     comp: Compositor,
@@ -185,6 +188,12 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     let live = sys::start(comp, move || {
         let _ = wake_tx.send(Msg::Wake);
     });
+    let wake_tx = std::sync::Mutex::new(tx.clone());
+    let radio = crate::radio::start(move || {
+        if let Ok(t) = wake_tx.lock() {
+            let _ = t.send(Msg::Wake);
+        }
+    });
     let mut shell = Shell {
         conn: conn.clone(),
         qh: qh.clone(),
@@ -202,6 +211,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         s: settings,
         live,
         last_gen: 0,
+        radio,
+        radio_gen: 0,
         apps: load_apps(),
         popup: None,
         comp,
@@ -531,9 +542,14 @@ impl Shell {
             // Opens with the list it has; a fresh one (new installs) follows in a moment.
             self.reload_apps();
         }
-        if matches!(p.kind, PopupKind::Control { .. }) {
+        if matches!(p.kind, PopupKind::Control { .. } | PopupKind::Network { .. } | PopupKind::Bluetooth) {
             self.live.refresh(true);
         }
+        self.radio.want(match p.kind {
+            PopupKind::Network { .. } => crate::radio::WIFI,
+            PopupKind::Bluetooth => crate::radio::BT,
+            _ => crate::radio::NONE,
+        });
         self.popup = Some(p);
         let s = self.new_surf(Kind::Popup, output.as_ref(), 0);
         self.surfs.push(s);
@@ -541,6 +557,7 @@ impl Shell {
 
     fn close_popup(&mut self) {
         self.popup = None;
+        self.radio.want(crate::radio::NONE);
         if let Some(i) = self.surfs.iter().position(|s| s.kind == Kind::Popup) {
             let s = self.surfs.remove(i);
             self.spare = Some((s.ctx, s.kit, s.tex, s.start));
@@ -589,6 +606,8 @@ impl Shell {
                     ("control-center" | "control" | "notifications", _) => self.open_popup(Popup::at(PopupKind::Control { drag: None }, right, "")),
                     ("calendar", _) => self.open_popup(Popup::at(PopupKind::Calendar { month: 0 }, f32::NAN, "")),
                     ("power", _) => self.open_popup(Popup::at(PopupKind::Power { confirm: None }, right, "")),
+                    ("network" | "wifi", _) => self.open_popup(Popup::at(PopupKind::Network { ask: None }, right, "")),
+                    ("bluetooth", _) => self.open_popup(Popup::at(PopupKind::Bluetooth, right, "")),
                     ("volume", "up" | "down") => self.act(Act::Volume(arg == "up")),
                     ("volume", "mute") => self.act(Act::Mute),
                     ("mic", "mute") => self.act(Act::MicMute),
@@ -730,6 +749,13 @@ impl Shell {
 
     /// The status thread read something new: draw again only the surfaces that show it.
     fn status_changed(&mut self) {
+        let rg = self.radio.generation();
+        if rg != self.radio_gen {
+            self.radio_gen = rg;
+            if self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Network { .. } | PopupKind::Bluetooth)) {
+                self.redraw_kinds(&[Kind::Popup]);
+            }
+        }
         let generation = self.live.generation();
         if generation == self.last_gen {
             return;
@@ -745,7 +771,7 @@ impl Shell {
         let prev = std::mem::replace(&mut self.prev_status, st.clone());
         let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness || (bg_changed && self.s.panels.iter().any(|p| p.has("system")));
         let dock_changed = st.running != prev.running;
-        let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. }));
+        let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Network { .. } | PopupKind::Bluetooth));
         let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.profile != prev.profile;
         for s in &mut self.surfs {
             let shows = match s.kind {
@@ -984,6 +1010,7 @@ impl Shell {
             awake: self.inhibit_mgr.as_ref().map(|_| self.inhibitor.is_some()),
             osd: self.osd,
             user: self.user.clone(),
+            radios: if kind == Kind::Popup { self.radio.get() } else { Default::default() },
         };
         let Shell { surfs, s: settings, apps, popup, comp, walls, .. } = self;
         let wall: Option<&[u8]> = wall_idx.and_then(|i| walls.get(i)).map(|w| w.pixels.as_slice());
@@ -1112,6 +1139,10 @@ impl Shell {
                 }
                 self.close_popup();
             }
+            Act::Spawn(cmd) => {
+                sys::spawn(&cmd, &[]);
+                self.close_popup();
+            }
             Act::Workspace(k) => sys::focus_workspace(self.comp, &k),
             Act::Open(p) => self.open_popup(p),
             Act::Close => self.close_popup(),
@@ -1149,6 +1180,14 @@ impl Shell {
             }
             Act::Bluetooth(on) => {
                 sys::set_bluetooth(on);
+                self.live.refresh(true);
+                // Turned on with the Bluetooth popup open: look for devices.
+                if on && matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::Bluetooth)) {
+                    self.radio.run(crate::radio::Job::BtScan);
+                }
+            }
+            Act::Radio(job) => {
+                self.radio.run(job);
                 self.live.refresh(true);
             }
             Act::NextProfile => {
@@ -1311,6 +1350,7 @@ impl LayerShellHandler for Shell {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
         if self.surfs.iter().any(|s| &s.layer == layer && s.kind == Kind::Popup) {
             self.popup = None;
+            self.radio.want(crate::radio::NONE);
         }
         self.surfs.retain(|s| &s.layer != layer);
     }

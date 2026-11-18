@@ -4,11 +4,13 @@
 mod bar;
 mod cc;
 mod config;
+mod conn;
 mod glyph;
 mod ipc;
 mod notes;
 mod panels;
 mod quick;
+mod radio;
 mod settings_app;
 mod shot;
 mod sys;
@@ -26,7 +28,7 @@ Usage:
   rivet-shell settings              The settings window
   rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
-                                    power (each opens or closes it); volume up|down|mute|N,
+                                    power, network, bluetooth (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
                                     settings, wallpaper PATH|random|next|previous, reload, quit

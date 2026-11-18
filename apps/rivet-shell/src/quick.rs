@@ -150,7 +150,7 @@ fn heading(ui: &mut egui::Ui, name: &str, extra: Option<(&str, Act)>, acts: &mut
 }
 
 /// A toolbar-style button (a hover fill, like Rivet Files' toolbar), with a drawn symbol.
-fn tool_button(ui: &mut egui::Ui, r: Rect, id: &str, tip: &str, draw: &dyn Fn(&egui::Painter, Pos2, Color32)) -> bool {
+pub fn tool_button(ui: &mut egui::Ui, r: Rect, id: &str, tip: &str, draw: &dyn Fn(&egui::Painter, Pos2, Color32)) -> bool {
     let v = ui.visuals().clone();
     let resp = ui.interact(r, egui::Id::unique(("quick-tool", id)), Sense::click());
     if resp.hovered() {
@@ -278,8 +278,29 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                         (t.glyph)(ui.painter(), Pos2::new(r.left() + 20.0, r.center().y), icol, t.on);
                         let tcol = if t.on { v.strong_text_color() } else { fg };
                         ui.painter().text(Pos2::new(r.left() + 40.0, r.center().y - 8.0), Align2::LEFT_CENTER, t.title, ui_font(13.0), tcol);
-                        let g = one_line(ui.painter(), &t.sub, ui_font(11.5), weak, r.width() - 46.0);
+                        // Wi-Fi and Bluetooth: a › at the right opens their list.
+                        let more = match t.title {
+                            "Wi-Fi" => Some((PopupKind::Network { ask: None }, "Networks")),
+                            "Bluetooth" => Some((PopupKind::Bluetooth, "Devices")),
+                            _ => None,
+                        };
+                        let room = if more.is_some() { 26.0 } else { 0.0 };
+                        let g = one_line(ui.painter(), &t.sub, ui_font(11.5), weak, r.width() - 46.0 - room);
                         ui.painter().galley(Pos2::new(r.left() + 40.0, r.center().y + 1.0), g, weak);
+                        if let Some((kind, tip)) = more {
+                            let mr = Rect::from_min_max(Pos2::new(r.right() - room, r.top() + 4.0), Pos2::new(r.right() - 4.0, r.bottom() - 4.0));
+                            let mresp = ui.interact(mr, egui::Id::unique(("quick-more", t.title)), Sense::click());
+                            if mresp.hovered() {
+                                ui.painter().rect_filled(mr, r_sm(), mix(v.panel_fill, fg, 0.10));
+                            }
+                            let c = mr.center();
+                            let col = if mresp.hovered() { v.strong_text_color() } else { weak };
+                            ui.painter().add(egui::Shape::line(vec![c + Vec2::new(-2.0, -4.5), c + Vec2::new(2.5, 0.0), c + Vec2::new(-2.0, 4.5)], Stroke::new(1.6, col)));
+                            if mresp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip).clicked() {
+                                acts.push(Act::Open(Popup::at(kind, mr.center().x, m.output)));
+                                continue;
+                            }
+                        }
                         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             acts.push(t.act.clone());
                         }

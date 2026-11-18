@@ -163,6 +163,35 @@ pub fn wifi(p: &egui::Painter, c: Pos2, col: Color32) {
     p.circle_filled(base + Vec2::new(0.0, -1.0), 1.7, col);
 }
 
+/// Wi-Fi with its strength (0–100): the arcs it doesn't reach are faint.
+pub fn wifi_signal(p: &egui::Painter, c: Pos2, col: Color32, signal: u8) {
+    use std::f32::consts::PI;
+    let base = c + Vec2::new(0.0, 5.0);
+    let faint = col.gamma_multiply(0.28);
+    for (r, need) in [(5.0, 35), (9.0, 65)] {
+        arc(p, base, r, -PI * 0.78, -PI * 0.22, Stroke::new(1.7, if signal >= need { col } else { faint }));
+    }
+    p.circle_filled(base + Vec2::new(0.0, -1.0), 1.7, col);
+}
+
+/// A small padlock (a secured network).
+pub fn lock(p: &egui::Painter, c: Pos2, col: Color32) {
+    use std::f32::consts::PI;
+    p.rect_filled(Rect::from_center_size(c + Vec2::new(0.0, 1.5), Vec2::new(7.0, 5.0)), 1.0, col);
+    arc(p, c + Vec2::new(0.0, -1.0), 2.3, PI, 2.0 * PI, Stroke::new(1.2, col));
+    for dx in [-2.3, 2.3] {
+        p.line_segment([c + Vec2::new(dx, -1.0), c + Vec2::new(dx, 0.0)], Stroke::new(1.2, col));
+    }
+}
+
+/// Look again (a circling arrow).
+pub fn refresh(p: &egui::Painter, c: Pos2, col: Color32) {
+    use std::f32::consts::PI;
+    arc(p, c, 6.0, -PI * 0.3, PI * 1.45, Stroke::new(1.6, col));
+    let tip = c + Vec2::new((-PI * 0.3).cos(), (-PI * 0.3).sin()) * 6.0;
+    p.add(Shape::convex_polygon(vec![tip + Vec2::new(-3.6, -2.4), tip + Vec2::new(1.8, -3.6), tip + Vec2::new(0.6, 2.2)], col, Stroke::NONE));
+}
+
 pub fn wired(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.6, col);
     p.rect_stroke(Rect::from_center_size(c + Vec2::new(0.0, 2.0), Vec2::new(14.0, 8.0)), 1.5, s, egui::StrokeKind::Inside);
@@ -239,6 +268,7 @@ pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32)
         "volume" => speaker(p, c + Vec2::new(1.5, 0.0), false, col),
         "brightness" => sun(p, c, col),
         "network" => wifi(p, c, col),
+        "bluetooth" => bluetooth(p, c, col, true),
         "battery" => battery(p, c - Vec2::new(1.0, 0.0), 70, false, col, accent),
         "notifications" => bell(p, c, col, false),
         "quick-settings" => sliders(p, c, col),

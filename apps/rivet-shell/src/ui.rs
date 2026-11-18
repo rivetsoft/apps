@@ -71,6 +71,10 @@ pub enum PopupKind {
     Control { drag: Option<(u8, u32)> },
     /// Right-click on a dock icon.
     DockMenu { app: String, pinned: bool },
+    /// Wi-Fi networks (`ask`: the network a password is being typed for, and the password).
+    Network { ask: Option<(String, String)> },
+    /// Bluetooth devices.
+    Bluetooth,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,7 +100,7 @@ impl Popup {
     }
     /// Whether it needs the keyboard (the launcher's search; Esc for the others).
     pub fn wants_keyboard(&self) -> bool {
-        matches!(self.kind, PopupKind::Launcher { .. })
+        matches!(self.kind, PopupKind::Launcher { .. } | PopupKind::Network { .. })
     }
 }
 
@@ -123,12 +127,16 @@ pub struct Extra {
     pub awake: Option<bool>,
     pub osd: Option<(OsdKind, u32, bool)>,
     pub user: String,
+    /// Wi-Fi networks and Bluetooth devices (while their popup is open).
+    pub radios: crate::radio::Radios,
 }
 
 /// What the person asked for, done by whoever runs the shell.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Act {
     Launch(String),
+    /// A program with no desktop entry, by name.
+    Spawn(String),
     Workspace(String),
     Open(Popup),
     Close,
@@ -141,6 +149,8 @@ pub enum Act {
     Media(&'static str),
     Wifi(bool),
     Bluetooth(bool),
+    /// Join, leave, pair, forget… (done on the radios' thread).
+    Radio(crate::radio::Job),
     NightLight(bool),
     Dnd(bool),
     KeepAwake(bool),
@@ -410,13 +420,15 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     // over the bottom ones when there are only those.
     let (edge, inset) = pop.from.unwrap_or(if top_room == 0.0 && bottom_room > 0.0 { (Edge::Bottom, bottom_room + 4.0) } else { (Edge::Top, top_room + if top_room > 0.0 { 4.0 } else { MARGIN }) });
     let below = top_room + if top_room > 0.0 { 4.0 } else { MARGIN };
-    let esc = ui.input(|i| i.key_pressed(Key::Escape));
+    // Esc while a Wi-Fi password is being typed only stops that.
+    let esc = ui.input(|i| i.key_pressed(Key::Escape)) && !matches!(pop.kind, PopupKind::Network { ask: Some(_) });
     let size = match &pop.kind {
         PopupKind::Launcher { .. } => Vec2::new(620.0f32.min(full.width() - 40.0), 480.0f32.min(full.height() - 120.0)),
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
         PopupKind::Power { .. } => Vec2::new(240.0, 238.0),
         PopupKind::Control { .. } => Vec2::new(392.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
+        PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
     };
     let rect = match pop.kind {
         PopupKind::Launcher { .. } => {
@@ -456,6 +468,8 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Power { confirm } => power_menu(&mut child, confirm, m),
         PopupKind::Control { drag } => crate::quick::quick_settings(&mut child, drag, m, kit),
         PopupKind::DockMenu { app, pinned } => dock_menu(&mut child, app, *pinned, m),
+        PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
+        PopupKind::Bluetooth => crate::conn::bluetooth(&mut child, m, kit),
     }
 }
 

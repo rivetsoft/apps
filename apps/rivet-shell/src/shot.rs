@@ -28,6 +28,19 @@ pub struct ShotApp {
     shot: rivet_kit::Shot,
 }
 
+fn demo_radios() -> crate::radio::Radios {
+    use crate::radio::{BtDevice, Radios, WifiNet};
+    let net = |ssid: &str, signal, secure, active, saved| WifiNet { ssid: ssid.into(), signal, secure, active, saved };
+    let dev = |name: &str, paired, connected| BtDevice { mac: format!("00:11:22:33:44:{:02X}", name.len()), name: name.into(), paired, connected };
+    Radios {
+        wifi: vec![net("Home", 82, true, true, true), net("Home 5G", 64, true, false, true), net("Corner Café", 51, false, false, false), net("Neighbours", 40, true, false, false), net("Library Guest", 22, true, false, false)],
+        bt: vec![dev("Headphones", true, true), dev("Keyboard", true, false), dev("Speaker in the Kitchen", false, false)],
+        wifi_read: true,
+        bt_read: true,
+        ..Default::default()
+    }
+}
+
 pub fn demo_status() -> Status {
     let ws = |k: &str, active: bool, busy: bool| Workspace { key: k.into(), label: k.into(), active, busy, output: String::new() };
     Status {
@@ -101,6 +114,8 @@ impl ShotApp {
             Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: 550.0, output: String::new(), focus: false, from: None }),
             Ok("power") => Some(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: 1080.0, output: String::new(), focus: false, from: None }),
             Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None }),
+            Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
+            Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None }),
             _ => None,
         };
@@ -117,8 +132,13 @@ impl ShotApp {
             awake: Some(false),
             osd: on("RIVET_SHELL_OSD").then_some((OsdKind::Volume, 45, false)),
             user: "Sam Rivers".into(),
+            radios: demo_radios(),
         };
-        ShotApp { s, kit: Kit::new(false), status: demo_status(), extra, apps, wall, popup, shot: rivet_kit::Shot::new(path) }
+        let mut status = demo_status();
+        if popup.as_ref().is_some_and(|p| p.kind == PopupKind::Bluetooth) {
+            status.bluetooth = Some(true);
+        }
+        ShotApp { s, kit: Kit::new(false), status, extra, apps, wall, popup, shot: rivet_kit::Shot::new(path) }
     }
 }
 

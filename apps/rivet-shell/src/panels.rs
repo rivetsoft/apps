@@ -24,7 +24,8 @@ pub const ITEMS: &[(&str, &str, &str)] = &[
     ("system", "Processor and Memory", "How busy the computer is"),
     ("volume", "Volume", "Click to mute, scroll to change"),
     ("brightness", "Brightness", "Scroll to change (laptops)"),
-    ("network", "Network", "Wi-Fi or wired; click for quick settings"),
+    ("network", "Network", "Wi-Fi or wired; click to pick a network"),
+    ("bluetooth", "Bluetooth", "Click to connect or pair devices"),
     ("battery", "Battery", "Click for quick settings"),
     ("notifications", "Notifications", "A bell with a dot for new ones"),
     ("quick-settings", "Quick Settings", "Sliders, toggles, the notification history"),
@@ -64,7 +65,7 @@ impl Default for PanelCfg {
             edge: Edge::Top,
             floating: true,
             screen: String::new(),
-            zones: [list(&["launcher", "workspaces", "window-title"]), list(&["clock"]), list(&["media", "volume", "brightness", "network", "battery", "notifications", "quick-settings", "power"])],
+            zones: [list(&["launcher", "workspaces", "window-title"]), list(&["clock"]), list(&["media", "volume", "brightness", "network", "bluetooth", "battery", "notifications", "quick-settings", "power"])],
         }
     }
 }
