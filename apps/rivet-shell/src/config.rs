@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use rivet_look::theme::Mode;
 
+use crate::panels::PanelCfg;
+
 pub static NO_SAVE: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -41,25 +43,11 @@ pub struct Settings {
     pub color_mode: Mode,
     /// matugen's scheme type (`-t`), e.g. scheme-tonal-spot.
     pub scheme_type: String,
-    // ---- panel
-    pub panel: bool,
-    pub panel_edge: Edge,
-    /// A floating bar with rounded corners, or one that spans the edge.
-    pub panel_floating: bool,
+    // ---- panels
+    /// Every panel, in order (on the same edge, the first is nearest it).
+    pub panels: Vec<PanelCfg>,
     /// The clock, in strftime form.
     pub clock_format: String,
-    pub show_workspaces: bool,
-    pub show_volume: bool,
-    pub show_network: bool,
-    pub show_battery: bool,
-    /// The focused window's title, beside the workspaces.
-    pub show_window_title: bool,
-    /// What's playing (click to pause).
-    pub show_media: bool,
-    /// Screen brightness (laptops).
-    pub show_brightness: bool,
-    /// The notifications bell.
-    pub show_bell: bool,
     // ---- notifications, on-screen display, night light
     /// Be the notification service (cards in the corner, a history in the control center).
     pub notifications: bool,
@@ -96,18 +84,8 @@ impl Default for Settings {
             matugen: true,
             color_mode: Mode::Dark,
             scheme_type: "scheme-tonal-spot".into(),
-            panel: true,
-            panel_edge: Edge::Top,
-            panel_floating: true,
+            panels: vec![PanelCfg::default()],
             clock_format: "%a %b %-d  %H:%M".into(),
-            show_workspaces: true,
-            show_volume: true,
-            show_network: true,
-            show_battery: true,
-            show_window_title: true,
-            show_media: true,
-            show_brightness: true,
-            show_bell: true,
             notifications: true,
             osd: true,
             night_kelvin: 4000,
@@ -161,6 +139,17 @@ fn mode_from(v: &str) -> Mode {
     }
 }
 
+/// The single panel of earlier versions (`panel=`, `panel_edge=`, `show_volume=`…), turned into
+/// the first of the panels when the file has no panel list yet.
+#[derive(Default)]
+struct OldPanel {
+    seen: bool,
+    off: bool,
+    bottom: bool,
+    edge_to_edge: bool,
+    hidden: Vec<&'static str>,
+}
+
 impl Settings {
     pub fn load() -> Settings {
         let mut s = Settings::default();
@@ -170,11 +159,26 @@ impl Settings {
     }
 
     fn parse(&mut self, text: &str) {
+        let mut old = OldPanel::default();
+        let mut panels: Vec<(usize, PanelCfg)> = Vec::new();
+        let mut count: Option<usize> = None;
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
             let v = v.trim();
             let b = v == "true";
-            match k.trim() {
+            let k = k.trim();
+            if let Some(n) = k.strip_prefix("panel.").and_then(|n| n.parse::<usize>().ok()) {
+                panels.push((n, PanelCfg::parse(v)));
+                continue;
+            }
+            // The old single panel's settings.
+            let shown = |id: &'static str, old: &mut OldPanel| {
+                old.seen = true;
+                if !b {
+                    old.hidden.push(id);
+                }
+            };
+            match k {
                 "theme" => self.theme = mode_from(v),
                 "accent" => {
                     if let Some(h) = v.strip_prefix('#').filter(|h| h.len() == 6)
@@ -190,18 +194,28 @@ impl Settings {
                 "matugen" => self.matugen = b,
                 "color_mode" => self.color_mode = if v == "light" { Mode::Light } else { Mode::Dark },
                 "scheme_type" => self.scheme_type = v.to_string(),
-                "panel" => self.panel = b,
-                "panel_edge" => self.panel_edge = if v == "bottom" { Edge::Bottom } else { Edge::Top },
-                "panel_floating" => self.panel_floating = b,
+                "panel_count" => count = v.parse().ok(),
+                "panel" => {
+                    old.seen = true;
+                    old.off = !b;
+                }
+                "panel_edge" => {
+                    old.seen = true;
+                    old.bottom = v == "bottom";
+                }
+                "panel_floating" => {
+                    old.seen = true;
+                    old.edge_to_edge = !b;
+                }
+                "show_workspaces" => shown("workspaces", &mut old),
+                "show_volume" => shown("volume", &mut old),
+                "show_network" => shown("network", &mut old),
+                "show_battery" => shown("battery", &mut old),
+                "show_window_title" => shown("window-title", &mut old),
+                "show_media" => shown("media", &mut old),
+                "show_brightness" => shown("brightness", &mut old),
+                "show_bell" => shown("notifications", &mut old),
                 "clock_format" => self.clock_format = v.to_string(),
-                "show_workspaces" => self.show_workspaces = b,
-                "show_volume" => self.show_volume = b,
-                "show_network" => self.show_network = b,
-                "show_battery" => self.show_battery = b,
-                "show_window_title" => self.show_window_title = b,
-                "show_media" => self.show_media = b,
-                "show_brightness" => self.show_brightness = b,
-                "show_bell" => self.show_bell = b,
                 "notifications" => self.notifications = b,
                 "osd" => self.osd = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
@@ -217,13 +231,27 @@ impl Settings {
                 _ => {}
             }
         }
+        if count.is_some() || !panels.is_empty() {
+            panels.sort_by_key(|p| p.0);
+            self.panels = panels.into_iter().map(|p| p.1).take(count.unwrap_or(usize::MAX)).collect();
+        } else if old.seen {
+            self.panels = if old.off {
+                Vec::new()
+            } else {
+                let mut p = PanelCfg { edge: if old.bottom { Edge::Bottom } else { Edge::Top }, floating: !old.edge_to_edge, ..PanelCfg::default() };
+                for z in &mut p.zones {
+                    z.retain(|i| !old.hidden.contains(&i.as_str()));
+                }
+                vec![p]
+            };
+        }
     }
 
     pub fn text(&self) -> String {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
-        format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\npanel={}\npanel_edge={}\npanel_floating={}\nclock_format={}\nshow_workspaces={}\nshow_volume={}\nshow_network={}\nshow_battery={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nshow_window_title={}\nshow_media={}\nshow_brightness={}\nshow_bell={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\n",
+        let mut t = format!(
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -232,14 +260,7 @@ impl Settings {
             self.matugen,
             mode_name(self.color_mode),
             one(&self.scheme_type),
-            self.panel,
-            if self.panel_edge == Edge::Bottom { "bottom" } else { "top" },
-            self.panel_floating,
             one(&self.clock_format),
-            self.show_workspaces,
-            self.show_volume,
-            self.show_network,
-            self.show_battery,
             self.dock,
             self.dock_apps.join(","),
             self.dock_icon,
@@ -248,15 +269,16 @@ impl Settings {
             self.widget_clock,
             self.widget_system,
             if self.widget_side == Side::Right { "right" } else { "left" },
-            self.show_window_title,
-            self.show_media,
-            self.show_brightness,
-            self.show_bell,
             self.notifications,
             self.osd,
             self.night_kelvin,
             self.dock_open_apps,
-        )
+            self.panels.len(),
+        );
+        for (i, p) in self.panels.iter().enumerate() {
+            t.push_str(&format!("panel.{i}={}\n", p.text()));
+        }
+        t
     }
 
     pub fn save(&self) {
@@ -284,10 +306,28 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), panel_edge: Edge::Bottom, widget_side: Side::Right, color_mode: Mode::Light, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), widget_side: Side::Right, color_mode: Mode::Light, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
+        s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);
+        // No panels at all stays no panels.
+        let none = Settings { panels: Vec::new(), ..Settings::default() };
+        let mut t = Settings::default();
+        t.parse(&none.text());
+        assert!(t.panels.is_empty());
+    }
+
+    #[test]
+    fn takes_in_the_old_single_panel() {
+        let mut t = Settings::default();
+        t.parse("panel=true\npanel_edge=bottom\npanel_floating=false\nshow_volume=false\nshow_bell=true\n");
+        assert_eq!(t.panels.len(), 1);
+        let p = &t.panels[0];
+        assert!(p.edge == Edge::Bottom && !p.floating && !p.has("volume") && p.has("notifications") && p.has("clock"));
+        let mut t = Settings::default();
+        t.parse("panel=false\n");
+        assert!(t.panels.is_empty());
     }
 }

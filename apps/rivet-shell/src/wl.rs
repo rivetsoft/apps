@@ -61,6 +61,8 @@ enum Kind {
 
 struct Surf {
     kind: Kind,
+    /// Which panel (for panels).
+    idx: usize,
     layer: LayerSurface,
     output: Option<wl_output::WlOutput>,
     output_name: String,
@@ -242,7 +244,7 @@ fn load_apps() -> Vec<rivet_xdg::launch::DesktopApp> {
 impl Shell {
     // ---------------------------------------------------------------- surfaces
 
-    fn new_surf(&mut self, kind: Kind, output: Option<&wl_output::WlOutput>) -> Surf {
+    fn new_surf(&mut self, kind: Kind, output: Option<&wl_output::WlOutput>, idx: usize) -> Surf {
         let surface = self.compositor.create_surface(&self.qh);
         let layer = match kind {
             Kind::Background => Layer::Background,
@@ -269,7 +271,9 @@ impl Shell {
                 layer.set_size(0, 0);
             }
             Kind::Panel => {
-                shape_panel(&layer, s);
+                if let Some(cfg) = s.panels.get(idx) {
+                    shape_panel(&layer, cfg);
+                }
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Dock => {
@@ -311,6 +315,7 @@ impl Shell {
         };
         Surf {
             kind,
+            idx,
             layer,
             output: output.cloned(),
             output_name: name,
@@ -366,7 +371,7 @@ impl Shell {
             sf.dirty = true;
         }
         if !have {
-            let c = self.new_surf(Kind::Cards, None);
+            let c = self.new_surf(Kind::Cards, None, 0);
             self.surfs.push(c);
         }
     }
@@ -381,7 +386,7 @@ impl Shell {
         if self.surfs.iter().any(|s| s.kind == Kind::Osd) {
             self.redraw_kinds(&[Kind::Osd]);
         } else {
-            let o = self.new_surf(Kind::Osd, None);
+            let o = self.new_surf(Kind::Osd, None, 0);
             self.surfs.push(o);
         }
     }
@@ -421,22 +426,55 @@ impl Shell {
 
     /// The panel and dock for a screen, as the settings ask.
     fn bars_for(&mut self, output: &wl_output::WlOutput) {
-        if self.s.panel {
-            let p = self.new_surf(Kind::Panel, Some(output));
-            self.surfs.push(p);
+        let name = self.output_state.info(output).and_then(|i| i.name).unwrap_or_default();
+        for idx in 0..self.s.panels.len() {
+            if self.s.panels[idx].on(&name) {
+                let p = self.new_surf(Kind::Panel, Some(output), idx);
+                self.surfs.push(p);
+            }
         }
         if self.s.dock {
-            let d = self.new_surf(Kind::Dock, Some(output));
+            let d = self.new_surf(Kind::Dock, Some(output), 0);
             self.surfs.push(d);
         }
     }
 
-    /// Panels (or docks) on every screen, or none: only those surfaces come or go.
+    /// The panels follow their settings: a panel no longer on a screen goes, a new one comes,
+    /// a moved or reshaped one is reshaped in place, one whose items changed is drawn again.
+    fn sync_panels(&mut self, old: &[crate::panels::PanelCfg]) {
+        let new = self.s.panels.clone();
+        self.surfs.retain(|sf| sf.kind != Kind::Panel || new.get(sf.idx).is_some_and(|c| c.on(&sf.output_name)));
+        for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Panel) {
+            let (a, b) = (old.get(sf.idx), &new[sf.idx]);
+            if a.is_none_or(|a| a.edge != b.edge || a.floating != b.floating) {
+                shape_panel(&sf.layer, b);
+                sf.layer.commit();
+                sf.dirty = true;
+            } else if a != Some(b) {
+                sf.dirty = true;
+            }
+        }
+        for o in self.output_state.outputs().collect::<Vec<_>>() {
+            let name = self.output_state.info(&o).and_then(|i| i.name).unwrap_or_default();
+            for (idx, cfg) in new.iter().enumerate() {
+                let have = self.surfs.iter().any(|sf| sf.kind == Kind::Panel && sf.idx == idx && sf.output.as_ref() == Some(&o));
+                if cfg.on(&name) && !have {
+                    let p = self.new_surf(Kind::Panel, Some(&o), idx);
+                    self.surfs.push(p);
+                }
+            }
+        }
+        if self.inhibitor.is_some() {
+            self.set_awake(true);
+        }
+    }
+
+    /// Docks on every screen, or none: only those surfaces come or go.
     fn set_bars(&mut self, kind: Kind, on: bool) {
         let have = self.surfs.iter().any(|s| s.kind == kind);
         if on && !have {
             for o in self.output_state.outputs().collect::<Vec<_>>() {
-                let s = self.new_surf(kind, Some(&o));
+                let s = self.new_surf(kind, Some(&o), 0);
                 self.surfs.push(s);
             }
         } else if !on {
@@ -471,7 +509,7 @@ impl Shell {
             self.live.refresh(true);
         }
         self.popup = Some(p);
-        let s = self.new_surf(Kind::Popup, output.as_ref());
+        let s = self.new_surf(Kind::Popup, output.as_ref(), 0);
         self.surfs.push(s);
     }
 
@@ -634,7 +672,7 @@ impl Shell {
         self.bg_key = bg_key;
         // Likewise the panel and the dock (open apps).
         let prev = std::mem::replace(&mut self.prev_status, st.clone());
-        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness;
+        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness || (bg_changed && self.s.panels.iter().any(|p| p.has("system")));
         let dock_changed = st.running != prev.running;
         let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. }));
         let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.profile != prev.profile;
@@ -699,17 +737,8 @@ impl Shell {
         // show a setting are drawn again.
         let look = old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size;
         let wall_changed = old.wallpaper != s.wallpaper || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type;
-        let panel_shape = old.panel_edge != s.panel_edge || old.panel_floating != s.panel_floating;
-        let panel_content = old.clock_format != s.clock_format
-            || old.show_workspaces != s.show_workspaces
-            || old.show_volume != s.show_volume
-            || old.show_network != s.show_network
-            || old.show_battery != s.show_battery
-            || old.show_window_title != s.show_window_title
-            || old.show_media != s.show_media
-            || old.show_brightness != s.show_brightness
-            || old.show_bell != s.show_bell
-            || old.notifications != s.notifications;
+        let panels_changed = old.panels != s.panels;
+        let panel_content = old.clock_format != s.clock_format || old.notifications != s.notifications;
         let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps;
         if old.notifications != s.notifications {
             self.set_notifications();
@@ -730,15 +759,10 @@ impl Shell {
             self.redraw_kinds(&[Kind::Background, Kind::Panel, Kind::Dock, Kind::Popup]);
         }
         // The panel: on or off, moved or reshaped, or just drawn again.
-        if old.panel != s.panel {
-            self.set_bars(Kind::Panel, s.panel);
-        } else if panel_shape {
-            for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Panel) {
-                shape_panel(&sf.layer, &s);
-                sf.layer.commit();
-                sf.dirty = true;
-            }
-        } else if panel_content {
+        if panels_changed {
+            self.sync_panels(&old.panels);
+        }
+        if panel_content {
             self.redraw_kinds(&[Kind::Panel]);
         }
         // The dock likewise.
@@ -750,7 +774,7 @@ impl Shell {
             self.redraw_kinds(&[Kind::Dock]);
         }
         // The wallpaper's widgets sit below the panel: they move with it.
-        if widgets || panel_shape || old.panel != s.panel {
+        if widgets || panels_changed {
             self.redraw_kinds(&[Kind::Background]);
         }
         if wall_changed {
@@ -820,6 +844,7 @@ impl Shell {
         let status = self.live.get();
         let mut acts: Vec<Act> = Vec::new();
         let kind = self.surfs[i].kind;
+        let idx = self.surfs[i].idx;
         let (w, h) = self.surfs[i].size;
         if w == 0 || h == 0 {
             return;
@@ -862,7 +887,7 @@ impl Shell {
             let mut m = Model { s: settings, status: &status, extra: &extra, apps, compositor: *comp, output: &output_name, acts: &mut acts };
             match kind {
                 Kind::Background => ui::widgets(ui, &mut m, &mut surf.kit),
-                Kind::Panel => ui::panel(ui, &mut m, &mut surf.kit),
+                Kind::Panel => crate::bar::panel(ui, &mut m, &mut surf.kit, idx),
                 Kind::Dock => ui::dock(ui, &mut m, &mut surf.kit),
                 Kind::Popup => {
                     if let Some(p) = popup.as_mut() {
@@ -1102,7 +1127,7 @@ impl OutputHandler for Shell {
         &mut self.output_state
     }
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: wl_output::WlOutput) {
-        let bg = self.new_surf(Kind::Background, Some(&output));
+        let bg = self.new_surf(Kind::Background, Some(&output), 0);
         self.surfs.push(bg);
         self.bars_for(&output);
     }
@@ -1277,10 +1302,10 @@ delegate_layer!(Shell);
 delegate_registry!(Shell);
 
 /// The panel's place and size: along the top or bottom edge, keeping windows clear of it.
-fn shape_panel(layer: &LayerSurface, s: &Settings) {
-    let edge = if s.panel_edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM };
+fn shape_panel(layer: &LayerSurface, p: &crate::panels::PanelCfg) {
+    let edge = if p.edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM };
     layer.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-    let h = ui::panel_height(s) as u32;
+    let h = p.height() as u32;
     layer.set_size(0, h);
     layer.set_exclusive_zone(h as i32);
 }
@@ -1296,7 +1321,8 @@ fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::Des
 
 /// The notification cards: in the corner on the panel's side, clear of the panel.
 fn shape_cards(layer: &LayerSurface, s: &Settings, cards: &[crate::notes::Note]) {
-    let edge = if s.panel_edge == Edge::Bottom { Anchor::BOTTOM } else { Anchor::TOP };
+    // On the side of the first panel (the top when there are none).
+    let edge = if s.panels.first().is_some_and(|p| p.edge == Edge::Bottom) { Anchor::BOTTOM } else { Anchor::TOP };
     layer.set_anchor(edge | Anchor::RIGHT);
     layer.set_size(crate::cc::CARDS_W as u32, crate::cc::cards_height(cards).ceil() as u32);
     layer.set_exclusive_zone(0);

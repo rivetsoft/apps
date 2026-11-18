@@ -10,6 +10,10 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   (scroll to change), network, battery, notifications, quick settings and a power menu (lock,
   suspend, log out, restart, shut down; the last three ask first). Floating or edge to edge, at
   the top or the bottom.
+- **Panels**: as many as you like, each along the top or bottom of every screen or of one,
+  floating or edge to edge. Each has three zones (left, center, right) and you choose which
+  items go in each and in what order (Settings, Panels). Items are named by id, ready for
+  plugins (`plugin:NAME`) later.
 - **Quick settings**: volume and brightness sliders; Wi-Fi, Bluetooth, Night Light, Do Not
   Disturb, Keep Awake, power mode, microphone and dark style; what's playing with its buttons;
   and the notification history.
@@ -24,7 +28,7 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
 - **Wallpaper and colors**: choose a picture in Settings; the shell shows it on every screen and
   runs [matugen](https://github.com/InioX/matugen) on it, so the desktop's colors (and every
   Rivet app's, which follow matugen live) come from the picture.
-- **Settings** (`rivet-shell settings`): wallpaper, colors, panel, dock and widgets, like the
+- **Settings** (`rivet-shell settings`): wallpaper, colors, panels, dock, widgets and notifications, like the
   other apps' Preferences. Changes apply to the running shell at once.
 
 ## Running it

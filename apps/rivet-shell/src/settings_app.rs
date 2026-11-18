@@ -12,8 +12,10 @@ use rivet_look::theme::{ACCENTS, Mode, r_md, r_sm, r_xs, selected_tile};
 use rivet_look::{fonts, palette};
 use rivet_xdg::launch::DesktopApp;
 
-use crate::config::{Edge, Settings, Side};
+use crate::config::{Settings, Side};
 use crate::ui::find_app;
+
+mod panel_editor;
 
 pub const ICON_SVG: &str = include_str!("../data/rivet-shell.svg");
 
@@ -35,7 +37,7 @@ impl Page {
         match self {
             Page::Wallpaper => "Wallpaper",
             Page::Appearance => "Appearance",
-            Page::Panel => "Panel",
+            Page::Panel => "Panels",
             Page::Dock => "Dock",
             Page::Widgets => "Widgets",
             Page::Notifications => "Notifications",
@@ -68,6 +70,8 @@ pub struct SettingsApp {
     thumb_rx: Option<Receiver<Thumb>>,
     listed_dir: String,
     add_filter: String,
+    /// The screens panels can be put on (output names).
+    screens: Vec<String>,
     note: Option<String>,
     app_icon: Option<egui::TextureHandle>,
     shot: Option<rivet_kit::Shot>,
@@ -125,6 +129,7 @@ impl SettingsApp {
             thumb_rx: None,
             listed_dir: String::new(),
             add_filter: String::new(),
+            screens: if shot.is_some() { vec!["DP-1".into(), "HDMI-A-1".into()] } else { crate::sys::screens(crate::sys::Compositor::detect()) },
             note: None,
             app_icon: None,
             shot: shot.map(rivet_kit::Shot::new),
@@ -439,48 +444,7 @@ impl SettingsApp {
     }
 
     fn panel_page(&mut self, ui: &mut egui::Ui) {
-        section(ui, "Panel", &mut |ui| {
-            ui.checkbox(&mut self.s.panel, "Show the panel");
-            ui.add_space(8.0);
-            ui.add_enabled_ui(self.s.panel, |ui| {
-                grid(ui, "shell-panel", &mut |ui| {
-                    ui.label("Edge");
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.s.panel_edge, Edge::Top, "Top");
-                        ui.selectable_value(&mut self.s.panel_edge, Edge::Bottom, "Bottom");
-                    });
-                    ui.end_row();
-                    ui.label("Shape");
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.s.panel_floating, true, "Floating");
-                        ui.selectable_value(&mut self.s.panel_floating, false, "Edge to edge");
-                    });
-                    ui.end_row();
-                    ui.label("Clock");
-                    egui::ComboBox::from_id_salt("shell-clock").selected_text(chrono::Local::now().format(&self.s.clock_format).to_string()).width(220.0).show_ui(ui, |ui| {
-                        for f in ["%H:%M", "%a %b %-d  %H:%M", "%A %-d %B  %H:%M", "%-I:%M %p", "%a %b %-d  %-I:%M %p", "%Y-%m-%d  %H:%M"] {
-                            let shown = chrono::Local::now().format(f).to_string();
-                            ui.selectable_value(&mut self.s.clock_format, f.to_string(), shown);
-                        }
-                    });
-                    ui.end_row();
-                });
-            });
-        });
-        section(ui, "Shows", &mut |ui| {
-            ui.checkbox(&mut self.s.show_workspaces, "Workspaces");
-            hint(ui, "From niri, Hyprland or Sway; other compositors don't say.");
-            ui.add_space(4.0);
-            ui.checkbox(&mut self.s.show_window_title, "The focused window's title");
-            ui.checkbox(&mut self.s.show_media, "What's playing (click to pause)");
-            ui.checkbox(&mut self.s.show_volume, "Volume (click to mute, scroll to change)");
-            ui.checkbox(&mut self.s.show_brightness, "Screen brightness (scroll to change; laptops)");
-            ui.checkbox(&mut self.s.show_network, "Network");
-            ui.checkbox(&mut self.s.show_battery, "Battery");
-            ui.checkbox(&mut self.s.show_bell, "Notifications");
-            ui.add_space(4.0);
-            hint(ui, "The quick settings button (sliders) and the power button are always there.");
-        });
+        self.panels_editor(ui);
     }
 
     fn notifications_page(&mut self, ui: &mut egui::Ui) {

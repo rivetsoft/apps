@@ -83,7 +83,13 @@ impl ShotApp {
             s.follow_desktop_colors = false;
         }
         if std::env::var("RIVET_SHELL_EDGE").as_deref() == Ok("bottom") {
-            s.panel_edge = Edge::Bottom;
+            s.panels[0].edge = Edge::Bottom;
+        }
+        if std::env::var("RIVET_SHELL_PANELS").as_deref() == Ok("2") {
+            // A second panel along the bottom, edge to edge, with other items in its zones.
+            let list = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+            s.panels.push(crate::panels::PanelCfg { edge: Edge::Bottom, floating: false, screen: String::new(), zones: [list(&["workspaces", "window-title"]), list(&["media"]), list(&["system", "clock"])] });
+            s.dock = false;
         }
         let dir = std::env::temp_dir().join(format!("rivet-shell-shot-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
@@ -91,11 +97,11 @@ impl ShotApp {
         let _ = std::fs::remove_dir_all(&dir);
         let query = std::env::var("RIVET_SHELL_QUERY").unwrap_or_default();
         let popup = match std::env::var("RIVET_SHELL_POPUP").as_deref() {
-            Ok("launcher") => Some(Popup { kind: PopupKind::Launcher { query, sel: 0 }, anchor_x: 0.0, output: String::new(), focus: false }),
-            Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: 550.0, output: String::new(), focus: false }),
-            Ok("power") => Some(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: 1080.0, output: String::new(), focus: false }),
-            Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false }),
-            Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false }),
+            Ok("launcher") => Some(Popup { kind: PopupKind::Launcher { query, sel: 0 }, anchor_x: 0.0, output: String::new(), focus: false, from: None }),
+            Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: 550.0, output: String::new(), focus: false, from: None }),
+            Ok("power") => Some(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: 1080.0, output: String::new(), focus: false, from: None }),
+            Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None }),
+            Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None }),
             _ => None,
         };
         let mut apps = rivet_xdg::launch::all_apps();
@@ -138,21 +144,28 @@ impl eframe::App for ShotApp {
             f(&mut child, &mut m, &mut self.kit);
         };
         at(full, &mut |ui, m, k| ui::widgets(ui, m, k));
-        let ph = ui::panel_height(&s);
-        let panel = if s.panel_edge == Edge::Top { Rect::from_min_size(full.min, Vec2::new(full.width(), ph)) } else { Rect::from_min_size(Pos2::new(full.left(), full.bottom() - ph), Vec2::new(full.width(), ph)) };
-        at(panel, &mut |ui, m, k| ui::panel(ui, m, k));
+        // Each panel against its edge, after the ones before it on that edge.
+        for (idx, p) in s.panels.iter().enumerate() {
+            let reach = crate::panels::reach(&s.panels, idx, "");
+            let h = p.height();
+            let r = if p.edge == Edge::Top { Rect::from_min_size(Pos2::new(full.left(), full.top() + reach - h), Vec2::new(full.width(), h)) } else { Rect::from_min_size(Pos2::new(full.left(), full.bottom() - reach), Vec2::new(full.width(), h)) };
+            at(r, &mut |ui, m, k| crate::bar::panel(ui, m, k, idx));
+        }
+        let top_room = crate::panels::room(&s.panels, "", Edge::Top);
+        let bottom = full.bottom() - crate::panels::room(&s.panels, "", Edge::Bottom);
         let items = ui::dock_items(&s, &self.apps, &self.status.running);
         let (dsize, _) = ui::dock_size(&s, &items);
-        let bottom = if s.panel_edge == Edge::Bottom { full.bottom() - ph } else { full.bottom() };
         let dock = Rect::from_min_size(Pos2::new(full.center().x - dsize.x / 2.0, bottom - dsize.y), dsize);
-        at(dock, &mut |ui, m, k| ui::dock(ui, m, k));
+        if s.dock {
+            at(dock, &mut |ui, m, k| ui::dock(ui, m, k));
+        }
         if self.extra.osd.is_some() {
             let r = Rect::from_center_size(Pos2::new(full.center().x, dock.top() - 12.0 - crate::cc::OSD_H / 2.0), Vec2::new(crate::cc::OSD_W, crate::cc::OSD_H));
             at(r, &mut |ui, m, k| crate::cc::osd(ui, m, k));
         }
         if !self.extra.cards.is_empty() {
             let h = crate::cc::cards_height(&self.extra.cards);
-            let top = if s.panel_edge == Edge::Top { full.top() + ph + 2.0 } else { full.bottom() - ph - 2.0 - h };
+            let top = if s.panels.first().is_none_or(|p| p.edge == Edge::Top) { full.top() + top_room + 2.0 } else { bottom - 2.0 - h };
             let r = Rect::from_min_size(Pos2::new(full.right() - 4.0 - crate::cc::CARDS_W, top), Vec2::new(crate::cc::CARDS_W, h));
             at(r, &mut |ui, m, k| crate::cc::cards(ui, m, k));
         }

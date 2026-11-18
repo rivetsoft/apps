@@ -15,22 +15,15 @@ use rivet_look::{fonts, quick};
 use rivet_xdg::launch::DesktopApp;
 
 use crate::config::{Edge, Settings, Side};
-use crate::glyph;
 use crate::notes::Note;
-use crate::sys::{Compositor, Net, Power, Status};
+use crate::sys::{Compositor, Power, Status};
 
 /// Heights and room, in points.
-pub const BAR: f32 = 36.0;
-pub const MARGIN: f32 = 6.0;
+pub use crate::panels::MARGIN;
 const DOCK_PAD: f32 = 8.0;
 const DOCK_GAP: f32 = 6.0;
 const DOCK_SEP: f32 = 13.0;
 const DOCK_LABEL: f32 = 30.0;
-
-/// The panel surface's height (and the room it keeps from windows).
-pub fn panel_height(s: &Settings) -> f32 {
-    if s.panel_floating { BAR + MARGIN * 2.0 } else { BAR }
-}
 
 /// An open app's desktop entry, by the id its windows carry.
 pub fn open_app<'a>(apps: &'a [DesktopApp], running: &str) -> Option<&'a DesktopApp> {
@@ -89,6 +82,9 @@ pub struct Popup {
     /// Its screen's name (empty: whichever the compositor picks).
     pub output: String,
     pub focus: bool,
+    /// The panel it opens from: that panel's edge, and how far from the edge to open (None:
+    /// opened by a key, so under the screen's top panels, or over its bottom ones).
+    pub from: Option<(Edge, f32)>,
 }
 
 impl Popup {
@@ -96,7 +92,7 @@ impl Popup {
         Popup::at(PopupKind::Launcher { query: String::new(), sel: 0 }, 0.0, output)
     }
     pub fn at(kind: PopupKind, anchor_x: f32, output: &str) -> Popup {
-        Popup { kind, anchor_x, output: output.to_string(), focus: true }
+        Popup { kind, anchor_x, output: output.to_string(), focus: true, from: None }
     }
     /// Whether it needs the keyboard (the launcher's search; Esc for the others).
     pub fn wants_keyboard(&self) -> bool {
@@ -286,213 +282,6 @@ pub fn ago(at: DateTime<Local>) -> String {
     }
 }
 
-/// How far the wheel turned over this frame.
-fn wheel(ui: &egui::Ui) -> f32 {
-    ui.input(|i| i.events.iter().filter_map(|e| if let egui::Event::MouseWheel { delta, .. } = e { Some(delta.y) } else { None }).sum())
-}
-
-// ------------------------------------------------------------------ the panel
-
-pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
-    let v = ui.visuals().clone();
-    let accent = kit.accent(m.s);
-    let full = ui.max_rect();
-    let (bar, radius) = if m.s.panel_floating {
-        (Rect::from_min_size(full.min + Vec2::new(MARGIN, MARGIN), Vec2::new(full.width() - MARGIN * 2.0, BAR)), egui::CornerRadius::from(r_lg()))
-    } else {
-        (full, egui::CornerRadius::ZERO)
-    };
-    card(ui.painter(), bar, &v, 0.94, radius);
-    let p = ui.painter().clone();
-    let fg = v.text_color();
-    let weak = v.weak_text_color();
-    let cy = bar.center().y;
-    let btn = |ui: &mut egui::Ui, r: Rect, id: &str| -> egui::Response {
-        let resp = ui.interact(r, egui::Id::unique(("panel", id)), Sense::click());
-        if resp.hovered() {
-            hover_fill(ui.painter(), r, &v);
-        }
-        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
-    };
-    let output = m.output.to_string();
-    let control = |x: f32| Act::Open(Popup::at(PopupKind::Control { drag: None }, x, &output));
-    let mut acts: Vec<Act> = Vec::new();
-    // ---- left: the launcher and the workspaces
-    let mut x = bar.left() + 6.0;
-    let r = Rect::from_center_size(Pos2::new(x + 15.0, cy), Vec2::new(30.0, 28.0));
-    let resp = btn(ui, r, "launcher");
-    glyph::grid(&p, r.center(), fg);
-    if resp.on_hover_text("Apps").clicked() {
-        acts.push(Act::Open(Popup::at(PopupKind::Launcher { query: String::new(), sel: 0 }, r.center().x, &output)));
-    }
-    x = r.right() + 8.0;
-    if m.s.show_workspaces {
-        let here: Vec<_> = m.status.workspaces.iter().filter(|w| m.output.is_empty() || w.output.is_empty() || w.output == m.output).collect();
-        for w in here {
-            let label = if w.label.is_empty() { w.key.clone() } else { w.label.clone() };
-            let g = p.layout_no_wrap(label.clone(), ui_font(12.5), fg);
-            let width = if w.active { (g.size().x + 26.0).max(38.0) } else { (g.size().x + 14.0).max(24.0) };
-            let r = Rect::from_min_size(Pos2::new(x, cy - 11.0), Vec2::new(width, 22.0));
-            let resp = ui.interact(r, egui::Id::unique(("ws", &w.key, &w.output)), Sense::click());
-            let (fill, col) = if w.active {
-                (accent, on(accent))
-            } else if resp.hovered() {
-                (mix(v.panel_fill, fg, 0.16), fg)
-            } else {
-                (mix(v.panel_fill, fg, if w.busy { 0.1 } else { 0.05 }), if w.busy { fg } else { weak })
-            };
-            p.rect_filled(r, 11.0, fill);
-            // Laid out again in its colour (a galley keeps the colour it was made with).
-            let g = p.layout_no_wrap(label, ui_font(12.5), col);
-            p.galley(r.center() - g.size() / 2.0, g, col);
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("Workspace {} ({})", w.label, m.compositor.name())).clicked() {
-                acts.push(Act::Workspace(w.key.clone()));
-            }
-            x = r.right() + 4.0;
-        }
-    }
-    let left_end = x + 8.0;
-    // ---- the middle: the clock (measured first, so the rest keeps clear of it)
-    let now = Local::now();
-    let clock_g = p.layout_no_wrap(now.format(&m.s.clock_format).to_string(), ui_font(13.5), fg);
-    let clock = Rect::from_center_size(bar.center(), clock_g.size() + Vec2::new(22.0, 10.0));
-    // ---- right: power, quick settings, notifications, battery, network, brightness, volume, media
-    let rx = std::cell::Cell::new(bar.right() - 6.0);
-    let slot = |ui: &mut egui::Ui, w: f32, id: &str| -> (Rect, egui::Response) {
-        let r = Rect::from_min_max(Pos2::new(rx.get() - w, cy - 14.0), Pos2::new(rx.get(), cy + 14.0));
-        rx.set(r.left() - 2.0);
-        let resp = btn(ui, r, id);
-        (r, resp)
-    };
-    let (r, resp) = slot(ui, 30.0, "power");
-    glyph::power(&p, r.center(), fg);
-    if resp.on_hover_text("Lock, suspend, restart, shut down").clicked() {
-        acts.push(Act::Open(Popup::at(PopupKind::Power { confirm: None }, r.center().x, &output)));
-    }
-    let (r, resp) = slot(ui, 30.0, "control");
-    glyph::sliders(&p, r.center(), fg);
-    if resp.on_hover_text("Quick settings").clicked() {
-        acts.push(control(r.center().x));
-    }
-    if m.s.show_bell && m.extra.notifying {
-        let (r, resp) = slot(ui, 30.0, "bell");
-        glyph::bell(&p, r.center(), fg, m.extra.dnd);
-        let n = m.extra.notes.len();
-        if n > 0 && !m.extra.dnd {
-            p.circle_filled(r.center() + Vec2::new(6.0, -6.0), 3.5, accent);
-        }
-        let tip = if m.extra.dnd { "Do not disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
-        if resp.on_hover_text(tip).clicked() {
-            acts.push(control(r.center().x));
-        }
-    }
-    if m.s.show_battery
-        && let Some((pct, charging)) = m.status.battery
-    {
-        let low = pct <= 15 && !charging;
-        let col = if low { rivet_look::theme::status(ui.ctx()).danger } else { fg };
-        let g = p.layout_no_wrap(format!("{pct}%"), ui_font(12.5), col);
-        let (r, resp) = slot(ui, g.size().x + 40.0, "battery");
-        glyph::battery(&p, Pos2::new(r.left() + 16.0, cy), pct, charging, col, accent);
-        p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, col);
-        let mut tip = if charging { format!("Battery {pct}%, charging") } else { format!("Battery {pct}%") };
-        if let Some(pr) = &m.status.profile {
-            tip.push_str(&format!(" · {}", pr.replace('-', " ")));
-        }
-        if resp.on_hover_text(tip).clicked() {
-            acts.push(control(r.center().x));
-        }
-    }
-    if m.s.show_network {
-        let (r, resp) = slot(ui, 30.0, "network");
-        let tip = match &m.status.net {
-            Net::Wifi(ssid) => {
-                glyph::wifi(&p, r.center(), fg);
-                if ssid.is_empty() { "Wi-Fi".to_string() } else { format!("Wi-Fi: {ssid}") }
-            }
-            Net::Wired => {
-                glyph::wired(&p, r.center(), fg);
-                "Wired".to_string()
-            }
-            Net::None => {
-                glyph::wifi(&p, r.center(), weak.gamma_multiply(0.5));
-                "Not connected".to_string()
-            }
-        };
-        if resp.on_hover_text(tip).clicked() {
-            acts.push(control(r.center().x));
-        }
-    }
-    if m.s.show_brightness
-        && let Some(b) = m.status.brightness
-    {
-        let g = p.layout_no_wrap(format!("{b}%"), ui_font(12.5), fg);
-        let (r, resp) = slot(ui, g.size().x + 38.0, "brightness");
-        glyph::sun(&p, Pos2::new(r.left() + 15.0, cy), fg);
-        p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, fg);
-        if resp.hovered() {
-            let dy = wheel(ui);
-            if dy.abs() > 0.5 {
-                acts.push(Act::Brightness(dy > 0.0));
-            }
-        }
-        if resp.on_hover_text("Brightness · scroll to change").clicked() {
-            acts.push(control(r.center().x));
-        }
-    }
-    if m.s.show_volume
-        && let Some((vol, muted)) = m.status.volume
-    {
-        let text = if muted { "Muted".to_string() } else { format!("{vol}%") };
-        let col = if muted { weak } else { fg };
-        let g = p.layout_no_wrap(text, ui_font(12.5), col);
-        let (r, resp) = slot(ui, g.size().x + 38.0, "volume");
-        glyph::speaker(&p, Pos2::new(r.left() + 15.0, cy), muted, col);
-        p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, col);
-        if resp.hovered() {
-            let dy = wheel(ui);
-            if dy.abs() > 0.5 {
-                acts.push(Act::Volume(dy > 0.0));
-            }
-        }
-        if resp.on_hover_text("Click to mute · scroll to change").clicked() {
-            acts.push(Act::Mute);
-        }
-    }
-    let clock_fits = clock.left() > left_end && clock.right() < rx.get();
-    if m.s.show_media
-        && let Some(md) = &m.status.media
-    {
-        let room = rx.get() - if clock_fits { clock.right() + 14.0 } else { left_end } - 34.0;
-        if room > 70.0 {
-            let text = if md.artist.is_empty() { md.title.clone() } else { format!("{} · {}", md.title, md.artist) };
-            let g = one_line(&p, &text, ui_font(12.5), fg, room.min(230.0));
-            let (r, resp) = slot(ui, g.size().x + 34.0, "media");
-            glyph::play(&p, Pos2::new(r.left() + 14.0, cy), !md.playing, accent);
-            p.galley(Pos2::new(r.left() + 26.0, cy - g.size().y / 2.0), g, fg);
-            if resp.on_hover_text(format!("{} · click to {}", md.player, if md.playing { "pause" } else { "play" })).clicked() {
-                acts.push(Act::Media("play-pause"));
-            }
-        }
-    }
-    if clock_fits {
-        let resp = btn(ui, clock, "clock");
-        p.galley(clock.center() - clock_g.size() / 2.0, clock_g, fg);
-        if resp.on_hover_text(now.format("%A, %B %-d, %Y").to_string()).clicked() {
-            acts.push(Act::Open(Popup::at(PopupKind::Calendar { month: 0 }, clock.center().x, &output)));
-        }
-    }
-    // ---- the focused window's title, between the workspaces and the clock
-    if m.s.show_window_title && !m.status.window.is_empty() {
-        let end = if clock_fits { clock.left() - 14.0 } else { rx.get() - 14.0 };
-        if end - left_end > 60.0 {
-            let g = one_line(&p, &m.status.window, ui_font(12.5), weak, (end - left_end).min(360.0));
-            p.galley(Pos2::new(left_end, cy - g.size().y / 2.0), g, weak);
-        }
-    }
-    m.acts.extend(acts);
-}
-
 // ------------------------------------------------------------------ the dock
 
 pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
@@ -564,7 +353,7 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let accent = kit.accent(m.s);
     let full = ui.max_rect();
-    let top = full.top() + if m.s.panel && m.s.panel_edge == Edge::Top { panel_height(m.s) } else { 0.0 } + 24.0;
+    let top = full.top() + crate::panels::room(&m.s.panels, m.output, Edge::Top) + 24.0;
     let w = 280.0;
     let x = if m.s.widget_side == Side::Left { full.left() + 28.0 } else { full.right() - 28.0 - w };
     let mut y = top;
@@ -615,13 +404,18 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
 pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let full = ui.max_rect();
-    let below = if m.s.panel_edge == Edge::Top { panel_height(m.s) + 4.0 } else { MARGIN };
+    let top_room = crate::panels::room(&m.s.panels, m.output, Edge::Top);
+    let bottom_room = crate::panels::room(&m.s.panels, m.output, Edge::Bottom);
+    // Where it opens: under (or over) the panel it came from; else under the top panels, or
+    // over the bottom ones when there are only those.
+    let (edge, inset) = pop.from.unwrap_or(if top_room == 0.0 && bottom_room > 0.0 { (Edge::Bottom, bottom_room + 4.0) } else { (Edge::Top, top_room + if top_room > 0.0 { 4.0 } else { MARGIN }) });
+    let below = top_room + if top_room > 0.0 { 4.0 } else { MARGIN };
     let esc = ui.input(|i| i.key_pressed(Key::Escape));
     let size = match &pop.kind {
         PopupKind::Launcher { .. } => Vec2::new(620.0f32.min(full.width() - 40.0), 480.0f32.min(full.height() - 120.0)),
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
         PopupKind::Power { .. } => Vec2::new(240.0, 238.0),
-        PopupKind::Control { .. } => Vec2::new(392.0, crate::cc::height(m).min(full.height() - panel_height(m.s) - 24.0)),
+        PopupKind::Control { .. } => Vec2::new(392.0, crate::cc::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
     };
     let rect = match pop.kind {
@@ -635,14 +429,14 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
             let items = dock_items(m.s, m.apps, &m.status.running);
             let (_, room) = dock_size(m.s, &items);
             let x = (full.center().x + pop.anchor_x - size.x / 2.0).clamp(full.left() + MARGIN, full.right() - MARGIN - size.x);
-            let bottom = full.bottom() - room - 8.0 - if m.s.panel && m.s.panel_edge == Edge::Bottom { panel_height(m.s) } else { 0.0 };
+            let bottom = full.bottom() - room - 8.0 - bottom_room;
             Rect::from_min_size(Pos2::new(x, bottom - size.y), size)
         }
         _ => {
             // No button to open under (asked by `rivet-shell msg`): the middle.
             let ax = if pop.anchor_x.is_nan() { full.center().x } else { pop.anchor_x };
             let x = (ax - size.x / 2.0).clamp(full.left() + MARGIN, full.right() - MARGIN - size.x);
-            let y = if m.s.panel_edge == Edge::Top { full.top() + below } else { full.bottom() - panel_height(m.s) - 4.0 - size.y };
+            let y = if edge == Edge::Top { full.top() + inset } else { full.bottom() - inset - size.y };
             Rect::from_min_size(Pos2::new(x, y), size)
         }
     };
@@ -986,7 +780,6 @@ mod tests {
         assert_eq!(items.iter().map(|(a, p)| (a.name.as_str(), *p)).collect::<Vec<_>>(), [("Firefox", true), ("Rivet Files", true), ("kitty", false)]);
         let (size, room) = dock_size(&s, &items);
         assert!(size.x > 3.0 * s.dock_icon + DOCK_SEP && room < size.y);
-        assert_eq!(panel_height(&Settings { panel_floating: false, ..Settings::default() }), BAR);
     }
 
     #[test]

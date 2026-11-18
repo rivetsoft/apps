@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Several panels, each on every screen or one, with three zones (left, center, right) of items
+  chosen and ordered in Settings; a processor and memory item. The old single panel's
+  settings carry over.
 - Quick settings (sliders, toggles, what's playing, notification history), notifications with
   cards in the corner, an on-screen display for volume and brightness, media and brightness and
   the window title in the panel, open apps and a right-click menu (pin, unpin, move) in the dock,

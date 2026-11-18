@@ -147,22 +147,28 @@ pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
                 next.media = read_media();
                 next.cpu = cpu.read();
                 next.mem = memory();
+                let publish = |next: Status, s: &mut Status| {
+                    if next != *s {
+                        *s = next;
+                        if let Ok(mut g) = l.status.lock() {
+                            *g = s.clone();
+                        }
+                        l.generation.fetch_add(1, Ordering::Relaxed);
+                        wake();
+                    }
+                };
+                next.battery = battery();
                 if all || slow_at.elapsed() >= Duration::from_secs(10) {
+                    // The quick readings show first; the slow tools (Bluetooth waits up to 2 s)
+                    // follow.
+                    publish(next.clone(), &mut s);
                     slow_at = Instant::now();
-                    next.battery = battery();
                     next.net = network();
                     next.wifi_on = wifi_radio();
                     next.bluetooth = bluetooth();
                     next.profile = output("powerprofilesctl", &["get"]).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
                 }
-                if next != s {
-                    s = next;
-                    if let Ok(mut g) = l.status.lock() {
-                        *g = s.clone();
-                    }
-                    l.generation.fetch_add(1, Ordering::Relaxed);
-                    wake();
-                }
+                publish(next, &mut s);
                 // Asked to look again (a slider moved, a toggle flipped): look soon.
                 all = match poked.recv_timeout(Duration::from_millis(900)) {
                     Ok(a) => {
@@ -222,6 +228,19 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
     };
     out.sort_by_key(|w| (w.output.clone(), w.key.parse::<i64>().unwrap_or(i64::MAX)));
     out
+}
+
+/// The screens' names (DP-1, HDMI-A-1…), from the compositor (none from others).
+pub fn screens(c: Compositor) -> Vec<String> {
+    let from_list = |v: Option<Value>| -> Vec<String> { v.and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|o| o.get("name").and_then(Value::as_str).map(String::from)).collect() };
+    let mut names = match c {
+        Compositor::Niri => json("niri", &["msg", "-j", "outputs"]).and_then(|v| v.as_object().map(|o| o.keys().cloned().collect())).unwrap_or_default(),
+        Compositor::Hyprland => from_list(json("hyprctl", &["-j", "monitors"])),
+        Compositor::Sway => from_list(json("swaymsg", &["-t", "get_outputs", "-r"])),
+        Compositor::Other => Vec::new(),
+    };
+    names.sort();
+    names
 }
 
 /// Open apps, keeping the order they were first seen in (so the dock doesn't shuffle).
