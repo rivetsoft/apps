@@ -12,13 +12,17 @@ use crate::glyph;
 use crate::sys::Net;
 use crate::ui::{Act, Kit, Model, Popup, PopupKind, ago, one_line, ui_font};
 
-const HEAD: f32 = 46.0;
-const FOLD: f32 = 28.0;
-const SLIDER: f32 = 34.0;
-const TOGGLE: f32 = 44.0;
-const MEDIA: f32 = 50.0;
-const NOTE: f32 = 50.0;
-const GAP: f32 = 8.0;
+const HEAD: f32 = 56.0;
+const FOLD: f32 = 30.0;
+const SLIDER: f32 = 40.0;
+const TOGGLE: f32 = 52.0;
+const MEDIA: f32 = 58.0;
+const NOTE: f32 = 54.0;
+const GAP: f32 = 12.0;
+/// Between toggles, across and down.
+const TGAP: f32 = 8.0;
+/// The card's padding (ui.rs gives quick settings this much).
+pub const PAD: f32 = 18.0;
 
 /// A toggle: what it is, whether it's on, and what clicking does.
 struct Toggle {
@@ -96,7 +100,7 @@ fn sections(m: &Model, ctx: &egui::Context) -> Vec<(&'static str, bool)> {
 
 /// Quick settings' height for what it shows.
 pub fn height(m: &Model, ctx: &egui::Context) -> f32 {
-    let mut h = 28.0 + HEAD;
+    let mut h = 2.0 * PAD + HEAD;
     for (name, folded) in sections(m, ctx) {
         h += FOLD + GAP;
         if folded {
@@ -104,16 +108,16 @@ pub fn height(m: &Model, ctx: &egui::Context) -> f32 {
         }
         h += match name {
             "Sound and Display" => (m.status.volume.is_some() as usize + m.status.brightness.is_some() as usize) as f32 * SLIDER,
-            "Toggles" => toggles(m).len().div_ceil(2) as f32 * (TOGGLE + 6.0),
+            "Toggles" => toggles(m).len().div_ceil(2) as f32 * (TOGGLE + TGAP),
             "Now Playing" => MEDIA,
             _ => {
                 if m.extra.notes.is_empty() {
                     30.0
                 } else {
-                    m.extra.notes.len().min(4) as f32 * (NOTE + 2.0)
+                    m.extra.notes.len().min(4) as f32 * (NOTE + 4.0)
                 }
             }
-        } + 4.0;
+        } + 8.0;
     }
     h
 }
@@ -223,17 +227,17 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
     // ---- the title row: who, how long up; settings and power as toolbar buttons
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, HEAD), Sense::hover());
     let p = ui.painter().clone();
-    p.text(Pos2::new(r.left() + 2.0, r.top() + 13.0), Align2::LEFT_CENTER, "Quick Settings", ui_font(14.5), v.strong_text_color());
+    p.text(Pos2::new(r.left() + 2.0, r.top() + 14.0), Align2::LEFT_CENTER, "Quick Settings", ui_font(15.0), v.strong_text_color());
     let up = crate::sys::uptime();
     let up_text = if up >= 86400 { format!("up {} d {} h", up / 86400, up / 3600 % 24) } else { format!("up {} h {} min", up / 3600, up / 60 % 60) };
     let who = if m.extra.user.is_empty() { up_text } else { format!("{} · {up_text}", m.extra.user) };
     let g = one_line(&p, &who, ui_font(12.0), weak, w - 90.0);
-    p.galley(Pos2::new(r.left() + 2.0, r.top() + 26.0), g, weak);
-    let pr = Rect::from_center_size(Pos2::new(r.right() - 15.0, r.top() + 18.0), Vec2::new(30.0, 30.0));
+    p.galley(Pos2::new(r.left() + 2.0, r.top() + 29.0), g, weak);
+    let pr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.top() + 21.0), Vec2::new(32.0, 32.0));
     if tool_button(ui, pr, "power", "Lock, suspend, restart, shut down", &|p, c, col| glyph::power(p, c, col)) {
         acts.push(Act::Open(Popup::at(PopupKind::Power { confirm: None }, pr.center().x, m.output)));
     }
-    let sr = pr.translate(Vec2::new(-34.0, 0.0));
+    let sr = pr.translate(Vec2::new(-38.0, 0.0));
     if tool_button(ui, sr, "settings", "Settings", &|p, c, col| glyph::gear(p, c, col)) {
         acts.push(Act::Close);
         acts.push(Act::Settings);
@@ -260,11 +264,11 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                 }
             }
             "Toggles" => {
-                let tw = (w - 6.0) / 2.0;
+                let tw = (w - TGAP) / 2.0;
                 for pair in toggles(m).chunks(2) {
-                    let (row, _) = ui.allocate_exact_size(Vec2::new(w, TOGGLE + 6.0), Sense::hover());
+                    let (row, _) = ui.allocate_exact_size(Vec2::new(w, TOGGLE + TGAP), Sense::hover());
                     for (k, t) in pair.iter().enumerate() {
-                        let r = Rect::from_min_size(Pos2::new(row.left() + k as f32 * (tw + 6.0), row.top()), Vec2::new(tw, TOGGLE));
+                        let r = Rect::from_min_size(Pos2::new(row.left() + k as f32 * (tw + TGAP), row.top()), Vec2::new(tw, TOGGLE));
                         let resp = ui.interact(r, egui::Id::unique(("quick-toggle", t.title)), Sense::click());
                         // On: lit like a selected item in the apps; off: a quiet row.
                         if t.on {
@@ -275,9 +279,9 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                             ui.painter().rect_filled(r, r_md(), mix(v.panel_fill, fg, if resp.hovered() { 0.09 } else { 0.04 }));
                         }
                         let icol = if t.on { accent } else { weak };
-                        (t.glyph)(ui.painter(), Pos2::new(r.left() + 20.0, r.center().y), icol, t.on);
+                        (t.glyph)(ui.painter(), Pos2::new(r.left() + 22.0, r.center().y), icol, t.on);
                         let tcol = if t.on { v.strong_text_color() } else { fg };
-                        ui.painter().text(Pos2::new(r.left() + 40.0, r.center().y - 8.0), Align2::LEFT_CENTER, t.title, ui_font(13.0), tcol);
+                        ui.painter().text(Pos2::new(r.left() + 44.0, r.center().y - 9.0), Align2::LEFT_CENTER, t.title, ui_font(13.0), tcol);
                         // Wi-Fi and Bluetooth: a › at the right opens their list.
                         let more = match t.title {
                             "Wi-Fi" => Some((PopupKind::Network { ask: None }, "Networks")),
@@ -285,10 +289,10 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                             _ => None,
                         };
                         let room = if more.is_some() { 26.0 } else { 0.0 };
-                        let g = one_line(ui.painter(), &t.sub, ui_font(11.5), weak, r.width() - 46.0 - room);
-                        ui.painter().galley(Pos2::new(r.left() + 40.0, r.center().y + 1.0), g, weak);
+                        let g = one_line(ui.painter(), &t.sub, ui_font(11.5), weak, r.width() - 52.0 - room);
+                        ui.painter().galley(Pos2::new(r.left() + 44.0, r.center().y + 2.0), g, weak);
                         if let Some((kind, tip)) = more {
-                            let mr = Rect::from_min_max(Pos2::new(r.right() - room, r.top() + 4.0), Pos2::new(r.right() - 4.0, r.bottom() - 4.0));
+                            let mr = Rect::from_min_max(Pos2::new(r.right() - room - 2.0, r.top() + 6.0), Pos2::new(r.right() - 6.0, r.bottom() - 6.0));
                             let mresp = ui.interact(mr, egui::Id::unique(("quick-more", t.title)), Sense::click());
                             if mresp.hovered() {
                                 ui.painter().rect_filled(mr, r_sm(), mix(v.panel_fill, fg, 0.10));
@@ -314,12 +318,12 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                 glyph::play(&p, Pos2::new(r.left() + 16.0, r.center().y), !md.playing, accent);
                 let tw = r.width() - 150.0;
                 let g = one_line(&p, if md.title.is_empty() { "Playing" } else { &md.title }, ui_font(13.5), v.strong_text_color(), tw);
-                p.galley(Pos2::new(r.left() + 36.0, r.top() + 8.0), g, v.strong_text_color());
+                p.galley(Pos2::new(r.left() + 38.0, r.top() + 10.0), g, v.strong_text_color());
                 let sub = if md.artist.is_empty() { md.player.clone() } else { md.artist.clone() };
                 let g = one_line(&p, &sub, ui_font(12.0), weak, tw);
-                p.galley(Pos2::new(r.left() + 36.0, r.top() + 27.0), g, weak);
+                p.galley(Pos2::new(r.left() + 38.0, r.top() + 31.0), g, weak);
                 for (k, (cmd, tip)) in [("previous", "Previous"), ("play-pause", if md.playing { "Pause" } else { "Play" }), ("next", "Next")].into_iter().enumerate() {
-                    let br = Rect::from_center_size(Pos2::new(r.right() - 88.0 + k as f32 * 34.0, r.center().y), Vec2::new(30.0, 30.0));
+                    let br = Rect::from_center_size(Pos2::new(r.right() - 92.0 + k as f32 * 36.0, r.center().y), Vec2::new(30.0, 30.0));
                     let clicked = match k {
                         1 => tool_button(ui, br, cmd, tip, &|p, c, col| glyph::play(p, c, !md.playing, col)),
                         _ => tool_button(ui, br, cmd, tip, &|p, c, col| glyph::skip(p, c, k == 2, col)),
@@ -331,7 +335,7 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
             }
             _ => notifications(ui, m, kit, &mut acts),
         }
-        ui.add_space(4.0);
+        ui.add_space(8.0);
     }
     m.acts.extend(acts);
 }
@@ -347,8 +351,8 @@ fn notifications(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, acts: &mut Vec
         return;
     }
     let notes = m.extra.notes.clone();
-    egui::ScrollArea::vertical().auto_shrink([false, true]).max_height((4.0 * (NOTE + 2.0)).min(ui.available_height())).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 2.0;
+    egui::ScrollArea::vertical().auto_shrink([false, true]).max_height((4.0 * (NOTE + 4.0)).min(ui.available_height())).show(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 4.0;
         for n in &notes {
             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), NOTE), Sense::hover());
             let p = ui.painter().clone();
@@ -366,17 +370,17 @@ fn notifications(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, acts: &mut Vec
             let tx = r.left() + 38.0;
             let tw = r.width() - 38.0 - 60.0;
             let g = one_line(&p, &n.summary, ui_font(13.0), v.text_color(), tw);
-            p.galley(Pos2::new(tx, r.top() + 8.0), g, v.text_color());
+            p.galley(Pos2::new(tx, r.top() + 9.0), g, v.text_color());
             let sub = if n.body.is_empty() { n.app.clone() } else { format!("{} · {}", n.app, n.body) };
             let g = one_line(&p, &sub, ui_font(11.5), weak, tw);
-            p.galley(Pos2::new(tx, r.top() + 27.0), g, weak);
+            p.galley(Pos2::new(tx, r.top() + 29.0), g, weak);
             if hovered {
                 let xr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.center().y), Vec2::new(26.0, 26.0));
                 if tool_button(ui, xr, &format!("note-x-{}", n.id), "Remove", &|p, c, col| glyph::x(p, c, 4.0, col)) {
                     acts.push(Act::NoteRemove(n.id));
                 }
             } else {
-                p.text(Pos2::new(r.right() - 6.0, r.top() + 15.0), Align2::RIGHT_CENTER, ago(n.at), ui_font(11.5), weak);
+                p.text(Pos2::new(r.right() - 8.0, r.top() + 16.0), Align2::RIGHT_CENTER, ago(n.at), ui_font(11.5), weak);
             }
         }
     });

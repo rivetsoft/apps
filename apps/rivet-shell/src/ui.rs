@@ -443,7 +443,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Launcher { .. } => Vec2::new(620.0f32.min(full.width() - 40.0), 480.0f32.min(full.height() - 120.0)),
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
         PopupKind::Power { .. } => Vec2::new(240.0, 238.0),
-        PopupKind::Control { .. } => Vec2::new(392.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Control { .. } => Vec2::new(408.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
@@ -478,7 +478,11 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         m.acts.push(Act::Close);
     }
     card(ui.painter(), rect, &v, 0.98, r_lg());
-    let pad = if matches!(pop.kind, PopupKind::DockMenu { .. }) { 6.0 } else { 14.0 };
+    let pad = match pop.kind {
+        PopupKind::DockMenu { .. } => 6.0,
+        PopupKind::Control { .. } => crate::quick::PAD,
+        _ => 14.0,
+    };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(pad)).layout(egui::Layout::top_down(egui::Align::Min)));
     let focus = std::mem::take(&mut pop.focus);
     match &mut pop.kind {
