@@ -32,7 +32,13 @@ use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
 
-use crate::config::{Edge, Settings};
+use crate::config::{DockHide, Edge, Settings};
+
+/// A hidden dock's strip along the edge, in points.
+const DOCK_STRIP: u32 = 4;
+/// How long the dock stays after the pointer leaves, and how long it takes to slide.
+const DOCK_LINGER: Duration = Duration::from_millis(700);
+const DOCK_SLIDE: f32 = 0.18;
 use crate::sys::{self, Compositor};
 use crate::notes::{self, NoteMsg, Notes, Reason};
 use crate::ui::{self, Act, Extra, Kit, Model, OsdKind, Popup, PopupKind};
@@ -80,6 +86,15 @@ struct Surf {
     events: Vec<egui::Event>,
     modifiers: egui::Modifiers,
     start: Instant,
+    // ---- the dock's hiding
+    /// How far it has slid away: 0 shown, 1 out of sight.
+    slide: f32,
+    slide_at: Instant,
+    /// Down to the thin strip along the edge that brings it back.
+    collapsed: bool,
+    /// The pointer is on it, or when it left.
+    hovered: bool,
+    left_at: Option<Instant>,
 }
 
 impl Surf {
@@ -277,7 +292,7 @@ impl Shell {
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Dock => {
-                shape_dock(&layer, s, &self.apps, &self.prev_status.running);
+                shape_dock(&layer, s, &self.apps, &self.prev_status.running, false);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Cards => {
@@ -332,6 +347,11 @@ impl Shell {
             events: Vec::new(),
             modifiers: egui::Modifiers::NONE,
             start,
+            slide: 0.0,
+            slide_at: Instant::now(),
+            collapsed: false,
+            hovered: false,
+            left_at: None,
         }
     }
 
@@ -718,7 +738,7 @@ impl Shell {
         self.dock_key = key;
         let (s, apps, running) = (self.s.clone(), self.apps.clone(), self.prev_status.running.clone());
         for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Dock) {
-            shape_dock(&sf.layer, &s, &apps, &running);
+            shape_dock(&sf.layer, &s, &apps, &running, sf.collapsed);
             sf.layer.commit();
             sf.dirty = true;
         }
@@ -739,7 +759,7 @@ impl Shell {
         let wall_changed = old.wallpaper != s.wallpaper || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type;
         let panels_changed = old.panels != s.panels;
         let panel_content = old.clock_format != s.clock_format || old.notifications != s.notifications;
-        let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps;
+        let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps || old.dock_hide != s.dock_hide;
         if old.notifications != s.notifications {
             self.set_notifications();
         }
@@ -801,8 +821,59 @@ impl Shell {
         }
     }
 
+    /// The docks show or slide away as the hide setting says: shown while the pointer is on one
+    /// (and a moment after it leaves) or its menu is open; with Smart, also while the screen's
+    /// workspace has no windows. Out of sight, a dock shrinks to a thin strip along the edge,
+    /// which the pointer reaching brings it back.
+    fn update_docks(&mut self) {
+        let mode = self.s.dock_hide;
+        let now = Instant::now();
+        let menu = matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. }));
+        let (s, apps, running) = (&self.s, &self.apps, &self.prev_status.running);
+        let workspaces = &self.prev_status.workspaces;
+        for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Dock) {
+            if sf.left_at.is_some_and(|t| now.duration_since(t) >= DOCK_LINGER) {
+                sf.left_at = None;
+            }
+            let near = sf.hovered || sf.left_at.is_some() || menu;
+            // Windows on this screen's workspace (a compositor that doesn't say: as if there were).
+            let here: Vec<_> = workspaces.iter().filter(|w| w.active && (w.output.is_empty() || sf.output_name.is_empty() || w.output == sf.output_name)).collect();
+            let busy = here.is_empty() || here.iter().any(|w| w.busy);
+            let show = match mode {
+                DockHide::Never => true,
+                DockHide::Auto => near,
+                DockHide::Smart => near || !busy,
+            };
+            if show && sf.collapsed {
+                // Full size again (still out of sight), then slide in.
+                sf.collapsed = false;
+                sf.slide = 1.0;
+                sf.slide_at = now;
+                shape_dock(&sf.layer, s, apps, running, false);
+                sf.layer.commit();
+                sf.dirty = true;
+                continue;
+            }
+            let target = if show { 0.0 } else { 1.0 };
+            if sf.slide != target && !sf.collapsed {
+                let step = now.duration_since(sf.slide_at).as_secs_f32().min(0.05) / DOCK_SLIDE;
+                sf.slide = if target > sf.slide { (sf.slide + step).min(1.0) } else { (sf.slide - step).max(0.0) };
+                sf.dirty = true;
+                sf.repaint_at = Some(now + Duration::from_millis(16));
+            }
+            sf.slide_at = now;
+            if !show && sf.slide >= 1.0 && !sf.collapsed {
+                sf.collapsed = true;
+                shape_dock(&sf.layer, s, apps, running, true);
+                sf.layer.commit();
+                sf.dirty = true;
+            }
+        }
+    }
+
     /// Draw every surface that needs it.
     fn redraw(&mut self) {
+        self.update_docks();
         let now = Instant::now();
         for s in &mut self.surfs {
             if s.repaint_at.is_some_and(|t| now >= t) {
@@ -880,6 +951,7 @@ impl Shell {
             v.focused = Some(true);
         }
         let output_name = surf.output_name.clone();
+        let (slide, collapsed) = (surf.slide, surf.collapsed);
         let mut plain = egui::Color32::from_rgb(30, 30, 34);
         let out = surf.ctx.run_ui(raw, |ui| {
             surf.kit.begin(ui.ctx(), settings);
@@ -888,7 +960,14 @@ impl Shell {
             match kind {
                 Kind::Background => ui::widgets(ui, &mut m, &mut surf.kit),
                 Kind::Panel => crate::bar::panel(ui, &mut m, &mut surf.kit, idx),
-                Kind::Dock => ui::dock(ui, &mut m, &mut surf.kit),
+                Kind::Dock => {
+                    // Slid part of the way out (a hidden one, down to its strip, shows nothing).
+                    if !collapsed {
+                        let r = ui.max_rect();
+                        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(r.translate(Vec2::new(0.0, slide * r.height()))));
+                        ui::dock(&mut c, &mut m, &mut surf.kit);
+                    }
+                }
                 Kind::Popup => {
                     if let Some(p) = popup.as_mut() {
                         ui::popup(ui, p, &mut m, &mut surf.kit);
@@ -933,6 +1012,10 @@ impl Shell {
         // Animations and hover effects ask to be drawn again soon.
         let delay = out.viewport_output.get(&ViewportId::ROOT).map(|v| v.repaint_delay).unwrap_or(Duration::MAX);
         surf.repaint_at = (delay < Duration::from_secs(1)).then(|| Instant::now() + delay.max(Duration::from_millis(16)));
+        // A dock on its way in or out keeps moving.
+        if kind == Kind::Dock && surf.slide > 0.0 && !surf.collapsed {
+            surf.repaint_at = Some(Instant::now() + Duration::from_millis(16));
+        }
         for a in acts {
             self.act(a);
         }
@@ -1196,12 +1279,18 @@ impl PointerHandler for Shell {
             let s = &mut self.surfs[i];
             match &e.kind {
                 PointerEventKind::Enter { .. } => {
+                    s.hovered = true;
+                    s.left_at = None;
                     if let Some(p) = &self.pointer {
                         let _ = p.set_cursor(&self.conn, CursorIcon::Default);
                     }
                     s.events.push(egui::Event::PointerMoved(pos));
                 }
-                PointerEventKind::Leave { .. } => s.events.push(egui::Event::PointerGone),
+                PointerEventKind::Leave { .. } => {
+                    s.hovered = false;
+                    s.left_at = Some(Instant::now());
+                    s.events.push(egui::Event::PointerGone);
+                }
                 PointerEventKind::Motion { .. } => s.events.push(egui::Event::PointerMoved(pos)),
                 PointerEventKind::Press { button, .. } | PointerEventKind::Release { button, .. } => {
                     let pressed = matches!(e.kind, PointerEventKind::Press { .. });
@@ -1311,12 +1400,17 @@ fn shape_panel(layer: &LayerSurface, p: &crate::panels::PanelCfg) {
 }
 
 /// The dock's size for its pinned apps, at the bottom, keeping windows clear of it when asked.
-fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::DesktopApp], running: &[String]) {
+fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::DesktopApp], running: &[String], collapsed: bool) {
     let items = ui::dock_items(s, apps, running);
     let (size, room) = ui::dock_size(s, &items);
     layer.set_anchor(Anchor::BOTTOM);
-    layer.set_size(size.x as u32, size.y as u32);
-    layer.set_exclusive_zone(if s.dock_reserve { room as i32 } else { 0 });
+    // Hidden: a thin strip as wide as the dock (at least a hand's width), to bring it back.
+    let h = if collapsed { DOCK_STRIP } else { size.y as u32 };
+    let w = if collapsed { (size.x as u32).max(220) } else { size.x as u32 };
+    layer.set_size(w, h);
+    // A dock that hides never keeps windows clear of it.
+    let reserve = s.dock_reserve && s.dock_hide == DockHide::Never;
+    layer.set_exclusive_zone(if reserve { room as i32 } else { 0 });
 }
 
 /// The notification cards: in the corner on the panel's side, clear of the panel.

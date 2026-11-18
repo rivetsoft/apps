@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The dock can auto-hide or smart-hide (shown while the workspace has no windows), sliding
+  away and back when the pointer reaches the bottom edge.
 - Several panels, each on every screen or one, with three zones (left, center, right) of items
   chosen and ordered in Settings; a processor and memory item. The old single panel's
   settings carry over.

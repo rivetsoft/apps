@@ -21,7 +21,8 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   the apps' buttons; urgent ones stay until closed), unless another one (mako, dunst) runs.
 - **On-screen display**: volume and brightness show as they change, from keys or anywhere else.
 - **Dock**: pinned apps, then open apps that aren't pinned; a dot under the ones with windows
-  open (niri, Hyprland); right-click an icon to pin, unpin or move it.
+  open (niri, Hyprland); right-click an icon to pin, unpin or move it. It can auto-hide (back when the pointer
+  reaches the bottom edge) or smart-hide (shown while the workspace has no windows).
 - **Launcher**: every installed app, searched as you type; arrows and Enter, or click. Type a sum
   (`12*(3+4)`) for its answer; Enter copies it.
 - **Widgets** on the desktop: a large clock and the date, processor, memory and battery.

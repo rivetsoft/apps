@@ -18,6 +18,28 @@ pub enum Edge {
     Bottom,
 }
 
+/// When the dock hides.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum DockHide {
+    /// Always shown.
+    #[default]
+    Never,
+    /// Slides away; comes back when the pointer reaches the screen's bottom edge.
+    Auto,
+    /// Shown while the workspace has no windows; else like Auto.
+    Smart,
+}
+
+impl DockHide {
+    pub fn name(self) -> &'static str {
+        match self {
+            DockHide::Never => "never",
+            DockHide::Auto => "auto",
+            DockHide::Smart => "smart",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Side {
     #[default]
@@ -66,6 +88,8 @@ pub struct Settings {
     pub dock_running: bool,
     /// Apps with windows open show in the dock too (after the pinned ones).
     pub dock_open_apps: bool,
+    /// Whether and when the dock slides out of the way.
+    pub dock_hide: DockHide,
     // ---- desktop widgets
     pub widget_clock: bool,
     pub widget_system: bool,
@@ -95,6 +119,7 @@ impl Default for Settings {
             dock_reserve: true,
             dock_running: true,
             dock_open_apps: true,
+            dock_hide: DockHide::Never,
             widget_clock: true,
             widget_system: true,
             widget_side: Side::Left,
@@ -220,6 +245,13 @@ impl Settings {
                 "osd" => self.osd = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
                 "dock_open_apps" => self.dock_open_apps = b,
+                "dock_hide" => {
+                    self.dock_hide = match v {
+                        "auto" => DockHide::Auto,
+                        "smart" => DockHide::Smart,
+                        _ => DockHide::Never,
+                    }
+                }
                 "dock" => self.dock = b,
                 "dock_apps" => self.dock_apps = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "dock_icon" => self.dock_icon = v.parse::<f32>().unwrap_or(44.0).clamp(24.0, 96.0),
@@ -251,7 +283,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -273,6 +305,7 @@ impl Settings {
             self.osd,
             self.night_kelvin,
             self.dock_open_apps,
+            self.dock_hide.name(),
             self.panels.len(),
         );
         for (i, p) in self.panels.iter().enumerate() {
@@ -306,7 +339,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), widget_side: Side::Right, color_mode: Mode::Light, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();

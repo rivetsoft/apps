@@ -12,7 +12,7 @@ use rivet_look::theme::{ACCENTS, Mode, r_md, r_sm, r_xs, selected_tile};
 use rivet_look::{fonts, palette};
 use rivet_xdg::launch::DesktopApp;
 
-use crate::config::{Settings, Side};
+use crate::config::{DockHide, Settings, Side};
 use crate::ui::find_app;
 
 mod panel_editor;
@@ -498,9 +498,26 @@ impl SettingsApp {
                     ui.label("Icon size");
                     ui.add(egui::Slider::new(&mut self.s.dock_icon, 28.0..=80.0).step_by(2.0).suffix(" pt"));
                     ui.end_row();
+                    ui.label("Hide");
+                    ui.horizontal(|ui| {
+                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Never, "Never");
+                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Auto, "Auto-hide");
+                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Smart, "Smart hide");
+                    });
+                    ui.end_row();
                 });
+                hint(
+                    ui,
+                    match self.s.dock_hide {
+                        DockHide::Never => "The dock always shows.",
+                        DockHide::Auto => "The dock slides away; move the pointer to the bottom edge to bring it back.",
+                        DockHide::Smart => "The dock shows while the workspace has no windows, and slides away once it has some; the bottom edge brings it back (niri, Hyprland; elsewhere like Auto-hide).",
+                    },
+                );
                 ui.add_space(6.0);
-                ui.checkbox(&mut self.s.dock_reserve, "Keep windows clear of the dock");
+                ui.add_enabled_ui(self.s.dock_hide == DockHide::Never, |ui| {
+                    ui.checkbox(&mut self.s.dock_reserve, "Keep windows clear of the dock");
+                });
                 ui.checkbox(&mut self.s.dock_running, "A dot under apps with windows open (niri, Hyprland)");
                 ui.checkbox(&mut self.s.dock_open_apps, "Open apps that aren't pinned show too (right-click one to pin it)");
             });
