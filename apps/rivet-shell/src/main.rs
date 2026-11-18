@@ -16,6 +16,7 @@ mod ipc;
 mod lock;
 mod lock_ui;
 mod notes;
+mod notes_pop;
 mod panels;
 mod quick;
 mod radio;

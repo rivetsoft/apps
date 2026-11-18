@@ -545,7 +545,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             }
             let tip = if ex.dnd { "Do not disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
             if resp.on_hover_text(tip).clicked() {
-                let a = b.control(r.center().x);
+                let a = b.popup(PopupKind::Notifications, r.center().x);
                 b.acts.push(a);
             }
         }

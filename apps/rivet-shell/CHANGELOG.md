@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Notifications have their own panel, opened from the bell (`rivet-shell msg notifications`):
+  grouped by app, newest first, a line or two of each, Do Not Disturb and Clear All at the top,
+  and a Clear for one app's. Clicking one the app can open opens it. Quick settings no longer
+  lists them, and has a little more room.
 - A Sound popup from the volume item (click; middle-click still mutes): the output's volume and
   every output to choose from (speakers, headphones, Bluetooth, screens, network speakers;
   ones with nothing plugged in are left out), the same for microphones, and each app playing

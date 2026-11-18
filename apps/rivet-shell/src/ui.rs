@@ -77,6 +77,8 @@ pub enum PopupKind {
     Bluetooth,
     /// AI plans' usage.
     Ai,
+    /// The notification history (and later perhaps more beside it).
+    Notifications,
     /// Sound devices and apps (`drag`: a volume being dragged).
     Sound { drag: Option<(u64, u32)> },
 }
@@ -447,6 +449,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Notifications => Vec2::new(crate::notes_pop::WIDTH, crate::notes_pop::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
     };
     let rect = match pop.kind {
@@ -481,6 +484,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let pad = match pop.kind {
         PopupKind::DockMenu { .. } => 6.0,
         PopupKind::Control { .. } => crate::quick::PAD,
+        PopupKind::Notifications => crate::notes_pop::PAD,
         _ => 14.0,
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(pad)).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -494,6 +498,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
         PopupKind::Bluetooth => crate::conn::bluetooth(&mut child, m, kit),
         PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
+        PopupKind::Notifications => crate::notes_pop::popup(&mut child, m, kit),
         PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
     }
 }

@@ -771,7 +771,8 @@ impl Shell {
                 let right = f32::MAX;
                 match (cmd, arg) {
                     ("launcher", _) => self.open_popup(Popup::launcher("")),
-                    ("control-center" | "control" | "notifications", _) => self.open_popup(Popup::at(PopupKind::Control { drag: None }, right, "")),
+                    ("control-center" | "control" | "quick-settings", _) => self.open_popup(Popup::at(PopupKind::Control { drag: None }, right, "")),
+                    ("notifications" | "notification-center", _) => self.open_popup(Popup::at(PopupKind::Notifications, right, "")),
                     ("calendar", _) => self.open_popup(Popup::at(PopupKind::Calendar { month: 0 }, f32::NAN, "")),
                     ("power", _) => self.open_popup(Popup::at(PopupKind::Power { confirm: None }, right, "")),
                     ("network" | "wifi", _) => self.open_popup(Popup::at(PopupKind::Network { ask: None }, right, "")),
@@ -901,7 +902,7 @@ impl Shell {
         self.last_minute = minute;
         for s in &mut self.surfs {
             // The clock, and the cards' "5 min ago".
-            let clocked = matches!(s.kind, Kind::Panel | Kind::Cards) || (s.kind == Kind::Background && self.s.widget_clock) || (s.kind == Kind::Popup && self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. })));
+            let clocked = matches!(s.kind, Kind::Panel | Kind::Cards) || (s.kind == Kind::Background && self.s.widget_clock) || (s.kind == Kind::Popup && self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Notifications)));
             if recolor || (new_minute && clocked) || s.repaint_at.is_some_and(|t| now >= t) {
                 s.dirty = true;
             }

@@ -1,8 +1,8 @@
 //! Quick settings, in the Rivet apps' own look rather than a phone's: a title row with
 //! toolbar-style buttons, sections under small folding headings like Rivet Files' sidebar,
 //! thin sliders, toggles that light up the way a selected item does in the apps (a soft
-//! accent tint with an accent edge, never a solid block), what's playing as a plain row with
-//! toolbar buttons, and the notifications as a list.
+//! accent tint with an accent edge, never a solid block), and what's playing as a plain row
+//! with toolbar buttons. (The notifications have their own panel: notes_pop.rs.)
 
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
@@ -10,14 +10,13 @@ use rivet_look::theme::{Mode, r_md, r_sm, selected_tile};
 
 use crate::glyph;
 use crate::sys::Net;
-use crate::ui::{Act, Kit, Model, Popup, PopupKind, ago, one_line, ui_font};
+use crate::ui::{Act, Kit, Model, Popup, PopupKind, one_line, ui_font};
 
 const HEAD: f32 = 56.0;
 const FOLD: f32 = 30.0;
 const SLIDER: f32 = 40.0;
 const TOGGLE: f32 = 52.0;
 const MEDIA: f32 = 58.0;
-const NOTE: f32 = 54.0;
 const GAP: f32 = 12.0;
 /// Between toggles, across and down.
 const TGAP: f32 = 8.0;
@@ -92,9 +91,6 @@ fn sections(m: &Model, ctx: &egui::Context) -> Vec<(&'static str, bool)> {
     if m.status.media.is_some() {
         s.push(("Now Playing", folded(ctx, "Now Playing")));
     }
-    if m.extra.notifying {
-        s.push(("Notifications", folded(ctx, "Notifications")));
-    }
     s
 }
 
@@ -109,14 +105,7 @@ pub fn height(m: &Model, ctx: &egui::Context) -> f32 {
         h += match name {
             "Sound and Display" => (m.status.volume.is_some() as usize + m.status.brightness.is_some() as usize) as f32 * SLIDER,
             "Toggles" => toggles(m).len().div_ceil(2) as f32 * (TOGGLE + TGAP),
-            "Now Playing" => MEDIA,
-            _ => {
-                if m.extra.notes.is_empty() {
-                    30.0
-                } else {
-                    m.extra.notes.len().min(4) as f32 * (NOTE + 4.0)
-                }
-            }
+            _ => MEDIA,
         } + 8.0;
     }
     h
@@ -246,8 +235,7 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
     p.line_segment([Pos2::new(r.left(), r.bottom() - 1.0), Pos2::new(r.right(), r.bottom() - 1.0)], Stroke::new(1.0, mix(v.panel_fill, fg, 0.08)));
     for (name, _) in sections(m, ui.ctx()) {
         ui.add_space(GAP);
-        let extra = (name == "Notifications" && !m.extra.notes.is_empty()).then_some(("Clear All", Act::ClearNotes));
-        if !heading(ui, name, extra, &mut acts) {
+        if !heading(ui, name, None, &mut acts) {
             continue;
         }
         match name {
@@ -311,7 +299,7 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                     }
                 }
             }
-            "Now Playing" => {
+            _ => {
                 let Some(md) = m.status.media.clone() else { continue };
                 let (r, _) = ui.allocate_exact_size(Vec2::new(w, MEDIA), Sense::hover());
                 let p = ui.painter().clone();
@@ -333,55 +321,8 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                     }
                 }
             }
-            _ => notifications(ui, m, kit, &mut acts),
         }
         ui.add_space(8.0);
     }
     m.acts.extend(acts);
-}
-
-/// The notification history as a list, newest first.
-fn notifications(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, acts: &mut Vec<Act>) {
-    let v = ui.visuals().clone();
-    let weak = v.weak_text_color();
-    if m.extra.notes.is_empty() {
-        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::hover());
-        let text = if m.extra.dnd { "Nothing new · Do Not Disturb is on" } else { "Nothing new" };
-        ui.painter().text(Pos2::new(r.left() + 18.0, r.center().y), Align2::LEFT_CENTER, text, ui_font(12.5), weak);
-        return;
-    }
-    let notes = m.extra.notes.clone();
-    egui::ScrollArea::vertical().auto_shrink([false, true]).max_height((4.0 * (NOTE + 4.0)).min(ui.available_height())).show(ui, |ui| {
-        ui.spacing_mut().item_spacing.y = 4.0;
-        for n in &notes {
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), NOTE), Sense::hover());
-            let p = ui.painter().clone();
-            let hovered = resp.hovered() || ui.rect_contains_pointer(r);
-            if hovered {
-                p.rect_filled(r, r_md(), mix(v.panel_fill, v.text_color(), 0.06));
-            }
-            let ir = Rect::from_center_size(Pos2::new(r.left() + 18.0, r.center().y), Vec2::splat(22.0));
-            match kit.note_icon(ui.ctx(), n, m.apps, 22.0) {
-                Some(t) => {
-                    p.image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
-                }
-                None => glyph::bell(&p, ir.center(), weak, false),
-            }
-            let tx = r.left() + 38.0;
-            let tw = r.width() - 38.0 - 60.0;
-            let g = one_line(&p, &n.summary, ui_font(13.0), v.text_color(), tw);
-            p.galley(Pos2::new(tx, r.top() + 9.0), g, v.text_color());
-            let sub = if n.body.is_empty() { n.app.clone() } else { format!("{} · {}", n.app, n.body) };
-            let g = one_line(&p, &sub, ui_font(11.5), weak, tw);
-            p.galley(Pos2::new(tx, r.top() + 29.0), g, weak);
-            if hovered {
-                let xr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.center().y), Vec2::new(26.0, 26.0));
-                if tool_button(ui, xr, &format!("note-x-{}", n.id), "Remove", &|p, c, col| glyph::x(p, c, 4.0, col)) {
-                    acts.push(Act::NoteRemove(n.id));
-                }
-            } else {
-                p.text(Pos2::new(r.right() - 8.0, r.top() + 16.0), Align2::RIGHT_CENTER, ago(n.at), ui_font(11.5), weak);
-            }
-        }
-    });
 }

@@ -2,7 +2,7 @@
 //! widgets, the panel, the dock, a popup when asked), drawn by the same code as the real shell,
 //! with made-up status, so checks never show the person's wallpaper or machine.
 //!
-//! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|dock-menu, RIVET_SHELL_THEME=light|dark,
+//! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|notifications|dock-menu, RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
 //! RIVET_SHELL_OSD=1|caps (the volume or Caps Lock display), RIVET_SHELL_POPUP=sound, RIVET_SHELL_QUERY=text (typed into the launcher),
 //! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style); RIVET_SHELL_POPUP=ai also puts
@@ -146,6 +146,7 @@ impl ShotApp {
             Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None }),
             Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
+            Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None }),
             Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None }),
             Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None }),
