@@ -247,6 +247,7 @@ impl SettingsApp {
         let col_w = (ui.available_width() - gap * 2.0) / 3.0;
         let clock_format = &mut self.s.clock_format;
         let (ws_style, ws_names, ws_hide_empty, ws_scroll) = (&mut self.s.ws_style, &mut self.s.ws_names, &mut self.s.ws_hide_empty, &mut self.s.ws_scroll);
+        let (ai_providers, ai_bar, ai_left) = (&mut self.s.ai_providers, &mut self.s.ai_bar, &mut self.s.ai_left);
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             for (z, zone) in ZONES.iter().enumerate() {
@@ -347,6 +348,50 @@ impl SettingsApp {
                                     ui.checkbox(ws_scroll, "Scroll to switch workspaces");
                                 });
                                 g_resp.on_hover_text("How the workspaces show");
+                            }
+                            if id == "ai" {
+                                let gr = xr.translate(Vec2::new(-26.0, 0.0));
+                                let g_resp = ui.interact(gr, ui.scope_id().with(("item-gear", z, k)), Sense::click());
+                                if g_resp.hovered() {
+                                    ui.painter().circle_filled(gr.center(), 11.0, mix(v.panel_fill, v.text_color(), 0.12));
+                                }
+                                glyph::gear(ui.painter(), gr.center(), v.weak_text_color());
+                                egui::Popup::menu(&g_resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+                                    ui.set_min_width(260.0);
+                                    ui.label(egui::RichText::new("Read the usage of").small().color(v.weak_text_color()));
+                                    for (pid, pname) in crate::ai::PROVIDERS {
+                                        let mut on = ai_providers.iter().any(|x| x == pid);
+                                        if ui.checkbox(&mut on, *pname).changed() {
+                                            if on {
+                                                ai_providers.push(pid.to_string());
+                                                // Kept in the providers' order.
+                                                ai_providers.sort_by_key(|x| crate::ai::PROVIDERS.iter().position(|p| p.0 == x));
+                                            } else {
+                                                ai_providers.retain(|x| x != pid);
+                                            }
+                                        }
+                                    }
+                                    ui.add_space(4.0);
+                                    ui.label(egui::RichText::new("The panel shows").small().color(v.weak_text_color()));
+                                    egui::ComboBox::from_id_salt("ai-bar").selected_text(if ai_bar == "auto" { "The most used limit" } else { crate::ai::name(ai_bar) }).show_ui(ui, |ui| {
+                                        ui.selectable_value(ai_bar, "auto".to_string(), "The most used limit");
+                                        for (pid, pname) in crate::ai::PROVIDERS {
+                                            ui.selectable_value(ai_bar, pid.to_string(), format!("{pname}'s most used limit"));
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.horizontal(|ui| {
+                                        ui.selectable_value(ai_left, false, "Used");
+                                        ui.selectable_value(ai_left, true, "Left");
+                                    });
+                                    ui.add_space(6.0);
+                                    ui.label(
+                                        egui::RichText::new(format!("Claude, Codex and Grok use their own sign-ins. OpenRouter and DeepSeek take OPENROUTER_API_KEY and DEEPSEEK_API_KEY from the environment or {}.", crate::ai::env_file().display()))
+                                            .small()
+                                            .color(v.weak_text_color()),
+                                    );
+                                });
+                                g_resp.on_hover_text("What the AI item reads and shows");
                             }
                             resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(tip);
                         }

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- An AI Usage panel item: the most used limit of your AI plans in the panel, and a popup with
+  each plan's limits, bars and reset times. Claude's comes from what Claude Code already keeps
+  (no requests while it's fresh), with whether Claude Code is running and working; Codex and
+  Grok use their own sign-ins; OpenRouter and DeepSeek take API keys from the environment or
+  `~/.config/rivet-shell/ai.env`. `rivet-shell ai` prints the same; `rivet-shell msg ai`
+  opens the popup.
+- The workspaces item has settings: pills, dots or numbers; names or numbers; hide empty
+  workspaces; scroll to switch.
 - The launcher keeps up with typing: drawing is several times faster (plain shapes take the fast
   path, see-through ones blend two channels at a time), only the changed rows go to the
   compositor, the cursor doesn't blink, and the launcher is made ready at the start.

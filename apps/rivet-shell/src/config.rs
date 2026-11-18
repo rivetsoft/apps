@@ -109,6 +109,11 @@ pub struct Settings {
     pub ws_names: bool,
     pub ws_hide_empty: bool,
     pub ws_scroll: bool,
+    /// The AI item: the providers it reads (ids from ai::PROVIDERS), which one the panel shows
+    /// ("auto": the most used limit of any), and whether it shows what's left instead of used.
+    pub ai_providers: Vec<String>,
+    pub ai_bar: String,
+    pub ai_left: bool,
     // ---- notifications, on-screen display, night light
     /// Be the notification service (cards in the corner, a history in the control center).
     pub notifications: bool,
@@ -153,6 +158,9 @@ impl Default for Settings {
             ws_names: true,
             ws_hide_empty: false,
             ws_scroll: true,
+            ai_providers: crate::ai::PROVIDERS.iter().map(|p| p.0.to_string()).collect(),
+            ai_bar: "auto".into(),
+            ai_left: false,
             notifications: true,
             osd: true,
             night_kelvin: 4000,
@@ -288,6 +296,9 @@ impl Settings {
                 "ws_names" => self.ws_names = b,
                 "ws_hide_empty" => self.ws_hide_empty = b,
                 "ws_scroll" => self.ws_scroll = b,
+                "ai_providers" => self.ai_providers = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
+                "ai_bar" => self.ai_bar = if v.is_empty() { "auto".into() } else { v.to_string() },
+                "ai_left" => self.ai_left = b,
                 "notifications" => self.notifications = b,
                 "osd" => self.osd = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
@@ -330,7 +341,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -344,6 +355,9 @@ impl Settings {
             self.ws_names,
             self.ws_hide_empty,
             self.ws_scroll,
+            self.ai_providers.join(","),
+            one(&self.ai_bar),
+            self.ai_left,
             self.dock,
             self.dock_apps.join(","),
             self.dock_icon,
@@ -390,7 +404,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();

@@ -27,6 +27,7 @@ pub const ITEMS: &[(&str, &str, &str)] = &[
     ("network", "Network", "Wi-Fi or wired; click to pick a network"),
     ("bluetooth", "Bluetooth", "Click to connect or pair devices"),
     ("battery", "Battery", "Click for quick settings"),
+    ("ai", "AI Usage", "Claude, Codex and other plans' limits"),
     ("notifications", "Notifications", "A bell with a dot for new ones"),
     ("quick-settings", "Quick Settings", "Sliders, toggles, the notification history"),
     ("power", "Power Menu", "Lock, suspend, log out, restart, shut down"),

@@ -67,6 +67,10 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     Some(match id {
         "launcher" | "network" | "quick-settings" | "power" => (30.0, false),
         "bluetooth" => (if st.bluetooth.is_some() { 30.0 } else { return None }, false),
+        "ai" => match ai_text(b) {
+            Some((t, _)) => (b.text_w(t) + 36.0, false),
+            None => (30.0, false),
+        },
         "notifications" => (if b.m.extra.notifying { 30.0 } else { return None }, false),
         "workspaces" => {
             let ws = workspaces_here(b);
@@ -96,6 +100,13 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
         "battery" => (b.text_w(format!("{}%", st.battery?.0)) + 40.0, false),
         _ => return None,
     })
+}
+
+/// The AI item's text (the most used limit, or what's left of it) and how used it is.
+fn ai_text(b: &Bar) -> Option<(String, f32)> {
+    let (_, w) = b.m.extra.ai.headline(&b.m.s.ai_bar)?;
+    let shown = if b.m.s.ai_left { 100.0 - w.used } else { w.used };
+    Some((format!("{:.0}%", shown), w.used))
 }
 
 fn media_text(md: &crate::sys::Media) -> String {
@@ -406,6 +417,39 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             };
             if resp.on_hover_text(format!("{tip} · click for networks")).clicked() {
                 let a = b.popup(PopupKind::Network { ask: None }, r.center().x);
+                b.acts.push(a);
+            }
+        }
+        "ai" => {
+            let q = &ex.ai;
+            let resp = b.button(ui, r, id);
+            // Tinted while Claude Code is working.
+            let gc = if q.claude_busy { accent } else { fg };
+            match ai_text(b) {
+                Some((t, used)) => {
+                    glyph::spark(&p, Pos2::new(r.left() + 15.0, cy), gc);
+                    let sc = rivet_look::theme::status(ui.ctx());
+                    let col = if used >= 90.0 { sc.danger } else if used >= 75.0 { sc.warning } else { fg };
+                    let g = p.layout_no_wrap(t, ui_font(12.5), col);
+                    p.galley(Pos2::new(r.left() + 29.0, cy - g.size().y / 2.0), g, col);
+                }
+                None => glyph::spark(&p, r.center(), gc),
+            }
+            let mut tip: Vec<String> = q
+                .providers
+                .iter()
+                .filter(|p| p.state == crate::ai::State::Ok && !p.windows.is_empty())
+                .map(|p| format!("{}: {}", crate::ai::name(p.id), p.windows.iter().map(|w| format!("{} {:.0}%", w.name, if b.m.s.ai_left { 100.0 - w.used } else { w.used })).collect::<Vec<_>>().join(" · ")))
+                .collect();
+            if q.claude_sessions > 0 {
+                tip.push(format!("Claude Code: {} running{}", if q.claude_sessions == 1 { "1 session".to_string() } else { format!("{} sessions", q.claude_sessions) }, if q.claude_busy { ", working" } else { "" }));
+            }
+            if tip.is_empty() {
+                tip.push("AI usage".into());
+            }
+            tip.push(format!("{} · click for details", if b.m.s.ai_left { "Left" } else { "Used" }));
+            if resp.on_hover_text(tip.join("\n")).clicked() {
+                let a = b.popup(PopupKind::Ai, r.center().x);
                 b.acts.push(a);
             }
         }

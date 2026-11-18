@@ -75,6 +75,8 @@ pub enum PopupKind {
     Network { ask: Option<(String, String)> },
     /// Bluetooth devices.
     Bluetooth,
+    /// AI plans' usage.
+    Ai,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -129,6 +131,8 @@ pub struct Extra {
     pub user: String,
     /// Wi-Fi networks and Bluetooth devices (while their popup is open).
     pub radios: crate::radio::Radios,
+    /// AI plans' usage (while a panel shows the AI item).
+    pub ai: crate::ai::Quotas,
 }
 
 /// What the person asked for, done by whoever runs the shell.
@@ -151,6 +155,8 @@ pub enum Act {
     Bluetooth(bool),
     /// Join, leave, pair, forget… (done on the radios' thread).
     Radio(crate::radio::Job),
+    /// Read the AI plans' usage again now.
+    AiRefresh,
     NightLight(bool),
     Dnd(bool),
     KeepAwake(bool),
@@ -429,6 +435,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Control { .. } => Vec2::new(392.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
     };
     let rect = match pop.kind {
         PopupKind::Launcher { .. } => {
@@ -470,6 +477,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::DockMenu { app, pinned } => dock_menu(&mut child, app, *pinned, m),
         PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
         PopupKind::Bluetooth => crate::conn::bluetooth(&mut child, m, kit),
+        PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
     }
 }
 

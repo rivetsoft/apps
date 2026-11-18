@@ -78,6 +78,26 @@ pub fn moon(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
     arc(p, c + Vec2::new(3.6, -2.4), 5.2, PI * 0.42, PI * 1.25, s);
 }
 
+/// A four-pointed sparkle and a small one: AI. Curved sides, drawn as an outline.
+pub fn spark(p: &egui::Painter, c: Pos2, col: Color32) {
+    let star = |c: Pos2, r: f32| -> Vec<Pos2> {
+        // Each side bows in towards the middle (a quadratic curve through a point near it).
+        let tips = [Vec2::new(0.0, -r), Vec2::new(r, 0.0), Vec2::new(0.0, r), Vec2::new(-r, 0.0)];
+        let mut pts = Vec::new();
+        for i in 0..4 {
+            let (a, b) = (tips[i], tips[(i + 1) % 4]);
+            let k = (a + b) * 0.16;
+            for s in 0..6 {
+                let t = s as f32 / 6.0;
+                pts.push(c + a * (1.0 - t) * (1.0 - t) + k * 2.0 * t * (1.0 - t) + b * t * t);
+            }
+        }
+        pts
+    };
+    p.add(Shape::closed_line(star(c + Vec2::new(-1.5, 1.5), 7.0), Stroke::new(1.5, col)));
+    p.add(Shape::convex_polygon(star(c + Vec2::new(5.5, -5.5), 2.8).into_iter().step_by(6).collect(), col, Stroke::NONE));
+}
+
 pub fn bluetooth(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
     let pts = vec![c + Vec2::new(-4.5, -4.0), c + Vec2::new(4.0, 3.5), c + Vec2::new(0.0, 7.5), c + Vec2::new(0.0, -7.5), c + Vec2::new(4.0, -3.5), c + Vec2::new(-4.5, 4.0)];
     p.add(Shape::line(pts, Stroke::new(1.6, col)));
@@ -269,6 +289,7 @@ pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32)
         "brightness" => sun(p, c, col),
         "network" => wifi(p, c, col),
         "bluetooth" => bluetooth(p, c, col, true),
+        "ai" => spark(p, c, col),
         "battery" => battery(p, c - Vec2::new(1.0, 0.0), 70, false, col, accent),
         "notifications" => bell(p, c, col, false),
         "quick-settings" => sliders(p, c, col),

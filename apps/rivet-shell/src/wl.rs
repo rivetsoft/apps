@@ -132,6 +132,8 @@ pub struct Shell {
     /// Wi-Fi networks and Bluetooth devices, read while their popup is open.
     radio: crate::radio::RadioLive,
     radio_gen: u64,
+    ai: crate::ai::AiLive,
+    ai_gen: u64,
     apps: Vec<rivet_xdg::launch::DesktopApp>,
     popup: Option<Popup>,
     comp: Compositor,
@@ -194,6 +196,12 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
             let _ = t.send(Msg::Wake);
         }
     });
+    let wake_tx = std::sync::Mutex::new(tx.clone());
+    let ai = crate::ai::start(move || {
+        if let Ok(t) = wake_tx.lock() {
+            let _ = t.send(Msg::Wake);
+        }
+    });
     let mut shell = Shell {
         conn: conn.clone(),
         qh: qh.clone(),
@@ -213,6 +221,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         last_gen: 0,
         radio,
         radio_gen: 0,
+        ai,
+        ai_gen: 0,
         apps: load_apps(),
         popup: None,
         comp,
@@ -240,6 +250,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         exit: false,
     };
     shell.set_notifications();
+    shell.set_ai();
     let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle: LoopHandle<Shell> = event_loop.handle();
     WaylandSource::new(conn, queue).insert(handle.clone()).map_err(|e| e.to_string())?;
@@ -545,6 +556,9 @@ impl Shell {
         if matches!(p.kind, PopupKind::Control { .. } | PopupKind::Network { .. } | PopupKind::Bluetooth) {
             self.live.refresh(true);
         }
+        if p.kind == PopupKind::Ai {
+            self.ai.refresh(false);
+        }
         self.radio.want(match p.kind {
             PopupKind::Network { .. } => crate::radio::WIFI,
             PopupKind::Bluetooth => crate::radio::BT,
@@ -553,6 +567,11 @@ impl Shell {
         self.popup = Some(p);
         let s = self.new_surf(Kind::Popup, output.as_ref(), 0);
         self.surfs.push(s);
+    }
+
+    /// The AI item's readings run while a panel shows it.
+    fn set_ai(&self) {
+        self.ai.set(self.s.panels.iter().any(|p| p.has("ai")), &self.s.ai_providers);
     }
 
     fn close_popup(&mut self) {
@@ -608,6 +627,7 @@ impl Shell {
                     ("power", _) => self.open_popup(Popup::at(PopupKind::Power { confirm: None }, right, "")),
                     ("network" | "wifi", _) => self.open_popup(Popup::at(PopupKind::Network { ask: None }, right, "")),
                     ("bluetooth", _) => self.open_popup(Popup::at(PopupKind::Bluetooth, right, "")),
+                    ("ai", _) => self.open_popup(Popup::at(PopupKind::Ai, right, "")),
                     ("volume", "up" | "down") => self.act(Act::Volume(arg == "up")),
                     ("volume", "mute") => self.act(Act::Mute),
                     ("mic", "mute") => self.act(Act::MicMute),
@@ -749,6 +769,12 @@ impl Shell {
 
     /// The status thread read something new: draw again only the surfaces that show it.
     fn status_changed(&mut self) {
+        let ag = self.ai.generation();
+        if ag != self.ai_gen {
+            self.ai_gen = ag;
+            let pop = self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Ai);
+            self.redraw_kinds(if pop { &[Kind::Panel, Kind::Popup] } else { &[Kind::Panel] });
+        }
         let rg = self.radio.generation();
         if rg != self.radio_gen {
             self.radio_gen = rg;
@@ -828,6 +854,9 @@ impl Shell {
             return;
         }
         let old = std::mem::replace(&mut self.s, new);
+        if old.panels != self.s.panels || old.ai_providers != self.s.ai_providers {
+            self.set_ai();
+        }
         let s = self.s.clone();
         // Only what changed changes: surfaces are reshaped in place (never torn down and made
         // again, which makes them flash and moves the windows twice), and only the surfaces that
@@ -835,7 +864,7 @@ impl Shell {
         let look = old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size;
         let wall_changed = old.wallpaper != s.wallpaper || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type;
         let panels_changed = old.panels != s.panels;
-        let panel_content = old.clock_format != s.clock_format || old.ws_style != s.ws_style || old.ws_names != s.ws_names || old.ws_hide_empty != s.ws_hide_empty || old.ws_scroll != s.ws_scroll || old.notifications != s.notifications;
+        let panel_content = old.clock_format != s.clock_format || old.ai_bar != s.ai_bar || old.ai_left != s.ai_left || old.ws_style != s.ws_style || old.ws_names != s.ws_names || old.ws_hide_empty != s.ws_hide_empty || old.ws_scroll != s.ws_scroll || old.notifications != s.notifications;
         let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps || old.dock_hide != s.dock_hide;
         if old.notifications != s.notifications {
             self.set_notifications();
@@ -1011,6 +1040,7 @@ impl Shell {
             osd: self.osd,
             user: self.user.clone(),
             radios: if kind == Kind::Popup { self.radio.get() } else { Default::default() },
+            ai: if matches!(kind, Kind::Panel | Kind::Popup) { self.ai.get() } else { Default::default() },
         };
         let Shell { surfs, s: settings, apps, popup, comp, walls, .. } = self;
         let wall: Option<&[u8]> = wall_idx.and_then(|i| walls.get(i)).map(|w| w.pixels.as_slice());
@@ -1186,6 +1216,7 @@ impl Shell {
                     self.radio.run(crate::radio::Job::BtScan);
                 }
             }
+            Act::AiRefresh => self.ai.refresh(true),
             Act::Radio(job) => {
                 self.radio.run(job);
                 self.live.refresh(true);

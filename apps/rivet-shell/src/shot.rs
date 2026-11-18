@@ -5,7 +5,8 @@
 //! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|dock-menu, RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
 //! RIVET_SHELL_OSD=1 (the volume display), RIVET_SHELL_QUERY=text (typed into the launcher),
-//! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style).
+//! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style); RIVET_SHELL_POPUP=ai also puts
+//! the AI item on the panel.
 
 use std::time::Duration;
 
@@ -27,6 +28,23 @@ pub struct ShotApp {
     wall: Option<egui::TextureHandle>,
     popup: Option<Popup>,
     shot: rivet_kit::Shot,
+}
+
+fn demo_ai() -> crate::ai::Quotas {
+    use crate::ai::{Provider, Quotas, State, Window};
+    let now = Local::now().timestamp();
+    let w = |name: &str, used: f32, hours: i64| Window { name: name.into(), used, reset: if hours > 0 { now + hours * 3600 + 600 } else { 0 } };
+    Quotas {
+        providers: vec![
+            Provider { id: "claude", state: State::Ok, plan: "Max 5x".into(), windows: vec![w("5-hour", 34.0, 3), w("Weekly", 78.0, 50), w("Weekly · Fable", 12.0, 50)], balance: None, at: now - 40 },
+            Provider { id: "codex", state: State::Ok, plan: "Plus".into(), windows: vec![w("5-hour", 8.0, 4), w("Weekly", 21.0, 120)], balance: None, at: now - 70 },
+            Provider { id: "openrouter", state: State::Ok, plan: String::new(), windows: vec![w("Credits", 58.0, 0)], balance: Some("$4.20 left of $10.00".into()), at: now - 70 },
+            Provider { id: "deepseek", state: State::Missing("Set DEEPSEEK_API_KEY.".into()), ..Default::default() },
+        ],
+        claude_code: true,
+        claude_sessions: 2,
+        claude_busy: true,
+    }
 }
 
 fn demo_radios() -> crate::radio::Radios {
@@ -96,6 +114,11 @@ impl ShotApp {
             s.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
             s.follow_desktop_colors = false;
         }
+        if std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("ai") {
+            let right = &mut s.panels[0].zones[2];
+            let at = right.iter().position(|i| i == "network").unwrap_or(0);
+            right.insert(at, "ai".into());
+        }
         if let Ok(w) = std::env::var("RIVET_SHELL_WS") {
             s.ws_style = crate::config::WsStyle::from(&w);
         }
@@ -120,6 +143,7 @@ impl ShotApp {
             Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None }),
             Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
             Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None }),
+            Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None }),
             Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None }),
             _ => None,
         };
@@ -137,6 +161,7 @@ impl ShotApp {
             osd: on("RIVET_SHELL_OSD").then_some((OsdKind::Volume, 45, false)),
             user: "Sam Rivers".into(),
             radios: demo_radios(),
+            ai: demo_ai(),
         };
         let mut status = demo_status();
         if popup.as_ref().is_some_and(|p| p.kind == PopupKind::Bluetooth) {

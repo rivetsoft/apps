@@ -1,6 +1,8 @@
 //! Rivet Shell: a panel, dock, desktop widgets and wallpaper for Wayland compositors, with
 //! settings, in the Rivet apps' look.
 
+mod ai;
+mod ai_pop;
 mod bar;
 mod cc;
 mod config;
@@ -27,8 +29,9 @@ Usage:
   rivet-shell                       Start the shell in this Wayland session
   rivet-shell settings              The settings window
   rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
+  rivet-shell ai                    AI plan usage, as the panel's AI item reads it
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
-                                    power, network, bluetooth (each opens or closes it); volume up|down|mute|N,
+                                    power, network, bluetooth, ai (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
                                     settings, wallpaper PATH|random|next|previous, reload, quit
@@ -107,6 +110,10 @@ fn main() -> ExitCode {
             }
         },
         Some("settings") => settings_window(screenshot),
+        Some("ai") => {
+            print!("{}", ai::report());
+            ExitCode::SUCCESS
+        }
         Some("colors") => {
             // matugen on a picture, as the shell runs it, with the result shown.
             let Some(pic) = args.get(1).map(PathBuf::from) else {
