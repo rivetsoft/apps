@@ -157,6 +157,8 @@ pub enum Act {
     Radio(crate::radio::Job),
     /// Read the AI plans' usage again now.
     AiRefresh,
+    /// Pin a limit to the panel or take it off ("provider:limit name").
+    AiPin(String),
     NightLight(bool),
     Dnd(bool),
     KeepAwake(bool),

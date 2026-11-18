@@ -6,7 +6,7 @@
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
 //! RIVET_SHELL_OSD=1 (the volume display), RIVET_SHELL_QUERY=text (typed into the launcher),
 //! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style); RIVET_SHELL_POPUP=ai also puts
-//! the AI item on the panel.
+//! the AI item on the panel (RIVET_SHELL_AI_PINS=claude:5-hour,codex:Weekly pins limits).
 
 use std::time::Duration;
 
@@ -118,6 +118,9 @@ impl ShotApp {
             let right = &mut s.panels[0].zones[2];
             let at = right.iter().position(|i| i == "network").unwrap_or(0);
             right.insert(at, "ai".into());
+            if let Ok(p) = std::env::var("RIVET_SHELL_AI_PINS") {
+                s.ai_pins = p.split(',').map(String::from).collect();
+            }
         }
         if let Ok(w) = std::env::var("RIVET_SHELL_WS") {
             s.ws_style = crate::config::WsStyle::from(&w);

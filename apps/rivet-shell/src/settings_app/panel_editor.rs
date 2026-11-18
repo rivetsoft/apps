@@ -247,7 +247,7 @@ impl SettingsApp {
         let col_w = (ui.available_width() - gap * 2.0) / 3.0;
         let clock_format = &mut self.s.clock_format;
         let (ws_style, ws_names, ws_hide_empty, ws_scroll) = (&mut self.s.ws_style, &mut self.s.ws_names, &mut self.s.ws_hide_empty, &mut self.s.ws_scroll);
-        let (ai_providers, ai_bar, ai_left) = (&mut self.s.ai_providers, &mut self.s.ai_bar, &mut self.s.ai_left);
+        let (ai_providers, ai_bar, ai_left, ai_pins) = (&mut self.s.ai_providers, &mut self.s.ai_bar, &mut self.s.ai_left, &mut self.s.ai_pins);
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             for (z, zone) in ZONES.iter().enumerate() {
@@ -372,13 +372,17 @@ impl SettingsApp {
                                         }
                                     }
                                     ui.add_space(4.0);
-                                    ui.label(egui::RichText::new("The panel shows").small().color(v.weak_text_color()));
+                                    ui.label(egui::RichText::new("With nothing pinned (pin limits in the item's popup), the panel shows").small().color(v.weak_text_color()));
                                     egui::ComboBox::from_id_salt("ai-bar").selected_text(if ai_bar == "auto" { "The most used limit" } else { crate::ai::name(ai_bar) }).show_ui(ui, |ui| {
                                         ui.selectable_value(ai_bar, "auto".to_string(), "The most used limit");
                                         for (pid, pname) in crate::ai::PROVIDERS {
                                             ui.selectable_value(ai_bar, pid.to_string(), format!("{pname}'s most used limit"));
                                         }
                                     });
+                                    let n = ai_pins.len();
+                                    if n > 0 && ui.button(format!("Unpin all {n}")).clicked() {
+                                        ai_pins.clear();
+                                    }
                                     ui.add_space(4.0);
                                     ui.horizontal(|ui| {
                                         ui.selectable_value(ai_left, false, "Used");

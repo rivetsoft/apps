@@ -592,6 +592,36 @@ fn title(s: &str) -> String {
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }
 
+/// A pinned limit's key: "provider:limit name".
+pub fn pin_key(provider: &str, window: &str) -> String {
+    format!("{provider}:{}", window.replace(',', " "))
+}
+
+/// A limit's short name for the panel: "5h", "wk", "Fable"…
+pub fn short(window: &str) -> String {
+    match window {
+        "5-hour" => "5h".into(),
+        "Weekly" => "wk".into(),
+        "Code review" => "rev".into(),
+        "Billing period" => "bill".into(),
+        "Credits" => "cr".into(),
+        w => w.strip_prefix("Weekly · ").unwrap_or(w).to_string(),
+    }
+}
+
+impl Quotas {
+    /// The pinned limits found in what was read, in pin order.
+    pub fn pinned<'a>(&'a self, pins: &[String]) -> Vec<(&'a Provider, &'a Window)> {
+        pins.iter()
+            .filter_map(|k| {
+                let (pid, wn) = k.split_once(':')?;
+                let p = self.providers.iter().find(|p| p.id == pid && p.state == State::Ok)?;
+                Some((p, p.windows.iter().find(|w| pin_key(pid, &w.name) == *k || w.name == wn)?))
+            })
+            .collect()
+    }
+}
+
 /// Every provider read once, as text (`rivet-shell ai`).
 pub fn report() -> String {
     let mut out = String::new();

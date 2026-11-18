@@ -78,6 +78,18 @@ pub fn moon(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
     arc(p, c + Vec2::new(3.6, -2.4), 5.2, PI * 0.42, PI * 1.25, s);
 }
 
+/// A push pin, upright; filled when pinned.
+pub fn pin(p: &egui::Painter, c: Pos2, col: Color32, filled: bool) {
+    let s = Stroke::new(1.4, col);
+    let body = vec![c + Vec2::new(-2.5, -7.0), c + Vec2::new(2.5, -7.0), c + Vec2::new(2.5, -2.5), c + Vec2::new(5.0, 1.0), c + Vec2::new(-5.0, 1.0), c + Vec2::new(-2.5, -2.5)];
+    if filled {
+        p.add(Shape::convex_polygon(body, col, Stroke::NONE));
+    } else {
+        p.add(Shape::closed_line(body, s));
+    }
+    p.line_segment([c + Vec2::new(0.0, 1.0), c + Vec2::new(0.0, 7.5)], s);
+}
+
 /// A four-pointed sparkle and a small one: AI. Curved sides, drawn as an outline.
 pub fn spark(p: &egui::Painter, c: Pos2, col: Color32) {
     let star = |c: Pos2, r: f32| -> Vec<Pos2> {

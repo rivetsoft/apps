@@ -8,6 +8,8 @@
   Grok use their own sign-ins; OpenRouter and DeepSeek take API keys from the environment or
   `~/.config/rivet-shell/ai.env`. `rivet-shell ai` prints the same; `rivet-shell msg ai`
   opens the popup.
+- Pin any AI limit to the panel from its popup (several, from several providers); the AI
+  item then shows each, such as "5h 34%  wk 78%".
 - The workspaces item has settings: pills, dots or numbers; names or numbers; hide empty
   workspaces; scroll to switch.
 - The launcher keeps up with typing: drawing is several times faster (plain shapes take the fast

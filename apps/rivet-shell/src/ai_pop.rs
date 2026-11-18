@@ -4,7 +4,7 @@
 use eframe::egui::{self, Align2, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 
-use crate::ai::{Provider, State, ago, name, until};
+use crate::ai::{Provider, State, ago, name, pin_key, until};
 use crate::glyph;
 use crate::quick::tool_button;
 use crate::ui::{Act, Kit, Model, one_line, ui_font};
@@ -104,6 +104,22 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
                 for win in &pv.windows {
                     let (r, _) = ui.allocate_exact_size(Vec2::new(w, WROW), Sense::hover());
                     let y = r.top() + 9.0;
+                    // Pin to the panel: on the right, shown while pinned or while the row is pointed at.
+                    let key = pin_key(pv.id, &win.name);
+                    let pinned = m.s.ai_pins.contains(&key);
+                    let pr = Rect::from_center_size(Pos2::new(r.right() - 11.0, r.center().y - 1.0), Vec2::splat(22.0));
+                    let presp = ui.interact(pr, egui::Id::unique(("ai-pin", &key)), Sense::click());
+                    if presp.hovered() {
+                        p.rect_filled(pr, 5.0, mix(v.panel_fill, v.text_color(), 0.1));
+                    }
+                    if pinned || ui.rect_contains_pointer(r) {
+                        glyph::pin(&p, pr.center(), if pinned { accent } else if presp.hovered() { v.text_color() } else { v.weak_text_color() }, pinned);
+                    }
+                    if presp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if pinned { "Take off the panel" } else { "Pin to the panel" }).clicked() {
+                        m.acts.push(Act::AiPin(key));
+                    }
+                    let r = Rect::from_min_max(r.min, Pos2::new(r.right() - 28.0, r.bottom()));
+                    let w = r.width() + 2.0;
                     let label = if win.reset > 0 { format!("{}  ·  resets {}", win.name, until(win.reset)) } else { win.name.clone() };
                     let g = one_line(&p, &label, ui_font(12.0), v.text_color(), w - 90.0);
                     p.galley(Pos2::new(r.left() + 2.0, y - g.size().y / 2.0), g, v.text_color());

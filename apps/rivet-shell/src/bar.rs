@@ -67,10 +67,10 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     Some(match id {
         "launcher" | "network" | "quick-settings" | "power" => (30.0, false),
         "bluetooth" => (if st.bluetooth.is_some() { 30.0 } else { return None }, false),
-        "ai" => match ai_text(b) {
-            Some((t, _)) => (b.text_w(t) + 36.0, false),
-            None => (30.0, false),
-        },
+        "ai" => {
+            let parts = ai_parts(b);
+            (if parts.is_empty() { 30.0 } else { ai_width(b, &parts) + 38.0 }, false)
+        }
         "notifications" => (if b.m.extra.notifying { 30.0 } else { return None }, false),
         "workspaces" => {
             let ws = workspaces_here(b);
@@ -102,11 +102,39 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     })
 }
 
-/// The AI item's text (the most used limit, or what's left of it) and how used it is.
-fn ai_text(b: &Bar) -> Option<(String, f32)> {
-    let (_, w) = b.m.extra.ai.headline(&b.m.s.ai_bar)?;
-    let shown = if b.m.s.ai_left { 100.0 - w.used } else { w.used };
-    Some((format!("{:.0}%", shown), w.used))
+/// What the AI item shows: each pinned limit (a short name, its percent used or left, how
+/// used it is), else the most used limit alone.
+fn ai_parts(b: &Bar) -> Vec<(String, String, f32)> {
+    let q = &b.m.extra.ai;
+    let pct = |used: f32| format!("{:.0}%", if b.m.s.ai_left { 100.0 - used } else { used });
+    let pins = q.pinned(&b.m.s.ai_pins);
+    if pins.is_empty() {
+        return q.headline(&b.m.s.ai_bar).map(|(_, w)| vec![(String::new(), pct(w.used), w.used)]).unwrap_or_default();
+    }
+    // When limits of several providers are pinned, each provider's name before its first.
+    let mixed = pins.iter().any(|(p, _)| p.id != pins[0].0.id);
+    pins.iter()
+        .enumerate()
+        .map(|(i, (p, w))| {
+            let first = i == 0 || pins[i - 1].0.id != p.id;
+            let tag = if mixed && first { format!("{} {}", ai_abbr(p.id), crate::ai::short(&w.name)) } else { crate::ai::short(&w.name) };
+            (tag, pct(w.used), w.used)
+        })
+        .collect()
+}
+
+fn ai_abbr(id: &str) -> &'static str {
+    match id {
+        "openrouter" => "OR",
+        "deepseek" => "DS",
+        id => crate::ai::name(id),
+    }
+}
+
+/// The AI item's parts' width after its sparkle.
+fn ai_width(b: &Bar, parts: &[(String, String, f32)]) -> f32 {
+    let tw = |t: &str, size: f32| b.p.layout_no_wrap(t.to_string(), ui_font(size), b.fg()).size().x;
+    parts.iter().map(|(tag, val, _)| if tag.is_empty() { 0.0 } else { tw(tag, 11.5) + 4.0 } + tw(val, 12.5)).sum::<f32>() + 10.0 * parts.len().saturating_sub(1) as f32
 }
 
 fn media_text(md: &crate::sys::Media) -> String {
@@ -425,15 +453,24 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let resp = b.button(ui, r, id);
             // Tinted while Claude Code is working.
             let gc = if q.claude_busy { accent } else { fg };
-            match ai_text(b) {
-                Some((t, used)) => {
-                    glyph::spark(&p, Pos2::new(r.left() + 15.0, cy), gc);
-                    let sc = rivet_look::theme::status(ui.ctx());
+            let parts = ai_parts(b);
+            if parts.is_empty() {
+                glyph::spark(&p, r.center(), gc);
+            } else {
+                glyph::spark(&p, Pos2::new(r.left() + 15.0, cy), gc);
+                let sc = rivet_look::theme::status(ui.ctx());
+                let mut x = r.left() + 29.0;
+                for (tag, val, used) in parts {
+                    if !tag.is_empty() {
+                        let g = p.layout_no_wrap(tag, ui_font(11.5), weak);
+                        p.galley(Pos2::new(x, cy - g.size().y / 2.0), g.clone(), weak);
+                        x += g.size().x + 4.0;
+                    }
                     let col = if used >= 90.0 { sc.danger } else if used >= 75.0 { sc.warning } else { fg };
-                    let g = p.layout_no_wrap(t, ui_font(12.5), col);
-                    p.galley(Pos2::new(r.left() + 29.0, cy - g.size().y / 2.0), g, col);
+                    let g = p.layout_no_wrap(val, ui_font(12.5), col);
+                    p.galley(Pos2::new(x, cy - g.size().y / 2.0), g.clone(), col);
+                    x += g.size().x + 10.0;
                 }
-                None => glyph::spark(&p, r.center(), gc),
             }
             let mut tip: Vec<String> = q
                 .providers

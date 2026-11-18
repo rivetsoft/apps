@@ -114,6 +114,8 @@ pub struct Settings {
     pub ai_providers: Vec<String>,
     pub ai_bar: String,
     pub ai_left: bool,
+    /// Limits pinned to the panel, as "provider:limit name" (none: the most used one shows).
+    pub ai_pins: Vec<String>,
     // ---- notifications, on-screen display, night light
     /// Be the notification service (cards in the corner, a history in the control center).
     pub notifications: bool,
@@ -161,6 +163,7 @@ impl Default for Settings {
             ai_providers: crate::ai::PROVIDERS.iter().map(|p| p.0.to_string()).collect(),
             ai_bar: "auto".into(),
             ai_left: false,
+            ai_pins: Vec::new(),
             notifications: true,
             osd: true,
             night_kelvin: 4000,
@@ -299,6 +302,7 @@ impl Settings {
                 "ai_providers" => self.ai_providers = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "ai_bar" => self.ai_bar = if v.is_empty() { "auto".into() } else { v.to_string() },
                 "ai_left" => self.ai_left = b,
+                "ai_pins" => self.ai_pins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "notifications" => self.notifications = b,
                 "osd" => self.osd = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
@@ -341,7 +345,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -358,6 +362,7 @@ impl Settings {
             self.ai_providers.join(","),
             one(&self.ai_bar),
             self.ai_left,
+            self.ai_pins.join(","),
             self.dock,
             self.dock_apps.join(","),
             self.dock_icon,
@@ -404,7 +409,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();
