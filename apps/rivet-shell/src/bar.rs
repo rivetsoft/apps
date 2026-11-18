@@ -69,7 +69,7 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
         "bluetooth" => (if st.bluetooth.is_some() { 30.0 } else { return None }, false),
         "ai" => {
             let parts = ai_parts(b);
-            (if parts.is_empty() { 30.0 } else { ai_width(b, &parts) + 38.0 }, false)
+            (if parts.is_empty() { 30.0 } else { parts.iter().map(|p| ai_part_w(b, p)).sum::<f32>() + AI_SEP * (parts.len() - 1) as f32 + 16.0 }, false)
         }
         "notifications" => (if b.m.extra.notifying { 30.0 } else { return None }, false),
         "workspaces" => {
@@ -102,39 +102,38 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     })
 }
 
-/// What the AI item shows: each pinned limit (a short name, its percent used or left, how
-/// used it is), else the most used limit alone.
-fn ai_parts(b: &Bar) -> Vec<(String, String, f32)> {
+/// One part of the AI item: a provider's logo, a short name when several of its limits are
+/// pinned ("5h"), its percent used or left, and how used it is.
+struct AiPart {
+    id: &'static str,
+    tag: String,
+    val: String,
+    used: f32,
+}
+
+/// What the AI item shows: each pinned limit, else the most used limit alone.
+fn ai_parts(b: &Bar) -> Vec<AiPart> {
     let q = &b.m.extra.ai;
     let pct = |used: f32| format!("{:.0}%", if b.m.s.ai_left { 100.0 - used } else { used });
-    let pins = q.pinned(&b.m.s.ai_pins);
+    let mut pins = q.pinned(&b.m.s.ai_pins);
     if pins.is_empty() {
-        return q.headline(&b.m.s.ai_bar).map(|(_, w)| vec![(String::new(), pct(w.used), w.used)]).unwrap_or_default();
+        pins.extend(q.headline(&b.m.s.ai_bar));
     }
-    // When limits of several providers are pinned, each provider's name before its first.
-    let mixed = pins.iter().any(|(p, _)| p.id != pins[0].0.id);
     pins.iter()
-        .enumerate()
-        .map(|(i, (p, w))| {
-            let first = i == 0 || pins[i - 1].0.id != p.id;
-            let tag = if mixed && first { format!("{} {}", ai_abbr(p.id), crate::ai::short(&w.name)) } else { crate::ai::short(&w.name) };
-            (tag, pct(w.used), w.used)
+        .map(|(p, w)| {
+            let twice = pins.iter().filter(|(o, _)| o.id == p.id).count() > 1;
+            AiPart { id: p.id, tag: if twice { crate::ai::short(&w.name) } else { String::new() }, val: pct(w.used), used: w.used }
         })
         .collect()
 }
 
-fn ai_abbr(id: &str) -> &'static str {
-    match id {
-        "openrouter" => "OR",
-        "deepseek" => "DS",
-        id => crate::ai::name(id),
-    }
-}
+const AI_LOGO: f32 = 16.0;
+/// Between parts: room, a thin line, room.
+const AI_SEP: f32 = 17.0;
 
-/// The AI item's parts' width after its sparkle.
-fn ai_width(b: &Bar, parts: &[(String, String, f32)]) -> f32 {
+fn ai_part_w(b: &Bar, part: &AiPart) -> f32 {
     let tw = |t: &str, size: f32| b.p.layout_no_wrap(t.to_string(), ui_font(size), b.fg()).size().x;
-    parts.iter().map(|(tag, val, _)| if tag.is_empty() { 0.0 } else { tw(tag, 11.5) + 4.0 } + tw(val, 12.5)).sum::<f32>() + 10.0 * parts.len().saturating_sub(1) as f32
+    AI_LOGO + 5.0 + if part.tag.is_empty() { 0.0 } else { tw(&part.tag, 11.5) + 4.0 } + tw(&part.val, 12.5)
 }
 
 fn media_text(md: &crate::sys::Media) -> String {
@@ -451,26 +450,43 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
         "ai" => {
             let q = &ex.ai;
             let resp = b.button(ui, r, id);
-            // Tinted while Claude Code is working.
-            let gc = if q.claude_busy { accent } else { fg };
             let parts = ai_parts(b);
+            let logo_at = |x: f32| Rect::from_center_size(Pos2::new(x + AI_LOGO / 2.0, cy), Vec2::splat(AI_LOGO));
+            // Claude Code at work: a dot by Claude's logo (or the item's corner).
+            let mut busy_at = None;
             if parts.is_empty() {
-                glyph::spark(&p, r.center(), gc);
+                let lr = Rect::from_center_size(r.center(), Vec2::splat(AI_LOGO));
+                crate::ai_pop::logo(ui, &p, "claude", lr, fg);
+                busy_at = Some(lr.right_top());
             } else {
-                glyph::spark(&p, Pos2::new(r.left() + 15.0, cy), gc);
                 let sc = rivet_look::theme::status(ui.ctx());
-                let mut x = r.left() + 29.0;
-                for (tag, val, used) in parts {
-                    if !tag.is_empty() {
-                        let g = p.layout_no_wrap(tag, ui_font(11.5), weak);
+                let mut x = r.left() + 8.0;
+                for (k, part) in parts.iter().enumerate() {
+                    if k > 0 {
+                        let lx = x + AI_SEP / 2.0 - 0.5;
+                        p.line_segment([Pos2::new(lx, cy - 8.0), Pos2::new(lx, cy + 8.0)], egui::Stroke::new(1.0, mix(b.v.panel_fill, fg, 0.3)));
+                        x += AI_SEP;
+                    }
+                    let lr = logo_at(x);
+                    crate::ai_pop::logo(ui, &p, part.id, lr, fg);
+                    if part.id == "claude" && busy_at.is_none() {
+                        busy_at = Some(lr.right_top());
+                    }
+                    x += AI_LOGO + 5.0;
+                    if !part.tag.is_empty() {
+                        let g = p.layout_no_wrap(part.tag.clone(), ui_font(11.5), weak);
                         p.galley(Pos2::new(x, cy - g.size().y / 2.0), g.clone(), weak);
                         x += g.size().x + 4.0;
                     }
-                    let col = if used >= 90.0 { sc.danger } else if used >= 75.0 { sc.warning } else { fg };
-                    let g = p.layout_no_wrap(val, ui_font(12.5), col);
+                    let col = if part.used >= 90.0 { sc.danger } else if part.used >= 75.0 { sc.warning } else { fg };
+                    let g = p.layout_no_wrap(part.val.clone(), ui_font(12.5), col);
                     p.galley(Pos2::new(x, cy - g.size().y / 2.0), g.clone(), col);
-                    x += g.size().x + 10.0;
+                    x += g.size().x;
                 }
+            }
+            if q.claude_busy && let Some(c) = busy_at {
+                p.circle_filled(c + Vec2::new(0.5, 1.5), 3.5, b.v.panel_fill);
+                p.circle_filled(c + Vec2::new(0.5, 1.5), 2.5, accent);
             }
             let mut tip: Vec<String> = q
                 .providers

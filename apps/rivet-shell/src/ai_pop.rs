@@ -9,6 +9,38 @@ use crate::glyph;
 use crate::quick::tool_button;
 use crate::ui::{Act, Kit, Model, one_line, ui_font};
 
+/// The providers' logos (see data/ai/README.md).
+fn logo_svg(id: &str) -> &'static str {
+    match id {
+        "claude" => include_str!("../data/ai/claude.svg"),
+        "codex" => include_str!("../data/ai/codex.svg"),
+        "grok" => include_str!("../data/ai/grok.svg"),
+        "openrouter" => include_str!("../data/ai/openrouter.svg"),
+        "deepseek" => include_str!("../data/ai/deepseek.svg"),
+        _ => include_str!("../data/ai/claude.svg"),
+    }
+}
+
+/// A provider's logo in `r` (square). Logos without colours of their own take `col`. Each is
+/// made once per size and colour, at the screen's scale.
+pub fn logo(ui: &egui::Ui, p: &egui::Painter, id: &str, r: Rect, col: egui::Color32) {
+    let svg = logo_svg(id);
+    let mono = svg.contains("currentColor");
+    let px = (r.width() * ui.ctx().pixels_per_point()).round().max(1.0) as u32;
+    let key = egui::Id::unique(("ai-logo", id, px, if mono { col.to_array() } else { [0; 4] }));
+    let tex = ui.ctx().data(|d| d.get_temp::<egui::TextureHandle>(key)).or_else(|| {
+        let data = if mono { svg.replace("currentColor", &format!("#{:02x}{:02x}{:02x}", col.r(), col.g(), col.b())) } else { svg.to_string() };
+        let img = rivet_look::icons::render_svg(data.as_bytes(), px)?;
+        let t = ui.ctx().load_texture(format!("ai-logo-{id}-{px}"), img, egui::TextureOptions::LINEAR);
+        ui.ctx().data_mut(|d| d.insert_temp(key, t.clone()));
+        Some(t)
+    });
+    if let Some(t) = tex {
+        let tint = if mono { egui::Color32::WHITE.gamma_multiply(col.a() as f32 / 255.0) } else { egui::Color32::WHITE };
+        p.image(t.id(), r, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), tint);
+    }
+}
+
 const HEAD: f32 = 46.0;
 const PHEAD: f32 = 30.0;
 const WROW: f32 = 36.0;
@@ -87,9 +119,10 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     for pv in &shown {
         // Name and plan; when it was read, on the right.
         let (r, _) = ui.allocate_exact_size(Vec2::new(w, PHEAD), Sense::hover());
+        logo(ui, &p, pv.id, Rect::from_center_size(Pos2::new(r.left() + 10.0, r.center().y), Vec2::splat(16.0)), v.strong_text_color());
         let g = p.layout_no_wrap(name(pv.id).to_string(), ui_font(13.5), v.strong_text_color());
-        let nw = g.size().x;
-        p.galley(Pos2::new(r.left() + 2.0, r.center().y - g.size().y / 2.0), g, v.strong_text_color());
+        let nw = g.size().x + 24.0;
+        p.galley(Pos2::new(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, v.strong_text_color());
         if !pv.plan.is_empty() {
             let pg = p.layout_no_wrap(pv.plan.clone(), ui_font(11.0), v.text_color());
             let pr = Rect::from_min_size(Pos2::new(r.left() + nw + 10.0, r.center().y - 9.0), Vec2::new(pg.size().x + 12.0, 18.0));
