@@ -10,6 +10,7 @@ use rivet_look::theme::{r_lg, r_md, r_sm, selected_tile};
 use super::{SettingsApp, hint};
 use crate::config::Edge;
 use crate::glyph;
+use crate::config::WsStyle;
 use crate::panels::{ITEMS, PanelCfg, ZONES, label};
 
 /// A change to make after drawing (the lists can't change while they're drawn).
@@ -245,6 +246,7 @@ impl SettingsApp {
         let gap = 10.0;
         let col_w = (ui.available_width() - gap * 2.0) / 3.0;
         let clock_format = &mut self.s.clock_format;
+        let (ws_style, ws_names, ws_hide_empty, ws_scroll) = (&mut self.s.ws_style, &mut self.s.ws_names, &mut self.s.ws_hide_empty, &mut self.s.ws_scroll);
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = gap;
             for (z, zone) in ZONES.iter().enumerate() {
@@ -316,6 +318,35 @@ impl SettingsApp {
                                     }
                                 });
                                 g_resp.on_hover_text("How the clock shows");
+                            }
+                            if id == "workspaces" {
+                                let gr = xr.translate(Vec2::new(-26.0, 0.0));
+                                let g_resp = ui.interact(gr, ui.scope_id().with(("item-gear", z, k)), Sense::click());
+                                if g_resp.hovered() {
+                                    ui.painter().circle_filled(gr.center(), 11.0, mix(v.panel_fill, v.text_color(), 0.12));
+                                }
+                                glyph::gear(ui.painter(), gr.center(), v.weak_text_color());
+                                egui::Popup::menu(&g_resp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+                                    ui.set_min_width(220.0);
+                                    ui.label(egui::RichText::new("Style").small().color(v.weak_text_color()));
+                                    ui.horizontal(|ui| {
+                                        for st in WsStyle::ALL {
+                                            ui.selectable_value(ws_style, st, st.label());
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    if *ws_style != WsStyle::Dots {
+                                        ui.label(egui::RichText::new("Each shows its").small().color(v.weak_text_color()));
+                                        ui.horizontal(|ui| {
+                                            ui.selectable_value(ws_names, true, "Name").on_hover_text("Its name when it has one, else its number");
+                                            ui.selectable_value(ws_names, false, "Number");
+                                        });
+                                        ui.add_space(4.0);
+                                    }
+                                    ui.checkbox(ws_hide_empty, "Hide empty workspaces").on_hover_text("Workspaces with no windows are left out (the one you're on always shows)");
+                                    ui.checkbox(ws_scroll, "Scroll to switch workspaces");
+                                });
+                                g_resp.on_hover_text("How the workspaces show");
                             }
                             resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(tip);
                         }

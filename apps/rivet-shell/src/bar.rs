@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::r_lg;
 
-use crate::config::Edge;
+use crate::config::{Edge, WsStyle};
 use crate::glyph;
 use crate::panels::{BAR, MARGIN, PanelCfg};
 use crate::sys::Net;
@@ -73,7 +73,8 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
             if ws.is_empty() {
                 return None;
             }
-            (ws.iter().map(|(label, active)| pill_w(b, label, *active) + 4.0).sum::<f32>() - 4.0, false)
+            let gap = ws_gap(s.ws_style);
+            (ws.iter().map(|w| ws_w(b, &ws_label(b, w), w.active) + gap).sum::<f32>() - gap, false)
         }
         "window-title" => {
             if st.window.is_empty() {
@@ -106,14 +107,38 @@ fn system_text(b: &Bar) -> String {
     format!("{:.0}%  ·  {:.1} GB", b.m.status.cpu, used as f32 / (1u64 << 30) as f32)
 }
 
-fn workspaces_here(b: &Bar) -> Vec<(String, bool)> {
+/// This screen's workspaces, less the empty ones when they're hidden (the active one stays).
+fn workspaces_here<'a>(b: &Bar<'a, '_>) -> Vec<&'a crate::sys::Workspace> {
     let out = b.m.output;
-    b.m.status.workspaces.iter().filter(|w| out.is_empty() || w.output.is_empty() || w.output == out).map(|w| (if w.label.is_empty() { w.key.clone() } else { w.label.clone() }, w.active)).collect()
+    let hide = b.m.s.ws_hide_empty;
+    b.m.status.workspaces.iter().filter(|w| (out.is_empty() || w.output.is_empty() || w.output == out) && (!hide || w.busy || w.active)).collect()
 }
 
-fn pill_w(b: &Bar, label: &str, active: bool) -> f32 {
-    let w = b.p.layout_no_wrap(label.to_string(), ui_font(12.5), b.fg()).size().x;
-    if active { (w + 26.0).max(38.0) } else { (w + 14.0).max(24.0) }
+/// What a workspace shows: its name when it has one (and names are wanted), else its number.
+fn ws_label(b: &Bar, w: &crate::sys::Workspace) -> String {
+    if b.m.s.ws_names && !w.label.is_empty() { w.label.clone() } else { w.key.clone() }
+}
+
+fn ws_gap(style: WsStyle) -> f32 {
+    match style {
+        WsStyle::Pills => 4.0,
+        WsStyle::Dots => 2.0,
+        WsStyle::Numbers => 0.0,
+    }
+}
+
+/// A workspace's width in the panel.
+fn ws_w(b: &Bar, label: &str, active: bool) -> f32 {
+    let text = || b.p.layout_no_wrap(label.to_string(), ui_font(12.5), b.fg()).size().x;
+    match b.m.s.ws_style {
+        WsStyle::Pills => {
+            if active { (text() + 26.0).max(38.0) } else { (text() + 14.0).max(24.0) }
+        }
+        WsStyle::Dots => {
+            if active { 30.0 } else { 14.0 }
+        }
+        WsStyle::Numbers => (text() + 14.0).max(22.0),
+    }
 }
 
 /// Fit a zone's items into `room`: squeezable ones shrink first, then items are left out
@@ -218,28 +243,84 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             }
         }
         "workspaces" => {
+            let style = b.m.s.ws_style;
+            let ws = workspaces_here(b);
             let mut x = r.left();
-            for w in st.workspaces.iter().filter(|w| b.m.output.is_empty() || w.output.is_empty() || w.output == b.m.output) {
-                let label = if w.label.is_empty() { w.key.clone() } else { w.label.clone() };
-                let pr = Rect::from_min_size(Pos2::new(x, cy - 11.0), Vec2::new(pill_w(b, &label, w.active), 22.0));
-                x = pr.right() + 4.0;
+            for w in &ws {
+                let label = ws_label(b, w);
+                let pr = Rect::from_min_size(Pos2::new(x, cy - 11.0), Vec2::new(ws_w(b, &label, w.active), 22.0));
+                x = pr.right() + ws_gap(style);
                 if pr.right() > r.right() + 0.5 {
                     break;
                 }
                 let resp = ui.interact(pr, egui::Id::unique(("ws", b.idx, &w.key, &w.output)), Sense::click());
-                let (fill, col) = if w.active {
-                    (accent, on(accent))
-                } else if resp.hovered() {
-                    (mix(b.v.panel_fill, fg, 0.16), fg)
-                } else {
-                    (mix(b.v.panel_fill, fg, if w.busy { 0.1 } else { 0.05 }), if w.busy { fg } else { weak })
-                };
-                p.rect_filled(pr, 11.0, fill);
-                // Laid out in its colour (a galley keeps the colour it was made with).
-                let g = p.layout_no_wrap(label, ui_font(12.5), col);
-                p.galley(pr.center() - g.size() / 2.0, g, col);
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("Workspace {} ({})", w.label, b.m.compositor.name())).clicked() {
+                let hot = resp.hovered();
+                match style {
+                    WsStyle::Pills => {
+                        let (fill, col) = if w.active {
+                            (accent, on(accent))
+                        } else if hot {
+                            (mix(b.v.panel_fill, fg, 0.16), fg)
+                        } else {
+                            (mix(b.v.panel_fill, fg, if w.busy { 0.1 } else { 0.05 }), if w.busy { fg } else { weak })
+                        };
+                        p.rect_filled(pr, 11.0, fill);
+                        // Laid out in its colour (a galley keeps the colour it was made with).
+                        let g = p.layout_no_wrap(label.clone(), ui_font(12.5), col);
+                        p.galley(pr.center() - g.size() / 2.0, g, col);
+                    }
+                    WsStyle::Dots => {
+                        let c = pr.center();
+                        if w.active {
+                            p.rect_filled(Rect::from_center_size(c, Vec2::new(22.0, 8.0)), 4.0, accent);
+                        } else if w.busy {
+                            p.circle_filled(c, if hot { 4.5 } else { 3.75 }, if hot { fg } else { fg.gamma_multiply(0.75) });
+                        } else {
+                            // Empty: a ring.
+                            p.circle_stroke(c, if hot { 4.0 } else { 3.25 }, egui::Stroke::new(1.3, if hot { fg } else { weak.gamma_multiply(0.8) }));
+                        }
+                    }
+                    WsStyle::Numbers => {
+                        let col = if w.active {
+                            accent
+                        } else if hot || w.busy {
+                            fg
+                        } else {
+                            weak.gamma_multiply(0.75)
+                        };
+                        if hot && !w.active {
+                            p.rect_filled(pr, 6.0, mix(b.v.panel_fill, fg, 0.1));
+                        }
+                        let g = p.layout_no_wrap(label.clone(), ui_font(if w.active { 13.5 } else { 12.5 }), col);
+                        p.galley(pr.center() - g.size() / 2.0 - Vec2::new(0.0, 1.0), g, col);
+                        if w.active {
+                            p.rect_filled(Rect::from_center_size(Pos2::new(pr.center().x, pr.bottom() - 0.5), Vec2::new(12.0, 2.5)), 1.25, accent);
+                        }
+                    }
+                }
+                let comp = b.m.compositor.name();
+                let name = if w.label.is_empty() || w.label == w.key { format!("Workspace {} ({comp})", w.key) } else { format!("Workspace {} · {} ({comp})", w.key, w.label) };
+                let tip = if b.m.s.ws_scroll { format!("{name} · scroll to switch") } else { name };
+                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip).clicked() {
                     b.acts.push(Act::Workspace(w.key.clone()));
+                }
+            }
+            // Scrolling over the item steps through the workspaces (at most one step per 150 ms,
+            // so a touchpad's stream of small scrolls doesn't race to the end).
+            if b.m.s.ws_scroll && ui.rect_contains_pointer(r) {
+                let dy = wheel(ui);
+                let now = ui.input(|i| i.time);
+                let key = egui::Id::unique(("ws-scroll", b.idx));
+                let last = ui.ctx().data(|d| d.get_temp::<f64>(key)).unwrap_or(f64::MIN);
+                if dy.abs() > 0.5
+                    && now - last > 0.15
+                    && let Some(at) = ws.iter().position(|w| w.active)
+                {
+                    let to = if dy > 0.0 { at.checked_sub(1) } else { Some(at + 1).filter(|&i| i < ws.len()) };
+                    if let Some(to) = to {
+                        b.acts.push(Act::Workspace(ws[to].key.clone()));
+                        ui.ctx().data_mut(|d| d.insert_temp(key, now));
+                    }
                 }
             }
         }

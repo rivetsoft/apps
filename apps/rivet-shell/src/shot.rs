@@ -4,7 +4,8 @@
 //!
 //! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|dock-menu, RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
-//! RIVET_SHELL_OSD=1 (the volume display), RIVET_SHELL_QUERY=text (typed into the launcher).
+//! RIVET_SHELL_OSD=1 (the volume display), RIVET_SHELL_QUERY=text (typed into the launcher),
+//! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style).
 
 use std::time::Duration;
 
@@ -94,6 +95,9 @@ impl ShotApp {
         if let Some(n) = std::env::var("RIVET_SHELL_ACCENT").ok().and_then(|h| u32::from_str_radix(h.trim_start_matches('#'), 16).ok()) {
             s.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
             s.follow_desktop_colors = false;
+        }
+        if let Ok(w) = std::env::var("RIVET_SHELL_WS") {
+            s.ws_style = crate::config::WsStyle::from(&w);
         }
         if std::env::var("RIVET_SHELL_EDGE").as_deref() == Ok("bottom") {
             s.panels[0].edge = Edge::Bottom;

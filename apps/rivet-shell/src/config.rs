@@ -40,6 +40,39 @@ impl DockHide {
     }
 }
 
+/// How the panel's workspaces item looks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum WsStyle {
+    /// Rounded pills with the workspace's number or name; the active one is wider and coloured.
+    #[default]
+    Pills,
+    /// Small dots; the active one stretches into a coloured bar. No text.
+    Dots,
+    /// Just the numbers or names; the active one coloured and underlined.
+    Numbers,
+}
+
+impl WsStyle {
+    pub const ALL: [WsStyle; 3] = [WsStyle::Pills, WsStyle::Dots, WsStyle::Numbers];
+    pub fn name(self) -> &'static str {
+        match self {
+            WsStyle::Pills => "pills",
+            WsStyle::Dots => "dots",
+            WsStyle::Numbers => "numbers",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            WsStyle::Pills => "Pills",
+            WsStyle::Dots => "Dots",
+            WsStyle::Numbers => "Numbers",
+        }
+    }
+    pub fn from(v: &str) -> WsStyle {
+        WsStyle::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Side {
     #[default]
@@ -70,6 +103,12 @@ pub struct Settings {
     pub panels: Vec<PanelCfg>,
     /// The clock, in strftime form.
     pub clock_format: String,
+    /// The workspaces item: how it looks, names (when a workspace has one) or numbers, whether
+    /// empty workspaces are left out, and whether scrolling over it switches workspaces.
+    pub ws_style: WsStyle,
+    pub ws_names: bool,
+    pub ws_hide_empty: bool,
+    pub ws_scroll: bool,
     // ---- notifications, on-screen display, night light
     /// Be the notification service (cards in the corner, a history in the control center).
     pub notifications: bool,
@@ -110,6 +149,10 @@ impl Default for Settings {
             scheme_type: "scheme-tonal-spot".into(),
             panels: vec![PanelCfg::default()],
             clock_format: "%a %b %-d  %H:%M".into(),
+            ws_style: WsStyle::Pills,
+            ws_names: true,
+            ws_hide_empty: false,
+            ws_scroll: true,
             notifications: true,
             osd: true,
             night_kelvin: 4000,
@@ -241,6 +284,10 @@ impl Settings {
                 "show_brightness" => shown("brightness", &mut old),
                 "show_bell" => shown("notifications", &mut old),
                 "clock_format" => self.clock_format = v.to_string(),
+                "ws_style" => self.ws_style = WsStyle::from(v),
+                "ws_names" => self.ws_names = b,
+                "ws_hide_empty" => self.ws_hide_empty = b,
+                "ws_scroll" => self.ws_scroll = b,
                 "notifications" => self.notifications = b,
                 "osd" => self.osd = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
@@ -283,7 +330,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -293,6 +340,10 @@ impl Settings {
             mode_name(self.color_mode),
             one(&self.scheme_type),
             one(&self.clock_format),
+            self.ws_style.name(),
+            self.ws_names,
+            self.ws_hide_empty,
+            self.ws_scroll,
             self.dock,
             self.dock_apps.join(","),
             self.dock_icon,
@@ -339,7 +390,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();
