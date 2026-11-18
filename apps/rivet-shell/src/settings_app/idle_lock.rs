@@ -1,0 +1,114 @@
+//! The Idle & Lock page: what happens as the computer sits untouched, and the lock screen.
+
+use eframe::egui;
+
+use super::{SettingsApp, grid, hint, section};
+
+/// The times offered, in seconds (0: never).
+const TIMES: [u32; 12] = [0, 30, 60, 120, 180, 300, 600, 900, 1200, 1800, 2700, 3600];
+
+fn time_label(secs: u32) -> String {
+    match secs {
+        0 => "Never".into(),
+        s if s < 60 => format!("{s} seconds"),
+        60 => "1 minute".into(),
+        s if s < 3600 && s % 60 != 0 => format!("{} min {} s", s / 60, s % 60),
+        s if s < 3600 => format!("{} minutes", s / 60),
+        3600 => "1 hour".into(),
+        s => format!("{:.1} hours", s as f32 / 3600.0),
+    }
+}
+
+/// A time picked from the list (a time set by hand that isn't in it shows too).
+fn time_combo(ui: &mut egui::Ui, id: &str, v: &mut u32) {
+    egui::ComboBox::from_id_salt(id).selected_text(time_label(*v)).width(150.0).show_ui(ui, |ui| {
+        let mut all = TIMES.to_vec();
+        if !all.contains(v) {
+            all.push(*v);
+            all.sort();
+        }
+        for t in all {
+            ui.selectable_value(v, t, time_label(t));
+        }
+    });
+}
+
+impl SettingsApp {
+    pub(super) fn idle_page(&mut self, ui: &mut egui::Ui) {
+        let other = crate::idle::other_daemon();
+        section(ui, "When Idle", &mut |ui| {
+            let s = &mut self.s;
+            ui.checkbox(&mut s.idle_on, "Rivet Shell watches for idle");
+            if let Some(d) = &other {
+                let warn = rivet_look::theme::status(ui.ctx()).warning;
+                ui.label(egui::RichText::new(format!("{d} is running too, so these would happen twice. Stop it, or turn this off and leave idle to it.")).color(warn));
+            } else {
+                hint(ui, "Each step comes after this long without the keyboard or mouse. Apps playing a video, or Keep Awake in quick settings, hold it off.");
+            }
+            if !s.idle_on {
+                return;
+            }
+            ui.add_space(10.0);
+            grid(ui, "idle-times", &mut |ui| {
+                ui.label("Dim the screen");
+                time_combo(ui, "idle-dim", &mut s.idle_dim);
+                ui.end_row();
+                ui.label("Lock");
+                time_combo(ui, "idle-lock", &mut s.idle_lock);
+                ui.end_row();
+                ui.label("Turn the screens off");
+                time_combo(ui, "idle-off", &mut s.idle_screen_off);
+                ui.end_row();
+                ui.label("Suspend");
+                time_combo(ui, "idle-suspend", &mut s.idle_suspend);
+                ui.end_row();
+            });
+            ui.add_space(8.0);
+            ui.checkbox(&mut s.idle_media, "Not while music or a video plays");
+            hint(ui, "Any player that shows in the panel's media item.");
+        });
+        section(ui, "Lock Screen", &mut |ui| {
+            let s = &mut self.s;
+            ui.checkbox(&mut s.lock_on_sleep, "Lock before the computer sleeps");
+            ui.add_space(6.0);
+            let mut own = s.lock_cmd.trim().is_empty();
+            ui.horizontal(|ui| {
+                ui.radio_value(&mut own, true, "Rivet Shell's lock screen");
+                ui.radio_value(&mut own, false, "Another program");
+            });
+            if own && !s.lock_cmd.trim().is_empty() {
+                s.lock_cmd.clear();
+            } else if !own && s.lock_cmd.trim().is_empty() {
+                s.lock_cmd = ["hyprlock", "swaylock"].into_iter().find(|p| crate::sys::has(p)).unwrap_or("swaylock").to_string();
+            }
+            ui.add_space(6.0);
+            if own {
+                ui.checkbox(&mut s.lock_blur, "Blur the wallpaper");
+                ui.checkbox(&mut s.lock_power, "Suspend, restart and shut down on it");
+                ui.add_space(4.0);
+                hint(ui, &format!("Your password is checked with PAM (the \"{}\" service).", crate::auth::service()));
+                ui.add_space(6.0);
+                if ui.button("Try it").on_hover_text("Shows the lock screen without locking: type your password to check it, or press Escape").clicked()
+                    && let Ok(exe) = std::env::current_exe()
+                {
+                    {
+                        let _ = std::process::Command::new(exe).args(["lock", "--preview"]).stdin(std::process::Stdio::null()).spawn();
+                    }
+                }
+            } else {
+                grid(ui, "lock-cmd", &mut |ui| {
+                    ui.label("Command");
+                    ui.add(egui::TextEdit::singleline(&mut s.lock_cmd).desired_width(260.0).font(egui::TextStyle::Monospace));
+                    ui.end_row();
+                });
+                hint(ui, "It must stay running until it's unlocked (for swaylock, leave out -f), so the shell knows the screen is locked.");
+            }
+        });
+        section(ui, "Keys", &mut |ui| {
+            hint(ui, "Bind this in your compositor's settings to lock at once:");
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new("rivet-shell msg lock").monospace().size(12.0));
+            hint(ui, "loginctl lock-session does the same, while the shell runs.");
+        });
+    }
+}

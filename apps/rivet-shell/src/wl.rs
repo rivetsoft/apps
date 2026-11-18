@@ -31,6 +31,9 @@ use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_s
 use wayland_client::{Connection, Dispatch, QueueHandle};
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
+use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{self, ExtIdleNotificationV1};
+use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
+use crate::idle::{self, Stage};
 
 use crate::config::{DockHide, Edge, Settings};
 
@@ -63,6 +66,8 @@ enum Kind {
     Cards,
     /// Volume or brightness as it changes.
     Osd,
+    /// The screen dimming before it locks or goes off (idle).
+    Dim,
 }
 
 struct Surf {
@@ -157,6 +162,19 @@ pub struct Shell {
     night_ok: bool,
     inhibit_mgr: Option<ZwpIdleInhibitManagerV1>,
     inhibitor: Option<ZwpIdleInhibitorV1>,
+    // ---- idle and the lock screen (idle.rs)
+    seat: Option<wl_seat::WlSeat>,
+    idle_notifier: Option<ExtIdleNotifierV1>,
+    idle_notes: Vec<ExtIdleNotificationV1>,
+    locker: idle::Locker,
+    /// Dimming since then.
+    dim_at: Option<Instant>,
+    /// The screens turned off (their names, to turn them on again).
+    screens_off: Option<Vec<String>>,
+    /// Kept awake while media plays.
+    media_inhibitor: Option<ZwpIdleInhibitorV1>,
+    lock_on_sleep: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    own_locker: std::sync::Arc<std::sync::atomic::AtomicBool>,
     user: String,
     /// The last popup's screen state (fonts, icons already made), so the next opens at once.
     spare: Option<(egui::Context, Kit, soft::Textures, Instant)>,
@@ -186,6 +204,11 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     let shm = Shm::bind(&globals, &qh).map_err(|_| "the compositor has no shared memory (wl_shm)")?;
     let comp = Compositor::detect();
     let inhibit_mgr = globals.bind::<ZwpIdleInhibitManagerV1, _, _>(&qh, 1..=1, ()).ok();
+    let idle_notifier = globals.bind::<ExtIdleNotifierV1, _, _>(&qh, 1..=1, ()).ok();
+    idle::clear_stale_marker();
+    let lock_on_sleep = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(settings.lock_on_sleep));
+    let own_locker = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(settings.lock_cmd.trim().is_empty()));
+    idle::watch_logind(tx.clone(), lock_on_sleep.clone(), own_locker.clone());
     let wake_tx = tx.clone();
     let live = sys::start(comp, move || {
         let _ = wake_tx.send(Msg::Wake);
@@ -244,6 +267,15 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         night_ok: sys::NightLight::available(),
         inhibit_mgr,
         inhibitor: None,
+        seat: None,
+        idle_notifier,
+        idle_notes: Vec::new(),
+        locker: idle::Locker::default(),
+        dim_at: None,
+        screens_off: None,
+        media_inhibitor: None,
+        lock_on_sleep,
+        own_locker,
         user: sys::user_name(),
         spare: None,
         prewarmed: false,
@@ -292,7 +324,7 @@ impl Shell {
         let layer = match kind {
             Kind::Background => Layer::Background,
             Kind::Panel | Kind::Dock => Layer::Top,
-            Kind::Popup | Kind::Cards | Kind::Osd => Layer::Overlay,
+            Kind::Popup | Kind::Cards | Kind::Osd | Kind::Dim => Layer::Overlay,
         };
         let ns = match kind {
             Kind::Background => "rivet-shell-wallpaper",
@@ -301,6 +333,7 @@ impl Shell {
             Kind::Popup => "rivet-shell-popup",
             Kind::Cards => "rivet-shell-notifications",
             Kind::Osd => "rivet-shell-osd",
+            Kind::Dim => "rivet-shell-dim",
         };
         let layer = self.layer_shell.create_layer_surface(&self.qh, surface, layer, Some(ns), output);
         let name = output.and_then(|o| self.output_state.info(o)).and_then(|i| i.name).unwrap_or_default();
@@ -335,6 +368,16 @@ impl Shell {
                 layer.set_margin(0, 0, 24, 0);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
                 // Clicks go through it.
+                if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
+                    layer.wl_surface().set_input_region(Some(region.wl_region()));
+                }
+            }
+            Kind::Dim => {
+                layer.set_anchor(Anchor::all());
+                layer.set_exclusive_zone(-1);
+                layer.set_size(0, 0);
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                // Input goes through to the compositor (which ends idle).
                 if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
                     layer.wl_surface().set_input_region(Some(region.wl_region()));
                 }
@@ -456,6 +499,73 @@ impl Shell {
         }
     }
 
+    /// Watch for idle as the settings say: one notification per step with a time.
+    fn set_idle(&mut self) {
+        for n in self.idle_notes.drain(..) {
+            n.destroy();
+        }
+        let (Some(notifier), Some(seat)) = (&self.idle_notifier, &self.seat) else { return };
+        if !self.s.idle_on {
+            return;
+        }
+        for st in Stage::ALL {
+            let secs = st.secs(&self.s);
+            if secs > 0 {
+                self.idle_notes.push(notifier.get_idle_notification(secs.saturating_mul(1000), seat, &self.qh, st));
+            }
+        }
+    }
+
+    /// A step of idle reached (`on`), or the person is back.
+    fn idle(&mut self, st: Stage, on: bool) {
+        match (st, on) {
+            (Stage::Dim, true) => {
+                if self.dim_at.is_none() {
+                    self.dim_at = Some(Instant::now());
+                    for o in self.output_state.outputs().collect::<Vec<_>>() {
+                        let d = self.new_surf(Kind::Dim, Some(&o), 0);
+                        self.surfs.push(d);
+                    }
+                }
+            }
+            (Stage::Dim, false) => {
+                self.dim_at = None;
+                self.surfs.retain(|s| s.kind != Kind::Dim);
+            }
+            (Stage::Lock, true) => self.locker.lock(&self.s),
+            (Stage::ScreenOff, true) => {
+                let names: Vec<String> = self.output_state.outputs().filter_map(|o| self.output_state.info(&o).and_then(|i| i.name)).collect();
+                idle::screens(self.comp, false, &names);
+                self.screens_off = Some(names);
+            }
+            (Stage::ScreenOff, false) => {
+                if let Some(names) = self.screens_off.take() {
+                    idle::screens(self.comp, true, &names);
+                }
+            }
+            (Stage::Suspend, true) => sys::spawn("systemctl", &["suspend"]),
+            _ => {}
+        }
+    }
+
+    /// Kept awake while something plays (when the settings ask), like Keep Awake.
+    fn set_media_awake(&mut self) {
+        let want = self.s.idle_on && self.s.idle_media && self.prev_status.media.as_ref().is_some_and(|m| m.playing);
+        if want == self.media_inhibitor.is_some() {
+            return;
+        }
+        if let Some(i) = self.media_inhibitor.take() {
+            i.destroy();
+        }
+        let Some(mgr) = &self.inhibit_mgr else { return };
+        if want {
+            let host = [Kind::Panel, Kind::Dock, Kind::Background].iter().find_map(|k| self.surfs.iter().find(|s| s.kind == *k));
+            if let Some(h) = host {
+                self.media_inhibitor = Some(mgr.create_inhibitor(h.layer.wl_surface(), &self.qh, ()));
+            }
+        }
+    }
+
     /// Settings changed by the shell itself (pins, dark style): saved, then taken in like the
     /// Settings window's changes.
     fn change_settings(&mut self, f: impl FnOnce(&mut Settings)) {
@@ -516,6 +626,9 @@ impl Shell {
         if self.inhibitor.is_some() {
             self.set_awake(true);
         }
+        if let Some(i) = self.media_inhibitor.take() {
+            i.destroy();
+        }
     }
 
     /// Docks on every screen, or none: only those surfaces come or go.
@@ -532,6 +645,9 @@ impl Shell {
         // Keep awake rides on the panel's surface: onto the new one.
         if self.inhibitor.is_some() {
             self.set_awake(true);
+        }
+        if let Some(i) = self.media_inhibitor.take() {
+            i.destroy();
         }
     }
 
@@ -660,6 +776,8 @@ impl Shell {
                         self.act(Act::NightLight(!on));
                     }
                     ("keep-awake", _) => self.act(Act::KeepAwake(self.inhibitor.is_none())),
+                    ("lock", _) => self.locker.lock(&self.s),
+                    ("unlock", _) => self.locker.unlock(),
                     ("settings", _) => open_settings(),
                     ("reload", _) => self.reload_settings(true),
                     ("wallpaper", "random" | "next" | "previous") => {
@@ -740,6 +858,8 @@ impl Shell {
             self.reload_settings(false);
         }
         self.prewarm();
+        self.locker.check(&self.s);
+        self.set_media_awake();
         let now = Instant::now();
         // The colour files' dates only (reading them again is the surfaces' job, when they change).
         if self.palette_watch.iter().any(|(p, t)| mtime(p) != *t) {
@@ -816,7 +936,7 @@ impl Shell {
                 Kind::Dock => dock_changed,
                 Kind::Background => self.s.widget_system && bg_changed,
                 Kind::Popup => (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed,
-                Kind::Cards | Kind::Osd => false,
+                Kind::Cards | Kind::Osd | Kind::Dim => false,
             };
             s.dirty |= shows;
         }
@@ -868,6 +988,11 @@ impl Shell {
         if old.panels != self.s.panels || old.ai_providers != self.s.ai_providers {
             self.set_ai();
         }
+        if idle::key(&old) != idle::key(&self.s) {
+            self.set_idle();
+        }
+        self.lock_on_sleep.store(self.s.lock_on_sleep, std::sync::atomic::Ordering::Relaxed);
+        self.own_locker.store(self.s.lock_cmd.trim().is_empty(), std::sync::atomic::Ordering::Relaxed);
         self.apply_comp();
         let s = self.s.clone();
         // Only what changed changes: surfaces are reshaped in place (never torn down and made
@@ -1042,6 +1167,8 @@ impl Shell {
         let (pw, ph) = self.surfs[i].physical();
         let wall_idx = if kind == Kind::Background { self.wall_for((pw, ph)) } else { None };
         let night = self.night_ok.then(|| self.night.on());
+        // Dimming: darker over a second and a half.
+        let dim = self.dim_at.map(|t| (t.elapsed().as_secs_f32() / 1.5).min(1.0)).unwrap_or(0.0);
         let extra = Extra {
             notes: if matches!(kind, Kind::Panel | Kind::Popup) { self.notes.list.clone() } else { Vec::new() },
             cards: if kind == Kind::Cards { self.notes.on_screen() } else { Vec::new() },
@@ -1096,6 +1223,9 @@ impl Shell {
                 }
                 Kind::Cards => crate::cc::cards(ui, &mut m, &mut surf.kit),
                 Kind::Osd => crate::cc::osd(ui, &mut m, &mut surf.kit),
+                Kind::Dim => {
+                    ui.painter().rect_filled(ui.max_rect(), 0.0, egui::Color32::from_black_alpha((dim * 150.0) as u8));
+                }
             }
         });
         // Take in the frame's texture changes (fonts, icons) and mark them handled: egui
@@ -1162,6 +1292,9 @@ impl Shell {
         // Animations and hover effects ask to be drawn again soon.
         let delay = out.viewport_output.get(&ViewportId::ROOT).map(|v| v.repaint_delay).unwrap_or(Duration::MAX);
         surf.repaint_at = (delay < Duration::from_secs(1)).then(|| Instant::now() + delay.max(Duration::from_millis(16)));
+        if kind == Kind::Dim && dim < 1.0 {
+            surf.repaint_at = Some(Instant::now() + Duration::from_millis(33));
+        }
         // A dock on its way in or out keeps moving.
         if kind == Kind::Dock && surf.slide > 0.0 && !surf.collapsed {
             surf.repaint_at = Some(Instant::now() + Duration::from_millis(16));
@@ -1335,6 +1468,10 @@ impl Shell {
                 sys::copy(&text);
                 self.close_popup();
             }
+            Act::Power(sys::Power::Lock) => {
+                self.close_popup();
+                self.locker.lock(&self.s);
+            }
             Act::Power(p) => {
                 self.close_popup();
                 sys::power(self.comp, p);
@@ -1420,6 +1557,10 @@ impl SeatHandler for Shell {
     }
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
     fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, cap: Capability) {
+        if self.seat.is_none() {
+            self.seat = Some(seat.clone());
+            self.set_idle();
+        }
         if cap == Capability::Pointer && self.pointer.is_none() {
             let surface = self.compositor.create_surface(qh);
             self.pointer = self.seat_state.get_pointer_with_theme(qh, &seat, self.shm.wl_shm(), surface, ThemeSpec::default()).ok();
@@ -1601,4 +1742,19 @@ impl Dispatch<ZwpIdleInhibitManagerV1, ()> for Shell {
 
 impl Dispatch<ZwpIdleInhibitorV1, ()> for Shell {
     fn event(_: &mut Self, _: &ZwpIdleInhibitorV1, _: <ZwpIdleInhibitorV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+// Idle: the notifier has no events; each step's notification says idled or resumed.
+impl Dispatch<ExtIdleNotifierV1, ()> for Shell {
+    fn event(_: &mut Self, _: &ExtIdleNotifierV1, _: <ExtIdleNotifierV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+impl Dispatch<ExtIdleNotificationV1, Stage> for Shell {
+    fn event(shell: &mut Self, _: &ExtIdleNotificationV1, ev: ext_idle_notification_v1::Event, st: &Stage, _: &Connection, _: &QueueHandle<Self>) {
+        match ev {
+            ext_idle_notification_v1::Event::Idled => shell.idle(*st, true),
+            ext_idle_notification_v1::Event::Resumed => shell.idle(*st, false),
+            _ => {}
+        }
+    }
 }

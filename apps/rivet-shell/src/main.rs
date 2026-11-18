@@ -3,13 +3,17 @@
 
 mod ai;
 mod ai_pop;
+mod auth;
 mod bar;
 mod cc;
 mod comp;
 mod config;
 mod conn;
 mod glyph;
+mod idle;
 mod ipc;
+mod lock;
+mod lock_ui;
 mod notes;
 mod panels;
 mod quick;
@@ -31,11 +35,14 @@ Usage:
   rivet-shell settings              The settings window
   rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
   rivet-shell ai                    AI plan usage, as the panel's AI item reads it
+  rivet-shell lock                  Lock the screen (the shell does this itself when idle
+                                    and before sleep); --preview shows it without locking
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
                                     power, network, bluetooth, ai (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
-                                    settings, wallpaper PATH|random|next|previous, reload, quit
+                                    lock, unlock, settings, wallpaper PATH|random|next|previous,
+                                    reload, quit
   rivet-shell --install-desktop-entry
                                     Add Rivet Shell Settings to the app launcher (for this user)
   rivet-shell -h, --help            This help
@@ -111,6 +118,10 @@ fn main() -> ExitCode {
             }
         },
         Some("settings") => settings_window(screenshot),
+        Some("lock") => match screenshot {
+            Some(p) => lock::screenshot(p),
+            None => lock::run(args.iter().any(|a| a == "--preview")),
+        },
         Some("ai") => {
             print!("{}", ai::report());
             ExitCode::SUCCESS

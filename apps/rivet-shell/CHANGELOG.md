@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Idle and the lock screen. As the computer sits untouched the shell dims the screen, locks,
+  turns the screens off and suspends, each after its own time (Settings, Idle & Lock), holding
+  off while an app inhibits idle, Keep Awake is on, or music or a video plays. It locks before
+  sleep and on `loginctl lock-session` or `rivet-shell msg lock`. The lock screen is its own
+  program (`rivet-shell lock`, the session-lock protocol, the password checked with PAM): the
+  blurred wallpaper, the time, your picture or initial, and suspend, restart and shut down
+  (two clicks); if it stops while locked, the shell starts it again. Another locker
+  (hyprlock, swaylock) can be used instead; `rivet-shell lock --preview` tries the look.
 - The compositor is detected (niri, Hyprland, mango, Sway), and mango is supported like the
   others: its tags as workspaces, open apps, the window title, log out. Appearance has a Window
   Look card: gaps, border, rounded corners, unfocused opacity, shadows, and borders in the

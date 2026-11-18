@@ -15,6 +15,7 @@ use rivet_xdg::launch::DesktopApp;
 use crate::config::{DockHide, Settings, Side};
 use crate::ui::find_app;
 
+mod idle_lock;
 mod panel_editor;
 mod window_look;
 
@@ -29,11 +30,12 @@ enum Page {
     Dock,
     Widgets,
     Notifications,
+    Idle,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 7] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Notifications, Page::About];
+    const ALL: [Page; 8] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Notifications, Page::Idle, Page::About];
     fn label(self) -> &'static str {
         match self {
             Page::Wallpaper => "Wallpaper",
@@ -42,6 +44,7 @@ impl Page {
             Page::Dock => "Dock",
             Page::Widgets => "Widgets",
             Page::Notifications => "Notifications",
+            Page::Idle => "Idle & Lock",
             Page::About => "About",
         }
     }
@@ -53,6 +56,7 @@ impl Page {
             Page::Dock => &["view-grid-symbolic", "view-app-grid-symbolic"],
             Page::Widgets => &["view-compact-symbolic", "preferences-system-symbolic"],
             Page::Notifications => &["preferences-system-notifications-symbolic", "notification-symbolic", "dialog-information-symbolic"],
+            Page::Idle => &["system-lock-screen-symbolic", "changes-prevent-symbolic", "preferences-desktop-screensaver-symbolic"],
             Page::About => &["help-about-symbolic", "dialog-information-symbolic"],
         }
     }
@@ -310,6 +314,7 @@ impl eframe::App for SettingsApp {
                         Page::Dock => self.dock_page(ui),
                         Page::Widgets => self.widgets_page(ui),
                         Page::Notifications => self.notifications_page(ui),
+                        Page::Idle => self.idle_page(ui),
                         Page::About => self.about_page(ui),
                     }
                 });
@@ -510,6 +515,7 @@ impl SettingsApp {
                 ("rivet-shell msg dnd", "Do Not Disturb"),
                 ("rivet-shell msg wallpaper random | next | previous", "Another wallpaper from the folder"),
                 ("rivet-shell msg power", "Lock, suspend, restart, shut down"),
+                ("rivet-shell msg lock", "Lock the screen"),
             ] {
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new(cmd).monospace().size(12.0));

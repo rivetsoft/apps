@@ -133,6 +133,23 @@ pub struct Settings {
     pub comp_accent_borders: bool,
     pub comp_inactive_opacity: f32,
     pub comp_shadows: bool,
+    // ---- idle and the lock screen (idle.rs, lock.rs); times in seconds, 0 for never
+    /// The shell watches for idle (else another program, like hypridle or swayidle, does).
+    pub idle_on: bool,
+    pub idle_dim: u32,
+    pub idle_lock: u32,
+    pub idle_screen_off: u32,
+    pub idle_suspend: u32,
+    /// Not idle while music or a video plays (players that say so over MPRIS).
+    pub idle_media: bool,
+    /// Lock before the computer sleeps.
+    pub lock_on_sleep: bool,
+    /// Another program to lock with (swaylock, hyprlock…); empty for Rivet Shell's own.
+    pub lock_cmd: String,
+    /// The lock screen's wallpaper blurred (else as it is, darkened).
+    pub lock_blur: bool,
+    /// Suspend, restart and shut down on the lock screen.
+    pub lock_power: bool,
     // ---- dock
     pub dock: bool,
     /// Pinned apps by desktop id (rivet-files, org.mozilla.firefox…).
@@ -185,6 +202,16 @@ impl Default for Settings {
             comp_accent_borders: true,
             comp_inactive_opacity: 1.0,
             comp_shadows: true,
+            idle_on: true,
+            idle_dim: 240,
+            idle_lock: 300,
+            idle_screen_off: 600,
+            idle_suspend: 0,
+            idle_media: true,
+            lock_on_sleep: true,
+            lock_cmd: String::new(),
+            lock_blur: true,
+            lock_power: true,
             dock: true,
             dock_apps: vec!["rivet-files".into(), "rivet-terminal".into(), "rivet-edit".into(), "rivet-notes".into(), "firefox".into()],
             dock_icon: 44.0,
@@ -331,6 +358,16 @@ impl Settings {
                 "comp_accent_borders" => self.comp_accent_borders = b,
                 "comp_inactive_opacity" => self.comp_inactive_opacity = v.parse::<f32>().unwrap_or(1.0).clamp(0.5, 1.0),
                 "comp_shadows" => self.comp_shadows = b,
+                "idle_on" => self.idle_on = b,
+                "idle_dim" => self.idle_dim = v.parse::<u32>().unwrap_or(0).min(86_400),
+                "idle_lock" => self.idle_lock = v.parse::<u32>().unwrap_or(0).min(86_400),
+                "idle_screen_off" => self.idle_screen_off = v.parse::<u32>().unwrap_or(0).min(86_400),
+                "idle_suspend" => self.idle_suspend = v.parse::<u32>().unwrap_or(0).min(86_400),
+                "idle_media" => self.idle_media = b,
+                "lock_on_sleep" => self.lock_on_sleep = b,
+                "lock_cmd" => self.lock_cmd = v.to_string(),
+                "lock_blur" => self.lock_blur = b,
+                "lock_power" => self.lock_power = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
                 "dock_open_apps" => self.dock_open_apps = b,
                 "dock_hide" => {
@@ -408,6 +445,10 @@ impl Settings {
             "comp_on={}\ncomp_gaps_in={}\ncomp_gaps_out={}\ncomp_border={}\ncomp_radius={}\ncomp_accent_borders={}\ncomp_inactive_opacity={}\ncomp_shadows={}\n",
             self.comp_on, self.comp_gaps_in, self.comp_gaps_out, self.comp_border, self.comp_radius, self.comp_accent_borders, self.comp_inactive_opacity, self.comp_shadows
         ));
+        t.push_str(&format!(
+            "idle_on={}\nidle_dim={}\nidle_lock={}\nidle_screen_off={}\nidle_suspend={}\nidle_media={}\nlock_on_sleep={}\nlock_cmd={}\nlock_blur={}\nlock_power={}\n",
+            self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
+        ));
         for (i, p) in self.panels.iter().enumerate() {
             t.push_str(&format!("panel.{i}={}\n", p.text()));
         }
@@ -455,6 +496,14 @@ mod tests {
     #[test]
     fn comp_round_trips() {
         let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, ..Settings::default() };
+        let mut t = Settings::default();
+        t.parse(&s.text());
+        assert_eq!(s, t);
+    }
+
+    #[test]
+    fn idle_round_trips() {
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);
