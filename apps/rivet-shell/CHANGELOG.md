@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A clearer Panels page: a tab for each panel, a live preview of it, Position and Style
+  switches, and the three zones side by side, where items are dragged to reorder them or move
+  them between zones; Add Item lists what's left with a picture and a line about each.
 - The dock can auto-hide or smart-hide (shown while the workspace has no windows), sliding
   away and back when the pointer reaches the bottom edge.
 - Several panels, each on every screen or one, with three zones (left, center, right) of items

@@ -185,3 +185,64 @@ pub fn speaker(p: &egui::Painter, c: Pos2, muted: bool, col: Color32) {
         arc(p, c, 7.5, -PI / 3.5, PI / 3.5, s);
     }
 }
+
+pub fn clock(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.6, col);
+    p.circle_stroke(c, 7.0, s);
+    p.line_segment([c, c + Vec2::new(0.0, -4.5)], s);
+    p.line_segment([c, c + Vec2::new(3.5, 1.5)], s);
+}
+
+/// A chip: processor and memory.
+pub fn chip(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.5, col);
+    p.rect_stroke(Rect::from_center_size(c, Vec2::splat(10.0)), 2.0, s, egui::StrokeKind::Middle);
+    p.rect_filled(Rect::from_center_size(c, Vec2::splat(4.0)), 1.0, col);
+    for d in [-3.0, 0.0, 3.0] {
+        for (a, b) in [(Vec2::new(d, -5.0), Vec2::new(d, -7.5)), (Vec2::new(d, 5.0), Vec2::new(d, 7.5)), (Vec2::new(-5.0, d), Vec2::new(-7.5, d)), (Vec2::new(5.0, d), Vec2::new(7.5, d))] {
+            p.line_segment([c + a, c + b], Stroke::new(1.2, col));
+        }
+    }
+}
+
+/// Lines of text: a window's title.
+pub fn title(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.6, col);
+    p.rect_stroke(Rect::from_center_size(c, Vec2::new(16.0, 12.0)), 2.0, s, egui::StrokeKind::Middle);
+    p.line_segment([c + Vec2::new(-8.0, -2.5), c + Vec2::new(8.0, -2.5)], s);
+    p.line_segment([c + Vec2::new(-4.5, 2.0), c + Vec2::new(4.5, 2.0)], Stroke::new(1.3, col));
+}
+
+/// Three pills: workspaces.
+pub fn pills(p: &egui::Painter, c: Pos2, col: Color32, accent: Color32) {
+    p.rect_filled(Rect::from_center_size(c + Vec2::new(-5.0, 0.0), Vec2::new(8.0, 6.0)), 3.0, accent);
+    p.circle_filled(c + Vec2::new(3.0, 0.0), 2.6, col);
+    p.circle_filled(c + Vec2::new(8.5, 0.0), 2.6, col);
+}
+
+/// A puzzle piece of sorts: a plugin.
+pub fn plugin(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.5, col);
+    p.rect_stroke(Rect::from_center_size(c + Vec2::new(-1.0, 1.0), Vec2::splat(11.0)), 2.0, s, egui::StrokeKind::Middle);
+    p.circle_stroke(c + Vec2::new(4.5, -4.5), 2.5, s);
+}
+
+/// A panel item's symbol, by id.
+pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32) {
+    match id {
+        "launcher" => grid(p, c, col),
+        "workspaces" => pills(p, c, col, accent),
+        "window-title" => title(p, c, col),
+        "clock" => clock(p, c, col),
+        "media" => play(p, c, true, col),
+        "system" => chip(p, c, col),
+        "volume" => speaker(p, c + Vec2::new(1.5, 0.0), false, col),
+        "brightness" => sun(p, c, col),
+        "network" => wifi(p, c, col),
+        "battery" => battery(p, c - Vec2::new(1.0, 0.0), 70, false, col, accent),
+        "notifications" => bell(p, c, col, false),
+        "quick-settings" => sliders(p, c, col),
+        "power" => power(p, c, col),
+        _ => plugin(p, c, col),
+    }
+}

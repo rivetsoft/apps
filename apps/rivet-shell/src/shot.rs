@@ -28,7 +28,7 @@ pub struct ShotApp {
     shot: rivet_kit::Shot,
 }
 
-fn demo_status() -> Status {
+pub fn demo_status() -> Status {
     let ws = |k: &str, active: bool, busy: bool| Workspace { key: k.into(), label: k.into(), active, busy, output: String::new() };
     Status {
         workspaces: vec![ws("1", false, true), ws("2", true, true), ws("3", false, true), ws("4", false, false)],
@@ -48,7 +48,7 @@ fn demo_status() -> Status {
     }
 }
 
-fn demo_notes() -> Vec<Note> {
+pub fn demo_notes() -> Vec<Note> {
     let now = Local::now();
     let note = |id: u32, app: &str, icon: &str, summary: &str, body: &str, mins: i64, actions: &[(&str, &str)]| Note {
         id,

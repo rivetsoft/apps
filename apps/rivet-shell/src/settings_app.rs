@@ -72,6 +72,9 @@ pub struct SettingsApp {
     add_filter: String,
     /// The screens panels can be put on (output names).
     screens: Vec<String>,
+    /// The panel being edited on the Panels page, and the look its preview is drawn with.
+    panel_sel: usize,
+    preview_kit: Option<crate::ui::Kit>,
     note: Option<String>,
     app_icon: Option<egui::TextureHandle>,
     shot: Option<rivet_kit::Shot>,
@@ -104,6 +107,9 @@ impl SettingsApp {
                 s.wallpaper = p.to_string_lossy().into_owned();
             }
             s.wallpaper_dir = d.to_string_lossy().into_owned();
+            if std::env::var("RIVET_SHELL_PANELS").as_deref() == Ok("2") {
+                s.panels.push(crate::panels::PanelCfg { screen: "HDMI-A-1".into(), ..crate::panels::PanelCfg::new_bottom() });
+            }
             demo_dir = Some(d);
             match std::env::var("RIVET_SHELL_THEME").as_deref() {
                 Ok("light") => (s.theme, s.follow_desktop_colors) = (Mode::Light, false),
@@ -130,6 +136,8 @@ impl SettingsApp {
             listed_dir: String::new(),
             add_filter: String::new(),
             screens: if shot.is_some() { vec!["DP-1".into(), "HDMI-A-1".into()] } else { crate::sys::screens(crate::sys::Compositor::detect()) },
+            panel_sel: 0,
+            preview_kit: None,
             note: None,
             app_icon: None,
             shot: shot.map(rivet_kit::Shot::new),
@@ -213,6 +221,26 @@ fn grid(ui: &mut egui::Ui, id: &str, body: &mut dyn FnMut(&mut egui::Ui)) {
 }
 
 impl eframe::App for SettingsApp {
+    /// Checks: RIVET_SHELL_DRAG=x1,y1,x2,y2 presses at the first point, drags to the second and lets
+    /// go (add ",hold" to keep holding, to see the drag mid-way).
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let Some(shot) = &self.shot else { return };
+        let Ok(spec) = std::env::var("RIVET_SHELL_DRAG") else { return };
+        let n: Vec<f32> = spec.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+        if n.len() < 4 {
+            return;
+        }
+        let (a, b) = (Pos2::new(n[0], n[1]), Pos2::new(n[2], n[3]));
+        let f = shot.frames();
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+        match f {
+            30 => raw.events.extend([egui::Event::PointerMoved(a), button(a, true)]),
+            31..=60 => raw.events.push(egui::Event::PointerMoved(a + (b - a) * ((f - 30) as f32 / 30.0))),
+            62 if !spec.ends_with("hold") => raw.events.push(button(b, false)),
+            _ => {}
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let live = self.shot.is_none();
