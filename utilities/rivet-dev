@@ -35,8 +35,8 @@ Releasing
                                    nothing changed, asks release / skip / stop, then runs its
                                    bump and release. Checks build, tests and lint once first;
                                    stops at the first failure. --dry-run changes nothing
-  push                             Send your latest commits to GitHub — no release
-                                   (creates the GitHub repo the first time)
+  push [--all]                     Send the branch you're on to GitHub (--all: every local
+                                   branch) — no release (creates the GitHub repo the first time)
   aur-bump X.Y.Z                   Update the AUR PKGBUILDs for a published release
 
 Building
