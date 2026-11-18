@@ -184,3 +184,38 @@ pub fn resolve(choice: &str) -> Option<(String, PathBuf)> {
     }
     None
 }
+
+/// Finds a font for any character the app's fonts don't have (an emoji or a symbol in a
+/// window title, say), by asking fontconfig, so nothing is drawn as an empty box.
+struct FcFallback;
+
+impl eframe::egui::FontProvider for FcFallback {
+    fn font_for(&self, request: &eframe::egui::FallbackRequest<'_>) -> Option<eframe::egui::FontInsert> {
+        use std::collections::HashMap;
+        use std::sync::Mutex;
+        let c = request.cluster.chars().next()?;
+        let base = if *request.family == eframe::egui::FontFamily::Monospace { "monospace" } else { "sans-serif" };
+        let out = run("fc-match", &["-f", "%{file}|%{index}", &format!("{base}:charset={:x}", c as u32)])?;
+        let (file, index) = out.trim().split_once('|')?;
+        let index: u32 = index.trim().parse().unwrap_or(0);
+        // Each file is read once and shared (there are only ever a few).
+        static LOADED: Mutex<Option<HashMap<String, eframe::egui::epaint::text::Blob>>> = Mutex::new(None);
+        let mut g = LOADED.lock().unwrap_or_else(|e| e.into_inner());
+        let map = g.get_or_insert_with(HashMap::new);
+        let blob = match map.get(file) {
+            Some(b) => b.clone(),
+            None => {
+                let b: eframe::egui::epaint::text::Blob = std::sync::Arc::new(std::fs::read(file).ok()?);
+                map.insert(file.to_string(), b.clone());
+                b
+            }
+        };
+        let data = eframe::egui::FontData::from_blob(blob, index);
+        Some(eframe::egui::FontInsert::new(&format!("fallback:{file}#{index}"), data, Vec::new()))
+    }
+}
+
+/// Use the fontconfig fallback for characters no loaded font has.
+pub fn install_fallback(ctx: &eframe::egui::Context) {
+    ctx.set_font_providers(vec![std::sync::Arc::new(FcFallback)]);
+}

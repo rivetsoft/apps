@@ -100,6 +100,7 @@ impl LiveLook {
         defs.families.insert(editor_family(), ed);
         defs.families.insert(editor_bold_family(), bold);
         ctx.set_fonts(defs);
+        fonts::install_fallback(ctx);
     }
 
     /// Colours of the app's own, for its dark style and its light one, shown in place of any
