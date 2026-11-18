@@ -415,7 +415,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Launcher { .. } => Vec2::new(620.0f32.min(full.width() - 40.0), 480.0f32.min(full.height() - 120.0)),
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
         PopupKind::Power { .. } => Vec2::new(240.0, 238.0),
-        PopupKind::Control { .. } => Vec2::new(392.0, crate::cc::height(m).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Control { .. } => Vec2::new(392.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
     };
     let rect = match pop.kind {
@@ -454,7 +454,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Launcher { query, sel } => launcher(&mut child, query, sel, focus, m, kit),
         PopupKind::Calendar { month } => calendar(&mut child, month, kit.accent(m.s)),
         PopupKind::Power { confirm } => power_menu(&mut child, confirm, m),
-        PopupKind::Control { drag } => crate::cc::control_center(&mut child, drag, m, kit),
+        PopupKind::Control { drag } => crate::quick::quick_settings(&mut child, drag, m, kit),
         PopupKind::DockMenu { app, pinned } => dock_menu(&mut child, app, *pinned, m),
     }
 }

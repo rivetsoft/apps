@@ -8,6 +8,7 @@ mod glyph;
 mod ipc;
 mod notes;
 mod panels;
+mod quick;
 mod settings_app;
 mod shot;
 mod sys;

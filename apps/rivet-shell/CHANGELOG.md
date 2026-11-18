@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Quick settings in the Rivet apps' own look: a title row with toolbar buttons, folding
+  sections like Rivet Files' sidebar, thin sliders, toggles that light up like a selected item,
+  what's playing as a row, the notifications as a list.
 - `rivet-shell msg wallpaper random` (and `next`, `previous`) picks another picture from the
   wallpaper folder.
 - A clearer Panels page: a tab for each panel, a live preview of it, Position and Style
