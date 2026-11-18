@@ -123,6 +123,16 @@ pub struct Settings {
     pub osd: bool,
     /// Night light's warmth, in kelvin.
     pub night_kelvin: u32,
+    // ---- the compositor's window look (comp.rs): set by an included overrides file
+    pub comp_on: bool,
+    pub comp_gaps_in: u32,
+    pub comp_gaps_out: u32,
+    pub comp_border: u32,
+    pub comp_radius: u32,
+    /// The focused window's border in the accent colour (else the compositor's colours).
+    pub comp_accent_borders: bool,
+    pub comp_inactive_opacity: f32,
+    pub comp_shadows: bool,
     // ---- dock
     pub dock: bool,
     /// Pinned apps by desktop id (rivet-files, org.mozilla.firefox…).
@@ -167,6 +177,14 @@ impl Default for Settings {
             notifications: true,
             osd: true,
             night_kelvin: 4000,
+            comp_on: false,
+            comp_gaps_in: 6,
+            comp_gaps_out: 12,
+            comp_border: 2,
+            comp_radius: 10,
+            comp_accent_borders: true,
+            comp_inactive_opacity: 1.0,
+            comp_shadows: true,
             dock: true,
             dock_apps: vec!["rivet-files".into(), "rivet-terminal".into(), "rivet-edit".into(), "rivet-notes".into(), "firefox".into()],
             dock_icon: 44.0,
@@ -305,6 +323,14 @@ impl Settings {
                 "ai_pins" => self.ai_pins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "notifications" => self.notifications = b,
                 "osd" => self.osd = b,
+                "comp_on" => self.comp_on = b,
+                "comp_gaps_in" => self.comp_gaps_in = v.parse::<u32>().unwrap_or(6).min(64),
+                "comp_gaps_out" => self.comp_gaps_out = v.parse::<u32>().unwrap_or(12).min(96),
+                "comp_border" => self.comp_border = v.parse::<u32>().unwrap_or(2).min(16),
+                "comp_radius" => self.comp_radius = v.parse::<u32>().unwrap_or(10).min(40),
+                "comp_accent_borders" => self.comp_accent_borders = b,
+                "comp_inactive_opacity" => self.comp_inactive_opacity = v.parse::<f32>().unwrap_or(1.0).clamp(0.5, 1.0),
+                "comp_shadows" => self.comp_shadows = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
                 "dock_open_apps" => self.dock_open_apps = b,
                 "dock_hide" => {
@@ -378,6 +404,10 @@ impl Settings {
             self.dock_hide.name(),
             self.panels.len(),
         );
+        t.push_str(&format!(
+            "comp_on={}\ncomp_gaps_in={}\ncomp_gaps_out={}\ncomp_border={}\ncomp_radius={}\ncomp_accent_borders={}\ncomp_inactive_opacity={}\ncomp_shadows={}\n",
+            self.comp_on, self.comp_gaps_in, self.comp_gaps_out, self.comp_border, self.comp_radius, self.comp_accent_borders, self.comp_inactive_opacity, self.comp_shadows
+        ));
         for (i, p) in self.panels.iter().enumerate() {
             t.push_str(&format!("panel.{i}={}\n", p.text()));
         }
@@ -420,6 +450,14 @@ mod tests {
         let mut t = Settings::default();
         t.parse(&none.text());
         assert!(t.panels.is_empty());
+    }
+
+    #[test]
+    fn comp_round_trips() {
+        let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, ..Settings::default() };
+        let mut t = Settings::default();
+        t.parse(&s.text());
+        assert_eq!(s, t);
     }
 
     #[test]

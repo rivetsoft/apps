@@ -16,6 +16,7 @@ use crate::config::{DockHide, Settings, Side};
 use crate::ui::find_app;
 
 mod panel_editor;
+mod window_look;
 
 pub const ICON_SVG: &str = include_str!("../data/rivet-shell.svg");
 
@@ -469,6 +470,7 @@ impl SettingsApp {
                 ui.end_row();
             });
         });
+        self.window_look_section(ui);
     }
 
     fn panel_page(&mut self, ui: &mut egui::Ui) {

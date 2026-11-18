@@ -251,6 +251,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     };
     shell.set_notifications();
     shell.set_ai();
+    shell.apply_comp();
     let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle: LoopHandle<Shell> = event_loop.handle();
     WaylandSource::new(conn, queue).insert(handle.clone()).map_err(|e| e.to_string())?;
@@ -569,6 +570,14 @@ impl Shell {
         self.surfs.push(s);
     }
 
+    /// The compositor's window look, from the settings and the shell's accent (its overrides
+    /// file is rewritten only when it would change).
+    fn apply_comp(&self) {
+        if let Err(e) = crate::comp::apply_now(self.comp, &self.s) {
+            eprintln!("rivet-shell: window look: {e}");
+        }
+    }
+
     /// The AI item's readings run while a panel shows it.
     fn set_ai(&self) {
         self.ai.set(self.s.panels.iter().any(|p| p.has("ai")), &self.s.ai_providers);
@@ -735,6 +744,8 @@ impl Shell {
         // The colour files' dates only (reading them again is the surfaces' job, when they change).
         if self.palette_watch.iter().any(|(p, t)| mtime(p) != *t) {
             self.palette_watch = palette_files();
+            // Borders that follow the accent follow the new colours.
+            self.apply_comp();
             // Each surface checks the colours as it draws (every 2 s): keep drawing for a moment.
             self.recolor_until = Some(now + Duration::from_secs(3));
         }
@@ -857,6 +868,7 @@ impl Shell {
         if old.panels != self.s.panels || old.ai_providers != self.s.ai_providers {
             self.set_ai();
         }
+        self.apply_comp();
         let s = self.s.clone();
         // Only what changed changes: surfaces are reshaped in place (never torn down and made
         // again, which makes them flash and moves the windows twice), and only the surfaces that

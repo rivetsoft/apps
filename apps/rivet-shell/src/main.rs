@@ -5,6 +5,7 @@ mod ai;
 mod ai_pop;
 mod bar;
 mod cc;
+mod comp;
 mod config;
 mod conn;
 mod glyph;

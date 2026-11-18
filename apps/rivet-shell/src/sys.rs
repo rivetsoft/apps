@@ -16,18 +16,35 @@ use serde_json::Value;
 pub enum Compositor {
     Niri,
     Hyprland,
+    /// mango (mangowm), talked to with mmsg.
+    Mango,
     Sway,
     Other,
 }
 
 impl Compositor {
+    /// From the session's environment: each compositor's socket variable, else
+    /// XDG_CURRENT_DESKTOP (for a program started some other way).
     pub fn detect() -> Compositor {
         let has = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty());
         if has("NIRI_SOCKET") {
-            Compositor::Niri
+            return Compositor::Niri;
         } else if has("HYPRLAND_INSTANCE_SIGNATURE") {
-            Compositor::Hyprland
+            return Compositor::Hyprland;
+        } else if has("MANGO_INSTANCE_SIGNATURE") {
+            return Compositor::Mango;
         } else if has("SWAYSOCK") {
+            return Compositor::Sway;
+        }
+        let desk = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
+        let named = |n: &str| desk.split(':').any(|d| d == n);
+        if named("niri") {
+            Compositor::Niri
+        } else if named("hyprland") {
+            Compositor::Hyprland
+        } else if named("mango") || named("mangowc") || named("mangowm") {
+            Compositor::Mango
+        } else if named("sway") {
             Compositor::Sway
         } else {
             Compositor::Other
@@ -38,6 +55,7 @@ impl Compositor {
         match self {
             Compositor::Niri => "niri",
             Compositor::Hyprland => "Hyprland",
+            Compositor::Mango => "mango",
             Compositor::Sway => "Sway",
             Compositor::Other => "your compositor",
         }
@@ -220,6 +238,20 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
                 })
                 .collect()
         }
+        Compositor::Mango => {
+            // Tags: {"all_tags":[{"monitor":"DP-1","tags":[{"index":1,"is_active":true,"client_count":2}…]}]}
+            let Some(all) = json("mmsg", &["get", "all-tags"]) else { return Vec::new() };
+            let mons = all.get("all_tags").and_then(Value::as_array).cloned().unwrap_or_default();
+            mons.iter()
+                .flat_map(|m| {
+                    let out = s(m, "monitor");
+                    m.get("tags").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(move |t| {
+                        let i = s(&t, "index");
+                        Workspace { label: i.clone(), key: i, active: b(&t, "is_active"), busy: t.get("client_count").and_then(Value::as_u64).unwrap_or(0) > 0, output: out.clone() }
+                    })
+                })
+                .collect()
+        }
         Compositor::Sway => {
             let Some(Value::Array(list)) = json("swaymsg", &["-t", "get_workspaces", "-r"]) else { return Vec::new() };
             list.iter().map(|w| Workspace { key: s(w, "num"), label: s(w, "name"), active: b(w, "visible"), busy: true, output: s(w, "output") }).collect()
@@ -236,6 +268,7 @@ pub fn screens(c: Compositor) -> Vec<String> {
     let mut names = match c {
         Compositor::Niri => json("niri", &["msg", "-j", "outputs"]).and_then(|v| v.as_object().map(|o| o.keys().cloned().collect())).unwrap_or_default(),
         Compositor::Hyprland => from_list(json("hyprctl", &["-j", "monitors"])),
+        Compositor::Mango => from_list(json("mmsg", &["get", "all-monitors"]).and_then(|v| v.get("monitors").cloned())),
         Compositor::Sway => from_list(json("swaymsg", &["-t", "get_outputs", "-r"])),
         Compositor::Other => Vec::new(),
     };
@@ -248,6 +281,7 @@ fn running(c: Compositor, before: &[String]) -> Vec<String> {
     let list: Vec<String> = match c {
         Compositor::Niri => json("niri", &["msg", "-j", "windows"]).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|w| w.get("app_id").and_then(Value::as_str).map(String::from)).collect(),
         Compositor::Hyprland => json("hyprctl", &["-j", "clients"]).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|w| w.get("class").and_then(Value::as_str).map(String::from)).collect(),
+        Compositor::Mango => json("mmsg", &["get", "all-clients"]).and_then(|v| v.get("clients").and_then(Value::as_array).cloned()).unwrap_or_default().iter().filter_map(|w| w.get("appid").and_then(Value::as_str).map(String::from)).collect(),
         _ => Vec::new(),
     };
     let now: Vec<String> = list.into_iter().map(|s| s.to_lowercase()).filter(|s| !s.is_empty()).collect();
@@ -264,6 +298,7 @@ fn focused_title(c: Compositor) -> String {
     let v = match c {
         Compositor::Niri => json("niri", &["msg", "-j", "focused-window"]),
         Compositor::Hyprland => json("hyprctl", &["-j", "activewindow"]),
+        Compositor::Mango => json("mmsg", &["get", "focusing-client"]),
         _ => None,
     };
     v.and_then(|w| w.get("title").and_then(Value::as_str).map(|t| t.trim().to_string())).unwrap_or_default()
@@ -402,6 +437,7 @@ pub fn focus_workspace(c: Compositor, key: &str) {
     match c {
         Compositor::Niri => spawn("niri", &["msg", "action", "focus-workspace", key]),
         Compositor::Hyprland => spawn("hyprctl", &["dispatch", "workspace", key]),
+        Compositor::Mango => spawn("mmsg", &["dispatch", &format!("view,{key},0")]),
         Compositor::Sway => spawn("swaymsg", &["workspace", "number", key]),
         Compositor::Other => {}
     }
@@ -545,6 +581,7 @@ pub fn power(c: Compositor, p: Power) {
         Power::LogOut => match c {
             Compositor::Niri => spawn("niri", &["msg", "action", "quit", "--skip-confirmation"]),
             Compositor::Hyprland => spawn("hyprctl", &["dispatch", "exit"]),
+            Compositor::Mango => spawn("mmsg", &["dispatch", "quit"]),
             Compositor::Sway => spawn("swaymsg", &["exit"]),
             Compositor::Other => {
                 if let Ok(id) = std::env::var("XDG_SESSION_ID") {

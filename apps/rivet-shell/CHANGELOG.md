@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The compositor is detected (niri, Hyprland, mango, Sway), and mango is supported like the
+  others: its tags as workspaces, open apps, the window title, log out. Appearance has a Window
+  Look card: gaps, border, rounded corners, unfocused opacity, shadows, and borders in the
+  accent colour, written to an overrides file in the compositor's own format
+  (`rivet-shell.kdl`, `.conf` or `.lua`) that its config includes; one button adds the include
+  line, keeping a copy of the config first.
 - An AI Usage panel item: the most used limit of your AI plans in the panel, and a popup with
   each plan's limits, bars and reset times. Claude's comes from what Claude Code already keeps
   (no requests while it's fresh), with whether Claude Code is running and working; Codex and
