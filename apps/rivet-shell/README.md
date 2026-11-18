@@ -1,17 +1,25 @@
-# <img src="data/rivet-shell.svg" width="40" alt=""> Rivet Shell
+# <img src="data/rivet-shelltarget/release/rivet-shell msg quit              # stop itsvg" width="40" alt=""> Rivet Shell
 
 A desktop shell for Wayland, in the Rivet apps' look: a panel, a dock, desktop widgets and the
 wallpaper, with a settings window. **Just started**: not released yet; build it from source.
 
 ![Rivet Shell: the panel, widgets and dock over a wallpaper](../../docs/screenshots/shell-wide.png)
 
-- **Panel**: a launcher button, workspaces (niri, Hyprland, Sway), the clock (click for a
-  calendar), volume (click to mute, scroll to change), network, battery, settings and a power
-  menu (lock, suspend, log out, restart, shut down; the last three ask first). Floating or edge
-  to edge, at the top or the bottom.
-- **Dock**: pinned apps, a dot under the ones with windows open (niri, Hyprland), the name above
-  the icon under the pointer.
-- **Launcher**: every installed app, searched as you type; arrows and Enter, or click.
+- **Panel**: a launcher button, workspaces (niri, Hyprland, Sway), the focused window's title,
+  the clock (click for a calendar), what's playing (click to pause), volume and brightness
+  (scroll to change), network, battery, notifications, quick settings and a power menu (lock,
+  suspend, log out, restart, shut down; the last three ask first). Floating or edge to edge, at
+  the top or the bottom.
+- **Quick settings**: volume and brightness sliders; Wi-Fi, Bluetooth, Night Light, Do Not
+  Disturb, Keep Awake, power mode, microphone and dark style; what's playing with its buttons;
+  and the notification history.
+- **Notifications**: the shell is the desktop's notification service (cards in the corner, with
+  the apps' buttons; urgent ones stay until closed), unless another one (mako, dunst) runs.
+- **On-screen display**: volume and brightness show as they change, from keys or anywhere else.
+- **Dock**: pinned apps, then open apps that aren't pinned; a dot under the ones with windows
+  open (niri, Hyprland); right-click an icon to pin, unpin or move it.
+- **Launcher**: every installed app, searched as you type; arrows and Enter, or click. Type a sum
+  (`12*(3+4)`) for its answer; Enter copies it.
 - **Widgets** on the desktop: a large clock and the date, processor, memory and battery.
 - **Wallpaper and colors**: choose a picture in Settings; the shell shows it on every screen and
   runs [matugen](https://github.com/InioX/matugen) on it, so the desktop's colors (and every
@@ -26,6 +34,8 @@ cargo build --release -p rivet-shell
 ./target/release/rivet-shell                       # in your Wayland session
 ./target/release/rivet-shell settings              # the settings window
 ./target/release/rivet-shell msg launcher          # open (or close) the launcher
+./target/release/rivet-shell msg control-center    # quick settings
+./target/release/rivet-shell msg volume up         # also down, mute; brightness up|down; media next…
 ./target/release/rivet-shell msg quit              # stop it
 ./target/release/rivet-shell --install-desktop-entry   # Rivet Shell Settings in your launcher
 ```
@@ -39,8 +49,10 @@ Start it with your session and bind a key to the launcher:
 | Sway | `exec rivet-shell` | `bindsym $mod+space exec rivet-shell msg launcher` |
 
 It needs a compositor with the wlr layer-shell protocol (niri, Hyprland, Sway, river, labwc,
-Wayfire, COSMIC; not GNOME). Volume uses `wpctl` (PipeWire), Wi-Fi names `nmcli`, power
-`loginctl` and `systemctl`; anything missing simply doesn't show. Stop another shell or bar
+Wayfire, COSMIC; not GNOME). Volume uses `wpctl` (PipeWire), brightness `brightnessctl`, Wi-Fi
+`nmcli`, Bluetooth `bluetoothctl`, music `playerctl`, power modes `powerprofilesctl`, Night Light
+`gammastep`, `hyprsunset` or `wlsunset`, power `loginctl` and `systemctl`; anything missing
+simply doesn't show. Stop another shell or bar
 (Noctalia, Waybar…) first, or both will be on screen.
 
 ## How it's made

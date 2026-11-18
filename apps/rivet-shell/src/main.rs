@@ -1,8 +1,11 @@
 //! Rivet Shell: a panel, dock, desktop widgets and wallpaper for Wayland compositors, with
 //! settings, in the Rivet apps' look.
 
+mod cc;
 mod config;
+mod glyph;
 mod ipc;
+mod notes;
 mod settings_app;
 mod shot;
 mod sys;
@@ -19,7 +22,10 @@ Usage:
   rivet-shell                       Start the shell in this Wayland session
   rivet-shell settings              The settings window
   rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
-  rivet-shell msg COMMAND           Tell the running shell: launcher (open or close it),
+  rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
+                                    power (each opens or closes it); volume up|down|mute|N,
+                                    mic mute, brightness up|down|N, media play-pause|next|previous,
+                                    dnd, night-light, keep-awake (each turns it on or off);
                                     settings, wallpaper PATH, reload, quit
   rivet-shell --install-desktop-entry
                                     Add Rivet Shell Settings to the app launcher (for this user)

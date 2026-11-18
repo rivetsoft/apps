@@ -1,9 +1,12 @@
 //! What the shell draws: the panel, the dock, the desktop widgets and the popups (launcher,
-//! calendar, power), in the Rivet apps' look. The same code draws them on the desktop (each on
-//! its own layer surface) and in screenshots (all on one picture).
+//! calendar, power), in the Rivet apps' look; `cc` has the control center, the notification
+//! cards and the on-screen display. The same code draws them on the desktop (each on its own
+//! layer surface) and in screenshots (all on one picture).
 
-use chrono::{Datelike, Local, NaiveDate};
-use eframe::egui::{self, Align2, Color32, FontId, Key, Pos2, Rect, Sense, Shape, Stroke, Vec2};
+use std::sync::Arc;
+
+use chrono::{DateTime, Datelike, Local, NaiveDate};
+use eframe::egui::{self, Align2, Color32, FontId, Galley, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::icons::IconTheme;
 use rivet_look::live::LiveLook;
 use rivet_look::palette::mix;
@@ -12,6 +15,8 @@ use rivet_look::{fonts, quick};
 use rivet_xdg::launch::DesktopApp;
 
 use crate::config::{Edge, Settings, Side};
+use crate::glyph;
+use crate::notes::Note;
 use crate::sys::{Compositor, Net, Power, Status};
 
 /// Heights and room, in points.
@@ -19,6 +24,7 @@ pub const BAR: f32 = 36.0;
 pub const MARGIN: f32 = 6.0;
 const DOCK_PAD: f32 = 8.0;
 const DOCK_GAP: f32 = 6.0;
+const DOCK_SEP: f32 = 13.0;
 const DOCK_LABEL: f32 = 30.0;
 
 /// The panel surface's height (and the room it keeps from windows).
@@ -26,10 +32,39 @@ pub fn panel_height(s: &Settings) -> f32 {
     if s.panel_floating { BAR + MARGIN * 2.0 } else { BAR }
 }
 
+/// An open app's desktop entry, by the id its windows carry.
+pub fn open_app<'a>(apps: &'a [DesktopApp], running: &str) -> Option<&'a DesktopApp> {
+    find_app(apps, running).or_else(|| apps.iter().find(|a| a.name.to_lowercase() == running))
+}
+
+/// Whether an app has windows open.
+pub fn is_running(a: &DesktopApp, running: &[String]) -> bool {
+    let id = a.id.trim_end_matches(".desktop").to_lowercase();
+    let short = id.rsplit('.').next().unwrap_or(&id).to_string();
+    let name = a.name.to_lowercase();
+    running.iter().any(|w| *w == id || *w == short || *w == name || id.ends_with(w.as_str()))
+}
+
+/// What the dock shows: the pinned apps, then (when asked) open apps that aren't pinned.
+pub fn dock_items(s: &Settings, apps: &[DesktopApp], running: &[String]) -> Vec<(DesktopApp, bool)> {
+    let mut out: Vec<(DesktopApp, bool)> = s.dock_apps.iter().filter_map(|id| find_app(apps, id).cloned()).map(|a| (a, true)).collect();
+    if s.dock_open_apps {
+        for r in running {
+            if let Some(a) = open_app(apps, r)
+                && !out.iter().any(|(x, _)| x.id == a.id)
+            {
+                out.push((a.clone(), false));
+            }
+        }
+    }
+    out
+}
+
 /// The dock surface's size, and the room it keeps from windows.
-pub fn dock_size(s: &Settings, apps: usize) -> (Vec2, f32) {
-    let n = apps.max(1) as f32;
-    let w = DOCK_PAD * 2.0 + n * s.dock_icon + (n - 1.0) * DOCK_GAP + MARGIN * 2.0;
+pub fn dock_size(s: &Settings, items: &[(DesktopApp, bool)]) -> (Vec2, f32) {
+    let n = items.len().max(1) as f32;
+    let sep = if items.iter().any(|i| i.1) && items.iter().any(|i| !i.1) { DOCK_SEP } else { 0.0 };
+    let w = DOCK_PAD * 2.0 + n * s.dock_icon + (n - 1.0) * DOCK_GAP + sep + MARGIN * 2.0;
     let body = s.dock_icon + DOCK_PAD * 2.0 + MARGIN;
     (Vec2::new(w, body + DOCK_LABEL), body)
 }
@@ -39,12 +74,17 @@ pub enum PopupKind {
     Launcher { query: String, sel: usize },
     Calendar { month: i32 },
     Power { confirm: Option<Power> },
+    /// Quick settings, sliders, what's playing and the notifications (`drag`: a slider held).
+    Control { drag: Option<(u8, u32)> },
+    /// Right-click on a dock icon.
+    DockMenu { app: String, pinned: bool },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Popup {
     pub kind: PopupKind,
-    /// Where it opens from (x on its screen, in points), under the panel button.
+    /// Where it opens from (x on its screen, in points), under the panel button; for the dock's
+    /// menu, from the screen's middle.
     pub anchor_x: f32,
     /// Its screen's name (empty: whichever the compositor picks).
     pub output: String,
@@ -53,12 +93,40 @@ pub struct Popup {
 
 impl Popup {
     pub fn launcher(output: &str) -> Popup {
-        Popup { kind: PopupKind::Launcher { query: String::new(), sel: 0 }, anchor_x: 0.0, output: output.to_string(), focus: true }
+        Popup::at(PopupKind::Launcher { query: String::new(), sel: 0 }, 0.0, output)
+    }
+    pub fn at(kind: PopupKind, anchor_x: f32, output: &str) -> Popup {
+        Popup { kind, anchor_x, output: output.to_string(), focus: true }
     }
     /// Whether it needs the keyboard (the launcher's search; Esc for the others).
     pub fn wants_keyboard(&self) -> bool {
         matches!(self.kind, PopupKind::Launcher { .. })
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OsdKind {
+    Volume,
+    Mic,
+    Brightness,
+}
+
+/// What the shell itself keeps (not read from the computer): notifications and its toggles.
+#[derive(Clone, Debug, Default)]
+pub struct Extra {
+    /// The history, newest first.
+    pub notes: Vec<Note>,
+    /// The cards on screen, newest first.
+    pub cards: Vec<Note>,
+    /// Whether the shell is the notification service.
+    pub notifying: bool,
+    pub dnd: bool,
+    /// None: no night light program installed.
+    pub night: Option<bool>,
+    /// None: the compositor can't keep the screen awake for the shell.
+    pub awake: Option<bool>,
+    pub osd: Option<(OsdKind, u32, bool)>,
+    pub user: String,
 }
 
 /// What the person asked for, done by whoever runs the shell.
@@ -69,7 +137,31 @@ pub enum Act {
     Open(Popup),
     Close,
     Volume(bool),
+    SetVolume(u32),
     Mute,
+    MicMute,
+    Brightness(bool),
+    SetBrightness(u32),
+    Media(&'static str),
+    Wifi(bool),
+    Bluetooth(bool),
+    NightLight(bool),
+    Dnd(bool),
+    KeepAwake(bool),
+    NextProfile,
+    DarkStyle(bool),
+    Pin(String),
+    Unpin(String),
+    MovePin(String, i32),
+    /// A notification's card clicked (its default action).
+    NoteClick(u32),
+    NoteAction(u32, String),
+    /// Off the screen (kept in the history).
+    NoteHide(u32),
+    /// Out of the history.
+    NoteRemove(u32),
+    ClearNotes,
+    Copy(String),
     Power(Power),
     Settings,
 }
@@ -99,12 +191,31 @@ impl Kit {
         self.look.accent(&s.choice())
     }
 
+    fn own_icon(&mut self, ctx: &egui::Context, icon: &str, size: u32) -> Option<egui::TextureHandle> {
+        if icon.starts_with('/') {
+            self.icons.texture_from_path(ctx, std::path::Path::new(icon), size)
+        } else if icon.is_empty() {
+            None
+        } else {
+            self.icons.texture(ctx, &[icon], size)
+        }
+    }
+
     pub fn app_icon(&mut self, ctx: &egui::Context, app: &DesktopApp, px: f32) -> Option<egui::TextureHandle> {
         let size = (px * ctx.pixels_per_point()).round() as u32;
         // The app's own icon first: a fallback name in the same list could be answered by
         // Rivet's built-in icons before the theme is even asked for the app's.
-        let own = if app.icon.starts_with('/') { self.icons.texture_from_path(ctx, std::path::Path::new(&app.icon), size) } else if app.icon.is_empty() { None } else { self.icons.texture(ctx, &[app.icon.as_str()], size) };
-        own.or_else(|| self.icons.texture(ctx, &["application-x-executable"], size))
+        self.own_icon(ctx, &app.icon, size).or_else(|| self.icons.texture(ctx, &["application-x-executable"], size))
+    }
+
+    /// A notification's picture: its own, else its app's.
+    pub fn note_icon(&mut self, ctx: &egui::Context, n: &Note, apps: &[DesktopApp], px: f32) -> Option<egui::TextureHandle> {
+        let size = (px * ctx.pixels_per_point()).round() as u32;
+        if let Some(t) = self.own_icon(ctx, &n.icon, size) {
+            return Some(t);
+        }
+        let app = (!n.desktop.is_empty()).then(|| find_app(apps, &n.desktop)).flatten().or_else(|| open_app(apps, &n.app.to_lowercase()))?;
+        self.own_icon(ctx, &app.icon.clone(), size)
     }
 }
 
@@ -112,6 +223,7 @@ impl Kit {
 pub struct Model<'a> {
     pub s: &'a Settings,
     pub status: &'a Status,
+    pub extra: &'a Extra,
     pub apps: &'a [DesktopApp],
     pub compositor: Compositor,
     /// This surface's screen ("" when unknown: everything shows).
@@ -127,12 +239,17 @@ pub fn find_app<'a>(apps: &'a [DesktopApp], id: &str) -> Option<&'a DesktopApp> 
     apps.iter().find(|a| key(a) == want).or_else(|| apps.iter().find(|a| key(a).rsplit('.').next() == Some(want.as_str())))
 }
 
-fn ui_font(size: f32) -> FontId {
+pub fn ui_font(size: f32) -> FontId {
     fonts::ui_font(size)
 }
 
+/// Black or white, whichever reads on `fill`.
+pub fn on(fill: Color32) -> Color32 {
+    if rivet_look::palette::luminance(fill) > 0.6 { Color32::BLACK } else { Color32::WHITE }
+}
+
 /// A see-through card in the panel's colour, with a soft shadow.
-fn card(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>) {
+pub fn card(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>) {
     let radius: egui::CornerRadius = radius.into();
     let shadow = egui::Shadow { offset: [0, 2], blur: 14, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
     p.add(shadow.as_shape(r, radius));
@@ -140,8 +257,38 @@ fn card(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl 
     p.rect_stroke(r, radius, Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08).gamma_multiply(alpha)), egui::StrokeKind::Inside);
 }
 
-fn hover_fill(p: &egui::Painter, r: Rect, v: &egui::Visuals) {
+pub fn hover_fill(p: &egui::Painter, r: Rect, v: &egui::Visuals) {
     p.rect_filled(r, r_md(), mix(v.panel_fill, v.text_color(), 0.09));
+}
+
+/// Text on one line, cut with "…" to fit.
+pub fn one_line(p: &egui::Painter, text: &str, font: FontId, color: Color32, max_w: f32) -> Arc<Galley> {
+    let mut job = egui::text::LayoutJob::single_section(text.replace('\n', " "), egui::TextFormat { font_id: font, color, ..Default::default() });
+    job.wrap = egui::text::TextWrapping { max_width: max_w.max(10.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    p.layout_job(job)
+}
+
+/// Text wrapped to at most `rows` lines.
+pub fn wrapped(p: &egui::Painter, text: &str, font: FontId, color: Color32, max_w: f32, rows: usize) -> Arc<Galley> {
+    let mut job = egui::text::LayoutJob::single_section(text.to_string(), egui::TextFormat { font_id: font, color, ..Default::default() });
+    job.wrap = egui::text::TextWrapping { max_width: max_w.max(10.0), max_rows: rows, break_anywhere: false, overflow_character: Some('…') };
+    p.layout_job(job)
+}
+
+/// "now", "5 min", "2 h", "Mon"…
+pub fn ago(at: DateTime<Local>) -> String {
+    let s = (Local::now() - at).num_seconds().max(0);
+    match s {
+        0..60 => "now".into(),
+        60..3600 => format!("{} min", s / 60),
+        3600..86400 => format!("{} h", s / 3600),
+        _ => at.format("%a").to_string(),
+    }
+}
+
+/// How far the wheel turned over this frame.
+fn wheel(ui: &egui::Ui) -> f32 {
+    ui.input(|i| i.events.iter().filter_map(|e| if let egui::Event::MouseWheel { delta, .. } = e { Some(delta.y) } else { None }).sum())
 }
 
 // ------------------------------------------------------------------ the panel
@@ -167,13 +314,16 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         }
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
     };
+    let output = m.output.to_string();
+    let control = |x: f32| Act::Open(Popup::at(PopupKind::Control { drag: None }, x, &output));
+    let mut acts: Vec<Act> = Vec::new();
     // ---- left: the launcher and the workspaces
     let mut x = bar.left() + 6.0;
     let r = Rect::from_center_size(Pos2::new(x + 15.0, cy), Vec2::new(30.0, 28.0));
     let resp = btn(ui, r, "launcher");
-    glyph_grid(&p, r.center(), fg);
-    if resp.clicked() {
-        m.acts.push(Act::Open(Popup { kind: PopupKind::Launcher { query: String::new(), sel: 0 }, anchor_x: r.center().x, output: m.output.to_string(), focus: true }));
+    glyph::grid(&p, r.center(), fg);
+    if resp.on_hover_text("Apps").clicked() {
+        acts.push(Act::Open(Popup::at(PopupKind::Launcher { query: String::new(), sel: 0 }, r.center().x, &output)));
     }
     x = r.right() + 8.0;
     if m.s.show_workspaces {
@@ -185,7 +335,7 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
             let r = Rect::from_min_size(Pos2::new(x, cy - 11.0), Vec2::new(width, 22.0));
             let resp = ui.interact(r, egui::Id::unique(("ws", &w.key, &w.output)), Sense::click());
             let (fill, col) = if w.active {
-                (accent, if rivet_look::palette::luminance(accent) > 0.7 { Color32::BLACK } else { Color32::WHITE })
+                (accent, on(accent))
             } else if resp.hovered() {
                 (mix(v.panel_fill, fg, 0.16), fg)
             } else {
@@ -196,90 +346,151 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
             let g = p.layout_no_wrap(label, ui_font(12.5), col);
             p.galley(r.center() - g.size() / 2.0, g, col);
             if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("Workspace {} ({})", w.label, m.compositor.name())).clicked() {
-                m.acts.push(Act::Workspace(w.key.clone()));
+                acts.push(Act::Workspace(w.key.clone()));
             }
             x = r.right() + 4.0;
         }
     }
-    let left_end = x;
-    // ---- right: power, settings, battery, network, volume
-    let mut rx = bar.right() - 6.0;
-    let mut slot = |ui: &mut egui::Ui, w: f32, id: &str| -> (Rect, egui::Response) {
-        let r = Rect::from_min_max(Pos2::new(rx - w, cy - 14.0), Pos2::new(rx, cy + 14.0));
-        rx = r.left() - 2.0;
+    let left_end = x + 8.0;
+    // ---- the middle: the clock (measured first, so the rest keeps clear of it)
+    let now = Local::now();
+    let clock_g = p.layout_no_wrap(now.format(&m.s.clock_format).to_string(), ui_font(13.5), fg);
+    let clock = Rect::from_center_size(bar.center(), clock_g.size() + Vec2::new(22.0, 10.0));
+    // ---- right: power, quick settings, notifications, battery, network, brightness, volume, media
+    let rx = std::cell::Cell::new(bar.right() - 6.0);
+    let slot = |ui: &mut egui::Ui, w: f32, id: &str| -> (Rect, egui::Response) {
+        let r = Rect::from_min_max(Pos2::new(rx.get() - w, cy - 14.0), Pos2::new(rx.get(), cy + 14.0));
+        rx.set(r.left() - 2.0);
         let resp = btn(ui, r, id);
         (r, resp)
     };
     let (r, resp) = slot(ui, 30.0, "power");
-    glyph_power(&p, r.center(), fg);
+    glyph::power(&p, r.center(), fg);
     if resp.on_hover_text("Lock, suspend, restart, shut down").clicked() {
-        m.acts.push(Act::Open(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: r.center().x, output: m.output.to_string(), focus: true }));
+        acts.push(Act::Open(Popup::at(PopupKind::Power { confirm: None }, r.center().x, &output)));
     }
-    let (r, resp) = slot(ui, 30.0, "settings");
-    glyph_gear(&p, r.center(), fg);
-    if resp.on_hover_text("Settings").clicked() {
-        m.acts.push(Act::Settings);
+    let (r, resp) = slot(ui, 30.0, "control");
+    glyph::sliders(&p, r.center(), fg);
+    if resp.on_hover_text("Quick settings").clicked() {
+        acts.push(control(r.center().x));
+    }
+    if m.s.show_bell && m.extra.notifying {
+        let (r, resp) = slot(ui, 30.0, "bell");
+        glyph::bell(&p, r.center(), fg, m.extra.dnd);
+        let n = m.extra.notes.len();
+        if n > 0 && !m.extra.dnd {
+            p.circle_filled(r.center() + Vec2::new(6.0, -6.0), 3.5, accent);
+        }
+        let tip = if m.extra.dnd { "Do not disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
+        if resp.on_hover_text(tip).clicked() {
+            acts.push(control(r.center().x));
+        }
     }
     if m.s.show_battery
         && let Some((pct, charging)) = m.status.battery
     {
-        let text = format!("{pct}%");
-        let g = p.layout_no_wrap(text, ui_font(12.5), fg);
-        let (r, resp) = slot(ui, g.size().x + 40.0, "battery");
         let low = pct <= 15 && !charging;
         let col = if low { rivet_look::theme::status(ui.ctx()).danger } else { fg };
-        glyph_battery(&p, Pos2::new(r.left() + 16.0, cy), pct, charging, col, accent);
+        let g = p.layout_no_wrap(format!("{pct}%"), ui_font(12.5), col);
+        let (r, resp) = slot(ui, g.size().x + 40.0, "battery");
+        glyph::battery(&p, Pos2::new(r.left() + 16.0, cy), pct, charging, col, accent);
         p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, col);
-        resp.on_hover_text(if charging { format!("Battery {pct}%, charging") } else { format!("Battery {pct}%") });
+        let mut tip = if charging { format!("Battery {pct}%, charging") } else { format!("Battery {pct}%") };
+        if let Some(pr) = &m.status.profile {
+            tip.push_str(&format!(" · {}", pr.replace('-', " ")));
+        }
+        if resp.on_hover_text(tip).clicked() {
+            acts.push(control(r.center().x));
+        }
     }
     if m.s.show_network {
         let (r, resp) = slot(ui, 30.0, "network");
         let tip = match &m.status.net {
             Net::Wifi(ssid) => {
-                glyph_wifi(&p, r.center(), fg);
+                glyph::wifi(&p, r.center(), fg);
                 if ssid.is_empty() { "Wi-Fi".to_string() } else { format!("Wi-Fi: {ssid}") }
             }
             Net::Wired => {
-                glyph_wired(&p, r.center(), fg);
+                glyph::wired(&p, r.center(), fg);
                 "Wired".to_string()
             }
             Net::None => {
-                glyph_wifi(&p, r.center(), weak.gamma_multiply(0.5));
+                glyph::wifi(&p, r.center(), weak.gamma_multiply(0.5));
                 "Not connected".to_string()
             }
         };
-        resp.on_hover_text(tip);
+        if resp.on_hover_text(tip).clicked() {
+            acts.push(control(r.center().x));
+        }
+    }
+    if m.s.show_brightness
+        && let Some(b) = m.status.brightness
+    {
+        let g = p.layout_no_wrap(format!("{b}%"), ui_font(12.5), fg);
+        let (r, resp) = slot(ui, g.size().x + 38.0, "brightness");
+        glyph::sun(&p, Pos2::new(r.left() + 15.0, cy), fg);
+        p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, fg);
+        if resp.hovered() {
+            let dy = wheel(ui);
+            if dy.abs() > 0.5 {
+                acts.push(Act::Brightness(dy > 0.0));
+            }
+        }
+        if resp.on_hover_text("Brightness · scroll to change").clicked() {
+            acts.push(control(r.center().x));
+        }
     }
     if m.s.show_volume
         && let Some((vol, muted)) = m.status.volume
     {
         let text = if muted { "Muted".to_string() } else { format!("{vol}%") };
-        let g = p.layout_no_wrap(text, ui_font(12.5), if muted { weak } else { fg });
+        let col = if muted { weak } else { fg };
+        let g = p.layout_no_wrap(text, ui_font(12.5), col);
         let (r, resp) = slot(ui, g.size().x + 38.0, "volume");
-        glyph_speaker(&p, Pos2::new(r.left() + 15.0, cy), muted, if muted { weak } else { fg });
-        p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, if muted { weak } else { fg });
+        glyph::speaker(&p, Pos2::new(r.left() + 15.0, cy), muted, col);
+        p.galley(Pos2::new(r.left() + 30.0, cy - g.size().y / 2.0), g, col);
         if resp.hovered() {
-            let dy: f32 = ui.input(|i| i.events.iter().filter_map(|e| if let egui::Event::MouseWheel { delta, .. } = e { Some(delta.y) } else { None }).sum());
+            let dy = wheel(ui);
             if dy.abs() > 0.5 {
-                m.acts.push(Act::Volume(dy > 0.0));
+                acts.push(Act::Volume(dy > 0.0));
             }
         }
         if resp.on_hover_text("Click to mute · scroll to change").clicked() {
-            m.acts.push(Act::Mute);
+            acts.push(Act::Mute);
         }
     }
-    // ---- the middle: the clock
-    let now = Local::now();
-    let text = now.format(&m.s.clock_format).to_string();
-    let g = p.layout_no_wrap(text, ui_font(13.5), fg);
-    let r = Rect::from_center_size(bar.center(), g.size() + Vec2::new(22.0, 10.0));
-    if r.left() > left_end && r.right() < rx {
-        let resp = btn(ui, r, "clock");
-        p.galley(r.center() - g.size() / 2.0, g, fg);
+    let clock_fits = clock.left() > left_end && clock.right() < rx.get();
+    if m.s.show_media
+        && let Some(md) = &m.status.media
+    {
+        let room = rx.get() - if clock_fits { clock.right() + 14.0 } else { left_end } - 34.0;
+        if room > 70.0 {
+            let text = if md.artist.is_empty() { md.title.clone() } else { format!("{} · {}", md.title, md.artist) };
+            let g = one_line(&p, &text, ui_font(12.5), fg, room.min(230.0));
+            let (r, resp) = slot(ui, g.size().x + 34.0, "media");
+            glyph::play(&p, Pos2::new(r.left() + 14.0, cy), !md.playing, accent);
+            p.galley(Pos2::new(r.left() + 26.0, cy - g.size().y / 2.0), g, fg);
+            if resp.on_hover_text(format!("{} · click to {}", md.player, if md.playing { "pause" } else { "play" })).clicked() {
+                acts.push(Act::Media("play-pause"));
+            }
+        }
+    }
+    if clock_fits {
+        let resp = btn(ui, clock, "clock");
+        p.galley(clock.center() - clock_g.size() / 2.0, clock_g, fg);
         if resp.on_hover_text(now.format("%A, %B %-d, %Y").to_string()).clicked() {
-            m.acts.push(Act::Open(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: r.center().x, output: m.output.to_string(), focus: true }));
+            acts.push(Act::Open(Popup::at(PopupKind::Calendar { month: 0 }, clock.center().x, &output)));
         }
     }
+    // ---- the focused window's title, between the workspaces and the clock
+    if m.s.show_window_title && !m.status.window.is_empty() {
+        let end = if clock_fits { clock.left() - 14.0 } else { rx.get() - 14.0 };
+        if end - left_end > 60.0 {
+            let g = one_line(&p, &m.status.window, ui_font(12.5), weak, (end - left_end).min(360.0));
+            p.galley(Pos2::new(left_end, cy - g.size().y / 2.0), g, weak);
+        }
+    }
+    m.acts.extend(acts);
 }
 
 // ------------------------------------------------------------------ the dock
@@ -288,7 +499,7 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let accent = kit.accent(m.s);
     let full = ui.max_rect();
-    let apps: Vec<DesktopApp> = m.s.dock_apps.iter().filter_map(|id| find_app(m.apps, id).cloned()).collect();
+    let items = dock_items(m.s, m.apps, &m.status.running);
     let size = m.s.dock_icon;
     let body_h = size + DOCK_PAD * 2.0;
     let body = Rect::from_min_size(Pos2::new(full.left() + MARGIN, full.bottom() - MARGIN - body_h), Vec2::new(full.width() - MARGIN * 2.0, body_h));
@@ -296,7 +507,17 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let p = ui.painter().clone();
     let mut x = body.left() + DOCK_PAD;
     let mut label: Option<(String, f32)> = None;
-    for a in &apps {
+    let mut after_pinned = false;
+    for (a, pinned) in &items {
+        if !pinned && !after_pinned {
+            after_pinned = true;
+            if items.iter().any(|i| i.1) {
+                // Between the pinned apps and the open ones.
+                let sx = x + DOCK_SEP / 2.0 - DOCK_GAP / 2.0;
+                p.line_segment([Pos2::new(sx, body.top() + 12.0), Pos2::new(sx, body.bottom() - 12.0)], Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.2)));
+                x += DOCK_SEP;
+            }
+        }
         let r = Rect::from_min_size(Pos2::new(x, body.top() + DOCK_PAD), Vec2::splat(size));
         let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &a.id)), Sense::click());
         let lift = if resp.hovered() { -4.0 } else { 0.0 };
@@ -315,15 +536,14 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
             }
         }
         // Open: a dot under it.
-        if m.s.dock_running {
-            let id = a.id.trim_end_matches(".desktop").to_lowercase();
-            let short = id.rsplit('.').next().unwrap_or(&id).to_string();
-            let name = a.name.to_lowercase();
-            if m.status.running.iter().any(|w| *w == id || *w == short || *w == name || id.ends_with(w.as_str())) {
-                p.circle_filled(Pos2::new(r.center().x, body.bottom() - 4.0), 2.5, accent);
-            }
+        if m.s.dock_running && (!pinned || is_running(a, &m.status.running)) {
+            p.circle_filled(Pos2::new(r.center().x, body.bottom() - 4.0), 2.5, accent);
         }
-        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        if resp.secondary_clicked() {
+            // The dock is centred on its screen: the menu's place is the icon's from the middle.
+            m.acts.push(Act::Open(Popup::at(PopupKind::DockMenu { app: a.id.trim_end_matches(".desktop").to_string(), pinned: *pinned }, r.center().x - full.center().x, m.output)));
+        } else if resp.clicked() {
             m.acts.push(Act::Launch(a.id.clone()));
         }
         x += size + DOCK_GAP;
@@ -381,7 +601,7 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         match st.battery {
             Some((pct, charging)) => row("Battery", format!("{pct}%{}", if charging { ", charging" } else { "" }), pct as f32 / 100.0, r.top() + 94.0),
             None => {
-                let up = std::fs::read_to_string("/proc/uptime").ok().and_then(|t| t.split_whitespace().next().and_then(|x| x.parse::<f64>().ok())).unwrap_or(0.0) as u64;
+                let up = crate::sys::uptime();
                 p.text(Pos2::new(r.left() + 16.0, r.top() + 94.0), Align2::LEFT_CENTER, "Up for", ui_font(12.5), weak);
                 p.text(Pos2::new(r.right() - 16.0, r.top() + 94.0), Align2::RIGHT_CENTER, format!("{} h {} min", up / 3600, up / 60 % 60), ui_font(12.5), txt);
             }
@@ -397,10 +617,12 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let full = ui.max_rect();
     let below = if m.s.panel_edge == Edge::Top { panel_height(m.s) + 4.0 } else { MARGIN };
     let esc = ui.input(|i| i.key_pressed(Key::Escape));
-    let size = match pop.kind {
+    let size = match &pop.kind {
         PopupKind::Launcher { .. } => Vec2::new(620.0f32.min(full.width() - 40.0), 480.0f32.min(full.height() - 120.0)),
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
         PopupKind::Power { .. } => Vec2::new(240.0, 238.0),
+        PopupKind::Control { .. } => Vec2::new(392.0, crate::cc::height(m).min(full.height() - panel_height(m.s) - 24.0)),
+        PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
     };
     let rect = match pop.kind {
         PopupKind::Launcher { .. } => {
@@ -408,24 +630,134 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
             ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(70));
             Rect::from_min_size(Pos2::new(full.center().x - size.x / 2.0, full.top() + (full.height() * 0.16).max(below + 10.0)), size)
         }
+        PopupKind::DockMenu { .. } => {
+            // Above the dock, over the icon.
+            let items = dock_items(m.s, m.apps, &m.status.running);
+            let (_, room) = dock_size(m.s, &items);
+            let x = (full.center().x + pop.anchor_x - size.x / 2.0).clamp(full.left() + MARGIN, full.right() - MARGIN - size.x);
+            let bottom = full.bottom() - room - 8.0 - if m.s.panel && m.s.panel_edge == Edge::Bottom { panel_height(m.s) } else { 0.0 };
+            Rect::from_min_size(Pos2::new(x, bottom - size.y), size)
+        }
         _ => {
-            let x = (pop.anchor_x - size.x / 2.0).clamp(full.left() + MARGIN, full.right() - MARGIN - size.x);
+            // No button to open under (asked by `rivet-shell msg`): the middle.
+            let ax = if pop.anchor_x.is_nan() { full.center().x } else { pop.anchor_x };
+            let x = (ax - size.x / 2.0).clamp(full.left() + MARGIN, full.right() - MARGIN - size.x);
             let y = if m.s.panel_edge == Edge::Top { full.top() + below } else { full.bottom() - panel_height(m.s) - 4.0 - size.y };
             Rect::from_min_size(Pos2::new(x, y), size)
         }
     };
     // Outside the card: close.
     let back = ui.interact(full, egui::Id::unique("popup-back"), Sense::click());
-    if back.clicked() && !ui.input(|i| i.pointer.interact_pos().is_some_and(|p| rect.contains(p))) || esc {
+    let outside = ui.input(|i| i.pointer.interact_pos().is_some_and(|p| !rect.contains(p)));
+    if (back.clicked() || back.secondary_clicked()) && outside || esc {
         m.acts.push(Act::Close);
     }
     card(ui.painter(), rect, &v, 0.98, r_lg());
-    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(14.0)).layout(egui::Layout::top_down(egui::Align::Min)));
+    let pad = if matches!(pop.kind, PopupKind::DockMenu { .. }) { 6.0 } else { 14.0 };
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(pad)).layout(egui::Layout::top_down(egui::Align::Min)));
     let focus = std::mem::take(&mut pop.focus);
     match &mut pop.kind {
         PopupKind::Launcher { query, sel } => launcher(&mut child, query, sel, focus, m, kit),
         PopupKind::Calendar { month } => calendar(&mut child, month, kit.accent(m.s)),
         PopupKind::Power { confirm } => power_menu(&mut child, confirm, m),
+        PopupKind::Control { drag } => crate::cc::control_center(&mut child, drag, m, kit),
+        PopupKind::DockMenu { app, pinned } => dock_menu(&mut child, app, *pinned, m),
+    }
+}
+
+/// A simple calculator for the launcher: + − × ÷ % ^ and brackets.
+pub fn calc(q: &str) -> Option<f64> {
+    let q = q.trim().trim_start_matches('=');
+    if !q.chars().any(|c| c.is_ascii_digit()) || !q.chars().any(|c| "+-*/%^×÷x(".contains(c)) || q.chars().any(|c| c.is_alphabetic() && c != 'x') {
+        return None;
+    }
+    let toks: Vec<char> = q
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != ',')
+        .map(|c| match c {
+            '×' | 'x' => '*',
+            '÷' => '/',
+            c => c,
+        })
+        .collect();
+    struct P {
+        t: Vec<char>,
+        i: usize,
+    }
+    impl P {
+        fn peek(&self) -> Option<char> {
+            self.t.get(self.i).copied()
+        }
+        fn sum(&mut self) -> Option<f64> {
+            let mut v = self.product()?;
+            while let Some(c @ ('+' | '-')) = self.peek() {
+                self.i += 1;
+                let r = self.product()?;
+                v = if c == '+' { v + r } else { v - r };
+            }
+            Some(v)
+        }
+        fn product(&mut self) -> Option<f64> {
+            let mut v = self.power()?;
+            while let Some(c @ ('*' | '/' | '%')) = self.peek() {
+                self.i += 1;
+                let r = self.power()?;
+                v = match c {
+                    '*' => v * r,
+                    '/' => v / r,
+                    _ => v % r,
+                };
+            }
+            Some(v)
+        }
+        fn power(&mut self) -> Option<f64> {
+            let b = self.unary()?;
+            if self.peek() == Some('^') {
+                self.i += 1;
+                let e = self.power()?;
+                return Some(b.powf(e));
+            }
+            Some(b)
+        }
+        fn unary(&mut self) -> Option<f64> {
+            match self.peek()? {
+                '-' => {
+                    self.i += 1;
+                    Some(-self.unary()?)
+                }
+                '+' => {
+                    self.i += 1;
+                    self.unary()
+                }
+                '(' => {
+                    self.i += 1;
+                    let v = self.sum()?;
+                    if self.peek() == Some(')') {
+                        self.i += 1;
+                    }
+                    Some(v)
+                }
+                _ => {
+                    let start = self.i;
+                    while self.peek().is_some_and(|c| c.is_ascii_digit() || c == '.') {
+                        self.i += 1;
+                    }
+                    self.t[start..self.i].iter().collect::<String>().parse().ok()
+                }
+            }
+        }
+    }
+    let mut p = P { t: toks, i: 0 };
+    let v = p.sum()?;
+    (p.i == p.t.len() && v.is_finite()).then_some(v)
+}
+
+fn calc_text(v: f64) -> String {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{v:.0}")
+    } else {
+        let s = format!("{v:.10}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
     }
 }
 
@@ -433,7 +765,7 @@ fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: bool,
     let v = ui.visuals().clone();
     let id = egui::Id::unique("launcher-search");
     let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
-        ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text("Search apps…").desired_width(f32::INFINITY))
+        ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text("Search apps, or type a sum…").desired_width(f32::INFINITY))
     });
     let resp = field.inner;
     if focus || !resp.has_focus() {
@@ -443,19 +775,33 @@ fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: bool,
         *sel = 0;
     }
     ui.add_space(12.0);
+    let accent = kit.accent(m.s);
+    let enter = ui.input(|i| i.key_pressed(Key::Enter));
+    // A sum: its answer, and Enter copies it.
+    if let Some(answer) = calc(query) {
+        let text = calc_text(answer);
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 52.0), Sense::click());
+        ui.painter().rect_filled(r, r_md(), accent.gamma_multiply(0.22));
+        ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+        ui.painter().text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, format!("= {text}"), ui_font(20.0), v.strong_text_color());
+        ui.painter().text(Pos2::new(r.right() - 16.0, r.center().y), Align2::RIGHT_CENTER, "Enter to copy", ui_font(12.0), v.weak_text_color());
+        if enter || resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            m.acts.push(Act::Copy(text));
+        }
+        return;
+    }
     // The apps: best matches first when searching, else by name.
     let mut ranked: Vec<(i32, &DesktopApp)> = m.apps.iter().filter_map(|a| quick::fuzzy_score(&a.name, query).map(|s| (s, a))).collect();
     if !query.is_empty() {
         ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
     }
     let cols = ((ui.available_width() + 6.0) / 104.0).floor().max(1.0) as usize;
-    let (up, down, left, right, enter) = ui.input_mut(|i| {
+    let (up, down, left, right) = ui.input_mut(|i| {
         (
             i.consume_key(egui::Modifiers::NONE, Key::ArrowUp),
             i.consume_key(egui::Modifiers::NONE, Key::ArrowDown),
             i.consume_key(egui::Modifiers::NONE, Key::ArrowLeft) && query.is_empty(),
             i.consume_key(egui::Modifiers::NONE, Key::ArrowRight) && query.is_empty(),
-            i.key_pressed(Key::Enter),
         )
     });
     let n = ranked.len();
@@ -477,29 +823,31 @@ fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: bool,
     if enter && let Some((_, a)) = ranked.get(*sel) {
         m.acts.push(Act::Launch(a.id.clone()));
     }
-    let accent = kit.accent(m.s);
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         egui::Grid::new("launcher-grid").spacing([6.0, 6.0]).show(ui, |ui| {
             for (k, (_, a)) in ranked.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(98.0, 92.0), Sense::click());
-                if k == *sel {
-                    ui.painter().rect_filled(r, r_md(), accent.gamma_multiply(0.22));
-                    ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
-                    if up || down || left || right {
-                        ui.scroll_to_rect(r, None);
+                // Only what's in view is drawn (and only its icons made).
+                if ui.is_rect_visible(r) {
+                    if k == *sel {
+                        ui.painter().rect_filled(r, r_md(), accent.gamma_multiply(0.22));
+                        ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
+                    } else if resp.hovered() {
+                        hover_fill(ui.painter(), r, &v);
                     }
-                } else if resp.hovered() {
-                    hover_fill(ui.painter(), r, &v);
+                    let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 30.0), Vec2::splat(42.0));
+                    if let Some(t) = kit.app_icon(ui.ctx(), a, 42.0) {
+                        ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                    }
+                    let mut job = egui::text::LayoutJob::single_section(a.name.clone(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
+                    job.wrap = egui::text::TextWrapping { max_width: r.width() - 8.0, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
+                    job.halign = egui::Align::Center;
+                    let g = ui.painter().layout_job(job);
+                    ui.painter().galley(Pos2::new(r.center().x, r.top() + 58.0), g, v.text_color());
                 }
-                let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 30.0), Vec2::splat(42.0));
-                if let Some(t) = kit.app_icon(ui.ctx(), a, 42.0) {
-                    ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                if k == *sel && (up || down || left || right) {
+                    ui.scroll_to_rect(r, None);
                 }
-                let mut job = egui::text::LayoutJob::single_section(a.name.clone(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
-                job.wrap = egui::text::TextWrapping { max_width: r.width() - 8.0, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
-                job.halign = egui::Align::Center;
-                let g = ui.painter().layout_job(job);
-                ui.painter().galley(Pos2::new(r.center().x, r.top() + 58.0), g, v.text_color());
                 if resp.clicked() {
                     m.acts.push(Act::Launch(a.id.clone()));
                 }
@@ -553,7 +901,7 @@ fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
         let date = first + chrono::Duration::days(d as i64);
         let col = if date == today {
             p.circle_filled(c, 13.0, accent);
-            if rivet_look::palette::luminance(accent) > 0.55 { Color32::BLACK } else { Color32::WHITE }
+            on(accent)
         } else if cell % 7 >= 5 {
             v.weak_text_color()
         } else {
@@ -587,81 +935,34 @@ fn power_menu(ui: &mut egui::Ui, confirm: &mut Option<Power>, m: &mut Model) {
     }
 }
 
-// ------------------------------------------------------------------ drawn symbols
-
-fn arc(p: &egui::Painter, c: Pos2, r: f32, from: f32, to: f32, s: Stroke) {
-    let n = 14;
-    let pts: Vec<Pos2> = (0..=n).map(|i| {
-        let a = from + (to - from) * i as f32 / n as f32;
-        c + Vec2::new(a.cos(), a.sin()) * r
-    }).collect();
-    p.add(Shape::line(pts, s));
-}
-
-fn glyph_grid(p: &egui::Painter, c: Pos2, col: Color32) {
-    for i in -1..=1 {
-        for j in -1..=1 {
-            p.circle_filled(c + Vec2::new(i as f32 * 5.0, j as f32 * 5.0), 1.7, col);
-        }
-    }
-}
-
-fn glyph_power(p: &egui::Painter, c: Pos2, col: Color32) {
-    let s = Stroke::new(1.7, col);
-    use std::f32::consts::PI;
-    arc(p, c + Vec2::new(0.0, 1.0), 6.5, -PI / 2.0 + 0.7, 3.0 * PI / 2.0 - 0.7, s);
-    p.line_segment([c + Vec2::new(0.0, -7.0), c + Vec2::new(0.0, 0.5)], s);
-}
-
-fn glyph_gear(p: &egui::Painter, c: Pos2, col: Color32) {
-    let s = Stroke::new(1.7, col);
-    p.circle_stroke(c, 5.2, s);
-    p.circle_filled(c, 1.8, col);
-    for k in 0..8 {
-        let a = k as f32 * std::f32::consts::FRAC_PI_4;
-        let d = Vec2::new(a.cos(), a.sin());
-        p.line_segment([c + d * 5.2, c + d * 7.6], Stroke::new(2.2, col));
-    }
-}
-
-fn glyph_battery(p: &egui::Painter, c: Pos2, pct: u32, charging: bool, col: Color32, accent: Color32) {
-    let body = Rect::from_center_size(c, Vec2::new(18.0, 10.0));
-    p.rect_stroke(body, 2.0, Stroke::new(1.4, col), egui::StrokeKind::Inside);
-    p.rect_filled(Rect::from_min_size(Pos2::new(body.right() + 0.5, c.y - 2.5), Vec2::new(2.0, 5.0)), 1.0, col);
-    let inner = body.shrink(2.5);
-    let w = inner.width() * (pct as f32 / 100.0).clamp(0.05, 1.0);
-    p.rect_filled(Rect::from_min_size(inner.min, Vec2::new(w, inner.height())), 1.0, if charging { accent } else { col });
-}
-
-fn glyph_wifi(p: &egui::Painter, c: Pos2, col: Color32) {
-    use std::f32::consts::PI;
-    let base = c + Vec2::new(0.0, 5.0);
-    for r in [5.0, 9.0] {
-        arc(p, base, r, -PI * 0.78, -PI * 0.22, Stroke::new(1.7, col));
-    }
-    p.circle_filled(base + Vec2::new(0.0, -1.0), 1.7, col);
-}
-
-fn glyph_wired(p: &egui::Painter, c: Pos2, col: Color32) {
-    let s = Stroke::new(1.6, col);
-    p.rect_stroke(Rect::from_center_size(c + Vec2::new(0.0, 2.0), Vec2::new(14.0, 8.0)), 1.5, s, egui::StrokeKind::Inside);
-    p.line_segment([c + Vec2::new(0.0, -2.0), c + Vec2::new(0.0, -7.0)], s);
-    for dx in [-3.5, 0.0, 3.5] {
-        p.line_segment([c + Vec2::new(dx, 1.0), c + Vec2::new(dx, 3.5)], Stroke::new(1.2, col));
-    }
-}
-
-fn glyph_speaker(p: &egui::Painter, c: Pos2, muted: bool, col: Color32) {
-    let pts = vec![c + Vec2::new(-7.0, -2.5), c + Vec2::new(-4.0, -2.5), c + Vec2::new(0.0, -6.0), c + Vec2::new(0.0, 6.0), c + Vec2::new(-4.0, 2.5), c + Vec2::new(-7.0, 2.5)];
-    p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
-    let s = Stroke::new(1.5, col);
-    if muted {
-        p.line_segment([c + Vec2::new(3.0, -3.0), c + Vec2::new(8.0, 3.0)], s);
-        p.line_segment([c + Vec2::new(8.0, -3.0), c + Vec2::new(3.0, 3.0)], s);
+/// Right-click on a dock icon: open it, move it, pin or unpin it.
+fn dock_menu(ui: &mut egui::Ui, app: &str, pinned: bool, m: &mut Model) {
+    let v = ui.visuals().clone();
+    let name = find_app(m.apps, app).map(|a| a.name.clone()).unwrap_or_else(|| app.to_string());
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::hover());
+    let g = one_line(ui.painter(), &name, ui_font(12.5), v.weak_text_color(), r.width() - 20.0);
+    ui.painter().galley(Pos2::new(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, v.weak_text_color());
+    let at = m.s.dock_apps.iter().position(|d| find_app(m.apps, d).is_some_and(|a| a.id.trim_end_matches(".desktop") == app));
+    let last = m.s.dock_apps.len().saturating_sub(1);
+    let mut items: Vec<(&str, Act, bool)> = vec![("Open", Act::Launch(app.to_string()), true)];
+    if pinned {
+        items.push(("Move Left", Act::MovePin(app.to_string(), -1), at.is_some_and(|i| i > 0)));
+        items.push(("Move Right", Act::MovePin(app.to_string(), 1), at.is_some_and(|i| i < last)));
+        items.push(("Unpin from Dock", Act::Unpin(app.to_string()), true));
     } else {
-        use std::f32::consts::PI;
-        arc(p, c + Vec2::new(0.0, 0.0), 4.0, -PI / 3.5, PI / 3.5, s);
-        arc(p, c + Vec2::new(0.0, 0.0), 7.5, -PI / 3.5, PI / 3.5, s);
+        items.push(("Pin to Dock", Act::Pin(app.to_string()), true));
+    }
+    for (label, act, enabled) in items {
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), if enabled { Sense::click() } else { Sense::hover() });
+        if enabled && resp.hovered() {
+            hover_fill(ui.painter(), r, &v);
+        }
+        let col = if enabled { v.text_color() } else { v.weak_text_color().gamma_multiply(0.6) };
+        ui.painter().text(Pos2::new(r.left() + 10.0, r.center().y), Align2::LEFT_CENTER, label, ui_font(13.5), col);
+        if enabled && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            m.acts.push(Act::Close);
+            m.acts.push(act);
+        }
     }
 }
 
@@ -675,13 +976,29 @@ mod tests {
 
     #[test]
     fn finds_apps_and_sizes() {
-        let apps = [app("org.mozilla.firefox.desktop", "Firefox"), app("rivet-files.desktop", "Rivet Files")];
+        let apps = [app("org.mozilla.firefox.desktop", "Firefox"), app("rivet-files.desktop", "Rivet Files"), app("kitty.desktop", "kitty")];
         assert_eq!(find_app(&apps, "firefox").map(|a| a.name.as_str()), Some("Firefox"));
         assert_eq!(find_app(&apps, "rivet-files").map(|a| a.name.as_str()), Some("Rivet Files"));
         assert!(find_app(&apps, "nope").is_none());
-        let s = Settings::default();
-        let (size, room) = dock_size(&s, 5);
-        assert!(size.x > 5.0 * s.dock_icon && room < size.y);
+        let s = Settings { dock_apps: vec!["firefox".into(), "rivet-files".into()], ..Settings::default() };
+        // Open apps that aren't pinned come after the pinned ones, once each.
+        let items = dock_items(&s, &apps, &["kitty".into(), "firefox".into()]);
+        assert_eq!(items.iter().map(|(a, p)| (a.name.as_str(), *p)).collect::<Vec<_>>(), [("Firefox", true), ("Rivet Files", true), ("kitty", false)]);
+        let (size, room) = dock_size(&s, &items);
+        assert!(size.x > 3.0 * s.dock_icon + DOCK_SEP && room < size.y);
         assert_eq!(panel_height(&Settings { panel_floating: false, ..Settings::default() }), BAR);
+    }
+
+    #[test]
+    fn sums() {
+        assert_eq!(calc("2+2"), Some(4.0));
+        assert_eq!(calc("= (1 + 2) * 3 ^ 2"), Some(27.0));
+        assert_eq!(calc("10 / 4"), Some(2.5));
+        assert_eq!(calc("-3 × 2"), Some(-6.0));
+        assert_eq!(calc("firefox"), None);
+        assert_eq!(calc("42"), None);
+        assert_eq!(calc("2+"), None);
+        assert_eq!(calc_text(2.5), "2.5");
+        assert_eq!(calc_text(4.0), "4");
     }
 }

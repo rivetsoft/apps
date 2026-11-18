@@ -25,11 +25,12 @@ enum Page {
     Panel,
     Dock,
     Widgets,
+    Notifications,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 6] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::About];
+    const ALL: [Page; 7] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Notifications, Page::About];
     fn label(self) -> &'static str {
         match self {
             Page::Wallpaper => "Wallpaper",
@@ -37,6 +38,7 @@ impl Page {
             Page::Panel => "Panel",
             Page::Dock => "Dock",
             Page::Widgets => "Widgets",
+            Page::Notifications => "Notifications",
             Page::About => "About",
         }
     }
@@ -47,6 +49,7 @@ impl Page {
             Page::Panel => &["view-more-horizontal-symbolic", "open-menu-symbolic"],
             Page::Dock => &["view-grid-symbolic", "view-app-grid-symbolic"],
             Page::Widgets => &["view-compact-symbolic", "preferences-system-symbolic"],
+            Page::Notifications => &["preferences-system-notifications-symbolic", "notification-symbolic", "dialog-information-symbolic"],
             Page::About => &["help-about-symbolic", "dialog-information-symbolic"],
         }
     }
@@ -272,6 +275,7 @@ impl eframe::App for SettingsApp {
                         Page::Panel => self.panel_page(ui),
                         Page::Dock => self.dock_page(ui),
                         Page::Widgets => self.widgets_page(ui),
+                        Page::Notifications => self.notifications_page(ui),
                         Page::About => self.about_page(ui),
                     }
                 });
@@ -467,9 +471,56 @@ impl SettingsApp {
             ui.checkbox(&mut self.s.show_workspaces, "Workspaces");
             hint(ui, "From niri, Hyprland or Sway; other compositors don't say.");
             ui.add_space(4.0);
+            ui.checkbox(&mut self.s.show_window_title, "The focused window's title");
+            ui.checkbox(&mut self.s.show_media, "What's playing (click to pause)");
             ui.checkbox(&mut self.s.show_volume, "Volume (click to mute, scroll to change)");
+            ui.checkbox(&mut self.s.show_brightness, "Screen brightness (scroll to change; laptops)");
             ui.checkbox(&mut self.s.show_network, "Network");
             ui.checkbox(&mut self.s.show_battery, "Battery");
+            ui.checkbox(&mut self.s.show_bell, "Notifications");
+            ui.add_space(4.0);
+            hint(ui, "The quick settings button (sliders) and the power button are always there.");
+        });
+    }
+
+    fn notifications_page(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Notifications", &mut |ui| {
+            ui.checkbox(&mut self.s.notifications, "Show apps' notifications");
+            hint(ui, "Cards in the screen's corner, and a history in quick settings. If another notification program is running (mako, dunst or another shell), it keeps them instead.");
+        });
+        section(ui, "On-screen display", &mut |ui| {
+            ui.checkbox(&mut self.s.osd, "Show volume and brightness as they change");
+        });
+        section(ui, "Night Light", &mut |ui| {
+            grid(ui, "shell-night", &mut |ui| {
+                ui.label("Warmth");
+                ui.add(egui::Slider::new(&mut self.s.night_kelvin, 2500..=6000).step_by(100.0).suffix(" K"));
+                ui.end_row();
+            });
+            let tool = ["gammastep", "hyprsunset", "wlsunset"].into_iter().find(|t| crate::sys::has(t));
+            hint(ui, &match tool {
+                Some(t) => format!("Turned on in quick settings; {t} makes the colors warmer."),
+                None => "Needs gammastep, hyprsunset or wlsunset installed.".to_string(),
+            });
+        });
+        section(ui, "Keys", &mut |ui| {
+            hint(ui, "Bind these in your compositor's settings:");
+            ui.add_space(4.0);
+            let weak = ui.visuals().weak_text_color();
+            for (cmd, what) in [
+                ("rivet-shell msg launcher", "Apps"),
+                ("rivet-shell msg control-center", "Quick settings"),
+                ("rivet-shell msg volume up | down | mute", "Volume"),
+                ("rivet-shell msg brightness up | down", "Brightness"),
+                ("rivet-shell msg media play-pause | next | previous", "Music and video"),
+                ("rivet-shell msg dnd", "Do Not Disturb"),
+                ("rivet-shell msg power", "Lock, suspend, restart, shut down"),
+            ] {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(cmd).monospace().size(12.0));
+                    ui.label(egui::RichText::new(what).color(weak).size(12.0));
+                });
+            }
         });
     }
 
@@ -487,6 +538,7 @@ impl SettingsApp {
                 ui.add_space(6.0);
                 ui.checkbox(&mut self.s.dock_reserve, "Keep windows clear of the dock");
                 ui.checkbox(&mut self.s.dock_running, "A dot under apps with windows open (niri, Hyprland)");
+                ui.checkbox(&mut self.s.dock_open_apps, "Open apps that aren't pinned show too (right-click one to pin it)");
             });
         });
         let pinned: Vec<(String, Option<DesktopApp>)> = self.s.dock_apps.iter().map(|id| (id.clone(), find_app(&self.apps, id).cloned())).collect();

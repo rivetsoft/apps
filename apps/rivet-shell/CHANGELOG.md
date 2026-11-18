@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Quick settings (sliders, toggles, what's playing, notification history), notifications with
+  cards in the corner, an on-screen display for volume and brightness, media and brightness and
+  the window title in the panel, open apps and a right-click menu (pin, unpin, move) in the dock,
+  a calculator in the launcher, and more `rivet-shell msg` commands for keys.
+- The launcher opens at once (its icons are kept between openings).
+
 The first version.
 
 - A panel (launcher, workspaces for niri / Hyprland / Sway, clock with a calendar, volume,

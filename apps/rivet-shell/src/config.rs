@@ -52,6 +52,21 @@ pub struct Settings {
     pub show_volume: bool,
     pub show_network: bool,
     pub show_battery: bool,
+    /// The focused window's title, beside the workspaces.
+    pub show_window_title: bool,
+    /// What's playing (click to pause).
+    pub show_media: bool,
+    /// Screen brightness (laptops).
+    pub show_brightness: bool,
+    /// The notifications bell.
+    pub show_bell: bool,
+    // ---- notifications, on-screen display, night light
+    /// Be the notification service (cards in the corner, a history in the control center).
+    pub notifications: bool,
+    /// Show volume and brightness changes in the middle of the screen's bottom.
+    pub osd: bool,
+    /// Night light's warmth, in kelvin.
+    pub night_kelvin: u32,
     // ---- dock
     pub dock: bool,
     /// Pinned apps by desktop id (rivet-files, org.mozilla.firefox…).
@@ -61,6 +76,8 @@ pub struct Settings {
     pub dock_reserve: bool,
     /// A dot under apps that have windows open (niri, Hyprland).
     pub dock_running: bool,
+    /// Apps with windows open show in the dock too (after the pinned ones).
+    pub dock_open_apps: bool,
     // ---- desktop widgets
     pub widget_clock: bool,
     pub widget_system: bool,
@@ -87,11 +104,19 @@ impl Default for Settings {
             show_volume: true,
             show_network: true,
             show_battery: true,
+            show_window_title: true,
+            show_media: true,
+            show_brightness: true,
+            show_bell: true,
+            notifications: true,
+            osd: true,
+            night_kelvin: 4000,
             dock: true,
             dock_apps: vec!["rivet-files".into(), "rivet-terminal".into(), "rivet-edit".into(), "rivet-notes".into(), "firefox".into()],
             dock_icon: 44.0,
             dock_reserve: true,
             dock_running: true,
+            dock_open_apps: true,
             widget_clock: true,
             widget_system: true,
             widget_side: Side::Left,
@@ -173,6 +198,14 @@ impl Settings {
                 "show_volume" => self.show_volume = b,
                 "show_network" => self.show_network = b,
                 "show_battery" => self.show_battery = b,
+                "show_window_title" => self.show_window_title = b,
+                "show_media" => self.show_media = b,
+                "show_brightness" => self.show_brightness = b,
+                "show_bell" => self.show_bell = b,
+                "notifications" => self.notifications = b,
+                "osd" => self.osd = b,
+                "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
+                "dock_open_apps" => self.dock_open_apps = b,
                 "dock" => self.dock = b,
                 "dock_apps" => self.dock_apps = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "dock_icon" => self.dock_icon = v.parse::<f32>().unwrap_or(44.0).clamp(24.0, 96.0),
@@ -190,7 +223,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\npanel={}\npanel_edge={}\npanel_floating={}\nclock_format={}\nshow_workspaces={}\nshow_volume={}\nshow_network={}\nshow_battery={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\npanel={}\npanel_edge={}\npanel_floating={}\nclock_format={}\nshow_workspaces={}\nshow_volume={}\nshow_network={}\nshow_battery={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nshow_window_title={}\nshow_media={}\nshow_brightness={}\nshow_bell={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -215,6 +248,14 @@ impl Settings {
             self.widget_clock,
             self.widget_system,
             if self.widget_side == Side::Right { "right" } else { "left" },
+            self.show_window_title,
+            self.show_media,
+            self.show_brightness,
+            self.show_bell,
+            self.notifications,
+            self.osd,
+            self.night_kelvin,
+            self.dock_open_apps,
         )
     }
 

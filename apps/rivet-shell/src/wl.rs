@@ -28,11 +28,14 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_shm, registry_handlers};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
-use wayland_client::{Connection, QueueHandle};
+use wayland_client::{Connection, Dispatch, QueueHandle};
+use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1;
+use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
 
 use crate::config::{Edge, Settings};
 use crate::sys::{self, Compositor};
-use crate::ui::{self, Act, Kit, Model, Popup};
+use crate::notes::{self, NoteMsg, Notes, Reason};
+use crate::ui::{self, Act, Extra, Kit, Model, OsdKind, Popup, PopupKind};
 
 /// Messages from other threads (status, IPC, wallpaper loading, matugen).
 pub enum Msg {
@@ -40,6 +43,8 @@ pub enum Msg {
     Ipc(String),
     Wall { path: PathBuf, size: (u32, u32), pixels: Option<Vec<u8>> },
     Matugen(Result<(), String>),
+    Note(NoteMsg),
+    Apps(Vec<rivet_xdg::launch::DesktopApp>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +53,10 @@ enum Kind {
     Panel,
     Dock,
     Popup,
+    /// Notification cards in the corner.
+    Cards,
+    /// Volume or brightness as it changes.
+    Osd,
 }
 
 struct Surf {
@@ -112,6 +121,21 @@ pub struct Shell {
     last_minute: u32,
     bg_key: (u32, u64, Option<(u32, bool)>),
     prev_status: sys::Status,
+    /// The dock's items, to notice when it must change size.
+    dock_key: (usize, bool),
+    // ---- notifications, the on-screen display, night light, keep awake
+    notes: Notes,
+    note_server: Option<notes::Server>,
+    dnd: bool,
+    osd: Option<(OsdKind, u32, bool)>,
+    osd_until: Option<Instant>,
+    night: sys::NightLight,
+    night_ok: bool,
+    inhibit_mgr: Option<ZwpIdleInhibitManagerV1>,
+    inhibitor: Option<ZwpIdleInhibitorV1>,
+    user: String,
+    /// The last popup's screen state (fonts, icons already made), so the next opens at once.
+    spare: Option<(egui::Context, Kit, soft::Textures, Instant)>,
     pub exit: bool,
 }
 
@@ -135,6 +159,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     let layer_shell = LayerShell::bind(&globals, &qh).map_err(|_| "this compositor doesn't offer the layer-shell protocol (GNOME doesn't; niri, Hyprland, Sway, river, labwc, Wayfire and COSMIC do)".to_string())?;
     let shm = Shm::bind(&globals, &qh).map_err(|_| "the compositor has no shared memory (wl_shm)")?;
     let comp = Compositor::detect();
+    let inhibit_mgr = globals.bind::<ZwpIdleInhibitManagerV1, _, _>(&qh, 1..=1, ()).ok();
     let wake_tx = tx.clone();
     let live = sys::start(comp, move || {
         let _ = wake_tx.send(Msg::Wake);
@@ -167,8 +192,21 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         last_minute: 99,
         bg_key: (0, 0, None),
         prev_status: sys::Status::default(),
+        dock_key: (0, false),
+        notes: Notes::default(),
+        note_server: None,
+        dnd: false,
+        osd: None,
+        osd_until: None,
+        night: sys::NightLight::new(),
+        night_ok: sys::NightLight::available(),
+        inhibit_mgr,
+        inhibitor: None,
+        user: sys::user_name(),
+        spare: None,
         exit: false,
     };
+    shell.set_notifications();
     let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle: LoopHandle<Shell> = event_loop.handle();
     WaylandSource::new(conn, queue).insert(handle.clone()).map_err(|e| e.to_string())?;
@@ -209,13 +247,15 @@ impl Shell {
         let layer = match kind {
             Kind::Background => Layer::Background,
             Kind::Panel | Kind::Dock => Layer::Top,
-            Kind::Popup => Layer::Overlay,
+            Kind::Popup | Kind::Cards | Kind::Osd => Layer::Overlay,
         };
         let ns = match kind {
             Kind::Background => "rivet-shell-wallpaper",
             Kind::Panel => "rivet-shell-panel",
             Kind::Dock => "rivet-shell-dock",
             Kind::Popup => "rivet-shell-popup",
+            Kind::Cards => "rivet-shell-notifications",
+            Kind::Osd => "rivet-shell-osd",
         };
         let layer = self.layer_shell.create_layer_surface(&self.qh, surface, layer, Some(ns), output);
         let name = output.and_then(|o| self.output_state.info(o)).and_then(|i| i.name).unwrap_or_default();
@@ -233,8 +273,24 @@ impl Shell {
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Dock => {
-                shape_dock(&layer, s, &self.apps);
+                shape_dock(&layer, s, &self.apps, &self.prev_status.running);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+            }
+            Kind::Cards => {
+                shape_cards(&layer, s, &self.notes.on_screen());
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+            }
+            Kind::Osd => {
+                layer.set_anchor(Anchor::BOTTOM);
+                layer.set_size(crate::cc::OSD_W as u32, crate::cc::OSD_H as u32);
+                // Clear of the panel and the dock (a zone of 0 keeps out of others' room).
+                layer.set_exclusive_zone(0);
+                layer.set_margin(0, 0, 24, 0);
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
+                // Clicks go through it.
+                if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
+                    layer.wl_surface().set_input_region(Some(region.wl_region()));
+                }
             }
             Kind::Popup => {
                 layer.set_anchor(Anchor::all());
@@ -247,6 +303,12 @@ impl Shell {
         layer.wl_surface().set_buffer_scale(scale);
         layer.commit();
         let pool = SlotPool::new(256 * 256 * 4, &self.shm).expect("shared memory for a surface");
+        // A popup takes the last one's fonts and icons (making the launcher's icons again is
+        // what made it slow to open).
+        let (ctx, kit, tex, start) = match self.spare.take().filter(|_| kind == Kind::Popup) {
+            Some(parts) => parts,
+            None => (egui::Context::default(), Kit::new(true), soft::Textures::default(), Instant::now()),
+        };
         Surf {
             kind,
             layer,
@@ -258,14 +320,103 @@ impl Shell {
             dirty: true,
             waiting_frame: false,
             repaint_at: None,
-            ctx: egui::Context::default(),
-            kit: Kit::new(true),
-            tex: soft::Textures::default(),
+            ctx,
+            kit,
+            tex,
             pool,
             events: Vec::new(),
             modifiers: egui::Modifiers::NONE,
-            start: Instant::now(),
+            start,
         }
+    }
+
+    /// Become the notification service, or stop being it, as the settings say.
+    fn set_notifications(&mut self) {
+        if !self.s.notifications {
+            self.note_server = None;
+            self.notes = Notes::default();
+            self.sync_cards();
+            return;
+        }
+        if self.note_server.is_some() {
+            return;
+        }
+        let tx = self.tx.clone();
+        match notes::Server::start(move |m| {
+            let _ = tx.send(Msg::Note(m));
+        }) {
+            Ok(s) => self.note_server = Some(s),
+            Err(e) => eprintln!("rivet-shell: notifications: {e}"),
+        }
+    }
+
+    /// The notification cards' surface: made, resized or taken away to fit the cards on screen.
+    fn sync_cards(&mut self) {
+        let on_screen = self.notes.on_screen();
+        if on_screen.is_empty() {
+            self.surfs.retain(|s| s.kind != Kind::Cards);
+            return;
+        }
+        let s = self.s.clone();
+        let mut have = false;
+        for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Cards) {
+            have = true;
+            shape_cards(&sf.layer, &s, &on_screen);
+            sf.layer.commit();
+            sf.dirty = true;
+        }
+        if !have {
+            let c = self.new_surf(Kind::Cards, None);
+            self.surfs.push(c);
+        }
+    }
+
+    /// Show the on-screen display for a moment.
+    fn show_osd(&mut self, kind: OsdKind, value: u32, muted: bool) {
+        if !self.s.osd {
+            return;
+        }
+        self.osd = Some((kind, value, muted));
+        self.osd_until = Some(Instant::now() + Duration::from_millis(1600));
+        if self.surfs.iter().any(|s| s.kind == Kind::Osd) {
+            self.redraw_kinds(&[Kind::Osd]);
+        } else {
+            let o = self.new_surf(Kind::Osd, None);
+            self.surfs.push(o);
+        }
+    }
+
+    /// Keep the screen awake: an idle inhibitor on the panel (or dock, or wallpaper) surface,
+    /// which the compositor honours while that surface shows.
+    fn set_awake(&mut self, on: bool) {
+        if let Some(i) = self.inhibitor.take() {
+            i.destroy();
+        }
+        if !on {
+            return;
+        }
+        let Some(mgr) = &self.inhibit_mgr else { return };
+        let host = [Kind::Panel, Kind::Dock, Kind::Background].iter().find_map(|k| self.surfs.iter().find(|s| s.kind == *k));
+        if let Some(h) = host {
+            self.inhibitor = Some(mgr.create_inhibitor(h.layer.wl_surface(), &self.qh, ()));
+        }
+    }
+
+    /// Settings changed by the shell itself (pins, dark style): saved, then taken in like the
+    /// Settings window's changes.
+    fn change_settings(&mut self, f: impl FnOnce(&mut Settings)) {
+        let mut new = self.s.clone();
+        f(&mut new);
+        new.save();
+        self.reload_settings(false);
+    }
+
+    /// The app list, read again on a thread.
+    fn reload_apps(&self) {
+        let tx = self.tx.clone();
+        std::thread::spawn(move || {
+            let _ = tx.send(Msg::Apps(load_apps()));
+        });
     }
 
     /// The panel and dock for a screen, as the settings ask.
@@ -291,6 +442,10 @@ impl Shell {
         } else if !on {
             self.surfs.retain(|s| s.kind != kind);
         }
+        // Keep awake rides on the panel's surface: onto the new one.
+        if self.inhibitor.is_some() {
+            self.set_awake(true);
+        }
     }
 
     /// Mark the surfaces of these kinds to be drawn again (and only those).
@@ -308,8 +463,12 @@ impl Shell {
         }
         self.close_popup();
         let output = self.output_state.outputs().find(|o| self.output_state.info(o).and_then(|i| i.name).is_some_and(|n| !p.output.is_empty() && n == p.output));
-        if matches!(p.kind, ui::PopupKind::Launcher { .. }) {
-            self.apps = load_apps();
+        if matches!(p.kind, PopupKind::Launcher { .. }) {
+            // Opens with the list it has; a fresh one (new installs) follows in a moment.
+            self.reload_apps();
+        }
+        if matches!(p.kind, PopupKind::Control { .. }) {
+            self.live.refresh(true);
         }
         self.popup = Some(p);
         let s = self.new_surf(Kind::Popup, output.as_ref());
@@ -318,7 +477,10 @@ impl Shell {
 
     fn close_popup(&mut self) {
         self.popup = None;
-        self.surfs.retain(|s| s.kind != Kind::Popup);
+        if let Some(i) = self.surfs.iter().position(|s| s.kind == Kind::Popup) {
+            let s = self.surfs.remove(i);
+            self.spare = Some((s.ctx, s.kit, s.tex, s.start));
+        }
     }
 
     fn index_of(&self, surface: &wl_surface::WlSurface) -> Option<usize> {
@@ -329,20 +491,72 @@ impl Shell {
 
     fn on_msg(&mut self, m: Msg) {
         match m {
-            Msg::Wake => {}
+            Msg::Wake => self.status_changed(),
+            Msg::Apps(apps) => {
+                let key = |l: &[rivet_xdg::launch::DesktopApp]| l.iter().map(|a| format!("{}\t{}\t{}", a.id, a.name, a.icon)).collect::<Vec<_>>();
+                if key(&apps) != key(&self.apps) {
+                    self.apps = apps;
+                    self.reshape_dock(true);
+                    self.redraw_kinds(&[Kind::Popup, Kind::Dock]);
+                }
+            }
+            Msg::Note(NoteMsg::New(n)) => {
+                // Do Not Disturb keeps them off the screen (all but the urgent), not out of the history.
+                let card = !self.dnd || n.urgency >= 2;
+                self.notes.add(n, card);
+                self.sync_cards();
+                self.redraw_kinds(&[Kind::Panel, Kind::Popup]);
+            }
+            Msg::Note(NoteMsg::Close(id)) => {
+                if self.notes.get(id).is_some() {
+                    self.notes.remove(id);
+                    if let Some(s) = &self.note_server {
+                        s.closed(id, Reason::Asked);
+                    }
+                    self.sync_cards();
+                    self.redraw_kinds(&[Kind::Panel, Kind::Popup]);
+                }
+            }
             Msg::Ipc(line) => {
                 let (cmd, arg) = line.trim().split_once(' ').map(|(a, b)| (a, b.trim())).unwrap_or((line.trim(), ""));
-                match cmd {
-                    "launcher" => self.open_popup(Popup::launcher("")),
-                    "settings" => open_settings(),
-                    "reload" => self.reload_settings(true),
-                    "wallpaper" if !arg.is_empty() => {
+                let right = f32::MAX;
+                match (cmd, arg) {
+                    ("launcher", _) => self.open_popup(Popup::launcher("")),
+                    ("control-center" | "control" | "notifications", _) => self.open_popup(Popup::at(PopupKind::Control { drag: None }, right, "")),
+                    ("calendar", _) => self.open_popup(Popup::at(PopupKind::Calendar { month: 0 }, f32::NAN, "")),
+                    ("power", _) => self.open_popup(Popup::at(PopupKind::Power { confirm: None }, right, "")),
+                    ("volume", "up" | "down") => self.act(Act::Volume(arg == "up")),
+                    ("volume", "mute") => self.act(Act::Mute),
+                    ("mic", "mute") => self.act(Act::MicMute),
+                    ("volume", n) if n.parse::<u32>().is_ok() => self.act(Act::SetVolume(n.parse().unwrap_or(50))),
+                    ("brightness", "up" | "down") => self.act(Act::Brightness(arg == "up")),
+                    ("brightness", n) if n.parse::<u32>().is_ok() => self.act(Act::SetBrightness(n.parse().unwrap_or(50))),
+                    ("media", "play-pause" | "next" | "previous" | "play" | "pause" | "stop") => {
+                        let c: &'static str = match arg {
+                            "next" => "next",
+                            "previous" => "previous",
+                            "play" => "play",
+                            "pause" => "pause",
+                            "stop" => "stop",
+                            _ => "play-pause",
+                        };
+                        self.act(Act::Media(c));
+                    }
+                    ("dnd", _) => self.act(Act::Dnd(!self.dnd)),
+                    ("night-light", _) => {
+                        let on = self.night.on();
+                        self.act(Act::NightLight(!on));
+                    }
+                    ("keep-awake", _) => self.act(Act::KeepAwake(self.inhibitor.is_none())),
+                    ("settings", _) => open_settings(),
+                    ("reload", _) => self.reload_settings(true),
+                    ("wallpaper", _) if !arg.is_empty() => {
                         self.s.wallpaper = arg.to_string();
                         self.s.save();
                         self.s_mtime = crate::config::mtime();
                         self.wallpaper_changed(true);
                     }
-                    "quit" => self.exit = true,
+                    ("quit", _) => self.exit = true,
                     _ => eprintln!("rivet-shell: unknown command {line:?}"),
                 }
             }
@@ -377,8 +591,40 @@ impl Shell {
             self.recolor_until = Some(now + Duration::from_secs(3));
         }
         let recolor = self.recolor_until.is_some_and(|t| now < t);
+        self.status_changed();
+        let minute = chrono::Timelike::minute(&chrono::Local::now());
+        let new_minute = minute != self.last_minute;
+        self.last_minute = minute;
+        for s in &mut self.surfs {
+            // The clock, and the cards' "5 min ago".
+            let clocked = matches!(s.kind, Kind::Panel | Kind::Cards) || (s.kind == Kind::Background && self.s.widget_clock) || (s.kind == Kind::Popup && self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. })));
+            if recolor || (new_minute && clocked) || s.repaint_at.is_some_and(|t| now >= t) {
+                s.dirty = true;
+            }
+        }
+        // Cards whose time is up, and the on-screen display.
+        let gone = self.notes.expire(now);
+        if !gone.is_empty() {
+            if let Some(srv) = &self.note_server {
+                for id in &gone {
+                    srv.closed(*id, Reason::Expired);
+                }
+            }
+            self.sync_cards();
+        }
+        if self.osd_until.is_some_and(|t| now >= t) {
+            self.osd_until = None;
+            self.osd = None;
+            self.surfs.retain(|s| s.kind != Kind::Osd);
+        }
+    }
+
+    /// The status thread read something new: draw again only the surfaces that show it.
+    fn status_changed(&mut self) {
         let generation = self.live.generation();
-        let status_changed = generation != self.last_gen;
+        if generation == self.last_gen {
+            return;
+        }
         self.last_gen = generation;
         // The wallpaper's widgets only change with what they show, in the units they show it
         // (whole percent, tenths of a gigabyte): not every time the processor reading wiggles.
@@ -386,24 +632,57 @@ impl Shell {
         let bg_key = (st.cpu.round() as u32, st.mem.0 / (100 << 20), st.battery);
         let bg_changed = bg_key != self.bg_key;
         self.bg_key = bg_key;
-        // Likewise the panel (workspaces, volume, network, battery) and the dock (open apps).
+        // Likewise the panel and the dock (open apps).
         let prev = std::mem::replace(&mut self.prev_status, st.clone());
-        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery;
+        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness;
         let dock_changed = st.running != prev.running;
-        let minute = chrono::Timelike::minute(&chrono::Local::now());
-        let new_minute = minute != self.last_minute;
-        self.last_minute = minute;
+        let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. }));
+        let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.profile != prev.profile;
         for s in &mut self.surfs {
-            let clocked = matches!(s.kind, Kind::Panel) || (s.kind == Kind::Background && self.s.widget_clock);
-            let shows_status = match s.kind {
+            let shows = match s.kind {
                 Kind::Panel => panel_changed,
                 Kind::Dock => dock_changed,
                 Kind::Background => self.s.widget_system && bg_changed,
-                Kind::Popup => false,
+                Kind::Popup => (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed,
+                Kind::Cards | Kind::Osd => false,
             };
-            if recolor || (new_minute && clocked) || (status_changed && shows_status) || s.repaint_at.is_some_and(|t| now >= t) {
-                s.dirty = true;
+            s.dirty |= shows;
+        }
+        if dock_changed {
+            self.reshape_dock(false);
+        }
+        // Volume and brightness changes show in the middle of the screen's bottom (not while
+        // the control center's sliders are moving them, and not at the start).
+        if !control_open && prev != sys::Status::default() {
+            if let (Some(a), Some(b)) = (prev.volume, st.volume)
+                && a != b
+            {
+                self.show_osd(OsdKind::Volume, b.0, b.1);
+            } else if let (Some(a), Some(b)) = (prev.brightness, st.brightness)
+                && a != b
+            {
+                self.show_osd(OsdKind::Brightness, b, false);
+            } else if let (Some(a), Some(b)) = (prev.mic, st.mic)
+                && a.1 != b.1
+            {
+                self.show_osd(OsdKind::Mic, b.0, b.1);
             }
+        }
+    }
+
+    /// The dock's size follows its items (open apps come and go): reshaped only when it must.
+    fn reshape_dock(&mut self, force: bool) {
+        let items = ui::dock_items(&self.s, &self.apps, &self.prev_status.running);
+        let key = (items.len(), items.iter().any(|i| i.1) && items.iter().any(|i| !i.1));
+        if key == self.dock_key && !force {
+            return;
+        }
+        self.dock_key = key;
+        let (s, apps, running) = (self.s.clone(), self.apps.clone(), self.prev_status.running.clone());
+        for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Dock) {
+            shape_dock(&sf.layer, &s, &apps, &running);
+            sf.layer.commit();
+            sf.dirty = true;
         }
     }
 
@@ -421,8 +700,27 @@ impl Shell {
         let look = old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size;
         let wall_changed = old.wallpaper != s.wallpaper || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type;
         let panel_shape = old.panel_edge != s.panel_edge || old.panel_floating != s.panel_floating;
-        let panel_content = old.clock_format != s.clock_format || old.show_workspaces != s.show_workspaces || old.show_volume != s.show_volume || old.show_network != s.show_network || old.show_battery != s.show_battery;
-        let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve;
+        let panel_content = old.clock_format != s.clock_format
+            || old.show_workspaces != s.show_workspaces
+            || old.show_volume != s.show_volume
+            || old.show_network != s.show_network
+            || old.show_battery != s.show_battery
+            || old.show_window_title != s.show_window_title
+            || old.show_media != s.show_media
+            || old.show_brightness != s.show_brightness
+            || old.show_bell != s.show_bell
+            || old.notifications != s.notifications;
+        let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps;
+        if old.notifications != s.notifications {
+            self.set_notifications();
+        }
+        if old.night_kelvin != s.night_kelvin && self.night.on() {
+            self.night.set(true, s.night_kelvin);
+        }
+        if old.color_mode != s.color_mode {
+            // The control center's Dark Style tile.
+            self.redraw_kinds(&[Kind::Popup]);
+        }
         let widgets = old.widget_clock != s.widget_clock || old.widget_system != s.widget_system || old.widget_side != s.widget_side;
         if old.dock_apps != s.dock_apps && s.dock_apps.iter().any(|id| ui::find_app(&self.apps, id).is_none()) {
             // A newly pinned app this list doesn't know yet.
@@ -447,12 +745,7 @@ impl Shell {
         if old.dock != s.dock {
             self.set_bars(Kind::Dock, s.dock);
         } else if dock_shape {
-            let apps = self.apps.clone();
-            for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Dock) {
-                shape_dock(&sf.layer, &s, &apps);
-                sf.layer.commit();
-                sf.dirty = true;
-            }
+            self.reshape_dock(true);
         } else if old.dock_running != s.dock_running {
             self.redraw_kinds(&[Kind::Dock]);
         }
@@ -534,6 +827,17 @@ impl Shell {
         let scale = self.surfs[i].scale;
         let (pw, ph) = self.surfs[i].physical();
         let wall_idx = if kind == Kind::Background { self.wall_for((pw, ph)) } else { None };
+        let night = self.night_ok.then(|| self.night.on());
+        let extra = Extra {
+            notes: if matches!(kind, Kind::Panel | Kind::Popup) { self.notes.list.clone() } else { Vec::new() },
+            cards: if kind == Kind::Cards { self.notes.on_screen() } else { Vec::new() },
+            notifying: self.note_server.is_some(),
+            dnd: self.dnd,
+            night,
+            awake: self.inhibit_mgr.as_ref().map(|_| self.inhibitor.is_some()),
+            osd: self.osd,
+            user: self.user.clone(),
+        };
         let Shell { surfs, s: settings, apps, popup, comp, walls, .. } = self;
         let wall: Option<&[u8]> = wall_idx.and_then(|i| walls.get(i)).map(|w| w.pixels.as_slice());
         let surf = &mut surfs[i];
@@ -555,7 +859,7 @@ impl Shell {
         let out = surf.ctx.run_ui(raw, |ui| {
             surf.kit.begin(ui.ctx(), settings);
             plain = ui.visuals().extreme_bg_color;
-            let mut m = Model { s: settings, status: &status, apps, compositor: *comp, output: &output_name, acts: &mut acts };
+            let mut m = Model { s: settings, status: &status, extra: &extra, apps, compositor: *comp, output: &output_name, acts: &mut acts };
             match kind {
                 Kind::Background => ui::widgets(ui, &mut m, &mut surf.kit),
                 Kind::Panel => ui::panel(ui, &mut m, &mut surf.kit),
@@ -565,6 +869,8 @@ impl Shell {
                         ui::popup(ui, p, &mut m, &mut surf.kit);
                     }
                 }
+                Kind::Cards => crate::cc::cards(ui, &mut m, &mut surf.kit),
+                Kind::Osd => crate::cc::osd(ui, &mut m, &mut surf.kit),
             }
         });
         // Take in the frame's texture changes (fonts, icons) and mark them handled: egui
@@ -620,16 +926,146 @@ impl Shell {
             Act::Workspace(k) => sys::focus_workspace(self.comp, &k),
             Act::Open(p) => self.open_popup(p),
             Act::Close => self.close_popup(),
-            Act::Volume(up) => sys::change_volume(up),
-            Act::Mute => sys::toggle_mute(),
+            Act::Volume(up) => {
+                sys::change_volume(up);
+                self.live.refresh(false);
+            }
+            Act::SetVolume(v) => {
+                sys::set_volume(v);
+                self.live.refresh(false);
+            }
+            Act::Mute => {
+                sys::toggle_mute();
+                self.live.refresh(false);
+            }
+            Act::MicMute => {
+                sys::toggle_mic();
+                self.live.refresh(false);
+            }
+            Act::Brightness(up) => {
+                sys::change_brightness(up);
+                self.live.refresh(false);
+            }
+            Act::SetBrightness(v) => {
+                sys::set_brightness(v);
+                self.live.refresh(false);
+            }
+            Act::Media(cmd) => {
+                sys::media(cmd);
+                self.live.refresh(false);
+            }
+            Act::Wifi(on) => {
+                sys::set_wifi(on);
+                self.live.refresh(true);
+            }
+            Act::Bluetooth(on) => {
+                sys::set_bluetooth(on);
+                self.live.refresh(true);
+            }
+            Act::NextProfile => {
+                if let Some(p) = self.prev_status.profile.clone() {
+                    sys::next_profile(&p);
+                }
+                self.live.refresh(true);
+            }
+            Act::NightLight(on) => self.night.set(on, self.s.night_kelvin),
+            Act::KeepAwake(on) => self.set_awake(on),
+            Act::Dnd(on) => {
+                self.dnd = on;
+                if on {
+                    // Off the screen now, all but the urgent.
+                    let quiet: Vec<u32> = self.notes.on_screen().iter().filter(|n| n.urgency < 2).map(|n| n.id).collect();
+                    for id in quiet {
+                        self.notes.uncard(id);
+                    }
+                    self.sync_cards();
+                }
+            }
+            Act::DarkStyle(dark) => {
+                let mode = if dark { rivet_look::theme::Mode::Dark } else { rivet_look::theme::Mode::Light };
+                self.change_settings(|s| {
+                    s.color_mode = mode;
+                    // Without matugen making the colours, the style itself follows.
+                    if !(s.matugen && !s.wallpaper.is_empty()) || s.theme != rivet_look::theme::Mode::System {
+                        s.theme = mode;
+                    }
+                });
+            }
+            Act::Pin(id) => {
+                let apps = self.apps.clone();
+                self.change_settings(|s| {
+                    if !s.dock_apps.iter().any(|d| ui::find_app(&apps, d).is_some_and(|a| a.id.trim_end_matches(".desktop") == id)) {
+                        s.dock_apps.push(id);
+                    }
+                });
+            }
+            Act::Unpin(id) => {
+                let apps = self.apps.clone();
+                self.change_settings(|s| s.dock_apps.retain(|d| !(d == &id || ui::find_app(&apps, d).is_some_and(|a| a.id.trim_end_matches(".desktop") == id))));
+            }
+            Act::MovePin(id, by) => {
+                let apps = self.apps.clone();
+                self.change_settings(|s| {
+                    if let Some(i) = s.dock_apps.iter().position(|d| d == &id || ui::find_app(&apps, d).is_some_and(|a| a.id.trim_end_matches(".desktop") == id)) {
+                        let j = (i as i32 + by).clamp(0, s.dock_apps.len() as i32 - 1) as usize;
+                        s.dock_apps.swap(i, j);
+                    }
+                });
+            }
+            Act::NoteClick(id) => {
+                let default = self.notes.get(id).is_some_and(|n| n.actions.iter().any(|(k, _)| k == "default"));
+                if default {
+                    if let Some(s) = &self.note_server {
+                        s.invoke(id, "default");
+                        s.closed(id, Reason::Dismissed);
+                    }
+                    self.notes.remove(id);
+                } else {
+                    self.notes.uncard(id);
+                }
+                self.sync_cards();
+            }
+            Act::NoteAction(id, key) => {
+                if let Some(s) = &self.note_server {
+                    s.invoke(id, &key);
+                    s.closed(id, Reason::Dismissed);
+                }
+                self.notes.remove(id);
+                self.sync_cards();
+            }
+            Act::NoteHide(id) => {
+                self.notes.uncard(id);
+                self.sync_cards();
+            }
+            Act::NoteRemove(id) => {
+                if let Some(s) = &self.note_server {
+                    s.closed(id, Reason::Dismissed);
+                }
+                self.notes.remove(id);
+                self.sync_cards();
+            }
+            Act::ClearNotes => {
+                if let Some(s) = &self.note_server {
+                    for n in &self.notes.list {
+                        s.closed(n.id, Reason::Dismissed);
+                    }
+                }
+                self.notes = Notes::default();
+                self.sync_cards();
+            }
+            Act::Copy(text) => {
+                sys::copy(&text);
+                self.close_popup();
+            }
             Act::Power(p) => {
                 self.close_popup();
                 sys::power(self.comp, p);
             }
             Act::Settings => open_settings(),
         }
-        // The surface clicked draws itself again from the input; a popup that opens draws when
-        // it's configured; status changes (volume, workspace) redraw the panel when they arrive.
+        // What the shell keeps (notifications, toggles) shows in the panel and the popup; the
+        // rest follows the status when it arrives.
+        self.redraw_kinds(&[Kind::Panel, Kind::Popup]);
     }
 }
 
@@ -850,10 +1286,28 @@ fn shape_panel(layer: &LayerSurface, s: &Settings) {
 }
 
 /// The dock's size for its pinned apps, at the bottom, keeping windows clear of it when asked.
-fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::DesktopApp]) {
-    let n = s.dock_apps.iter().filter(|id| ui::find_app(apps, id).is_some()).count();
-    let (size, room) = ui::dock_size(s, n);
+fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::DesktopApp], running: &[String]) {
+    let items = ui::dock_items(s, apps, running);
+    let (size, room) = ui::dock_size(s, &items);
     layer.set_anchor(Anchor::BOTTOM);
     layer.set_size(size.x as u32, size.y as u32);
     layer.set_exclusive_zone(if s.dock_reserve { room as i32 } else { 0 });
+}
+
+/// The notification cards: in the corner on the panel's side, clear of the panel.
+fn shape_cards(layer: &LayerSurface, s: &Settings, cards: &[crate::notes::Note]) {
+    let edge = if s.panel_edge == Edge::Bottom { Anchor::BOTTOM } else { Anchor::TOP };
+    layer.set_anchor(edge | Anchor::RIGHT);
+    layer.set_size(crate::cc::CARDS_W as u32, crate::cc::cards_height(cards).ceil() as u32);
+    layer.set_exclusive_zone(0);
+    layer.set_margin(2, 4, 2, 0);
+}
+
+// The idle-inhibit protocol has no events the shell needs.
+impl Dispatch<ZwpIdleInhibitManagerV1, ()> for Shell {
+    fn event(_: &mut Self, _: &ZwpIdleInhibitManagerV1, _: <ZwpIdleInhibitManagerV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
+impl Dispatch<ZwpIdleInhibitorV1, ()> for Shell {
+    fn event(_: &mut Self, _: &ZwpIdleInhibitorV1, _: <ZwpIdleInhibitorV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
 }

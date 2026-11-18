@@ -1,0 +1,187 @@
+//! The shell's small drawn symbols (so they look alike on every icon theme).
+
+use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Vec2};
+
+fn arc(p: &egui::Painter, c: Pos2, r: f32, from: f32, to: f32, s: Stroke) {
+    let n = 14;
+    let pts: Vec<Pos2> = (0..=n)
+        .map(|i| {
+            let a = from + (to - from) * i as f32 / n as f32;
+            c + Vec2::new(a.cos(), a.sin()) * r
+        })
+        .collect();
+    p.add(Shape::line(pts, s));
+}
+
+pub fn grid(p: &egui::Painter, c: Pos2, col: Color32) {
+    for i in -1..=1 {
+        for j in -1..=1 {
+            p.circle_filled(c + Vec2::new(i as f32 * 5.0, j as f32 * 5.0), 1.7, col);
+        }
+    }
+}
+
+pub fn power(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.7, col);
+    use std::f32::consts::PI;
+    arc(p, c + Vec2::new(0.0, 1.0), 6.5, -PI / 2.0 + 0.7, 3.0 * PI / 2.0 - 0.7, s);
+    p.line_segment([c + Vec2::new(0.0, -7.0), c + Vec2::new(0.0, 0.5)], s);
+}
+
+pub fn gear(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.7, col);
+    p.circle_stroke(c, 5.2, s);
+    p.circle_filled(c, 1.8, col);
+    for k in 0..8 {
+        let a = k as f32 * std::f32::consts::FRAC_PI_4;
+        let d = Vec2::new(a.cos(), a.sin());
+        p.line_segment([c + d * 5.2, c + d * 7.6], Stroke::new(2.2, col));
+    }
+}
+
+/// Three sliders: quick settings.
+pub fn sliders(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.6, col);
+    for (dy, knob) in [(-5.0, 3.0), (0.0, -3.5), (5.0, 1.0)] {
+        p.line_segment([c + Vec2::new(-7.5, dy), c + Vec2::new(7.5, dy)], s);
+        p.circle_filled(c + Vec2::new(knob, dy), 2.4, col);
+    }
+}
+
+pub fn bell(p: &egui::Painter, c: Pos2, col: Color32, off: bool) {
+    let s = Stroke::new(1.6, col);
+    use std::f32::consts::PI;
+    arc(p, c + Vec2::new(0.0, -1.5), 4.5, PI, 2.0 * PI, s);
+    p.line_segment([c + Vec2::new(-4.5, -1.5), c + Vec2::new(-5.5, 4.0)], s);
+    p.line_segment([c + Vec2::new(4.5, -1.5), c + Vec2::new(5.5, 4.0)], s);
+    p.line_segment([c + Vec2::new(-7.0, 4.0), c + Vec2::new(7.0, 4.0)], s);
+    p.circle_filled(c + Vec2::new(0.0, 6.5), 1.5, col);
+    p.circle_filled(c + Vec2::new(0.0, -7.0), 1.1, col);
+    if off {
+        p.line_segment([c + Vec2::new(-7.0, -7.0), c + Vec2::new(7.0, 7.0)], Stroke::new(1.8, col));
+    }
+}
+
+pub fn sun(p: &egui::Painter, c: Pos2, col: Color32) {
+    p.circle_stroke(c, 3.6, Stroke::new(1.6, col));
+    for k in 0..8 {
+        let a = k as f32 * std::f32::consts::FRAC_PI_4;
+        let d = Vec2::new(a.cos(), a.sin());
+        p.line_segment([c + d * 5.8, c + d * 7.8], Stroke::new(1.5, col));
+    }
+}
+
+pub fn moon(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
+    use std::f32::consts::PI;
+    let s = Stroke::new(1.7, col);
+    arc(p, c, 7.0, PI * 0.15, PI * 1.85, s);
+    arc(p, c + Vec2::new(3.6, -2.4), 5.2, PI * 0.42, PI * 1.25, s);
+}
+
+pub fn bluetooth(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
+    let pts = vec![c + Vec2::new(-4.5, -4.0), c + Vec2::new(4.0, 3.5), c + Vec2::new(0.0, 7.5), c + Vec2::new(0.0, -7.5), c + Vec2::new(4.0, -3.5), c + Vec2::new(-4.5, 4.0)];
+    p.add(Shape::line(pts, Stroke::new(1.6, col)));
+}
+
+pub fn cup(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
+    let s = Stroke::new(1.6, col);
+    let body = vec![c + Vec2::new(-6.0, -2.0), c + Vec2::new(-5.0, 5.5), c + Vec2::new(3.0, 5.5), c + Vec2::new(4.0, -2.0), c + Vec2::new(-6.0, -2.0)];
+    p.add(Shape::line(body, s));
+    use std::f32::consts::PI;
+    arc(p, c + Vec2::new(4.5, 1.2), 2.6, -PI / 2.0, PI / 2.0, s);
+    for dx in [-3.0, 1.0] {
+        p.line_segment([c + Vec2::new(dx, -7.5), c + Vec2::new(dx, -4.5)], Stroke::new(1.4, col));
+    }
+}
+
+pub fn bolt(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
+    let pts = vec![c + Vec2::new(1.5, -8.0), c + Vec2::new(-5.0, 1.0), c + Vec2::new(-0.5, 1.0), c + Vec2::new(-1.5, 8.0), c + Vec2::new(5.0, -1.0), c + Vec2::new(0.5, -1.0), c + Vec2::new(1.5, -8.0)];
+    p.add(Shape::line(pts, Stroke::new(1.5, col)));
+}
+
+pub fn mic(p: &egui::Painter, c: Pos2, col: Color32, muted: bool) {
+    let s = Stroke::new(1.6, col);
+    p.rect_stroke(Rect::from_center_size(c + Vec2::new(0.0, -2.5), Vec2::new(5.5, 10.0)), 2.75, s, egui::StrokeKind::Middle);
+    use std::f32::consts::PI;
+    arc(p, c + Vec2::new(0.0, -1.0), 6.0, 0.0, PI, s);
+    p.line_segment([c + Vec2::new(0.0, 5.0), c + Vec2::new(0.0, 8.0)], s);
+    if muted {
+        p.line_segment([c + Vec2::new(-7.0, -7.0), c + Vec2::new(7.0, 7.0)], Stroke::new(1.8, col));
+    }
+}
+
+pub fn contrast(p: &egui::Painter, c: Pos2, col: Color32) {
+    use std::f32::consts::PI;
+    p.circle_stroke(c, 7.0, Stroke::new(1.6, col));
+    let pts: Vec<Pos2> = (0..=12)
+        .map(|i| {
+            let a = -PI / 2.0 + PI * i as f32 / 12.0;
+            c + Vec2::new(a.cos(), a.sin()) * 7.0
+        })
+        .collect();
+    p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
+}
+
+/// A play triangle, or pause bars.
+pub fn play(p: &egui::Painter, c: Pos2, play: bool, col: Color32) {
+    if play {
+        p.add(Shape::convex_polygon(vec![c + Vec2::new(-3.5, -5.5), c + Vec2::new(5.5, 0.0), c + Vec2::new(-3.5, 5.5)], col, Stroke::NONE));
+    } else {
+        for dx in [-2.8, 2.8] {
+            p.rect_filled(Rect::from_center_size(c + Vec2::new(dx, 0.0), Vec2::new(2.8, 10.0)), 1.0, col);
+        }
+    }
+}
+
+pub fn skip(p: &egui::Painter, c: Pos2, forward: bool, col: Color32) {
+    let d = if forward { 1.0 } else { -1.0 };
+    p.add(Shape::convex_polygon(vec![c + Vec2::new(-4.0 * d, -5.0), c + Vec2::new(3.0 * d, 0.0), c + Vec2::new(-4.0 * d, 5.0)], col, Stroke::NONE));
+    p.rect_filled(Rect::from_center_size(c + Vec2::new(4.5 * d, 0.0), Vec2::new(2.0, 10.0)), 0.5, col);
+}
+
+pub fn x(p: &egui::Painter, c: Pos2, r: f32, col: Color32) {
+    let s = Stroke::new(1.5, col);
+    p.line_segment([c + Vec2::new(-r, -r), c + Vec2::new(r, r)], s);
+    p.line_segment([c + Vec2::new(r, -r), c + Vec2::new(-r, r)], s);
+}
+
+pub fn battery(p: &egui::Painter, c: Pos2, pct: u32, charging: bool, col: Color32, accent: Color32) {
+    let body = Rect::from_center_size(c, Vec2::new(18.0, 10.0));
+    p.rect_stroke(body, 2.0, Stroke::new(1.4, col), egui::StrokeKind::Inside);
+    p.rect_filled(Rect::from_min_size(Pos2::new(body.right() + 0.5, c.y - 2.5), Vec2::new(2.0, 5.0)), 1.0, col);
+    let inner = body.shrink(2.5);
+    let w = inner.width() * (pct as f32 / 100.0).clamp(0.05, 1.0);
+    p.rect_filled(Rect::from_min_size(inner.min, Vec2::new(w, inner.height())), 1.0, if charging { accent } else { col });
+}
+
+pub fn wifi(p: &egui::Painter, c: Pos2, col: Color32) {
+    use std::f32::consts::PI;
+    let base = c + Vec2::new(0.0, 5.0);
+    for r in [5.0, 9.0] {
+        arc(p, base, r, -PI * 0.78, -PI * 0.22, Stroke::new(1.7, col));
+    }
+    p.circle_filled(base + Vec2::new(0.0, -1.0), 1.7, col);
+}
+
+pub fn wired(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.6, col);
+    p.rect_stroke(Rect::from_center_size(c + Vec2::new(0.0, 2.0), Vec2::new(14.0, 8.0)), 1.5, s, egui::StrokeKind::Inside);
+    p.line_segment([c + Vec2::new(0.0, -2.0), c + Vec2::new(0.0, -7.0)], s);
+    for dx in [-3.5, 0.0, 3.5] {
+        p.line_segment([c + Vec2::new(dx, 1.0), c + Vec2::new(dx, 3.5)], Stroke::new(1.2, col));
+    }
+}
+
+pub fn speaker(p: &egui::Painter, c: Pos2, muted: bool, col: Color32) {
+    let pts = vec![c + Vec2::new(-7.0, -2.5), c + Vec2::new(-4.0, -2.5), c + Vec2::new(0.0, -6.0), c + Vec2::new(0.0, 6.0), c + Vec2::new(-4.0, 2.5), c + Vec2::new(-7.0, 2.5)];
+    p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
+    let s = Stroke::new(1.5, col);
+    if muted {
+        p.line_segment([c + Vec2::new(3.0, -3.0), c + Vec2::new(8.0, 3.0)], s);
+        p.line_segment([c + Vec2::new(8.0, -3.0), c + Vec2::new(3.0, 3.0)], s);
+    } else {
+        use std::f32::consts::PI;
+        arc(p, c, 4.0, -PI / 3.5, PI / 3.5, s);
+        arc(p, c, 7.5, -PI / 3.5, PI / 3.5, s);
+    }
+}
