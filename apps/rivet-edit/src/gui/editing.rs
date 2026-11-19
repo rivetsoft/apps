@@ -88,8 +88,13 @@ impl std::hash::Hash for Query {
 }
 
 /// The text box's selection as a [`Sel`].
-fn primary(ctx: &egui::Context, id: egui::Id) -> Sel {
+pub(crate) fn primary(ctx: &egui::Context, id: egui::Id) -> Sel {
     egui::TextEdit::load_state(ctx, id).and_then(|s| s.cursor.char_range()).map(|r| Sel::new(r.secondary.index.0, r.primary.index.0)).unwrap_or_default()
+}
+
+/// Every cursor in a tab, the main one last.
+pub(crate) fn sels_now(ctx: &egui::Context, id: egui::Id, t: &Tab) -> Vec<Sel> {
+    if t.sels.len() >= 2 { t.sels.clone() } else { vec![primary(ctx, id)] }
 }
 
 /// Hand a selection to the text box (and the keyboard to it).
@@ -221,6 +226,7 @@ impl EditApp {
             .find(|(s, _)| i.consume_shortcut(s))
             .map(|(_, o)| o)
         });
+        let is_command = op.is_some();
         let multi = t.sels.len() >= 2;
         let mut sels = if multi { t.sels.clone() } else { vec![primary(ctx, id)] };
         let mut chars: Vec<char> = t.text.chars().collect();
@@ -324,11 +330,52 @@ impl EditApp {
         }
         ops::normalize(&mut sels);
         if changed {
+            if is_command {
+                t.hist.command();
+            }
             t.text = chars.into_iter().collect();
         }
         let main = *sels.last().unwrap_or(&Sel::default());
         t.sels = if sels.len() >= 2 { sels } else { Vec::new() };
         set_primary(ctx, id, main);
+        self.reveal = true;
+    }
+
+    /// Ctrl+Z, Shift+Ctrl+Z and Ctrl+Y in the editor (when `keys`), and Undo and Redo from
+    /// the menus. Anything changed since the last frame is recorded first.
+    pub(crate) fn undo_keys(&mut self, ctx: &egui::Context, id: egui::Id, keys: bool) {
+        let Some(t) = self.tabs.get_mut(self.active) else { return };
+        let now = sels_now(ctx, id, t);
+        t.hist.observe(&t.text, &now);
+        let mut asked: Vec<bool> = self.undo_asked.take().into_iter().collect();
+        if keys && ctx.memory(|m| m.has_focus(id)) {
+            let k = |m, key| egui::KeyboardShortcut::new(m, key);
+            ctx.input_mut(|i| {
+                // Shift+Ctrl+Z first: Ctrl+Z would match it too.
+                loop {
+                    if i.consume_shortcut(&k(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z)) || i.consume_shortcut(&k(Modifiers::COMMAND, Key::Y)) {
+                        asked.push(true);
+                    } else if i.consume_shortcut(&k(Modifiers::COMMAND, Key::Z)) {
+                        asked.push(false);
+                    } else {
+                        break;
+                    }
+                }
+            });
+        }
+        let mut last = None;
+        for redo in asked {
+            let sels = if redo { t.hist.redo(&mut t.text) } else { t.hist.undo(&mut t.text) };
+            if sels.is_some() {
+                last = sels;
+            }
+        }
+        let Some(sels) = last else { return };
+        let main = sels.last().copied().unwrap_or_default();
+        t.sels = if sels.len() >= 2 { sels } else { Vec::new() };
+        t.preview = false;
+        set_primary(ctx, id, main);
+        self.complete = None;
         self.reveal = true;
     }
 

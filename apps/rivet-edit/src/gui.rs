@@ -52,6 +52,8 @@ pub(crate) struct Tab {
     pub lang: crate::syntax::Pick,
     /// Tabs or spaces, and how many: told from the file, or the settings' for new files.
     pub indent: crate::ops::Indent,
+    /// Undo and redo.
+    pub hist: crate::history::History,
 }
 
 impl Tab {
@@ -147,6 +149,8 @@ pub struct EditApp {
     pub(crate) search: editing::Search,
     pub(crate) last_layout: Option<editing::LastLayout>,
     pub(crate) alt_click: bool,
+    /// Undo (false) or Redo (true) chosen from a menu, for the next frame.
+    pub(crate) undo_asked: Option<bool>,
     /// Open the find bar next frame (from a command; true: with replace).
     pub(crate) find_pending: Option<bool>,
     /// The language servers, and the suggestion list.
@@ -250,6 +254,7 @@ impl EditApp {
             search: Default::default(),
             last_layout: None,
             alt_click: false,
+            undo_asked: None,
             find_pending: None,
             lsp: crate::lsp::Lsp::new(Some(_cc.egui_ctx.clone())),
             complete: None,
@@ -496,7 +501,7 @@ impl EditApp {
         match workspace::read_text(&p) {
             Ok(text) => {
                 let indent = self.indent_for(&text);
-                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent };
+                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default() };
                 // A new preview takes the old one's place (when it wasn't changed).
                 match self.tabs.iter().position(|t| t.preview && !t.dirty()).filter(|_| preview) {
                     Some(i) => {
@@ -530,7 +535,7 @@ impl EditApp {
 
     pub(crate) fn new_tab(&mut self) {
         let indent = self.default_indent();
-        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent });
+        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default() });
         self.active = self.tabs.len() - 1;
     }
 
@@ -768,12 +773,20 @@ impl eframe::App for EditApp {
                 }
             }
             // Checks: RIVET_EDIT_KEY="ctrl+d ctrl+d Tab" presses those, one a frame, once things
-            // settle; RIVET_EDIT_TYPE=text types it after them.
+            // settle (text:abc types a, b and c, a frame each; _ is a space); RIVET_EDIT_TYPE=text
+            // types it after them.
             if let Ok(keys) = std::env::var("RIVET_EDIT_KEY") {
-                let list: Vec<&str> = keys.split_whitespace().collect();
+                let list: Vec<String> = keys.split_whitespace().flat_map(|k| match k.strip_prefix("text:") {
+                    Some(t) => t.chars().map(|c| format!("text:{}", if c == '_' { ' ' } else { c })).collect(),
+                    None => vec![k.to_string()],
+                }).collect();
                 let f = shot.frames() as usize;
-                if (40..40 + list.len()).contains(&f) {
-                    let k = list[f - 40];
+                if (40..40 + list.len()).contains(&f)
+                    && let Some(t) = list[f - 40].strip_prefix("text:")
+                {
+                    raw.events.push(egui::Event::Text(t.to_string()));
+                } else if (40..40 + list.len()).contains(&f) {
+                    let k = list[f - 40].as_str();
                     let mut m = Modifiers::NONE;
                     let mut name = k;
                     while let Some((pre, rest)) = name.split_once('+') {

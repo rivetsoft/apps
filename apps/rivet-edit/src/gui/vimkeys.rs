@@ -116,6 +116,11 @@ impl EditApp {
             fx.extend(self.vim.key(k, &mut chars, &mut cur, &unit, width));
         }
         if chars.iter().ne(t.text.chars().collect::<Vec<_>>().iter()) {
+            // Normal and Visual mode's changes are an undo step each (Insert mode's typing
+            // joins up as typing does).
+            if before_mode != vim::Mode::Insert {
+                t.hist.command();
+            }
             t.text = chars.iter().collect();
             t.preview = false;
         }

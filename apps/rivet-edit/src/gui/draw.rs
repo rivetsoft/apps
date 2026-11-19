@@ -142,6 +142,13 @@ impl EditApp {
         });
         ui.menu_button("Edit", |ui| {
             menu_style(ui);
+            if item(ui, "Undo", "Ctrl+Z", has_tab) {
+                self.undo_asked = Some(false);
+            }
+            if item(ui, "Redo", "Shift+Ctrl+Z", has_tab) {
+                self.undo_asked = Some(true);
+            }
+            ui.separator();
             if item(ui, "Go to Line…", "Ctrl+G", has_tab) {
                 self.open_quick(quick::QuickKind::Line);
             }
@@ -542,6 +549,8 @@ impl EditApp {
         let vim_block = self.s.vim_keys && self.vim.mode != crate::vim::Mode::Insert && ctx.memory(|m| m.has_focus(id));
         // What was typed this frame (to open or narrow the suggestions).
         let typed: Option<char> = if quick_open { None } else { ctx.input(|i| i.events.iter().rev().find_map(|e| if let egui::Event::Text(t) = e { t.chars().last() } else { None })) };
+        // Undo and redo (Vim's u and Ctrl+R come here as Ctrl+Z too), before the text box's own.
+        self.undo_keys(&ctx, id, !quick_open);
         if !quick_open {
             self.editor_keys(&ctx, id);
         }
@@ -710,6 +719,11 @@ impl EditApp {
             });
         });
         self.last_layout = layout_out;
+        // What this frame changed, for undo.
+        if let Some(t) = self.tabs.get_mut(self.active) {
+            let now = editing::sels_now(&ctx, id, t);
+            t.hist.observe(&t.text, &now);
+        }
         if let (Some((c, _)), Some(p)) = (caret, self.tabs.get(self.active).and_then(|t| t.path.clone())) {
             self.last_cursor.insert(p, c);
         }
