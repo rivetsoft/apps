@@ -336,19 +336,28 @@ enum Tok {
     Other,
 }
 
+/// Where the next `{{` or `{%` starts. One pass forward: looking for each separately reads
+/// to the end of the template again for every tag, which made a 70 KB template take 20 ms.
+fn next_tag(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut from = 0;
+    while let Some(i) = s[from..].find('{') {
+        let i = from + i;
+        if matches!(b.get(i + 1), Some(b'{' | b'%')) {
+            return Some(i);
+        }
+        from = i + 1;
+    }
+    None
+}
+
 fn tokenize(t: &str) -> Vec<Tok> {
     let mut out = Vec::new();
     let mut rest = t;
     loop {
-        let a = rest.find("{{");
-        let b = rest.find("{%");
-        let start = match (a, b) {
-            (Some(x), Some(y)) => x.min(y),
-            (Some(x), None) | (None, Some(x)) => x,
-            (None, None) => {
-                out.push(Tok::Lit(rest.to_string()));
-                return out;
-            }
+        let Some(start) = next_tag(rest) else {
+            out.push(Tok::Lit(rest.to_string()));
+            return out;
         };
         out.push(Tok::Lit(rest[..start].to_string()));
         let close = if rest[start..].starts_with("{{") { "}}" } else { "%}" };
@@ -650,6 +659,15 @@ mod tests {
         assert!(!f.contains_key(&("on_primary".into(), "dark".into())));
     }
     #[test]
+    fn finds_tags_among_css_braces() {
+        assert_eq!(next_tag("a { b } {{x}}"), Some(8));
+        assert_eq!(next_tag("a { {% if %} {{x}}"), Some(4));
+        assert_eq!(next_tag("only { css }"), None);
+        let toks = tokenize(".x { color: {{colors.primary.default.hex}}; } {% for %}");
+        assert!(matches!(&toks[1], Tok::Color { name, .. } if name == "primary"));
+        assert!(matches!(toks[3], Tok::Other));
+    }
+    #[test]
     fn parses_gtk_colors() {
         let dir = std::env::temp_dir().join(format!("rivet-pal-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -679,3 +697,4 @@ mod live_probe {
         println!("PALETTE {:?}\nWATCHED {:?}", p, w);
     }
 }
+
