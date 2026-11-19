@@ -64,12 +64,11 @@ fn block(p: &Provider) -> f32 {
 pub fn height(m: &Model) -> f32 {
     let (shown, missing) = order(&m.extra.ai);
     let mut h = 28.0 + HEAD + 6.0 + shown.iter().map(|p| block(p)).sum::<f32>();
-    if !missing.is_empty() {
-        h += PHEAD + missing.len() as f32 * LINE;
-    }
-    if shown.is_empty() && missing.is_empty() {
+    // Providers that aren't set up aren't listed: only a line when none is.
+    if shown.is_empty() {
         h += LINE * 2.0;
     }
+    let _ = missing;
     h
 }
 
@@ -98,16 +97,17 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let g = one_line(&p, &sub, ui_font(12.0), v.weak_text_color(), w - 60.0);
     p.galley(Pos2::new(r.left() + sx, r.top() + 26.0), g, v.weak_text_color());
     let tool = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.top() + 18.0), Vec2::splat(30.0));
-    if tool_button(ui, tool, "ai-refresh", "Read again now", &|p, c, col| glyph::refresh(p, c, col)) {
+    if tool_button(ui, tool, "ai-refresh", "Refresh now", &|p, c, col| glyph::refresh(p, c, col)) {
         m.acts.push(Act::AiRefresh);
     }
     p.line_segment([Pos2::new(r.left(), r.bottom() - 1.0), Pos2::new(r.right(), r.bottom() - 1.0)], Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08)));
     ui.add_space(6.0);
 
     let (shown, missing) = order(&q);
-    if shown.is_empty() && missing.is_empty() {
+    if shown.is_empty() {
         let (r, _) = ui.allocate_exact_size(Vec2::new(w, LINE * 2.0), Sense::hover());
-        p.text(Pos2::new(r.left() + 2.0, r.center().y), Align2::LEFT_CENTER, "No providers are turned on (Settings, Panels).", ui_font(12.5), v.weak_text_color());
+        let text = if missing.is_empty() { "No providers turned on. Choose them in Settings › Panels." } else { "None of the providers turned on is set up on this computer." };
+        p.text(Pos2::new(r.left() + 2.0, r.center().y), Align2::LEFT_CENTER, text, ui_font(12.5), v.weak_text_color());
         return;
     }
     let sc = rivet_look::theme::status(ui.ctx());
@@ -178,13 +178,5 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
             State::Missing(_) => {}
         }
         ui.add_space(GAP);
-    }
-    if !missing.is_empty() {
-        let (r, _) = ui.allocate_exact_size(Vec2::new(w, PHEAD), Sense::hover());
-        p.text(Pos2::new(r.left() + 2.0, r.center().y), Align2::LEFT_CENTER, "Not set up", ui_font(12.0), v.weak_text_color());
-        for pv in &missing {
-            let why = if let State::Missing(w) = &pv.state { w.as_str() } else { "" };
-            line(ui, &format!("{}: {why}", name(pv.id)), v.weak_text_color());
-        }
     }
 }
