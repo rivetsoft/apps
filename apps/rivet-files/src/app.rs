@@ -18,6 +18,7 @@ use crate::palette::{self, Palette};
 use crate::thumbs::{self, Thumbnailer};
 
 mod chrome;
+mod columns;
 mod bulkrename;
 mod dialogs;
 mod filterview;
@@ -271,6 +272,8 @@ pub struct RivetApp {
     split_right: bool,
     pane_rects: [Option<Rect>; 2],
     pane_salt: u8,
+    /// Column view: the other folders' listings (parents and the chosen folder), by path.
+    column_cache: std::collections::HashMap<PathBuf, Tab>,
     /// A text field or drop-down list in Preferences was active last frame (Esc then only
     /// leaves it, instead of closing Preferences).
     prefs_busy_last: bool,
@@ -539,6 +542,7 @@ impl RivetApp {
             split_right: false,
             pane_rects: [None, None],
             pane_salt: 0,
+            column_cache: Default::default(),
             prefs_busy_last: false,
             file_list_focus: None,
             kb_nav: false,
@@ -1104,6 +1108,7 @@ impl RivetApp {
         for t in self.tabs.iter_mut().chain(self.split.as_mut()) {
             t.reload(&self.mime, &self.s);
         }
+        self.column_cache.clear();
         self.trash_empty = places::trash_is_empty();
     }
 
@@ -1111,6 +1116,7 @@ impl RivetApp {
         for t in self.tabs.iter_mut().chain(self.split.as_mut()) {
             t.resort(&self.mime, &self.s);
         }
+        self.column_cache.clear();
         self.dirty_settings = true;
     }
 
@@ -1130,7 +1136,7 @@ impl RivetApp {
 
     fn zoom(&mut self, dir: i32) {
         match self.s.view {
-            ViewMode::List | ViewMode::Compact => {
+            ViewMode::List | ViewMode::Compact | ViewMode::Columns => {
                 self.s.list_zoom = step_in(&[16.0, 22.0, 32.0, 48.0, 64.0], self.s.list_zoom, dir);
             }
             ViewMode::Icons => {
@@ -2077,7 +2083,7 @@ impl RivetApp {
         if cmd && pressed(Key::Minus) {
             self.zoom(-1);
         }
-        for (k, v) in [(Key::Num1, ViewMode::Icons), (Key::Num2, ViewMode::List), (Key::Num3, ViewMode::Compact)] {
+        for (k, v) in [(Key::Num1, ViewMode::Icons), (Key::Num2, ViewMode::List), (Key::Num3, ViewMode::Compact), (Key::Num4, ViewMode::Columns)] {
             if cmd && pressed(k) {
                 self.s.view = v;
                 self.dirty_settings = true;
@@ -2100,6 +2106,18 @@ impl RivetApp {
             }
         }
 
+        // Column view: ← back to the parent's column, → into the chosen folder's.
+        if self.columns_shown() && !m.alt && !m.shift && !cmd {
+            if pressed(Key::ArrowLeft) {
+                self.column_left();
+                return;
+            }
+            if pressed(Key::ArrowRight) {
+                self.column_right();
+                return;
+            }
+        }
+
         // Arrow keys move the selection.
         let n = self.tab().visible.len();
         if n == 0 || m.alt {
@@ -2107,7 +2125,7 @@ impl RivetApp {
         }
         let (step_lr, step_ud) = match self.s.view {
             ViewMode::Icons => (1isize, cols.max(1) as isize),
-            ViewMode::List => (0, 1),
+            ViewMode::List | ViewMode::Columns => (0, 1),
             ViewMode::Compact => (cols.max(1) as isize, 1),
         };
         let mut delta: isize = 0;

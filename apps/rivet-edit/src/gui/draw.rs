@@ -142,6 +142,13 @@ impl EditApp {
         });
         ui.menu_button("Edit", |ui| {
             menu_style(ui);
+            if item(ui, "Undo", "Ctrl+Z", has_tab) {
+                self.undo_asked = Some(false);
+            }
+            if item(ui, "Redo", "Shift+Ctrl+Z", has_tab) {
+                self.undo_asked = Some(true);
+            }
+            ui.separator();
             if item(ui, "Go to Line…", "Ctrl+G", has_tab) {
                 self.open_quick(quick::QuickKind::Line);
             }
@@ -542,6 +549,8 @@ impl EditApp {
         let vim_block = self.s.vim_keys && self.vim.mode != crate::vim::Mode::Insert && ctx.memory(|m| m.has_focus(id));
         // What was typed this frame (to open or narrow the suggestions).
         let typed: Option<char> = if quick_open { None } else { ctx.input(|i| i.events.iter().rev().find_map(|e| if let egui::Event::Text(t) = e { t.chars().last() } else { None })) };
+        // Undo and redo (Vim's u and Ctrl+R come here as Ctrl+Z too), before the text box's own.
+        self.undo_keys(&ctx, id, !quick_open);
         if !quick_open {
             self.editor_keys(&ctx, id);
         }
@@ -594,16 +603,12 @@ impl EditApp {
             st.store(&ctx, id);
             ctx.memory_mut(|m| m.request_focus(id));
         }
-        let lines = t.text.split('\n').count();
+        let lines = t.text.bytes().filter(|&b| b == b'\n').count() + 1;
         let digits = lines.to_string().len().max(3) as f32;
         let char_w = ctx.fonts_mut(|f| f.glyph_width(&font, '0'));
         let gutter = if numbers { digits * char_w + 28.0 } else { 14.0 };
         let Tab { text, cache, line_col, .. } = t;
-        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| {
-            let mut job = cache.job(buf.as_str(), &name, pick, &colors, &font);
-            job.wrap.max_width = if wrap { wrap_w } else { f32::INFINITY };
-            ui.fonts_mut(|f| f.layout_job(job))
-        };
+        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| cache.galley(ui, buf.as_str(), &name, pick, &colors, &font, if wrap { wrap_w } else { f32::INFINITY });
         let area = ui.available_rect_before_wrap();
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(Vec2::new(0.0, 4.0))).layout(egui::Layout::top_down(egui::Align::Min)));
         let scroll = if wrap { egui::ScrollArea::vertical() } else { egui::ScrollArea::both() };
@@ -628,19 +633,30 @@ impl EditApp {
                 // The cursor's line and column, for the status bar and the gutter.
                 let cur = if vim_block && vim_visual { Some(vim_head) } else { out.cursor_range.map(|r| r.primary.index.0) };
                 if let Some(c) = cur {
-                    let before: String = text.chars().take(c).collect();
-                    let line = before.matches('\n').count() + 1;
-                    let col = before.rsplit('\n').next().map(|s| s.chars().count()).unwrap_or(0) + 1;
+                    let (mut line, mut col) = (1, 1);
+                    for ch in text.chars().take(c) {
+                        if ch == '\n' {
+                            (line, col) = (line + 1, 1);
+                        } else {
+                            col += 1;
+                        }
+                    }
                     *line_col = (line, col);
                 }
-                // Line numbers (once per line, also when it wraps), the cursor's brighter.
+                // Line numbers (once per line, also when it wraps), the cursor's brighter. Only
+                // those on screen are drawn: each is text to lay out, every frame.
                 if numbers {
                     let p = ui.painter();
+                    let clip = ui.clip_rect();
                     let mut n = 1;
                     let mut first = true;
                     for row in &out.galley.rows {
-                        if first {
-                            let y = out.galley_pos.y + row.pos.y + row.rect().height() / 2.0;
+                        let top = out.galley_pos.y + row.pos.y;
+                        if top > clip.bottom() {
+                            break;
+                        }
+                        if first && top + row.rect().height() >= clip.top() {
+                            let y = top + row.rect().height() / 2.0;
                             let on = n == line_col.0;
                             let col = if on { v.text_color() } else { v.weak_text_color().gamma_multiply(0.7) };
                             p.text(Pos2::new(left + gutter - 14.0, y), Align2::RIGHT_CENTER, n.to_string(), font.clone(), col);
@@ -703,6 +719,11 @@ impl EditApp {
             });
         });
         self.last_layout = layout_out;
+        // What this frame changed, for undo.
+        if let Some(t) = self.tabs.get_mut(self.active) {
+            let now = editing::sels_now(&ctx, id, t);
+            t.hist.observe(&t.text, &now);
+        }
         if let (Some((c, _)), Some(p)) = (caret, self.tabs.get(self.active).and_then(|t| t.path.clone())) {
             self.last_cursor.insert(p, c);
         }

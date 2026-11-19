@@ -291,7 +291,7 @@ impl RivetApp {
                 self.reload_all();
             }
             ui.separator();
-            for (v, label, key) in [(ViewMode::Icons, "Icons", "Ctrl+1"), (ViewMode::List, "List", "Ctrl+2"), (ViewMode::Compact, "Compact", "Ctrl+3")] {
+            for (v, label, key) in [(ViewMode::Icons, "Icons", "Ctrl+1"), (ViewMode::List, "List", "Ctrl+2"), (ViewMode::Compact, "Compact", "Ctrl+3"), (ViewMode::Columns, "Columns", "Ctrl+4")] {
                 if ui.add(egui::Button::selectable(self.s.view == v, label).shortcut_text(key)).clicked() {
                     self.s.view = v;
                     self.dirty_settings = true;
@@ -486,6 +486,7 @@ impl RivetApp {
             ViewIcons => (true, self.s.view == ViewMode::Icons, "Icon view".into()),
             ViewList => (true, self.s.view == ViewMode::List, "List view".into()),
             ViewCompact => (true, self.s.view == ViewMode::Compact, "Compact view".into()),
+            ViewColumns => (true, self.s.view == ViewMode::Columns, "Column view".into()),
             NewFolder | Terminal | Bookmark => (self.current_dir().is_some(), false, item.label().into()),
             ShowHidden => (true, self.s.show_hidden, "Show hidden files (Ctrl+H)".into()),
             Sidebar => (true, self.s.show_sidebar, "Show or hide the sidebar (F9)".into()),
@@ -524,10 +525,11 @@ impl RivetApp {
                     self.tabs[self.active].resort(&self.mime, &self.s);
                 }
             }
-            ViewIcons | ViewList | ViewCompact => {
+            ViewIcons | ViewList | ViewCompact | ViewColumns => {
                 self.s.view = match item {
                     ViewIcons => ViewMode::Icons,
                     ViewList => ViewMode::List,
+                    ViewColumns => ViewMode::Columns,
                     _ => ViewMode::Compact,
                 };
                 self.dirty_settings = true;

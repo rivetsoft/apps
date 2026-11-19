@@ -1,4 +1,6 @@
 <p>
+  <img src="apps/rivet-shell/data/rivet-shell.svg" width="88" alt="Rivet Shell icon">
+  &nbsp;
   <img src="apps/rivet-files/data/rivet-files.svg" width="88" alt="Rivet Files icon">
   &nbsp;
   <img src="apps/rivet-ftp/data/rivet-ftp.svg" width="88" alt="Rivet FTP icon">
@@ -8,8 +10,6 @@
   <img src="apps/rivet-edit/data/rivet-edit.svg" width="88" alt="Rivet Edit icon">
   &nbsp;
   <img src="apps/rivet-terminal/data/rivet-terminal.svg" width="88" alt="Rivet Terminal icon">
-  &nbsp;
-  <img src="apps/rivet-shell/data/rivet-shell.svg" width="88" alt="Rivet Shell icon">
   &nbsp;
   <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="88" alt="Rivet Welcome icon">
 </p>
@@ -23,9 +23,40 @@
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20egui-orange)](https://github.com/emilk/egui)
 ![No GTK or Qt](https://img.shields.io/badge/GTK%20%2F%20Qt-none-success)
 
-A family of Linux desktop apps written in Rust, with no GTK or Qt. They share one look: your
-desktop's colors, fonts and icon theme, light or dark, and the same menus, toolbars and
-Preferences.
+An ecosystem of Linux desktop software written in Rust, with no GTK or Qt: a desktop shell, a
+set of apps, and a small helper that keeps them all up to date.
+
+Every piece works on its own. Rivet Files is a file manager on GNOME, KDE or any other desktop;
+Rivet Shell runs alongside whatever apps you already use; nothing needs anything else installed.
+Each one is released separately, with its own version and changelog. Put them together, though,
+and they behave like one system.
+
+## How they fit together
+
+- **One look.** Every app takes your desktop's colors, fonts and icon theme, light or dark, and
+  shares the same menus, toolbars, Preferences and quick panel (Ctrl+P).
+- **One set of colors, from your wallpaper.** Rivet Shell runs matugen on the wallpaper you
+  pick, and every Rivet app follows those colors live, with no restart.
+- **One file picker.** Rivet Files can be the Open and Save window for every app, so your
+  sidebar, bookmarks and views are the same everywhere.
+- **Shared pieces.** Rivet Terminal uses Rivet Edit's color themes; Rivet Edit colors code the
+  way Rivet Files' Peek does; Rivet FTP's saved connections also work from plain `ssh`.
+- **A dock that knows them.** Rivet Shell's dock starts out with Files, Terminal, Edit and
+  Notes pinned.
+- **Kept current in one place.** Rivet Welcome installs and updates every app, and its tray
+  icon sits in Rivet Shell's panel (or any other tray).
+
+## Rivet Shell: the desktop
+
+### <img src="apps/rivet-shell/data/rivet-shell.svg" width="32" alt=""> Rivet Shell
+
+A desktop shell for Wayland compositors with the layer-shell protocol (niri, Hyprland, Sway and
+others): a panel, a dock, an app launcher, quick settings, notifications, desktop widgets and the
+wallpaper, which it gives to matugen so every app's colors follow it. Settings in the Rivet look.
+**Just started:** not released yet; build it from source.
+[More about Rivet Shell](apps/rivet-shell/README.md)
+
+![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.png)
 
 ## The apps
 
@@ -79,35 +110,29 @@ Ctrl+letters reach your programs.
 
 ![Rivet Terminal with three panes](docs/screenshots/terminal-wide.png)
 
-### <img src="apps/rivet-shell/data/rivet-shell.svg" width="32" alt=""> Rivet Shell
+> **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
+> Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
-A desktop shell for Wayland compositors with the layer-shell protocol (niri, Hyprland, Sway and
-others): a panel, a dock, an app launcher, desktop widgets and the wallpaper, which it gives to
-matugen so every app's colors follow it. Settings in the Rivet look.
-**Just started:** not released yet; build it from source.
-[More about Rivet Shell](apps/rivet-shell/README.md)
-
-![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.png)
+## Rivet Welcome: keeping it all current
 
 ### <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="32" alt=""> Rivet Welcome
 
-Optional: installs and updates the other apps from their releases, and has a tray icon that
-looks for new versions when you sign in and tells you when there are some.
+Optional: installs and updates the shell and the apps from their releases, and has a tray icon
+that looks for new versions when you sign in and tells you when there are some. Apps installed
+some other way (AUR, a distribution package) are shown but left alone.
 **Just started:** not released yet; build it from source.
 [More about Rivet Welcome](apps/rivet-welcome/README.md)
 
 ![Rivet Welcome with two updates and an install under way](docs/screenshots/welcome-wide.png)
 
-> **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
-> Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
-
 ## Install
 
-Every app has its own releases on the [Releases page](https://github.com/ulinaaron/rivet-apps/releases),
+The shell and every app have their own releases on the [Releases page](https://github.com/ulinaaron/rivet-apps/releases),
 told apart by name and tag:
 
 | App | Tags | Downloads |
 | --- | --- | --- |
+| Rivet Shell | `rivet-shell-v…` | Not released yet: build from source |
 | Rivet Files | `v0.6.0` | AppImage, archive, Flatpak bundle; AUR packages. See the [Rivet Files README](apps/rivet-files/README.md#-install) for the libraries the window needs. |
 | Rivet FTP | `rivet-ftp-v0.1.0` | An archive (pre-release) |
 | Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
@@ -124,22 +149,24 @@ cd rivet-notes-0.1.0-x86_64-linux
 ./install.sh
 ```
 
-Or build any of them from source (below).
+Or let [Rivet Welcome](#rivet-welcome-keeping-it-all-current) install and update them for you,
+or build any of them from source (below).
 
 ## Build from source
 
 You need Rust 1.88 or newer. From the top of the repository:
 
 ```sh
+cargo build --release -p rivet-shell     # Rivet Shell
 cargo build --release                    # Rivet Files (the default)
 cargo build --release -p rivet-ftp       # Rivet FTP
 cargo build --release -p rivet-notes     # Rivet Notes
 cargo build --release -p rivet-edit      # Rivet Edit
 cargo build --release -p rivet-terminal  # Rivet Terminal
-cargo build --release -p rivet-shell     # Rivet Shell
 cargo build --release -p rivet-welcome   # Rivet Welcome
 cargo build --release --workspace        # everything
 
+./target/release/rivet-shell             # in a Wayland session
 ./target/release/rivet [FOLDER]
 ./target/release/rivet-ftp
 ./target/release/rivet-notes [VAULT]
@@ -161,12 +188,12 @@ it shows what changed, skips apps with nothing new, and asks release, skip or st
 
 | Folder | What it is |
 | --- | --- |
+| `apps/rivet-shell` | Rivet Shell (just started): the panel, dock, widgets and wallpaper, and its settings |
 | `apps/rivet-files` | Rivet Files: its code, data, changelog and packaging (Flatpak, AUR) |
 | `apps/rivet-ftp` | Rivet FTP (early alpha): code, data, changelog |
 | `apps/rivet-notes` | Rivet Notes (early alpha): code, data, changelog |
 | `apps/rivet-edit` | Rivet Edit (just started): code, data, changelog |
 | `apps/rivet-terminal` | Rivet Terminal (just started): code, data, changelog |
-| `apps/rivet-shell` | Rivet Shell (just started): the panel, dock, widgets and wallpaper, and its settings |
 | `apps/rivet-welcome` | Rivet Welcome (just started): installs and updates the apps, with a tray icon |
 | `crates/rivet-term` | Shared: the terminal (a shell in a pseudo-terminal, drawn as a widget); Rivet Terminal's, and later Rivet Edit's panel |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |

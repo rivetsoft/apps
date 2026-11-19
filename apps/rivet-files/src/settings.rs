@@ -7,6 +7,8 @@ pub enum ViewMode {
     Icons,
     List,
     Compact,
+    /// Miller columns: the parent folders side by side, each column one level deeper.
+    Columns,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -164,7 +166,7 @@ impl Settings {
             let b = v == "true";
             let f = v.parse::<f32>().ok();
             match k.trim() {
-                "view" => s.view = match v { "list" => ViewMode::List, "compact" => ViewMode::Compact, _ => ViewMode::Icons },
+                "view" => s.view = match v { "list" => ViewMode::List, "compact" => ViewMode::Compact, "columns" => ViewMode::Columns, _ => ViewMode::Icons },
                 "sort" => s.sort = match v { "size" => SortKey::Size, "type" => SortKey::Type, "modified" => SortKey::Modified, _ => SortKey::Name },
                 "sort_desc" => s.sort_desc = b,
                 "folders_first" => s.folders_first = b,
@@ -220,7 +222,7 @@ impl Settings {
     }
 
     pub fn save(&self) {
-        let view = match self.view { ViewMode::Icons => "icons", ViewMode::List => "list", ViewMode::Compact => "compact" };
+        let view = match self.view { ViewMode::Icons => "icons", ViewMode::List => "list", ViewMode::Compact => "compact", ViewMode::Columns => "columns" };
         let sort = match self.sort { SortKey::Name => "name", SortKey::Size => "size", SortKey::Type => "type", SortKey::Modified => "modified" };
         let theme = match self.theme { ThemeChoice::System => "system", ThemeChoice::Light => "light", ThemeChoice::Dark => "dark" };
         let text = format!(
@@ -254,6 +256,7 @@ pub enum ToolItem {
     ViewIcons,
     ViewList,
     ViewCompact,
+    ViewColumns,
     NewFolder,
     NewTab,
     Terminal,
@@ -270,7 +273,7 @@ pub enum ToolItem {
 }
 
 impl ToolItem {
-    pub const ALL: [ToolItem; 24] = [
+    pub const ALL: [ToolItem; 25] = [
         ToolItem::Back,
         ToolItem::Forward,
         ToolItem::Up,
@@ -283,6 +286,7 @@ impl ToolItem {
         ToolItem::ViewIcons,
         ToolItem::ViewList,
         ToolItem::ViewCompact,
+        ToolItem::ViewColumns,
         ToolItem::NewFolder,
         ToolItem::NewTab,
         ToolItem::Terminal,
@@ -300,7 +304,7 @@ impl ToolItem {
     /// The default layout (classic file-manager toolbar).
     pub fn default_layout() -> Vec<ToolItem> {
         use ToolItem::*;
-        vec![Back, Forward, Up, Separator, Reload, Home, Computer, Separator, EditLocation, PathBar, Search, Separator, ViewIcons, ViewList, ViewCompact, Menu]
+        vec![Back, Forward, Up, Separator, Reload, Home, Computer, Separator, EditLocation, PathBar, Search, Separator, ViewIcons, ViewList, ViewCompact, ViewColumns, Menu]
     }
 
     pub fn id(self) -> &'static str {
@@ -318,6 +322,7 @@ impl ToolItem {
             ViewIcons => "view-icons",
             ViewList => "view-list",
             ViewCompact => "view-compact",
+            ViewColumns => "view-columns",
             NewFolder => "new-folder",
             NewTab => "new-tab",
             Terminal => "terminal",
@@ -348,6 +353,7 @@ impl ToolItem {
             ViewIcons => "Icon view",
             ViewList => "List view",
             ViewCompact => "Compact view",
+            ViewColumns => "Column view",
             NewFolder => "New folder",
             NewTab => "New tab",
             Terminal => "Open in terminal",
@@ -379,6 +385,7 @@ impl ToolItem {
             ViewIcons => (&["view-grid-symbolic", "view-app-grid-symbolic"], "▦"),
             ViewList => (&["view-list-symbolic", "view-list"], "☰"),
             ViewCompact => (&["view-compact-symbolic", "view-more-horizontal-symbolic"], "▥"),
+            ViewColumns => (&["rivet-columns-symbolic", "view-column-symbolic"], "▤"),
             NewFolder => (&["folder-new-symbolic", "folder-new"], "+"),
             NewTab => (&["tab-new-symbolic", "tab-new", "list-add-symbolic"], "+"),
             Terminal => (&["utilities-terminal-symbolic", "terminal-symbolic", "utilities-terminal"], ">_"),

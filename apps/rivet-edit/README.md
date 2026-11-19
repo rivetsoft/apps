@@ -55,6 +55,7 @@ fonts and icons, the same menus, Preferences and quick panel.
 | Shift+Ctrl+P | Commands |
 | Ctrl+O | Open a folder (type a path; Enter goes into a folder) |
 | Ctrl+N / Ctrl+S / Shift+Ctrl+S | New file / Save / Save all |
+| Ctrl+Z / Shift+Ctrl+Z or Ctrl+Y | Undo / redo (a word of typing, or a command, at a time) |
 | Ctrl+W, Ctrl+Tab | Close tab, next tab |
 | Ctrl+G | Go to line |
 | F9 / Alt+Z / Ctrl+M | Sidebar / word wrap / menu bar |

@@ -1,4 +1,4 @@
-//! The file area: icon, list and compact views, rubber-band selection and context menus.
+//! The file area: icon, list and compact views (columns are in columns.rs), rubber-band selection and context menus.
 
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use std::collections::HashSet;
@@ -119,6 +119,11 @@ impl RivetApp {
             });
             return cols;
         }
+        // Column view draws its own empty folder (the parents' columns still show).
+        if self.columns_shown() {
+            self.columns_view(ui, ctx);
+            return cols;
+        }
         if self.tab().visible.is_empty() {
             let msg = match &loc {
                 Location::Trash => "Trash is empty",
@@ -145,12 +150,17 @@ impl RivetApp {
                 1
             }
             ViewMode::Compact => self.compact_view(ui, ctx),
+            // Trash, Recent and searches aren't a folder with parents: they use the list.
+            ViewMode::Columns => {
+                self.list_view(ui, ctx);
+                1
+            }
         };
         cols
     }
 
     /// Background: click to clear, drag for rubber-band selection, context menu, drop target.
-    fn background(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, rect: Rect, resp: &egui::Response, item_rects: &[(usize, Rect)]) {
+    pub(super) fn background(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, rect: Rect, resp: &egui::Response, item_rects: &[(usize, Rect)]) {
         let mods = ctx.input(|i| i.modifiers);
         if resp.clicked() && !(mods.command || mods.shift) {
             self.tab_mut().selected.clear();
@@ -198,12 +208,12 @@ impl RivetApp {
         ui.painter().layout_job(job)
     }
 
-    fn tint_for(&self, e: &Entry) -> Color32 {
+    pub(super) fn tint_for(&self, e: &Entry) -> Color32 {
         let cut = self.clipboard.as_ref().is_some_and(|(f, c)| *c && f.contains(&e.path));
         if cut || e.hidden { Color32::from_white_alpha(140) } else { Color32::WHITE }
     }
 
-    fn tooltip(&self, e: &Entry) -> String {
+    pub(super) fn tooltip(&self, e: &Entry) -> String {
         let mut s = format!("{}\n{}", e.name, self.mime.describe(&e.mime));
         if e.is_dir {
             if let Some(c) = e.child_count {
@@ -561,7 +571,7 @@ impl RivetApp {
 
     // -------------------------------------------------------------- context menus
 
-    fn item_menu(&mut self, ui: &mut egui::Ui, e: &Entry) {
+    pub(super) fn item_menu(&mut self, ui: &mut egui::Ui, e: &Entry) {
         Self::comfy_menu(ui);
         if crate::picker::active() {
             self.picker_item_menu(ui, e);

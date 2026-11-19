@@ -254,6 +254,7 @@ fn main() -> eframe::Result {
         Some("list") => settings.view = settings::ViewMode::List,
         Some("compact") => settings.view = settings::ViewMode::Compact,
         Some("icons") => settings.view = settings::ViewMode::Icons,
+        Some("columns") => settings.view = settings::ViewMode::Columns,
         _ => {}
     }
     if screenshot.is_some() || measuring() {

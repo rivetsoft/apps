@@ -1,4 +1,4 @@
-# <img src="data/rivet-shelltarget/release/rivet-shell msg quit              # stop itsvg" width="40" alt=""> Rivet Shell
+# <img src="data/rivet-shell.svg" width="40" alt=""> Rivet Shell
 
 A desktop shell for Wayland, in the Rivet apps' look: a panel, a dock, desktop widgets and the
 wallpaper, with a settings window. **Just started**: not released yet; build it from source.

@@ -30,6 +30,7 @@ enum Cmd {
     Icons,
     List,
     Compact,
+    Columns,
     Hidden,
     Thumbnails,
     Sidebar,
@@ -109,6 +110,7 @@ impl RivetApp {
         add(Cmd::Icons, "View", "Icon View", "Ctrl+1", None, s.view != ViewMode::Icons);
         add(Cmd::List, "View", "List View", "Ctrl+2", None, s.view != ViewMode::List);
         add(Cmd::Compact, "View", "Compact View", "Ctrl+3", None, s.view != ViewMode::Compact);
+        add(Cmd::Columns, "View", "Column View", "Ctrl+4", None, s.view != ViewMode::Columns);
         add(Cmd::Hidden, "View", "Show Hidden Files", "Ctrl+H", Some(s.show_hidden), true);
         add(Cmd::Thumbnails, "View", "Picture Thumbnails", "", Some(s.show_thumbnails), true);
         add(Cmd::Sidebar, "View", "Sidebar", "F9", Some(s.show_sidebar), true);
@@ -207,6 +209,7 @@ impl RivetApp {
             Cmd::Icons => self.s.view = ViewMode::Icons,
             Cmd::List => self.s.view = ViewMode::List,
             Cmd::Compact => self.s.view = ViewMode::Compact,
+            Cmd::Columns => self.s.view = ViewMode::Columns,
             Cmd::Hidden => {
                 self.s.show_hidden = !self.s.show_hidden;
                 self.resort_all();

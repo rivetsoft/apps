@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Column view** (Ctrl+4, View → Columns, or the toolbar): Miller columns. The folders above this
+  one sit side by side (from Home, or from / outside it), and the column on the right shows what
+  the chosen folder holds, or a chosen file's preview and details when Peek is closed. Click in
+  any column to go there; ← and → (or Vim's h / l) move between columns.
 - **Shortcuts**: Ctrl+N makes a new folder, Ctrl+Shift+N opens a new window (File → New Window).
 
 ## 0.7.0

@@ -4,6 +4,15 @@
 
 - Several windows, each its own workspace: New Window (Shift+Ctrl+N), Open Folder in New Window,
   and Open in New Window on a folder in the sidebar; also from the app launcher.
+- Large files scroll and repaint smoothly: the laid-out text is kept between frames instead of
+  being rebuilt and looked up again each time, and only the line numbers on screen are drawn.
+- Typing in a large file no longer waits for its colors: they're worked out on another thread,
+  and until then the old ones move along with the edit. A large file opens at once, colored a
+  moment later.
+- Undo and redo of its own (Ctrl+Z, Shift+Ctrl+Z or Ctrl+Y, Vim's u and Ctrl+R, and in the Edit
+  menu): typing undoes a word at a time, every command (moving lines, commenting, several
+  cursors, replace, Vim's changes) is a step of its own, and undo brings every cursor back.
+  Each step keeps only what changed, not a copy of the file.
 
 ## 0.1.0
 
