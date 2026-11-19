@@ -13,6 +13,8 @@
   menu): typing undoes a word at a time, every command (moving lines, commenting, several
   cursors, replace, Vim's changes) is a step of its own, and undo brings every cursor back.
   Each step keeps only what changed, not a copy of the file.
+- Line height for the code (Preferences → Editor → Text), from 1.00× (as the font sets it) to
+  2.00×. The extra space is shared above and below each line.
 - Git, in the spirit of VS Code's and Zed's:
   - A Git panel in the sidebar (Shift+Ctrl+G) lists merge conflicts, staged changes and changes
     not staged yet. Hover a file to stage, unstage or discard it, or a section to do all of its

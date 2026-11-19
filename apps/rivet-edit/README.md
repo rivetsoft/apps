@@ -32,7 +32,7 @@ fonts and icons, the same menus, Preferences and quick panel.
 - **Go to File** (Ctrl+P): type a few letters of a file's name or path. **Commands**
   (Shift+Ctrl+P): every command and option by name. **Go to Line** (Ctrl+G).
 - Line numbers, the cursor's line and column, word wrap (Alt+Z), Tab puts in spaces, code size
-  (Ctrl+= and Ctrl+-), and your choice of monospace font.
+  (Ctrl+= and Ctrl+-), line height, and your choice of monospace font.
 - Saves safely (write, then rename), keeps a file's permissions, reloads files changed elsewhere,
   and asks before closing or quitting with changes.
 - **Git** (Shift+Ctrl+G):

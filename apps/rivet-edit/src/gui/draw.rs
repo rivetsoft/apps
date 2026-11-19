@@ -573,6 +573,7 @@ impl EditApp {
         };
         let font = egui::FontId::monospace(self.s.code_size * fonts::scale());
         let (wrap, numbers) = (self.s.word_wrap, self.s.line_numbers);
+        let line_height = self.s.line_height;
         let goto = self.goto.take();
         let quick_open = self.quick.is_some() || self.prompt.is_some() || self.prefs_open;
         if self.find.is_some() {
@@ -660,7 +661,7 @@ impl EditApp {
         let char_w = ctx.fonts_mut(|f| f.glyph_width(&font, '0'));
         let gutter = if numbers { digits * char_w + 28.0 } else { 14.0 };
         let Tab { text, cache, line_col, gutter: changes, .. } = t;
-        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| cache.galley(ui, buf.as_str(), &name, pick, &colors, &font, if wrap { wrap_w } else { f32::INFINITY });
+        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| cache.galley(ui, buf.as_str(), &name, pick, &colors, &font, line_height, if wrap { wrap_w } else { f32::INFINITY });
         let area = ui.available_rect_before_wrap();
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(Vec2::new(0.0, 4.0))).layout(egui::Layout::top_down(egui::Align::Min)));
         let scroll = if wrap { egui::ScrollArea::vertical() } else { egui::ScrollArea::both() };

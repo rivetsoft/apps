@@ -279,13 +279,15 @@ impl Drop for Worker {
 }
 
 impl Cache {
-    /// The laid-out text of `name` in `font`, wrapped at `wrap_width`.
+    /// The laid-out text of `name` in `font`, wrapped at `wrap_width`. `line_height` is the
+    /// space each line takes, as a multiple of the font's own.
     #[allow(clippy::too_many_arguments)]
-    pub fn galley(&mut self, ui: &Ui, text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId, wrap_width: f32) -> Arc<Galley> {
+    pub fn galley(&mut self, ui: &Ui, text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId, line_height: f32, wrap_width: f32) -> Arc<Galley> {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         name.hash(&mut h);
         pick.hash(&mut h);
         font.hash(&mut h);
+        line_height.to_bits().hash(&mut h);
         colors.hash(&mut h);
         let style = h.finish();
         // The worker's colors, when they're in (and still in this style).
@@ -333,6 +335,13 @@ impl Cache {
             self.worker = spawn(ui.ctx(), style, text, name, pick, colors, font);
         }
         job.wrap.max_width = wrap_width;
+        // Taller lines: the extra space is shared above and below the text.
+        let row = (line_height > 1.0).then(|| (ui.fonts_mut(|f| f.row_height(font)) * line_height).round());
+        if job.sections.first().is_some_and(|s| s.format.line_height != row) {
+            for s in &mut job.sections {
+                s.format.line_height = row;
+            }
+        }
         let galley = ui.fonts_mut(|f| f.layout_job(job));
         self.style = style;
         self.wrap = wrap_width;

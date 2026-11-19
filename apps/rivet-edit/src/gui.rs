@@ -202,6 +202,8 @@ impl EditApp {
             // No language servers in checks unless asked for (they're slow to start).
             s.lsp = std::env::var_os("RIVET_EDIT_LSP").is_some();
             s.vim_keys = std::env::var_os("RIVET_EDIT_VIM").is_some();
+            // RIVET_EDIT_LINE_HEIGHT=1.5: taller lines (else as the font sets them).
+            s.line_height = std::env::var("RIVET_EDIT_LINE_HEIGHT").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0).clamp(1.0, 2.0);
             // Never the person's own recent folders: the sample's files instead.
             s.recent = match &start.folder {
                 Some(root) => ["src/main.rs", "README.md", "web/app.js"].iter().map(|r| root.join(r)).collect(),

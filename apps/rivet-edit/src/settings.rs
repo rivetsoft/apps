@@ -25,6 +25,9 @@ pub struct Settings {
     /// The code font (a monospace family; empty: the system's).
     pub code_font: String,
     pub code_size: f32,
+    /// The space each line of code takes, as a multiple of the font's own (1.0: as the font
+    /// sets it).
+    pub line_height: f32,
     /// Spaces a Tab key puts in (or a tab's width, with `use_tabs`), for new files and files
     /// whose indentation can't be told.
     pub tab_width: usize,
@@ -60,6 +63,7 @@ impl Default for Settings {
             show_statusbar: true,
             code_font: String::new(),
             code_size: 14.0,
+            line_height: 1.0,
             tab_width: 4,
             use_tabs: false,
             detect_indent: true,
@@ -106,6 +110,7 @@ impl Settings {
                 "show_statusbar" => s.show_statusbar = b,
                 "code_font" => s.code_font = v.to_string(),
                 "code_size" => s.code_size = v.parse::<f32>().unwrap_or(14.0).clamp(8.0, 32.0),
+                "line_height" => s.line_height = v.parse::<f32>().unwrap_or(1.0).clamp(1.0, 2.0),
                 "tab_width" => s.tab_width = v.parse::<usize>().unwrap_or(4).clamp(1, 8),
                 "use_tabs" => s.use_tabs = b,
                 "detect_indent" => s.detect_indent = b,
@@ -134,7 +139,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let recent = self.recent.iter().map(|p| p.to_string_lossy().replace(['\n', SEP], " ")).collect::<Vec<_>>().join(&SEP.to_string());
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\ntyped_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\ntab_width={}\nuse_tabs={}\ndetect_indent={}\nautocomplete={}\nlsp={}\nvim_keys={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nbuiltin_icons={}\ntyped_icons={}\nshow_menubar={}\nshow_sidebar={}\nshow_statusbar={}\ncode_font={}\ncode_size={}\nline_height={}\ntab_width={}\nuse_tabs={}\ndetect_indent={}\nautocomplete={}\nlsp={}\nvim_keys={}\nword_wrap={}\nline_numbers={}\ncode_scheme={}\nrecent={recent}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.builtin_icons,
@@ -144,6 +149,7 @@ impl Settings {
             self.show_statusbar,
             self.code_font.replace('\n', ""),
             self.code_size,
+            self.line_height,
             self.tab_width,
             self.use_tabs,
             self.detect_indent,

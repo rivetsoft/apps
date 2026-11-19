@@ -332,6 +332,10 @@ impl EditApp {
                                             ui.label("Size");
                                             ui.add(egui::Slider::new(&mut self.s.code_size, 8.0..=32.0).step_by(1.0).suffix(" pt"));
                                             ui.end_row();
+                                            ui.label("Line height");
+                                            ui.add(egui::Slider::new(&mut self.s.line_height, 1.0..=2.0).step_by(0.05).fixed_decimals(2).suffix("×"))
+                                                .on_hover_text("The space each line takes: 1.00 is as the font sets it, 1.50 half as much again");
+                                            ui.end_row();
                                         });
                                     });
                                     section(ui, "Indentation", &mut |ui| {
