@@ -428,7 +428,7 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
         let tray = if cfg.has("tray") { crate::tray_ui::shown(m).into_iter().map(|it| (it.key.clone(), crate::tray_ui::texture(kit, ui.ctx(), it, mask))).collect() } else { Vec::new() };
         let launcher = if cfg.has("launcher") { kit.launcher_icon(ui.ctx(), m.s, LAUNCHER_ICON) } else { None };
         let dock = if cfg.has("dock") { crate::dock_ui::icons(kit, ui.ctx(), m) } else { Vec::new() };
-        let plug_icons = m.extra.plugins.iter().filter(|(id, it)| !it.icon.is_empty() && cfg.has(&format!("plugin:{id}"))).map(|(id, it)| (id.clone(), kit.named_icon(ui.ctx(), &it.icon, ICON))).collect();
+        let plug_icons = m.extra.plugins.iter().filter(|(id, it)| !it.icon.is_empty() && cfg.has(&format!("plugin:{id}"))).map(|(id, it)| (id.clone(), if m.s.plugin_icon(id) == crate::config::TrayColor::Own { kit.named_icon(ui.ctx(), &it.icon, ICON) } else { kit.named_mask(ui.ctx(), &it.icon, ICON) })).collect();
         let roles = style::Roles::new(&kit.look, m.s);
         let group_r = if rivet_look::theme::square() { 0.0 } else if cfg.floating { (look.radius - 4.0).clamp(0.0, 14.0) } else { 8.0 };
         let mut b = Bar { p: ui.painter().clone(), v, accent, hover_r, cy: bar.center().y, vert: cfg.vertical(), cx: bar.center().x, idx, from: (cfg.edge, if look.attach { reach - cfg.gap() } else { reach + 4.0 }), attach: look.attach, m: &*m, acts: Vec::new(), tray, dock, launcher, plug_icons, roles, surface, group_r, gap: cfg.spacing(), cell: (cfg.bar() - 8.0).max(12.0) };
@@ -594,14 +594,16 @@ fn plugin_draw(ui: &mut egui::Ui, b: &mut Bar, pid: &str, r: Rect) {
     let icon = plugin_icon(b, pid);
     let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
     let text = if it.failed && it.text.is_empty() { "!" } else { it.text.as_str() };
+    // The icon in its own colours, or in one of the panel's (Settings, the item's options).
+    let tint = crate::tray_ui::tint(b.m.s.plugin_icon(pid), b.fg(), b.accent);
     if b.vert {
         match icon {
             Some(t) if !text.is_empty() => {
-                p.image(t.id(), Rect::from_center_size(Pos2::new(r.center().x, r.top() + 13.0), Vec2::splat(ICON)), uv, Color32::WHITE);
+                p.image(t.id(), Rect::from_center_size(Pos2::new(r.center().x, r.top() + 13.0), Vec2::splat(ICON)), uv, tint);
                 small(&p, Pos2::new(r.center().x, r.bottom() - 9.0), text, SMALL, col);
             }
             Some(t) => {
-                p.image(t.id(), Rect::from_center_size(r.center(), Vec2::splat(ICON)), uv, Color32::WHITE);
+                p.image(t.id(), Rect::from_center_size(r.center(), Vec2::splat(ICON)), uv, tint);
             }
             None => small(&p, r.center(), text, 12.0, col),
         }
@@ -609,7 +611,7 @@ fn plugin_draw(ui: &mut egui::Ui, b: &mut Bar, pid: &str, r: Rect) {
         let mut x = r.left() + PAD;
         if let Some(t) = icon {
             let at = if text.is_empty() { r.center().x } else { x + ICON / 2.0 };
-            p.image(t.id(), Rect::from_center_size(Pos2::new(at, r.center().y), Vec2::splat(ICON)), uv, Color32::WHITE);
+            p.image(t.id(), Rect::from_center_size(Pos2::new(at, r.center().y), Vec2::splat(ICON)), uv, tint);
             x += ICON + ICON_GAP;
         }
         if !text.is_empty() {

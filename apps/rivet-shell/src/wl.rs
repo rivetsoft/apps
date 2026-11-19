@@ -1131,6 +1131,8 @@ impl Shell {
         let panels_changed = old.panels != s.panels;
         if old.plugins != s.plugins || old.plugin_set != s.plugin_set {
             self.plugins.sync(&s.plugins, &s.plugin_set);
+            // A plugin's icon colour is among them.
+            self.redraw_kinds(&[Kind::Panel]);
         }
         if old.wallpaper != s.wallpaper {
             self.event("wallpaper", &[("path", &s.wallpaper)]);

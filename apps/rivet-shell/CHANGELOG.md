@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A plugin's panel icon shows in its own colors, or as a solid shape in the panel's text color
+  or the accent, like the tray's icons (the item's options, on the Panels page).
+
 - A Notes plugin, for Rivet Notes: the vault's open tasks and latest notes in a panel item's
   menu, a dot and a notification when something is due today, and New Note in the launcher
   (type a title, choose New Note). Its vault is chosen in Settings, Plugins.

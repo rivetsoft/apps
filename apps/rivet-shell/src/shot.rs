@@ -173,6 +173,10 @@ impl ShotApp {
             s.launch_icon = it.next().and_then(|n| n.parse().ok()).unwrap_or(42);
             s.launch_place = crate::config::LaunchPlace::from(it.next().unwrap_or(""));
         }
+        // RIVET_SHELL_PLUGIN_ICON=text|highlight: the plugin item's icon in one colour.
+        if let Ok(c) = std::env::var("RIVET_SHELL_PLUGIN_ICON") {
+            s.set_plugin("disk", crate::plugins::ICON_COLOR, &c);
+        }
         if std::env::var("RIVET_SHELL_PLUGIN").as_deref() == Ok("1") {
             // Before the power button (the start of the zone is what a narrow screen leaves out).
             let at = s.panels[0].zones[2].len().saturating_sub(1);

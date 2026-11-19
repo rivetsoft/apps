@@ -132,9 +132,13 @@ pub struct Setting {
 /// The values of plugins' settings: (plugin, key, value).
 pub type Values = Vec<(String, String, String)>;
 
+/// The key of the shell's own setting for a plugin's panel icon: in its colours, or one colour.
+pub const ICON_COLOR: &str = "_icon";
+
 /// One plugin's values, as its program's environment has them (`RIVET_SET_KEY`).
 fn env_of(values: &Values, id: &str) -> Vec<(String, String)> {
-    values.iter().filter(|(p, _, _)| p == id).map(|(_, k, v)| (format!("RIVET_SET_{}", k.to_uppercase().replace('-', "_")), v.clone())).collect()
+    // Keys starting with `_` are the shell's own for the plugin (its icon's colour).
+    values.iter().filter(|(p, k, _)| p == id && !k.starts_with('_')).map(|(_, k, v)| (format!("RIVET_SET_{}", k.to_uppercase().replace('-', "_")), v.clone())).collect()
 }
 
 impl Manifest {

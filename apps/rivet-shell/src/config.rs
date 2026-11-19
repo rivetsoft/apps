@@ -1048,6 +1048,11 @@ impl Settings {
         self.plugin_set.iter().find(|(p, k, _)| p == id && k == key).map(|(_, _, v)| v.as_str()).unwrap_or("")
     }
 
+    /// How a plugin's panel icon shows: its own colours, or one of the panel's.
+    pub fn plugin_icon(&self, id: &str) -> TrayColor {
+        TrayColor::from(self.plugin_value(id, crate::plugins::ICON_COLOR))
+    }
+
     /// Set a plugin's setting (an empty value forgets it).
     pub fn set_plugin(&mut self, id: &str, key: &str, value: &str) {
         self.plugin_set.retain(|(p, k, _)| !(p == id && k == key));

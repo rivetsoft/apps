@@ -290,6 +290,18 @@ impl Kit {
         }
     }
 
+    /// `named_icon` in white, keeping its shape, to tint in one colour.
+    pub fn named_mask(&mut self, ctx: &egui::Context, icon: &str, px: f32) -> Option<egui::TextureHandle> {
+        let size = (px * ctx.pixels_per_point()).round() as u32;
+        if icon.starts_with('/') {
+            self.icons.mask_from_path(ctx, std::path::Path::new(icon), size)
+        } else if icon.is_empty() {
+            None
+        } else {
+            self.icons.mask(ctx, &[icon], size)
+        }
+    }
+
     /// The launcher item's icon, when it isn't the grid: the system's logo (as /etc/os-release
     /// names it, else the icon theme's usual names for one), or the custom icon or picture.
     pub fn launcher_icon(&mut self, ctx: &egui::Context, s: &Settings, px: f32) -> Option<egui::TextureHandle> {

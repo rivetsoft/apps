@@ -20,7 +20,25 @@ fn ui_font(size: f32) -> egui::FontId {
 
 /// The items with options.
 pub fn has_options(id: &str) -> bool {
-    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings")
+    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings") || id.starts_with("plugin:")
+}
+
+/// The choice between icons in their own colours and in one of the panel's.
+fn icon_tiles(ui: &mut egui::Ui, value: &mut TrayColor, labels: [&str; 3], accent: Color32) {
+    let choices: Vec<(TrayColor, &str)> = TrayColor::ALL.into_iter().zip(labels).collect();
+    tiles(ui, value, &choices, accent, move |p, r, c, col| {
+        let own = [Color32::from_rgb(0x58, 0x65, 0xf2), Color32::from_rgb(0x2e, 0xa0, 0x43), Color32::from_rgb(0xe6, 0x61, 0x00)];
+        for (i, o) in own.into_iter().enumerate() {
+            let pc = Pos2::new(r.center().x + (i as f32 - 1.0) * 16.0, r.center().y);
+            let fill = match c {
+                TrayColor::Own => o,
+                TrayColor::Text => col,
+                TrayColor::Highlight => accent,
+            };
+            p.circle_filled(pc, 5.5, fill);
+            p.circle_filled(pc, 2.0, mix(fill, Color32::BLACK, 0.45));
+        }
+    });
 }
 
 fn tip(id: &str) -> &'static str {
@@ -71,22 +89,19 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
             "clock" => clock(ui, s),
             "workspaces" => workspaces(ui, s, accent),
             "ai" => ai(ui, s),
+            plug if plug.starts_with("plugin:") => {
+                let pid = &plug["plugin:".len()..];
+                section(ui, "Icon");
+                let mut color = s.plugin_icon(pid);
+                icon_tiles(ui, &mut color, ["Colored", "Solid", "Highlight"], accent);
+                if color != s.plugin_icon(pid) {
+                    s.set_plugin(pid, crate::plugins::ICON_COLOR, if color == TrayColor::Own { "" } else { color.name() });
+                }
+                note(ui, "Solid draws the icon's shape in the panel's text color (a group's, in a group); Highlight in the accent.");
+            }
             "tray" => {
                 section(ui, "Icons");
-                let choices: Vec<(TrayColor, &str)> = TrayColor::ALL.iter().map(|c| (*c, c.label())).collect();
-                tiles(ui, &mut s.tray_color, &choices, accent, move |p, r, c, col| {
-                    let own = [Color32::from_rgb(0x58, 0x65, 0xf2), Color32::from_rgb(0x2e, 0xa0, 0x43), Color32::from_rgb(0xe6, 0x61, 0x00)];
-                    for (i, o) in own.into_iter().enumerate() {
-                        let pc = Pos2::new(r.center().x + (i as f32 - 1.0) * 16.0, r.center().y);
-                        let fill = match c {
-                            TrayColor::Own => o,
-                            TrayColor::Text => col,
-                            TrayColor::Highlight => accent,
-                        };
-                        p.circle_filled(pc, 5.5, fill);
-                        p.circle_filled(pc, 2.0, mix(fill, Color32::BLACK, 0.45));
-                    }
-                });
+                icon_tiles(ui, &mut s.tray_color, TrayColor::ALL.map(TrayColor::label), accent);
                 note(ui, "Recoloured icons keep their shapes in one colour, so the tray matches the panel.");
                 section(ui, "Shows");
                 toggle(ui, "Idle icons too", Some("Apps can mark an icon as having nothing to say"), &mut s.tray_passive, accent);
