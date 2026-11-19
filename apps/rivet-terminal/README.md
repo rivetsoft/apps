@@ -3,7 +3,7 @@
 A terminal with tabs and split panes, in the Rivet apps' look. **Just started**: not released
 yet; build it from source.
 
-![Rivet Terminal with three panes](../../docs/screenshots/terminal-wide.png)
+![Rivet Terminal with three panes](../../docs/screenshots/rivet-terminal-wide.png)
 
 - **Tabs and panes.** Each tab holds one or more panes, arranged by a layout: Tall (one on the
   left, the rest stacked on the right), Fat, Grid, Side by Side, Stacked, or One at a Time.

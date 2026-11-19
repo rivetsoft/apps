@@ -108,7 +108,7 @@ Ctrl+letters reach your programs.
 **Just started:** not released yet; build it from source.
 [More about Rivet Terminal](apps/rivet-terminal/README.md)
 
-![Rivet Terminal with three panes](docs/screenshots/terminal-wide.png)
+![Rivet Terminal with three panes](docs/screenshots/rivet-terminal-wide.png)
 
 > **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
