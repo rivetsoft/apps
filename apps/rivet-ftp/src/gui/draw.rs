@@ -54,7 +54,7 @@ impl FtpApp {
         });
         ui.add_space(6.0);
         if self.store.items.is_empty() {
-            ui.label(egui::RichText::new("No saved connections yet. Add one with ＋, or run rivet-ftp add in a terminal.").small().weak());
+            ui.label(egui::RichText::new("No saved connections yet. Add one with the + button.").small().weak());
         }
         let server_icon = self.named_icon(&ctx, &["network-server", "folder-remote", "network-workgroup"]);
         let items = self.store.items.clone();
