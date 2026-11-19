@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Rivet Shell's Notes plugin: open tasks and the latest notes on the panel, New Note in the
   launcher (and `@notes` to find a note by name), and a notice when something is due today (turn it on in the shell's Settings,
