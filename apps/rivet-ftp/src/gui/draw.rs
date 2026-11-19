@@ -310,7 +310,7 @@ impl FtpApp {
                 let p = self.pane(side);
                 p.sort = if p.sort.col == col { Sort { col, desc: !p.sort.desc } } else { Sort { col, desc: col != SortCol::Name } };
                 let order = p.sort;
-                crate::listing::sort_by(&mut p.entries, order);
+                crate::listing::sort_by(std::sync::Arc::make_mut(&mut p.entries).as_mut_slice(), order);
                 p.cursor = None;
             }
         }
@@ -324,7 +324,12 @@ impl FtpApp {
         let message: Option<(String, Color32)> = if side == Side::Remote && self.browse.is_none() {
             Some(("Not connected\n\nPick a saved connection on the left,\nor type an address above.".into(), weak))
         } else if pane.loading && pane.entries.is_empty() {
-            Some((if self.connecting { "Connecting…".into() } else { "Loading…".into() }, weak))
+            // A quick local read shows nothing rather than flashing "Loading…".
+            let quick = pane.loading_since.is_some_and(|t| t.elapsed().as_secs_f32() < 0.25);
+            if quick {
+                ctx.request_repaint_after(std::time::Duration::from_millis(250));
+            }
+            Some((if quick { String::new() } else if self.connecting { "Connecting…".into() } else { "Loading…".into() }, weak))
         } else if let Some(e) = &pane.error {
             Some((first_line(e).to_string(), status(&ctx).danger))
         } else if pane.entries.is_empty() {
@@ -492,7 +497,7 @@ impl FtpApp {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
         let (name_w, size_w) = cols;
-        let entries = self.pane_ref(side).entries.clone();
+        let entries = std::sync::Arc::clone(&self.pane_ref(side).entries);
         let focused = self.focus == side;
         let scroll_to = {
             let p = self.pane(side);
@@ -505,6 +510,13 @@ impl FtpApp {
         let mut activated: Option<usize> = None;
         let mut drag_start: Option<usize> = None;
         egui::ScrollArea::vertical().id_salt(("rows", side as u8)).auto_shrink([false, false]).show_rows(&mut lui, ROW_H, entries.len(), |ui, range| {
+            // Only rows in view are laid out, so one further away is scrolled to by where it
+            // would be (the selected folder after going up, say).
+            if let Some(i) = scroll_to.filter(|i| !range.contains(i)) {
+                let stride = ROW_H + ui.spacing().item_spacing.y;
+                let top = ui.max_rect().top() + (i as f32 - range.start as f32) * stride;
+                ui.scroll_to_rect(Rect::from_min_size(Pos2::new(ui.max_rect().left(), top), Vec2::new(1.0, ROW_H)), None);
+            }
             for i in range {
                 let e = &entries[i];
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click_and_drag());
@@ -758,12 +770,20 @@ impl FtpApp {
         for n in [["go-up-symbolic", "go-up"], ["go-down-symbolic", "go-down"]] {
             arrows.insert(n[0], self.icon_named(&ctx, &n));
         }
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            if self.queue.is_empty() {
-                ui.label(egui::RichText::new("Drag files between the panes, double-click a file, or use Upload and Download.").weak());
-            }
-            for (idx, j) in self.queue.iter().enumerate().rev() {
-                ui.horizontal(|ui| {
+        if self.queue.is_empty() {
+            ui.label(egui::RichText::new("Drag files between the panes, double-click a file, or use Upload and Download.").weak());
+        }
+        // Only the rows in view are laid out, so thousands of transfers cost no more than a few.
+        let row_h = 28.0 - ui.spacing().item_spacing.y;
+        let n = self.queue.len();
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_h, n, |ui, range| {
+            for r in range {
+                let idx = n - 1 - r;
+                let j = &self.queue[idx];
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::hover());
+                let mut row = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+                {
+                    let ui = &mut row;
                     let names: &[&str] = if j.dir == Dir::Up { &["go-up-symbolic", "go-up"] } else { &["go-down-symbolic", "go-down"] };
                     match arrows.get(names[0]).cloned().flatten() {
                         Some(t) => {
@@ -819,7 +839,7 @@ impl FtpApp {
                             ui.label(egui::RichText::new("Waiting").weak());
                         }
                     });
-                });
+                }
             }
         });
         if let Some(i) = retry {

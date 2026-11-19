@@ -14,6 +14,29 @@ mod toolbar;
 
 pub use prefs::ICON_SVG;
 
+/// The desktop font's file, read on a thread while the window opens: asking fontconfig takes
+/// tens of milliseconds, which the first frame would otherwise wait for.
+static FONT_LOOKUP: std::sync::Mutex<Option<std::thread::JoinHandle<Option<Vec<u8>>>>> = std::sync::Mutex::new(None);
+
+pub fn start_font_lookup() {
+    let job = std::thread::spawn(|| {
+        // Fills the cache the text size is read from, too.
+        let _ = rivet_look::fonts::desktop_font_cached();
+        let (_, path) = rivet_look::fonts::resolve("")?;
+        std::fs::read(path).ok()
+    });
+    *FONT_LOOKUP.lock().unwrap_or_else(|e| e.into_inner()) = Some(job);
+}
+
+/// The font file's bytes: from the lookup started early, or looked up now.
+fn desktop_font_bytes() -> Option<Vec<u8>> {
+    let job = FONT_LOOKUP.lock().unwrap_or_else(|e| e.into_inner()).take();
+    match job {
+        Some(j) => j.join().ok().flatten(),
+        None => std::fs::read(rivet_look::fonts::resolve("")?.1).ok(),
+    }
+}
+
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -46,7 +69,8 @@ impl Side {
 #[derive(Default)]
 struct Pane {
     path: String,
-    entries: Vec<Entry>,
+    /// Shared, so drawing a frame can hold the list without copying it.
+    entries: std::sync::Arc<Vec<Entry>>,
     selected: BTreeSet<String>,
     anchor: Option<usize>,
     cursor: Option<usize>,
@@ -56,7 +80,16 @@ struct Pane {
     editing: Option<String>,
     scroll_to_cursor: bool,
     sort: crate::listing::Sort,
+    /// A local folder being read on a thread: (folder, order, what was read). A newer reload
+    /// replaces it, so an older answer is never shown.
+    listing_rx: Option<std::sync::mpsc::Receiver<LocalListing>>,
+    /// When that read began: "Loading…" only shows once it takes long enough to notice.
+    loading_since: Option<std::time::Instant>,
+    /// Select this name once the listing being read arrives (a new folder, a renamed file).
+    reselect: Option<String>,
 }
+
+type LocalListing = (String, crate::listing::Sort, Result<Vec<Entry>, String>);
 
 impl Pane {
     fn selected_entries(&self) -> Vec<Entry> {
@@ -252,6 +285,8 @@ struct DragItems {
 }
 
 pub struct FtpApp {
+    /// For work on other threads to wake the window when it's done.
+    ctx: egui::Context,
     store: Store,
     mime: MimeDb,
     icons: IconTheme,
@@ -316,6 +351,8 @@ pub struct FtpApp {
     /// Test hook RIVET_FTP_PREVIEW=local:NAME or remote:NAME.
     hook_preview: Option<String>,
     apps: Option<Vec<rivet_xdg::launch::DesktopApp>>,
+    /// The installed apps, being read on a thread since startup.
+    apps_rx: Option<std::sync::mpsc::Receiver<Vec<rivet_xdg::launch::DesktopApp>>>,
     /// Test hook RIVET_FTP_EDIT=NAME: edit this server file once the folder is listed.
     hook_edit: Option<String>,
     /// Test hook RIVET_FTP_INFO=NAME: open Info for this server file once listed.
@@ -326,6 +363,9 @@ pub struct FtpApp {
     /// Keep these in the keyring once the login works: (connection, kind, secret).
     remember: Vec<(String, rivet_connections::secrets::Kind, String)>,
     shot_wait: u32,
+    /// Time spent building each frame, and when the first was ready (for RIVET_FRAME_STATS).
+    frame_times: Vec<f64>,
+    first_frame_ms: Option<f64>,
 }
 
 impl eframe::App for FtpApp {
@@ -359,9 +399,11 @@ impl eframe::App for FtpApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        let frame_start = std::time::Instant::now();
         self.watch_palette(&ctx);
         self.apply_look(&ctx);
         self.poll(&ctx);
+        self.poll_local();
         self.poll_background(&ctx);
         if let Some(list) = self.hook_tabs.take() {
             for name in list.split(',') {
@@ -416,13 +458,35 @@ impl eframe::App for FtpApp {
             // Checks: wait for logging in and listing to finish first (up to about 10 s).
             let editing = self.hook_edit.is_some() || self.edits.iter().any(|e| e.saved_at.is_none() && !matches!(e.state, edit::EditState::Failed(_)));
             let previewing = self.preview.as_ref().is_some_and(|p| !p.lb.current().ready) || self.hook_preview.is_some();
-            let busy = previewing || self.connecting || self.remote.loading || !self.pending.is_empty() || self.hook_send.is_some() || self.queue.iter().any(|j| j.state == JobState::Waiting) || editing;
+            let busy = previewing || self.connecting || self.local.loading || self.remote.loading || !self.pending.is_empty() || self.hook_send.is_some() || self.queue.iter().any(|j| j.state == JobState::Waiting) || editing;
             if busy && self.shot_wait < 800 {
                 self.shot_wait += 1;
                 ctx.request_repaint();
             } else {
                 shot.step(&ctx);
             }
+            if std::env::var_os("RIVET_FRAME_STATS").is_some() {
+                self.frame_times.push(frame_start.elapsed().as_secs_f64() * 1000.0);
+                self.first_frame_ms.get_or_insert_with(|| crate::STARTED.get().map(|t| t.elapsed().as_secs_f64() * 1000.0).unwrap_or(0.0));
+                if shot.frames() == shot.after {
+                    print_frame_stats(&self.frame_times, self.first_frame_ms);
+                }
+            }
         }
     }
+}
+
+/// Checks: how long frames took in a screenshot run. The first ten are left out of the median,
+/// since fonts, icons and the folders load then.
+fn print_frame_stats(times: &[f64], first: Option<f64>) {
+    if let Some(f) = first {
+        println!("first frame ready {f:.0} ms after start");
+    }
+    if times.len() <= 10 {
+        return;
+    }
+    let mut t = times[10..].to_vec();
+    t.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let head: f64 = times[..10].iter().sum();
+    println!("first 10 frames: {head:.1} ms total; afterwards median {:.2} ms, 95th percentile {:.2} ms per frame", t[t.len() / 2], t[t.len() * 95 / 100]);
 }

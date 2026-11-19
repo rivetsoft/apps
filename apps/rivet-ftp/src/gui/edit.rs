@@ -86,7 +86,9 @@ impl FtpApp {
     /// Installed apps (read once, when first needed).
     pub(super) fn apps(&mut self) -> &[DesktopApp] {
         if self.apps.is_none() {
-            self.apps = Some(launch::all_apps());
+            // Read at startup on a thread; this only waits if asked for in the first moments.
+            let read = self.apps_rx.take().and_then(|rx| rx.recv().ok());
+            self.apps = Some(read.unwrap_or_else(launch::all_apps));
         }
         self.apps.as_deref().unwrap_or(&[])
     }

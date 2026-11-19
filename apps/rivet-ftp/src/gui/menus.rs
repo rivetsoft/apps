@@ -207,7 +207,7 @@ impl FtpApp {
                 let p = self.pane(side);
                 p.sort = crate::listing::Sort { col, desc: if p.sort.col == col { p.sort.desc } else { col != crate::listing::SortCol::Name } };
                 let order = p.sort;
-                crate::listing::sort_by(&mut p.entries, order);
+                crate::listing::sort_by(std::sync::Arc::make_mut(&mut p.entries).as_mut_slice(), order);
             }
             Cmd::NewTab => self.new_tab(),
             Cmd::CloseTab => self.close_tab(self.active),
@@ -239,7 +239,7 @@ impl FtpApp {
                 let p = self.pane(side);
                 p.sort.desc = !p.sort.desc;
                 let order = p.sort;
-                crate::listing::sort_by(&mut p.entries, order);
+                crate::listing::sort_by(std::sync::Arc::make_mut(&mut p.entries).as_mut_slice(), order);
             }
             Cmd::Up => self.go_up(side),
             Cmd::LocalHome => {

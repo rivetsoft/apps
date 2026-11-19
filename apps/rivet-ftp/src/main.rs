@@ -47,7 +47,11 @@ Addresses look like sftp://user@server:port/folder, ftp://… or ftps://…; use
 alone means SFTP. Passwords are never saved in the connections file
 (~/.config/rivet-ftp/connections.conf); SSH logins use your keys or ssh agent.";
 
+/// When the process started (for RIVET_FRAME_STATS).
+pub static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
 fn main() -> ExitCode {
+    STARTED.get_or_init(std::time::Instant::now);
     // Run by ssh as its askpass helper: answer and exit.
     sftp::askpass_main();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
@@ -75,6 +79,7 @@ fn main() -> ExitCode {
 }
 
 fn window(open: Option<String>, screenshot: Option<PathBuf>) -> ExitCode {
+    gui::start_font_lookup();
     if screenshot.is_some() {
         // RIVET_SHOT_SIZE=WxH for documentation pictures (1100x700 by default).
         let size = std::env::var("RIVET_SHOT_SIZE").ok().and_then(|v| {

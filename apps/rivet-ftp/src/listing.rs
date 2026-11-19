@@ -35,10 +35,15 @@ pub struct Sort {
     pub desc: bool,
 }
 
-/// A local folder, folders first then by name (natural order, ignoring case). Hidden files
-/// only when asked.
-pub fn read_local(dir: &Path, hidden: bool) -> Result<Vec<Entry>, String> {
+/// A local folder, sorted as asked. Hidden files only when asked.
+pub fn read_local(dir: &Path, hidden: bool, order: Sort) -> Result<Vec<Entry>, String> {
+    use std::collections::HashMap;
+    use std::os::unix::fs::MetadataExt;
     let rd = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
+    let now = chrono::Local::now();
+    // A folder's files nearly all share one owner: look each one up once, not once a file.
+    let mut users: HashMap<u32, String> = HashMap::new();
+    let mut groups: HashMap<u32, String> = HashMap::new();
     let mut out = Vec::new();
     for d in rd.flatten() {
         let name = d.file_name().to_string_lossy().into_owned();
@@ -49,19 +54,20 @@ pub fn read_local(dir: &Path, hidden: bool) -> Result<Vec<Entry>, String> {
         let md = std::fs::metadata(d.path()).ok();
         let is_dir = md.as_ref().is_some_and(|m| m.is_dir());
         let t = md.as_ref().and_then(|m| m.modified().ok());
-        let modified = t.map(fmt_time).unwrap_or_default();
+        let modified = t.map(|t| fmt_time(t, now)).unwrap_or_default();
         let mtime = t.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
-        use std::os::unix::fs::MetadataExt;
-        let (mode, owner, group) = md.as_ref().map(|m| (m.mode() & 0o7777, user_name(m.uid()), group_name(m.gid()))).unwrap_or_default();
+        let (mode, owner, group) = md
+            .as_ref()
+            .map(|m| {
+                let owner = users.entry(m.uid()).or_insert_with(|| name_from("/etc/passwd", m.uid())).clone();
+                let group = groups.entry(m.gid()).or_insert_with(|| name_from("/etc/group", m.gid())).clone();
+                (m.mode() & 0o7777, owner, group)
+            })
+            .unwrap_or_default();
         out.push(Entry { name, is_dir, is_link: link, size: if is_dir { 0 } else { md.map(|m| m.len()).unwrap_or(0) }, modified, mtime, mode, owner, group });
     }
-    sort(&mut out);
+    sort_by(&mut out, order);
     Ok(out)
-}
-
-/// Folders first, then by name.
-pub fn sort(v: &mut [Entry]) {
-    sort_by(v, Sort::default());
 }
 
 /// Folders first, then by the chosen column (name breaks ties).
@@ -113,9 +119,8 @@ fn natural(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-fn fmt_time(t: std::time::SystemTime) -> String {
+fn fmt_time(t: std::time::SystemTime, now: chrono::DateTime<chrono::Local>) -> String {
     let dt: chrono::DateTime<chrono::Local> = t.into();
-    let now = chrono::Local::now();
     if (now - dt).num_days() < 180 && dt <= now + chrono::Duration::days(1) {
         dt.format("%b %e %H:%M").to_string()
     } else {
@@ -182,15 +187,7 @@ pub fn mode_from(perms: &str) -> u32 {
     m
 }
 
-/// A user's name from /etc/passwd (or the number).
-fn user_name(uid: u32) -> String {
-    name_from("/etc/passwd", uid)
-}
-
-fn group_name(gid: u32) -> String {
-    name_from("/etc/group", gid)
-}
-
+/// A user's or group's name from /etc/passwd or /etc/group (or the number).
 fn name_from(file: &str, id: u32) -> String {
     std::fs::read_to_string(file)
         .ok()
@@ -244,6 +241,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn reads_a_local_folder_in_order() {
+        let d = std::env::temp_dir().join(format!("rivet-ftp-listing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("sub")).unwrap();
+        for (name, len) in [("b10.txt", 1), ("b2.txt", 30), (".hidden", 5)] {
+            std::fs::write(d.join(name), vec![b'x'; len]).unwrap();
+        }
+        let names = |v: &[Entry]| v.iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+        let v = read_local(&d, false, Sort::default()).unwrap();
+        assert_eq!(names(&v), ["sub", "b2.txt", "b10.txt"]);
+        // Every file has its owner's name, looked up once for the folder.
+        assert!(v.iter().all(|e| !e.owner.is_empty() && e.owner == v[0].owner && !e.group.is_empty()));
+        let v = read_local(&d, true, Sort { col: SortCol::Size, desc: true }).unwrap();
+        assert_eq!(names(&v), ["sub", "b2.txt", ".hidden", "b10.txt"]);
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    #[test]
     fn parses_sftp_ls() {
         let e = parse_ls_line("-rw-r--r--    ? me       me              2 Nov 15 21:49 /srv/www/odd name [1].txt", "/srv/www").unwrap();
         assert_eq!((e.name.as_str(), e.is_dir, e.size), ("odd name [1].txt", false, 2));
@@ -261,7 +276,7 @@ mod tests {
             .enumerate()
             .map(|(i, n)| Entry { name: n.to_string(), is_dir: *n == "dir", size: i as u64, mtime: 10 - i as i64, ..Default::default() })
             .collect();
-        sort(&mut v);
+        sort_by(&mut v, Sort::default());
         assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"]);
         sort_by(&mut v, Sort { col: SortCol::Size, desc: true });
         assert_eq!(v.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["dir", "File2", "file10"], "folders stay first");

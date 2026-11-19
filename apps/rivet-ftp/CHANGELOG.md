@@ -3,6 +3,12 @@
 ## Unreleased
 
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
+- **Smoother with big folders and long transfer lists**: scrolling and redrawing no longer
+  slow down as a folder or the transfer list grows (thousands of files draw as quickly as a few).
+- **This computer's folders open without a pause**: they are read in the background, about three
+  times faster, and the window stays responsive while a slow drive answers.
+- **Opens sooner**: the first frame is ready about 100 ms earlier.
+- Going up a folder scrolls to the folder you came from, even in a long list.
 
 ## 0.3.0
 

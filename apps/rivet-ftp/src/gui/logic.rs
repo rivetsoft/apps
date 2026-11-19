@@ -20,6 +20,7 @@ impl FtpApp {
         let (pal, watched) = palette::load();
         let home = rivet_xdg::places::home();
         let mut app = FtpApp {
+            ctx: cc.egui_ctx.clone(),
             store: Store::load(),
             mime: MimeDb::load(),
             icons: IconTheme::new(&icons::detect_system_theme()),
@@ -65,11 +66,20 @@ impl FtpApp {
             preview: None,
             hook_preview: std::env::var("RIVET_FTP_PREVIEW").ok(),
             apps: None,
+            apps_rx: {
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = tx.send(rivet_xdg::launch::all_apps());
+                });
+                Some(rx)
+            },
             hook_edit: std::env::var("RIVET_FTP_EDIT").ok(),
             hook_info: std::env::var("RIVET_FTP_INFO").ok(),
             secret: None,
             remember: Vec::new(),
             shot_wait: 0,
+            frame_times: Vec::new(),
+            first_frame_ms: None,
         };
         if screenshot_mode(&app) {
             crate::settings::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -109,11 +119,6 @@ impl FtpApp {
             app.s.toolbar = crate::settings::parse_toolbar(&t);
         }
         app.reload_local();
-        if let Some(name) = app.hook_preview.clone().and_then(|h| h.strip_prefix("local:").map(str::to_string)) {
-            app.hook_preview = None;
-            app.select_only(Side::Local, &name);
-            app.open_preview(Side::Local);
-        }
         if let Some(name) = open {
             match app.store.find(&name).cloned() {
                 Some(c) => app.connect(c, &cc.egui_ctx),
@@ -133,9 +138,7 @@ impl FtpApp {
         if !self.font_set {
             self.font_set = true;
             let mut defs = egui::FontDefinitions::default();
-            if let Some((_, path)) = fonts::resolve("")
-                && let Ok(bytes) = std::fs::read(&path)
-            {
+            if let Some(bytes) = super::desktop_font_bytes() {
                 defs.font_data.insert("ui-font".into(), Arc::new(egui::FontData::from_owned(bytes)));
                 defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "ui-font".into());
             }
@@ -271,7 +274,7 @@ impl FtpApp {
                         let hidden = self.s.show_hidden;
                         let mut entries: Vec<Entry> = entries.into_iter().filter(|e| hidden || !e.name.starts_with('.')).collect();
                         listing::sort_by(&mut entries, self.remote.sort);
-                        self.remote.entries = entries;
+                        self.remote.entries = Arc::new(entries);
                         let names: BTreeSet<String> = self.remote.entries.iter().map(|e| e.name.clone()).collect();
                         self.remote.selected.retain(|n| names.contains(n));
                         self.remote.loading = false;
@@ -307,7 +310,7 @@ impl FtpApp {
                         self.remote.loading = false;
                         if let Some(e) = err {
                             self.remote.error = Some(e);
-                            self.remote.entries.clear();
+                            self.remote.entries = Default::default();
                         }
                         continue;
                     }
@@ -403,22 +406,62 @@ impl FtpApp {
 
     // ---------------------------------------------------------------- navigation
 
+    /// Read the local folder again, on a thread; `poll_local` takes the answer.
     pub(super) fn reload_local(&mut self) {
-        match listing::read_local(Path::new(&self.local.path), self.s.show_hidden) {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (path, hidden, order, ctx) = (self.local.path.clone(), self.s.show_hidden, self.local.sort, self.ctx.clone());
+        std::thread::spawn(move || {
+            let read = listing::read_local(Path::new(&path), hidden, order);
+            let _ = tx.send((path, order, read));
+            ctx.request_repaint();
+        });
+        self.local.listing_rx = Some(rx);
+        self.local.loading = true;
+        self.local.loading_since.get_or_insert_with(std::time::Instant::now);
+    }
+
+    /// The local folder's listing, once its thread has read it.
+    pub(super) fn poll_local(&mut self) {
+        let Some(rx) = &self.local.listing_rx else { return };
+        let (path, order, read) = match rx.try_recv() {
+            Ok(r) => r,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => (self.local.path.clone(), self.local.sort, Err("Couldn't read this folder. Press F5 to try again.".into())),
+        };
+        self.local.listing_rx = None;
+        self.local.loading = false;
+        self.local.loading_since = None;
+        match read {
             Ok(mut v) => {
-                listing::sort_by(&mut v, self.local.sort);
-                self.local.entries = v;
+                // The order was changed while it was being read.
+                if order != self.local.sort {
+                    listing::sort_by(&mut v, self.local.sort);
+                }
+                self.local.entries = Arc::new(v);
                 self.local.error = None;
+                if self.s.remember_local && self.s.last_local != path {
+                    self.s.last_local = path;
+                    self.s.save();
+                }
             }
             Err(e) => {
-                self.local.entries.clear();
+                self.local.entries = Default::default();
                 self.local.error = Some(e);
             }
         }
-        let names: BTreeSet<String> = self.local.entries.iter().map(|e| e.name.clone()).collect();
-        self.local.selected.retain(|n| names.contains(n));
+        let names: BTreeSet<&str> = self.local.entries.iter().map(|e| e.name.as_str()).collect();
+        self.local.selected.retain(|n| names.contains(n.as_str()));
         if self.local.cursor.is_some_and(|c| c >= self.local.entries.len()) {
             self.local.cursor = None;
+        }
+        if let Some(name) = self.local.reselect.take() {
+            self.select_only(Side::Local, &name);
+        }
+        // Test hook: RIVET_FTP_PREVIEW=local:NAME.
+        if let Some(name) = self.hook_preview.clone().and_then(|h| h.strip_prefix("local:").map(str::to_string)) {
+            self.hook_preview = None;
+            self.select_only(Side::Local, &name);
+            self.open_preview(Side::Local);
         }
     }
 
@@ -444,11 +487,10 @@ impl FtpApp {
         let old = std::mem::replace(&mut self.local.path, path);
         self.local.selected.clear();
         self.local.cursor = None;
+        // The old folder's items would act on the new folder until it's read.
+        self.local.entries = Default::default();
+        self.local.error = None;
         self.reload_local();
-        if self.s.remember_local && self.local.error.is_none() {
-            self.s.last_local = self.local.path.clone();
-            self.s.save();
-        }
         // Coming up out of a folder: select it.
         let oldp = Path::new(&old);
         if oldp.parent().is_some_and(|p| p.to_string_lossy() == self.local.path.as_str())
@@ -465,7 +507,7 @@ impl FtpApp {
         self.remote.path = path;
         self.remote.selected.clear();
         self.remote.cursor = None;
-        self.remote.entries.clear();
+        self.remote.entries = Default::default();
         self.remote.error = None;
         self.reload_remote();
     }
@@ -520,6 +562,9 @@ impl FtpApp {
 
     pub(super) fn select_only(&mut self, side: Side, name: &str) {
         let p = self.pane(side);
+        if p.listing_rx.is_some() {
+            p.reselect = Some(name.to_string());
+        }
         p.selected.clear();
         p.selected.insert(name.to_string());
         p.cursor = p.entries.iter().position(|e| e.name == name);
