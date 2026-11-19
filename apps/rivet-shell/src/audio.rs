@@ -247,7 +247,7 @@ fn device(v: &Value, input: bool, default: &str) -> Option<Device> {
         DevKind::Speaker
     };
     // The short name: the node's nickname (a card's "Speaker"), else its description.
-    let label = if !nick.is_empty() && bus != "bluetooth" { nick.to_string() } else { description.clone() };
+    let label = if !nick.is_empty() && bus != "bluetooth" { nick.to_string() } else { description };
     let sub = match kind {
         DevKind::Bluetooth => "Bluetooth".to_string(),
         DevKind::Network => "Over the network".to_string(),

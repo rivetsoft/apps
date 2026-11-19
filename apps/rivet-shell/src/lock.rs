@@ -201,7 +201,7 @@ fn run_inner(preview: bool) -> Result<u8, String> {
     let login = crate::auth::login_name();
     let s = Settings::load();
     let mut l = Lock {
-        conn: conn.clone(),
+        conn,
         qh: qh.clone(),
         handle: handle.clone(),
         tx,

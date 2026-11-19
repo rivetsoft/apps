@@ -243,7 +243,13 @@ fn spawn_detached(args: &[String], cwd: Option<&Path>) -> Result<(), String> {
         && d.is_dir() {
             cmd.current_dir(d);
         }
-    cmd.spawn().map(|_| ()).map_err(|e| format!("Could not start {}: {e}", args[0]))
+    let mut child = cmd.spawn().map_err(|e| format!("Could not start {}: {e}", args[0]))?;
+    // Waited for, off to the side: an app that's closed is then gone from the process list,
+    // not kept as a leftover until the program that started it quits.
+    let _ = std::thread::Builder::new().name("launched app".into()).stack_size(64 * 1024).spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 /// Open a web address or folder with the desktop's default handler.

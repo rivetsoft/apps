@@ -200,7 +200,7 @@ impl SettingsApp {
         };
         let mut s = self.s.clone();
         // Shown on the screen it's for.
-        s.panels = vec![p.clone()];
+        s.panels = vec![p];
         let mut m = crate::ui::Model { s: &s, status: &status, extra: &extra, apps: &self.apps, compositor: crate::sys::Compositor::Niri, output: "", acts: &mut acts };
         let mut child = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(virt));
         // Clipped to the preview and to what the page shows of it (in the layer's own, unscaled points).

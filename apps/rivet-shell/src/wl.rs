@@ -116,7 +116,12 @@ struct Surf {
     wall_now: Option<(PathBuf, Arc<Vec<u8>>)>,
     wall_from: Option<Arc<Vec<u8>>>,
     wall_at: Instant,
+    /// The picture last sent whole or in part, and the rows its widgets were drawn on.
+    wall_rows: Option<(Arc<Vec<u8>>, Rows)>,
 }
+
+/// The first and last row of a run of rows (none: no rows).
+type Rows = Option<(usize, usize)>;
 
 impl Surf {
     fn physical(&self) -> (u32, u32) {
@@ -481,6 +486,7 @@ impl Shell {
             wall_now: None,
             wall_from: None,
             wall_at: Instant::now(),
+            wall_rows: None,
             ctx,
             kit,
             tex,
@@ -1548,17 +1554,17 @@ impl Shell {
         let t_b0 = Instant::now();
         let Ok((buffer, canvas)) = surf.pool.create_buffer(pw as i32, ph as i32, stride, wl_shm::Format::Argb8888) else { return };
         let t_buf = t_b0.elapsed();
-        match (kind, wall) {
+        match (kind, wall.as_ref()) {
             (Kind::Background, Some(px)) if px.len() == canvas.len() => {
                 let t = surf.wall_at.elapsed().as_secs_f32() * 1000.0 / settings.wall_transition_ms.max(1) as f32;
                 match surf.wall_from.as_ref().filter(|f| t < 1.0 && f.len() == px.len()) {
                     Some(from) => {
-                        crate::wall::transition(settings.wall_transition, from, &px, canvas, pw as usize, t);
+                        crate::wall::transition(settings.wall_transition, from, px, canvas, pw as usize, t);
                         wall_moving = true;
                     }
                     None => {
                         surf.wall_from = None;
-                        canvas.copy_from_slice(&px);
+                        canvas.copy_from_slice(px);
                     }
                 }
             }
@@ -1580,11 +1586,28 @@ impl Shell {
         // Only the rows that changed since the last frame go to the compositor (typing in the
         // launcher changes a few lines of a screen-sized surface). The wallpaper changes whole.
         let row_bytes = pw as usize * 4;
-        let rows = if kind != Kind::Background && surf.last.len() == canvas.len() {
-            let differs = |y: usize| canvas[y * row_bytes..(y + 1) * row_bytes] != surf.last[y * row_bytes..(y + 1) * row_bytes];
+        let span = |differs: &dyn Fn(usize) -> bool| {
             let first = (0..ph as usize).find(|&y| differs(y));
             first.map(|f| (f, (f..ph as usize).rev().find(|&y| differs(y)).unwrap_or(f)))
+        };
+        let rows = if kind != Kind::Background && surf.last.len() == canvas.len() {
+            span(&|y| canvas[y * row_bytes..(y + 1) * row_bytes] != surf.last[y * row_bytes..(y + 1) * row_bytes])
+        } else if let Some(px) = wall.as_ref().filter(|px| kind == Kind::Background && !wall_moving && px.len() == canvas.len()) {
+            // The wallpaper with widgets drawn on it: the rows the widgets are on are the ones
+            // that differ from the picture, so only those (and the ones they were on last
+            // time) are sent, not the whole screen each time a widget's number changes.
+            let on = span(&|y| canvas[y * row_bytes..(y + 1) * row_bytes] != px[y * row_bytes..(y + 1) * row_bytes]);
+            let same_picture = surf.wall_rows.as_ref().is_some_and(|(p, _)| Arc::ptr_eq(p, px));
+            let before = surf.wall_rows.replace((px.clone(), on));
+            match before {
+                Some((_, was)) if same_picture => match (was, on) {
+                    (Some(a), Some(b)) => Some((a.0.min(b.0), a.1.max(b.1))),
+                    (a, b) => a.or(b),
+                },
+                _ => Some((0, ph as usize - 1)),
+            }
         } else {
+            surf.wall_rows = None;
             Some((0, ph as usize - 1))
         };
         if kind != Kind::Background {
@@ -1834,8 +1857,10 @@ impl Shell {
 
 /// The Settings window (its own program, so the shell never waits on it).
 pub fn open_settings() {
-    if let Ok(exe) = std::env::current_exe() {
-        let _ = std::process::Command::new(exe).arg("settings").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    if let Ok(exe) = std::env::current_exe()
+        && let Ok(child) = std::process::Command::new(exe).arg("settings").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()
+    {
+        sys::reap(child);
     }
 }
 

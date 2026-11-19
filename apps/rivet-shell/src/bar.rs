@@ -964,7 +964,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                         };
                         p.rect_filled(if style == WsStyle::Squares && b.vert { Rect::from_center_size(pr.center(), Vec2::splat(22.0)) } else { pr }, if style == WsStyle::Squares { 6.0 } else { 11.0 }, fill);
                         // Laid out in its colour (a galley keeps the colour it was made with).
-                        let g = p.layout_no_wrap(label.clone(), ui_font(12.5), col);
+                        let g = p.layout_no_wrap(label, ui_font(12.5), col);
                         p.galley(pr.center() - g.size() / 2.0, g, col);
                     }
                     WsStyle::Dots => {
@@ -989,7 +989,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                         if hot && !w.active {
                             p.rect_filled(pr, 6.0, mix(b.v.panel_fill, fg, 0.1));
                         }
-                        let g = p.layout_no_wrap(label.clone(), ui_font(if w.active { 13.5 } else { 12.5 }), col);
+                        let g = p.layout_no_wrap(label, ui_font(if w.active { 13.5 } else { 12.5 }), col);
                         p.galley(pr.center() - g.size() / 2.0 - Vec2::new(0.0, 1.0), g, col);
                         if w.active {
                             p.rect_filled(Rect::from_center_size(Pos2::new(pr.center().x, pr.bottom() - 0.5), Vec2::new(12.0, 2.5)), 1.25, accent);

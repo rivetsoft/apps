@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Lighter on the computer. The shell used to start six small programs every second to ask
+  about workspaces, windows, the volume and what's playing; now it's told when one of them
+  changes, so a quiet desktop costs next to nothing and a change shows sooner.
+- A widget on the wallpaper changing its number no longer redraws the whole screen.
+- Programs the shell started and that have since closed no longer linger in the process list.
 - An Edit plugin: Rivet Edit's five most recent folders on the panel and in the launcher
   (`@edit`). Turn it on in Settings, Plugins.
 - A new icon in Rivet's pink, to match the rest of the apps and the website.

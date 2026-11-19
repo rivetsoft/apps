@@ -27,6 +27,20 @@ enum DirKind {
 /// Icon name → where it exists (dir index, root index, extension index).
 type IconIndex = HashMap<String, Vec<(u16, u8, u8)>>;
 
+/// A theme's index as last built in this program, with each of its folders' dates then.
+struct SharedIndex {
+    dates: Vec<Option<std::time::SystemTime>>,
+    index: std::sync::Arc<IconIndex>,
+}
+
+/// The indexes built so far, by the theme's folders. A program with several `IconTheme`s (a
+/// shell with one for each surface) lists a theme's folders once between them, and again only
+/// when one of the folders has changed (an icon was added or taken away).
+static SHARED: std::sync::LazyLock<std::sync::Mutex<HashMap<ThemeFolders, SharedIndex>>> = std::sync::LazyLock::new(Default::default);
+
+/// What tells one theme from another: where it is, and its folders inside there.
+type ThemeFolders = (Vec<PathBuf>, Vec<String>);
+
 #[derive(Clone, Debug)]
 struct Theme {
     roots: Vec<PathBuf>,
@@ -35,7 +49,7 @@ struct Theme {
     /// icon name -> where it exists (dir index, root index, extension index).
     /// Built on first use by listing each theme folder once, so lookups never
     /// probe the disk file by file.
-    index: Option<IconIndex>,
+    index: Option<std::sync::Arc<IconIndex>>,
 }
 
 pub struct IconTheme {
@@ -319,7 +333,16 @@ impl IconTheme {
     }
 
     fn build_index(theme: &mut Theme) {
-        let mut index: HashMap<String, Vec<(u16, u8, u8)>> = HashMap::new();
+        // Each folder's date is a far smaller question than its listing.
+        let key = (theme.roots.clone(), theme.dirs.iter().map(|d| d.path.clone()).collect::<Vec<_>>());
+        let dates: Vec<Option<std::time::SystemTime>> = theme.dirs.iter().flat_map(|d| theme.roots.iter().map(move |r| std::fs::metadata(r.join(&d.path)).and_then(|m| m.modified()).ok())).collect();
+        if let Ok(shared) = SHARED.lock()
+            && let Some(hit) = shared.get(&key).filter(|h| h.dates == dates)
+        {
+            theme.index = Some(hit.index.clone());
+            return;
+        }
+        let mut index: IconIndex = HashMap::new();
         for (di, d) in theme.dirs.iter().enumerate() {
             for (ri, r) in theme.roots.iter().enumerate() {
                 let Ok(rd) = std::fs::read_dir(r.join(&d.path)) else { continue };
@@ -331,6 +354,10 @@ impl IconTheme {
                     index.entry(stem.to_string()).or_default().push((di as u16, ri as u8, ei as u8));
                 }
             }
+        }
+        let index = std::sync::Arc::new(index);
+        if let Ok(mut shared) = SHARED.lock() {
+            shared.insert(key, SharedIndex { dates, index: index.clone() });
         }
         theme.index = Some(index);
     }

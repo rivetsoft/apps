@@ -4,8 +4,14 @@
 //!
 //! Workspaces and open windows come from the compositor: niri, Hyprland and Sway are asked
 //! through their own tools; on other compositors the panel simply has no workspace buttons.
+//!
+//! Asking means running a program, so the thread asks only when something says there's news:
+//! the compositor's event stream, `pactl subscribe` and `playerctl --follow` are left running
+//! and each line from one marks its part to be read again (`follow`). A part whose program
+//! isn't there, or has stopped, is read every second as before.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::io::BufRead;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -131,6 +137,8 @@ pub struct Live {
     pub status: Arc<Mutex<Status>>,
     pub generation: Arc<AtomicU64>,
     poke: Arc<Mutex<Sender<bool>>>,
+    /// The shell changed something itself: every part is read, told of or not.
+    force: Arc<AtomicBool>,
 }
 
 impl Live {
@@ -142,38 +150,191 @@ impl Live {
     }
     /// Read again now (after the shell changed something), `all`: the slow parts too.
     pub fn refresh(&self, all: bool) {
+        self.force.store(true, Ordering::Relaxed);
         if let Ok(p) = self.poke.lock() {
             let _ = p.send(all);
         }
     }
 }
 
-/// Start reading the status every second on a thread; `wake` is called after each change.
+/// One part of the status that a program left running tells of.
+#[derive(Default)]
+struct Part {
+    /// The program is running: without it the part is read every second.
+    live: AtomicBool,
+    /// It said something since the part was last read.
+    news: AtomicBool,
+}
+
+impl Part {
+    /// Whether to read the part now; `read` is when it last was. One with nothing telling of
+    /// it is read every second; even one that's told of is read again every `RESYNC`, in case
+    /// something was missed.
+    fn due(&self, read: &mut Instant) -> bool {
+        let every = if self.live.load(Ordering::Relaxed) { RESYNC } else { TICK - Duration::from_millis(100) };
+        let due = self.news.swap(false, Ordering::Relaxed) || read.elapsed() >= every;
+        if due {
+            *read = Instant::now();
+        }
+        due
+    }
+}
+
+#[derive(Default)]
+struct Told {
+    /// Workspaces, open apps and the focused window's title.
+    comp: Part,
+    /// The volume and the microphone.
+    audio: Part,
+    media: Part,
+}
+
+const RESYNC: Duration = Duration::from_secs(10);
+/// The readings that are only files (processor, memory, battery) are taken this often.
+const TICK: Duration = Duration::from_millis(900);
+/// At least this long between readings that events ask for (a window's title can change many
+/// times a second).
+const SETTLE: Duration = Duration::from_millis(150);
+
+/// Where a part's news comes from.
+enum Source {
+    Program(&'static str, Vec<&'static str>),
+    Socket(std::path::PathBuf),
+}
+
+/// Keep `source` open on a thread of its own: each line `wants` marks `part` as having news and
+/// wakes the status thread. A program that isn't installed is left alone (the part is read
+/// every second); one that ends is started again, less and less often if it keeps ending.
+fn follow(name: &str, told: Arc<Told>, part: fn(&Told) -> &Part, poke: Sender<bool>, source: Source, wants: fn(&str) -> bool) {
+    let _ = std::thread::Builder::new().name(format!("rivet-shell {name}")).spawn(move || {
+        let mut wait = Duration::from_secs(2);
+        loop {
+            let began = Instant::now();
+            let mut child = None;
+            let lines: Box<dyn BufRead> = match &source {
+                Source::Program(cmd, args) => {
+                    use std::os::unix::process::CommandExt;
+                    let mut c = std::process::Command::new(cmd);
+                    c.args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::null());
+                    // It ends with the shell, even a shell that was killed.
+                    unsafe {
+                        c.pre_exec(|| {
+                            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                            Ok(())
+                        });
+                    }
+                    let Ok(mut c) = c.spawn() else { return };
+                    let Some(out) = c.stdout.take() else { return };
+                    child = Some(c);
+                    Box::new(std::io::BufReader::new(out))
+                }
+                Source::Socket(path) => match std::os::unix::net::UnixStream::connect(path) {
+                    Ok(s) => Box::new(std::io::BufReader::new(s)),
+                    Err(_) => return,
+                },
+            };
+            let p = part(&told);
+            p.live.store(true, Ordering::Relaxed);
+            for line in lines.lines().map_while(Result::ok) {
+                if wants(&line) {
+                    p.news.store(true, Ordering::Relaxed);
+                    if poke.send(false).is_err() {
+                        break;
+                    }
+                }
+            }
+            p.live.store(false, Ordering::Relaxed);
+            if let Some(mut c) = child {
+                let _ = c.kill();
+                let _ = c.wait();
+            }
+            if poke.send(false).is_err() {
+                return;
+            }
+            wait = if began.elapsed() > Duration::from_secs(30) { Duration::from_secs(2) } else { (wait * 2).min(Duration::from_secs(120)) };
+            std::thread::sleep(wait);
+        }
+    });
+}
+
+/// niri's events about workspaces and windows, but not the ones that come many times a second
+/// and change nothing shown (a window's size while it's resized, when it was last focused).
+fn niri_wants(line: &str) -> bool {
+    (line.starts_with("{\"Workspace") || line.starts_with("{\"Window")) && !line.starts_with("{\"WindowLayoutsChanged") && !line.starts_with("{\"WindowFocusTimestampChanged")
+}
+
+/// Sound devices and the default ones: not the apps playing, and not programs coming and going
+/// (every `wpctl` run is one).
+fn pactl_wants(line: &str) -> bool {
+    [" on sink #", " on source #", " on server"].iter().any(|k| line.contains(k))
+}
+
+fn follow_all(compositor: Compositor, told: &Arc<Told>, poke: &Sender<bool>) {
+    let any = |_: &str| true;
+    let comp = match compositor {
+        Compositor::Niri => Some((Source::Program("niri", vec!["msg", "-j", "event-stream"]), niri_wants as fn(&str) -> bool)),
+        Compositor::Hyprland => std::env::var_os("XDG_RUNTIME_DIR").zip(std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")).map(|(run, his)| (Source::Socket(std::path::PathBuf::from(run).join("hypr").join(his).join(".socket2.sock")), any as fn(&str) -> bool)),
+        Compositor::Sway => Some((Source::Program("swaymsg", vec!["-m", "-t", "subscribe", "[\"workspace\",\"window\"]"]), any as fn(&str) -> bool)),
+        Compositor::Mango | Compositor::Other => None,
+    };
+    if let Some((source, wants)) = comp {
+        follow("compositor events", told.clone(), |t| &t.comp, poke.clone(), source, wants);
+    }
+    follow("sound events", told.clone(), |t| &t.audio, poke.clone(), Source::Program("pactl", vec!["subscribe"]), pactl_wants);
+    follow("player events", told.clone(), |t| &t.media, poke.clone(), Source::Program("playerctl", vec!["metadata", "--follow", "--format", "{{status}}\t{{playerName}}\t{{artist}}\t{{title}}\t{{album}}\t{{mpris:artUrl}}\t{{mpris:length}}"]), any);
+}
+
+/// Start reading the status on a thread; `wake` is called after each change.
 pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
     let (poke, poked) = channel::<bool>();
-    let live = Live { status: Arc::new(Mutex::new(Status::default())), generation: Arc::new(AtomicU64::new(0)), poke: Arc::new(Mutex::new(poke)) };
+    let told = Arc::new(Told::default());
+    follow_all(compositor, &told, &poke);
+    let live = Live { status: Arc::new(Mutex::new(Status::default())), generation: Arc::new(AtomicU64::new(0)), poke: Arc::new(Mutex::new(poke)), force: Arc::default() };
     let l = live.clone();
     std::thread::Builder::new()
         .name("rivet-shell status".into())
         .spawn(move || {
             let mut cpu = CpuMeter::default();
-            let mut slow_at = Instant::now() - Duration::from_secs(60);
+            let long_ago = Instant::now() - Duration::from_secs(60);
+            let (mut slow_at, mut tick_at, mut comp_at, mut audio_at, mut media_at) = (long_ago, long_ago, long_ago, long_ago, long_ago);
+            // Where the track was when the player was last asked, to count on from.
+            let mut media_from = (0u32, 0u32);
             let mut s = Status::default();
             let mut all = false;
             loop {
+                let began = Instant::now();
+                let forced = l.force.swap(false, Ordering::Relaxed);
                 let mut next = s.clone();
-                next.workspaces = workspaces(compositor);
-                next.running = running(compositor, &s.running);
-                next.window = focused_title(compositor);
-                next.volume = volume("@DEFAULT_AUDIO_SINK@");
-                next.mic = volume("@DEFAULT_AUDIO_SOURCE@");
+                if told.comp.due(&mut comp_at) || forced {
+                    next.workspaces = workspaces(compositor);
+                    next.running = running(compositor, &s.running);
+                    next.window = focused_title(compositor);
+                }
+                if told.audio.due(&mut audio_at) || forced {
+                    next.volume = volume("@DEFAULT_AUDIO_SINK@");
+                    next.mic = volume("@DEFAULT_AUDIO_SOURCE@");
+                }
                 next.brightness = brightness();
-                (next.media, next.media_pos) = match read_media() {
-                    Some((m, pos)) => (Some(m), pos),
-                    None => (None, (0, 0)),
-                };
-                next.cpu = cpu.read();
-                next.mem = memory();
+                // The player is asked when it has news, and every few seconds while it plays
+                // (a jump made in the player itself); between those the seconds are counted here.
+                let playing = s.media.as_ref().is_some_and(|m| m.playing);
+                if told.media.due(&mut media_at) || forced || (playing && media_at.elapsed() >= Duration::from_secs(4)) {
+                    media_at = Instant::now();
+                    (next.media, next.media_pos) = match read_media() {
+                        Some((m, pos)) => (Some(m), pos),
+                        None => (None, (0, 0)),
+                    };
+                    media_from = next.media_pos;
+                } else if playing {
+                    let now = media_from.0 + media_at.elapsed().as_secs() as u32;
+                    next.media_pos = (if media_from.1 > 0 { now.min(media_from.1) } else { now }, media_from.1);
+                }
+                if tick_at.elapsed() >= TICK {
+                    tick_at = Instant::now();
+                    next.cpu = cpu.read();
+                    next.mem = memory();
+                    next.battery = battery();
+                }
                 let publish = |next: Status, s: &mut Status| {
                     if next != *s {
                         *s = next;
@@ -184,7 +345,6 @@ pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
                         wake();
                     }
                 };
-                next.battery = battery();
                 if all || slow_at.elapsed() >= Duration::from_secs(10) {
                     // The quick readings show first; the slow tools (Bluetooth waits up to 2 s)
                     // follow.
@@ -196,10 +356,11 @@ pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
                     next.profile = output("powerprofilesctl", &["get"]).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
                 }
                 publish(next, &mut s);
-                // Asked to look again (a slider moved, a toggle flipped): look soon.
-                all = match poked.recv_timeout(Duration::from_millis(900)) {
+                // Asked to look again (a slider moved, a toggle flipped, news from outside):
+                // look soon, once it has settled.
+                all = match poked.recv_timeout(TICK.saturating_sub(tick_at.elapsed()).max(Duration::from_millis(20))) {
                     Ok(a) => {
-                        std::thread::sleep(Duration::from_millis(60));
+                        std::thread::sleep(SETTLE.saturating_sub(began.elapsed()).max(Duration::from_millis(60)));
                         a || poked.try_iter().collect::<Vec<bool>>().contains(&true)
                     }
                     Err(RecvTimeoutError::Timeout) => false,
@@ -213,6 +374,8 @@ pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
 
 /// A command's output, or nothing (missing tools are fine: that part just doesn't show).
 fn output(cmd: &str, args: &[&str]) -> Option<String> {
+    #[cfg(test)]
+    tests::RUNS.fetch_add(1, Ordering::Relaxed);
     let out = std::process::Command::new(cmd).args(args).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output().ok()?;
     out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
@@ -367,7 +530,7 @@ fn art_file(url: &str) -> String {
     // Asked for once (the part file marks one on its way), and moved into place when whole.
     let part = file.with_extension("part");
     if !part.exists() && has("curl") && std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&part, b"").is_ok() {
-        let (url, part, file) = (url.to_string(), part.clone(), file.clone());
+        let (url, part, file) = (url.to_string(), part, file);
         std::thread::spawn(move || {
             let ok = std::process::Command::new("curl").args(["-sfL", "-m", "10", "--max-filesize", "8000000", "-o"]).arg(&part).arg("--").arg(&url).stdin(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
             if ok {
@@ -508,7 +671,17 @@ pub enum Power {
 
 /// Run a program without waiting for it (and without its output).
 pub fn spawn(cmd: &str, args: &[&str]) {
-    let _ = std::process::Command::new(cmd).args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
+    if let Ok(child) = std::process::Command::new(cmd).args(args).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn() {
+        reap(child);
+    }
+}
+
+/// Wait for a program that was started and left to itself, so that when it ends it's gone
+/// (one nobody waits for stays in the process list until the shell quits).
+pub fn reap(mut child: std::process::Child) {
+    let _ = std::thread::Builder::new().name("rivet-shell reap".into()).stack_size(64 * 1024).spawn(move || {
+        let _ = child.wait();
+    });
 }
 
 pub fn focus_workspace(c: Compositor, key: &str) {
@@ -649,23 +822,23 @@ pub fn watch_lock_keys(f: impl Fn(bool, bool) + Send + 'static) {
     std::thread::Builder::new()
         .name("rivet-shell lock keys".into())
         .spawn(move || {
-            let read = |suffix: &str| -> Option<bool> {
-                let mut any = None;
-                for e in std::fs::read_dir("/sys/class/leds").ok()?.flatten() {
-                    if e.file_name().to_string_lossy().ends_with(suffix) {
-                        let on = std::fs::read_to_string(e.path().join("brightness")).ok().is_some_and(|t| t.trim() != "0");
-                        any = Some(any.unwrap_or(false) || on);
-                    }
-                }
-                any
-            };
-            let mut last = (read("::capslock"), read("::numlock"));
+            // Each keyboard's light is a file; which keyboards there are is looked up now and then
+            // (one may be plugged in), the lights themselves each time.
+            let lights = |suffix: &str| -> Vec<std::path::PathBuf> { std::fs::read_dir("/sys/class/leds").into_iter().flatten().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(suffix)).map(|e| e.path().join("brightness")).collect() };
+            let read = |files: &[std::path::PathBuf]| -> Option<bool> { (!files.is_empty()).then(|| files.iter().any(|f| std::fs::read_to_string(f).is_ok_and(|t| t.trim() != "0"))) };
+            let (mut caps, mut num) = (lights("::capslock"), lights("::numlock"));
+            let mut last = (read(&caps), read(&num));
             if last == (None, None) {
                 return;
             }
+            let mut listed = Instant::now();
             loop {
                 std::thread::sleep(Duration::from_millis(120));
-                let now = (read("::capslock"), read("::numlock"));
+                if listed.elapsed() >= Duration::from_secs(5) {
+                    listed = Instant::now();
+                    (caps, num) = (lights("::capslock"), lights("::numlock"));
+                }
+                let now = (read(&caps), read(&num));
                 if let (Some(a), Some(b)) = (last.0, now.0)
                     && a != b
                 {
@@ -717,6 +890,56 @@ pub fn power(c: Compositor, p: Power) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Programs run to read something, counted.
+    pub static RUNS: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn events_are_picked() {
+        assert!(niri_wants(r#"{"WorkspaceActivated":{"id":3,"focused":true}}"#));
+        assert!(niri_wants(r#"{"WindowOpenedOrChanged":{"window":{}}}"#));
+        assert!(!niri_wants(r#"{"WindowLayoutsChanged":{"changes":[]}}"#));
+        assert!(!niri_wants(r#"{"KeyboardLayoutsChanged":{}}"#));
+        assert!(pactl_wants("Event 'change' on sink #53"));
+        assert!(pactl_wants("Event 'change' on server #4294967295"));
+        // Every program that asks the sound server something is a client coming and going.
+        assert!(!pactl_wants("Event 'new' on client #167774"));
+        assert!(!pactl_wants("Event 'change' on sink-input #90"));
+    }
+
+    #[test]
+    fn a_part_told_of_waits_for_news() {
+        let p = Part::default();
+        let mut read = Instant::now();
+        // Nothing telling of it: read every second.
+        assert!(!p.due(&mut read));
+        read = Instant::now() - TICK;
+        assert!(p.due(&mut read));
+        // Told of: only on news, or after a long while.
+        p.live.store(true, Ordering::Relaxed);
+        read = Instant::now() - TICK;
+        assert!(!p.due(&mut read));
+        p.news.store(true, Ordering::Relaxed);
+        assert!(p.due(&mut read) && !p.due(&mut read));
+        read = Instant::now() - RESYNC;
+        assert!(p.due(&mut read));
+    }
+
+    /// Reads this computer for real for a few seconds: `cargo test -- --ignored status_live`.
+    /// With the event streams running, a quiet desktop is asked next to nothing.
+    #[test]
+    #[ignore]
+    fn status_live() {
+        let live = start(Compositor::detect(), || {});
+        std::thread::sleep(Duration::from_secs(3));
+        let first = RUNS.swap(0, Ordering::Relaxed);
+        std::thread::sleep(Duration::from_secs(6));
+        let later = RUNS.load(Ordering::Relaxed);
+        let s = live.get();
+        eprintln!("programs run: {first} at the start, {later} in the next 6 s; {} workspaces, window {:?}, volume {:?}, media {:?} at {:?}", s.workspaces.len(), s.window, s.volume, s.media.as_ref().map(|m| &m.title), s.media_pos);
+        assert!(s.mem.1 > 0);
+        assert!(later < 20, "{later} programs in 6 s");
+    }
 
     #[test]
     fn reads_whats_playing() {

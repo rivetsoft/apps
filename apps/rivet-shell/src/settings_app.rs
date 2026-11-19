@@ -351,7 +351,9 @@ impl eframe::App for SettingsApp {
             }
         }
         if live {
-            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+            // Less often while another window has the keyboard: nothing here is being used.
+            let focused = ctx.input(|i| i.focused);
+            ctx.request_repaint_after(std::time::Duration::from_millis(if focused { 500 } else { 2000 }));
         }
         self.look.set_fonts(&ctx, &self.s.font, "", "");
         self.s.set_surfaces(&mut self.look);
