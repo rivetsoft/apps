@@ -62,19 +62,32 @@ pub fn desktop_font() -> Option<(String, f32)> {
 }
 
 /// `desktop_font`, looked up once and refreshed every few seconds (theme tools can change it).
+/// Apps ask every frame, so a refresh runs on a thread and the frame keeps the last answer:
+/// without a GTK settings file the lookup runs `gsettings`, which takes several milliseconds.
 pub fn desktop_font_cached() -> Option<(String, f32)> {
     use std::sync::Mutex;
     use std::time::Instant;
     type Cached = Option<(Instant, Option<(String, f32)>)>;
     static CACHE: Mutex<Cached> = Mutex::new(None);
     let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some((t, v)) = g.as_ref()
-        && t.elapsed().as_secs() < 5 {
-            return v.clone();
+    match g.as_mut() {
+        Some((t, v)) => {
+            if t.elapsed().as_secs() >= 5 {
+                // Marked fresh now, so only one refresh is ever under way.
+                *t = Instant::now();
+                std::thread::spawn(|| {
+                    let v = desktop_font();
+                    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), v));
+                });
+            }
+            v.clone()
         }
-    let v = desktop_font();
-    *g = Some((Instant::now(), v.clone()));
-    v
+        None => {
+            let v = desktop_font();
+            *g = Some((Instant::now(), v.clone()));
+            v
+        }
+    }
 }
 
 /// Points (as GTK uses them) to egui units: 1pt = 4/3 px at 96 dpi.
