@@ -409,154 +409,37 @@ impl EditApp {
     fn tab_strip(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
-        let mut select = None;
+        let tabs: Vec<rivet_look::tabs::Tab> = (0..self.tabs.len())
+            .map(|i| {
+                let name = self.tabs[i].name();
+                let icon = self.file_icon(&ctx, &name, 14.0);
+                let t = &self.tabs[i];
+                let mut tip = t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "Not saved yet".into());
+                if t.preview {
+                    tip.push_str("\nA preview: double-click to keep it open");
+                }
+                rivet_look::tabs::Tab { label: name, tip: Some(tip), icon, italic: t.preview, dirty: t.dirty(), badge: None }
+            })
+            .collect();
+        // The shared strip (Rivet Terminal's and Rivet Files' too), with a clear gap under it so
+        // the open tab's rounded corners don't sit on the code card's.
+        ui.add_space(2.0);
+        let out = rivet_look::tabs::TabStrip::new("edit-tabs", v.selection.bg_fill).widths(0.0, 320.0).show(ui, &tabs, self.active);
+        ui.add_space(8.0);
         let mut close = None;
-        let mut keep = None;
-        let icons: Vec<Option<egui::TextureHandle>> = (0..self.tabs.len()).map(|i| self.file_icon(&ctx, &self.tabs[i].name(), 14.0)).collect();
-        let strip = Rect::from_min_size(ui.cursor().min, Vec2::new(ui.available_width(), 40.0));
-        // Too many tabs to fit: they scroll sideways with no scroll bar over them; < and >
-        // buttons at the end, the mouse wheel, and a newly chosen tab is brought into view.
-        let over_id = egui::Id::unique("edit-tabs-overflow");
-        let overflow = ctx.data(|d| d.get_temp::<bool>(over_id)).unwrap_or(false);
-        let arrows_w = if overflow { 62.0 } else { 0.0 };
-        // A clear gap under the tabs, so the open tab's rounded corners don't sit on the
-        // code card's.
-        let tabs_rect = Rect::from_min_max(strip.min, strip.max - Vec2::new(arrows_w, 8.0));
-        let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Max)));
-        let wheel = if ui.rect_contains_pointer(tabs_rect) { ctx.input(|i| i.smooth_scroll_delta.y + i.smooth_scroll_delta.x) } else { 0.0 };
-        let shown_id = egui::Id::unique("edit-tabs-shown");
-        let bring = ctx.data(|d| d.get_temp::<usize>(shown_id)) != Some(self.active);
-        ctx.data_mut(|d| d.insert_temp(shown_id, self.active));
-        let active = self.active;
-        let goto_id = egui::Id::unique("edit-tabs-goto");
-        let mut sa = egui::ScrollArea::horizontal()
-            .id_salt("edit-tabs")
-            .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-            .scroll_source(egui::scroll_area::ScrollSource { scroll_bar: false, drag: egui::scroll_area::DragScroll::Always, mouse_wheel: false });
-        // An offset asked for last frame (arrows, wheel).
-        if let Some(x) = ctx.data_mut(|d| d.remove_temp::<f32>(goto_id)) {
-            sa = sa.horizontal_scroll_offset(x);
-        }
-        let out = sa.show(&mut inner, |ui| {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                for (i, t) in self.tabs.iter().enumerate() {
-                    let on = i == self.active;
-                    let name = t.name();
-                    let fmt = egui::TextFormat { font_id: fonts::ui_font(13.0), color: v.text_color(), italics: t.preview, ..Default::default() };
-                    let g = ui.painter().layout_job(egui::text::LayoutJob::single_section(name.clone(), fmt));
-                    let w = g.size().x + 64.0;
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
-                    if bring && i == active {
-                        ui.scroll_to_rect(r, None);
-                    }
-                    if on {
-                        // Raised off the window, like a chosen item in the sidebar.
-                        ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.09 } else { 0.07 }));
-                        ui.painter().line_segment([r.left_bottom() + Vec2::new(10.0, -1.0), r.right_bottom() + Vec2::new(-10.0, -1.0)], Stroke::new(2.0, v.selection.bg_fill));
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.05));
-                    }
-                    if let Some(tex) = &icons[i] {
-                        paint_tex(ui.painter(), tex, Rect::from_center_size(Pos2::new(r.left() + 16.0, r.center().y), Vec2::splat(14.0)), Color32::WHITE);
-                    }
-                    let fg = if on { v.strong_text_color() } else { v.weak_text_color() };
-                    ui.painter().galley(Pos2::new(r.left() + 30.0, r.center().y - g.size().y / 2.0), g, fg);
-                    // Close: a dot while it has changes, × under the pointer.
-                    let xr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.center().y), Vec2::splat(18.0));
-                    let over_x = ui.rect_contains_pointer(xr);
-                    if t.dirty() && !over_x {
-                        ui.painter().circle_filled(xr.center(), 4.0, fg);
-                    } else if on || resp.hovered() {
-                        if over_x {
-                            ui.painter().rect_filled(xr, r_sm(), v.widgets.hovered.weak_bg_fill);
-                        }
-                        ui.painter().text(xr.center(), Align2::CENTER_CENTER, "×", fonts::ui_font(15.0), fg);
-                    }
-                    let mut tip = t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "Not saved yet".into());
-                    if t.preview {
-                        tip.push_str("\nA preview: double-click to keep it open");
-                    }
-                    if resp.double_clicked() {
-                        keep = Some(i);
-                    }
-                    let resp = resp.on_hover_text(tip);
-                    if resp.clicked() {
-                        if over_x { close = Some(i) } else { select = Some(i) }
-                    }
-                    if resp.middle_clicked() {
-                        close = Some(i);
+        for e in &out.events {
+            match *e {
+                rivet_look::tabs::TabEvent::Swap(a, b) => self.tabs.swap(a, b),
+                rivet_look::tabs::TabEvent::Keep(i) => {
+                    if let Some(t) = self.tabs.get_mut(i) {
+                        t.preview = false;
                     }
                 }
-            });
-        });
-        let max = (out.content_size.x - out.inner_rect.width()).max(0.0);
-        let mut off = out.state.clamped_offset().x;
-        if (max > 0.5) != overflow {
-            ctx.data_mut(|d| d.insert_temp(over_id, max > 0.5));
-            // The strip's width changed (arrows came or went): show the open tab again.
-            ctx.data_mut(|d| d.remove_temp::<usize>(shown_id));
-            ctx.request_repaint();
-        }
-        let mut step = -wheel;
-        if overflow {
-            // < and >: a step of tabs each way.
-            let arrow = |x: f32, left: bool, on: bool| -> bool {
-                let r = Rect::from_center_size(Pos2::new(x, tabs_rect.center().y), Vec2::new(26.0, 26.0));
-                let resp = ui.interact(r, egui::Id::unique(("tab-arrow", left)), Sense::click());
-                if on && resp.hovered() {
-                    ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
-                }
-                let col = if on { v.text_color() } else { v.weak_text_color().gamma_multiply(0.5) };
-                let c = r.center();
-                let d = if left { -1.0 } else { 1.0 };
-                ui.painter().line_segment([c + Vec2::new(-2.5 * d, -5.0), c + Vec2::new(2.5 * d, 0.0)], Stroke::new(1.6, col));
-                ui.painter().line_segment([c + Vec2::new(2.5 * d, 0.0), c + Vec2::new(-2.5 * d, 5.0)], Stroke::new(1.6, col));
-                on && resp.on_hover_text(if left { "Scroll the tabs left" } else { "Scroll the tabs right" }).clicked()
-            };
-            let x = strip.right();
-            if arrow(x - 44.0, true, off > 0.5) {
-                step -= tabs_rect.width() * 0.6;
-            }
-            if arrow(x - 16.0, false, off < max - 0.5) {
-                step += tabs_rect.width() * 0.6;
+                rivet_look::tabs::TabEvent::Close(i) => close = Some(i),
+                rivet_look::tabs::TabEvent::Select(_) => {}
             }
         }
-        if step != 0.0 {
-            off = (off + step).clamp(0.0, max);
-            ctx.data_mut(|d| d.insert_temp(goto_id, off));
-            if wheel != 0.0 {
-                ctx.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
-            }
-            ctx.request_repaint();
-        }
-        // Faded edges where more tabs are hidden.
-        let bg = v.panel_fill;
-        let fade = |x_edge: f32, inward: f32| {
-            let r = Rect::from_x_y_ranges(x_edge.min(x_edge + inward)..=x_edge.max(x_edge + inward), tabs_rect.top()..=tabs_rect.bottom());
-            let (a, b) = if inward > 0.0 { (bg, Color32::TRANSPARENT) } else { (Color32::TRANSPARENT, bg) };
-            let mut mesh = egui::Mesh::default();
-            mesh.colored_vertex(r.left_top(), a);
-            mesh.colored_vertex(r.right_top(), b);
-            mesh.colored_vertex(r.right_bottom(), b);
-            mesh.colored_vertex(r.left_bottom(), a);
-            mesh.add_triangle(0, 1, 2);
-            mesh.add_triangle(0, 2, 3);
-            ui.painter().add(egui::Shape::mesh(mesh));
-        };
-        if off > 0.5 {
-            fade(tabs_rect.left(), 28.0);
-        }
-        if off < max - 0.5 {
-            fade(tabs_rect.right(), -28.0);
-        }
-        ui.advance_cursor_after_rect(strip);
-        if let Some(i) = select {
-            self.active = i;
-        }
-        if let Some(t) = keep.and_then(|i| self.tabs.get_mut(i)) {
-            t.preview = false;
-        }
+        self.active = out.active(self.active);
         if let Some(i) = close {
             self.close_tab(i, false);
         }

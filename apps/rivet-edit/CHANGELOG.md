@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Drag a tab to move it: it lifts and follows the pointer with a glow, the
+  tabs it passes slide aside, and it glides into place when let go. Dragging near either end of
+  a full strip scrolls it.
 - Several windows, each its own workspace: New Window (Shift+Ctrl+N), Open Folder in New Window,
   and Open in New Window on a folder in the sidebar; also from the app launcher.
 - Large files scroll and repaint smoothly: the laid-out text is kept between frames instead of

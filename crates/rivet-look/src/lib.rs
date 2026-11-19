@@ -14,6 +14,8 @@ pub mod nerd;
 pub mod palette;
 pub mod quick;
 pub mod schemes;
+pub mod tabdrag;
+pub mod tabs;
 pub mod theme;
 pub mod widgets;
 pub mod windows;

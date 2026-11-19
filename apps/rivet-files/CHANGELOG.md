@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Tabs look and work like Rivet Edit's and Rivet Terminal's (one shared strip): drag a tab to
+  move it, with a glow, and when there are too many to fit they scroll, with
+  < and > at the end. Files dropped on a tab still go to its folder.
 - **Column view** (Ctrl+4, View → Columns, or the toolbar): Miller columns. The folders above this
   one sit side by side (from Home, or from / outside it), and the column on the right shows what
   the chosen folder holds, or Peek for a chosen file when the Peek panel is closed. Click in

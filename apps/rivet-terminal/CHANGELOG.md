@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Drag a tab to move it: it lifts and follows the pointer with a glow, the
+  tabs it passes slide aside, and it glides into place when let go. Ctrl+Shift+, and
+  Ctrl+Shift+. still move the open one.
 - **Faster drawing**: a full screen draws in about a third of the time, a whole row of text at
   a time, with runs of one background as one rectangle. The screen is copied out quickly and
   drawn after, so a program's output keeps streaming in while a frame is drawn (`cat` of a big

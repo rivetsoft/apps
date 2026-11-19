@@ -637,7 +637,6 @@ impl TermApp {
     }
 
     fn toolbar(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
         let mut select = None;
         let mut close = None;
@@ -663,46 +662,28 @@ impl TermApp {
                 }
                 ui.add_space(6.0);
             }
-            // The tabs: the open one raised, like Rivet Edit's.
+            // The tabs: the shared strip (Rivet Edit's and Rivet Files' too). Drag one to move it.
             let accent = self.accent();
-            for (i, t) in self.tabs.iter().enumerate() {
-                let on = i == self.active;
-                let label = if t.label.is_empty() { "Terminal".to_string() } else { t.label.clone() };
-                let shown: String = if label.chars().count() > 34 { format!("{}…", label.chars().take(33).collect::<String>()) } else { label.clone() };
-                let g = ui.painter().layout_no_wrap(shown, fonts::ui_font(13.0), v.text_color());
-                let extra = if t.panes.len() > 1 { 22.0 } else { 0.0 };
-                // Roomy tabs: at least 170 points, the name with space either side.
-                let w = (g.size().x + 64.0 + extra).max(170.0);
-                let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
-                if on {
-                    ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.09 } else { 0.07 }));
-                    ui.painter().line_segment([r.left_bottom() + Vec2::new(10.0, -1.0), r.right_bottom() + Vec2::new(-10.0, -1.0)], Stroke::new(2.0, accent));
-                } else if resp.hovered() {
-                    ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.05));
+            let tabs: Vec<rivet_look::tabs::Tab> = self
+                .tabs
+                .iter()
+                .map(|t| {
+                    let label = if t.label.is_empty() { "Terminal".to_string() } else { t.label.clone() };
+                    rivet_look::tabs::Tab { tip: Some(label.clone()), label, badge: (t.panes.len() > 1).then(|| t.panes.len().to_string()), ..Default::default() }
+                })
+                .collect();
+            // Room after it for + and, on the right, the pane and layout buttons.
+            let out = rivet_look::tabs::TabStrip::new("term-tabs", accent).widths(170.0, 300.0).reserve(120.0).show(ui, &tabs, self.active);
+            for e in &out.events {
+                match *e {
+                    rivet_look::tabs::TabEvent::Swap(a, b) => self.tabs.swap(a, b),
+                    rivet_look::tabs::TabEvent::Close(i) => close = Some(i),
+                    rivet_look::tabs::TabEvent::Select(_) | rivet_look::tabs::TabEvent::Keep(_) => {}
                 }
-                let fg = if on { v.strong_text_color() } else { v.weak_text_color() };
-                ui.painter().galley(Pos2::new(r.left() + 16.0, r.center().y - g.size().y / 2.0), g, fg);
-                if t.panes.len() > 1 {
-                    // How many panes, as a small count.
-                    let cx = r.right() - 38.0;
-                    ui.painter().text(Pos2::new(cx, r.center().y), Align2::CENTER_CENTER, t.panes.len().to_string(), fonts::ui_font(10.5), v.weak_text_color());
-                    ui.painter().rect_stroke(Rect::from_center_size(Pos2::new(cx, r.center().y), Vec2::new(16.0, 14.0)), 3.0, Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.6)), egui::StrokeKind::Inside);
-                }
-                let xr = Rect::from_center_size(Pos2::new(r.right() - 15.0, r.center().y), Vec2::splat(18.0));
-                let over_x = ui.rect_contains_pointer(xr);
-                if on || resp.hovered() {
-                    if over_x {
-                        ui.painter().rect_filled(xr, r_sm(), v.widgets.hovered.weak_bg_fill);
-                    }
-                    ui.painter().text(xr.center(), Align2::CENTER_CENTER, "×", fonts::ui_font(15.0), fg);
-                }
-                let resp = resp.on_hover_text(label);
-                if resp.clicked() {
-                    if over_x { close = Some(i) } else { select = Some(i) }
-                }
-                if resp.middle_clicked() {
-                    close = Some(i);
-                }
+            }
+            let now = out.active(self.active);
+            if now != self.active {
+                select = Some(now);
             }
             // A new tab.
             let (r, resp) = ui.allocate_exact_size(Vec2::new(30.0, 30.0), Sense::click());
@@ -739,7 +720,6 @@ impl TermApp {
                 }
             });
         });
-        let _ = &ctx;
         if let Some(i) = select {
             self.active = i;
             self.refocus = true;

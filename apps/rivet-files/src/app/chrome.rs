@@ -1,6 +1,6 @@
 //! Title bar (when decorations are off), menus, toolbar, tabs, status bar and sidebar.
 
-use eframe::egui::{self, Align2, Color32, CornerRadius, Id, Key, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Align2, Color32, Id, Key, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
@@ -938,41 +938,24 @@ impl RivetApp {
         let fill = ctx.global_style().visuals.panel_fill;
         egui::Panel::top("tabs").show_separator_line(false).frame(egui::Frame::NONE.fill(fill).inner_margin(egui::Margin::symmetric(6, 2))).show(ui, |ui| {
             ui.horizontal(|ui| {
-                let n = self.tabs.len();
-                let w = ((ui.available_width() - 40.0) / n as f32).clamp(80.0, 240.0);
-                for i in 0..n {
-                    let title = self.tabs[i].loc.title();
-                    let sel = i == self.active;
-                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::click());
-                    let v = ui.visuals().clone();
-                    let bg = if sel { v.extreme_bg_color } else if resp.hovered() { v.widgets.hovered.weak_bg_fill } else { v.panel_fill };
-                    ui.painter().rect_filled(rect, CornerRadius { nw: r_sm(), ne: r_sm(), sw: 0, se: 0 }, bg);
-                    if sel {
-                        ui.painter().line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(2.0, accent_color(&self.s)));
+                // The shared strip (Rivet Edit's and Rivet Terminal's too): drag a tab to move it.
+                let tabs: Vec<rivet_look::tabs::Tab> = self.tabs.iter().map(|t| rivet_look::tabs::Tab { label: t.loc.title(), ..Default::default() }).collect();
+                let out = rivet_look::tabs::TabStrip::new("files-tabs", accent_color(&self.s)).widths(120.0, 240.0).reserve(40.0).show(ui, &tabs, self.active);
+                for e in &out.events {
+                    match *e {
+                        rivet_look::tabs::TabEvent::Swap(a, b) => self.tabs.swap(a, b),
+                        rivet_look::tabs::TabEvent::Close(i) => self.pending.push(Action::CloseTab(i)),
+                        rivet_look::tabs::TabEvent::Select(_) | rivet_look::tabs::TabEvent::Keep(_) => {}
                     }
-                    let close_rect = Rect::from_center_size(Pos2::new(rect.right() - 14.0, rect.center().y), Vec2::splat(16.0));
-                    let col = if sel { v.strong_text_color() } else { v.text_color() };
-                    let mut job = egui::text::LayoutJob::simple_singleline(title, crate::fonts::ui_font(13.0), col);
-                    job.wrap = egui::text::TextWrapping::truncate_at_width(close_rect.left() - rect.left() - 14.0);
-                    let galley = ui.painter().layout_job(job);
-                    ui.painter().galley(Pos2::new(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0), galley, col);
-                    let close = ui.interact(close_rect, Id::unique(("tabclose", i)), Sense::click());
-                    if close.hovered() {
-                        ui.painter().circle_filled(close_rect.center(), 8.0, v.widgets.hovered.bg_fill);
-                    }
-                    let c = close_rect.center();
-                    let s = Stroke::new(1.2, col);
-                    ui.painter().line_segment([c + Vec2::new(-3.5, -3.5), c + Vec2::new(3.5, 3.5)], s);
-                    ui.painter().line_segment([c + Vec2::new(3.5, -3.5), c + Vec2::new(-3.5, 3.5)], s);
-                    if close.clicked() || resp.clicked_by(egui::PointerButton::Middle) {
-                        self.pending.push(Action::CloseTab(i));
-                    } else if resp.clicked() {
-                        self.active = i;
-                    }
+                }
+                self.active = out.active(self.active);
+                // Files dropped on a tab go to its folder.
+                for (i, resp) in out.responses.iter().enumerate() {
                     if let Some(p) = resp.dnd_release_payload::<DragFiles>()
-                        && let Some(d) = self.tabs[i].loc.dir() {
-                            self.pending.push(Action::Transfer(p.0.clone(), d.to_path_buf(), ctx.input(|i| i.modifiers.ctrl)));
-                        }
+                        && let Some(d) = self.tabs.get(i).and_then(|t| t.loc.dir())
+                    {
+                        self.pending.push(Action::Transfer(p.0.clone(), d.to_path_buf(), ctx.input(|i| i.modifiers.ctrl)));
+                    }
                 }
                 if ui.button("+").on_hover_text("New tab (Ctrl+T)").clicked() {
                     self.pending.push(Action::NewTab);

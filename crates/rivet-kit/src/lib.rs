@@ -64,7 +64,20 @@ impl Shot {
 
 /// For checks: `{PREFIX}_RIGHTCLICK=X,Y` (or `{PREFIX}_CLICK=X,Y` for the left button) clicks
 /// there once the window has settled (frame 30). Call from `raw_input_hook` in screenshot runs.
+///
+/// `{PREFIX}_DRAG=X1,Y1,X2,Y2` presses at the first point, moves to the second over ten frames,
+/// and keeps holding, so the picture shows the drag in progress.
 pub fn scripted_click(prefix: &str, frame: u32, raw: &mut egui::RawInput) {
+    if let Some(v) = std::env::var(format!("{prefix}_DRAG")).ok().and_then(|v| v.split(',').map(|n| n.trim().parse::<f32>().ok()).collect::<Option<Vec<f32>>>()).filter(|v| v.len() == 4) {
+        let (a, b) = (egui::Pos2::new(v[0], v[1]), egui::Pos2::new(v[2], v[3]));
+        match frame {
+            30 => raw.events.push(egui::Event::PointerMoved(a)),
+            31 => raw.events.push(egui::Event::PointerButton { pos: a, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }),
+            32..=41 => raw.events.push(egui::Event::PointerMoved(a + (b - a) * ((frame - 31) as f32 / 10.0))),
+            _ => {}
+        }
+        return;
+    }
     let (var, button) = if std::env::var_os(format!("{prefix}_CLICK")).is_some() { (format!("{prefix}_CLICK"), egui::PointerButton::Primary) } else { (format!("{prefix}_RIGHTCLICK"), egui::PointerButton::Secondary) };
     let Some(pos) = std::env::var(var).ok().and_then(|v| {
         let (a, b) = v.split_once(',')?;
