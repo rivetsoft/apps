@@ -35,3 +35,21 @@ pub fn trash_button(ui: &mut egui::Ui) -> egui::Response {
     p.line_segment([c + Vec2::new(1.3, 0.0), c + Vec2::new(1.1, 4.0)], Stroke::new(1.1, col));
     resp
 }
+
+/// A button for an action that removes or deletes something: outlined in the theme's danger
+/// color, with a faint tint on hover, so it reads as a warning without shouting.
+pub fn danger_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
+    let danger = crate::theme::status(ui.ctx()).danger;
+    let label = crate::palette::mix(ui.visuals().text_color(), danger, 0.6);
+    ui.scope(|ui| {
+        let w = &mut ui.visuals_mut().widgets;
+        w.inactive.weak_bg_fill = egui::Color32::TRANSPARENT;
+        w.inactive.bg_stroke = Stroke::new(1.0, danger.gamma_multiply(0.7));
+        w.hovered.weak_bg_fill = danger.gamma_multiply(0.14);
+        w.hovered.bg_stroke = Stroke::new(1.0, danger);
+        w.active.weak_bg_fill = danger.gamma_multiply(0.24);
+        w.active.bg_stroke = Stroke::new(1.0, danger);
+        ui.add(egui::Button::new(egui::RichText::new(text).color(label)).corner_radius(crate::theme::r_sm()))
+    })
+    .inner
+}

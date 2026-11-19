@@ -289,10 +289,30 @@ fn section(ui: &mut egui::Ui, title: &str, body: &mut dyn FnMut(&mut egui::Ui)) 
     ui.add_space(4.0);
     let fr = egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 16)).show(ui, |ui| {
         ui.set_width(ui.available_width());
+        on_card(ui.visuals_mut(), fill);
         body(ui);
     });
     search::mark(ui, title, fr.response.rect);
     ui.add_space(22.0);
+}
+
+/// Controls on a card: wells, rails and outlines set from the card's own color, so fields,
+/// sliders and buttons stand out from it whatever palette the desktop has. The theme's own
+/// control colors are made from the window background and can land within a few shades of a card.
+pub(super) fn on_card(v: &mut egui::Visuals, card: egui::Color32) {
+    let fg = v.text_color();
+    let at = |t: f32| palette::mix(card, fg, t);
+    v.text_edit_bg_color = Some(at(0.06));
+    let w = &mut v.widgets;
+    w.inactive.bg_fill = at(0.2); // slider rails, checkbox boxes
+    w.inactive.weak_bg_fill = at(0.07);
+    w.inactive.bg_stroke = egui::Stroke::new(1.0, at(0.16));
+    w.hovered.bg_fill = at(0.26);
+    w.hovered.weak_bg_fill = at(0.12);
+    w.hovered.bg_stroke = egui::Stroke::new(1.0, at(0.3));
+    w.active.bg_fill = at(0.3);
+    w.active.weak_bg_fill = at(0.16);
+    w.active.bg_stroke = egui::Stroke::new(1.0, at(0.34));
 }
 
 /// Whether the compositor tells the shell which workspaces have windows (niri, Hyprland, mango),

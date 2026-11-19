@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Settings: text fields, slider tracks, buttons and switches now stand out from their card in
+  every color scheme, and Remove Panel is an outlined button instead of bright red text.
 - Lighter on the computer. The shell used to start six small programs every second to ask
   about workspaces, windows, the volume and what's playing; now it's told when one of them
   changes, so a quiet desktop costs next to nothing and a change shows sooner.

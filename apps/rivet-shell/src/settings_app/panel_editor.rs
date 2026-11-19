@@ -56,7 +56,8 @@ pub(super) fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, c
     let h = 30.0;
     let widths: Vec<f32> = choices.iter().map(|(_, t)| ui.painter().layout_no_wrap(t.to_string(), ui_font(13.0), v.text_color()).size().x + 28.0).collect();
     let (r, whole) = ui.allocate_exact_size(Vec2::new(widths.iter().sum::<f32>() + 4.0, h), Sense::hover());
-    ui.painter().rect_filled(r, r_md(), mix(v.extreme_bg_color, v.text_color(), 0.06));
+    ui.painter().rect_filled(r, r_md(), v.widgets.inactive.weak_bg_fill);
+    ui.painter().rect_stroke(r, r_md(), v.widgets.inactive.bg_stroke, egui::StrokeKind::Inside);
     let mut x = r.left() + 2.0;
     for ((val, text), w) in choices.iter().zip(widths) {
         let cell = Rect::from_min_size(Pos2::new(x, r.top() + 2.0), Vec2::new(w, h - 4.0));
@@ -67,7 +68,7 @@ pub(super) fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, c
         if on {
             ui.painter().rect_filled(cell, r_sm(), accent);
         } else if resp.hovered() {
-            ui.painter().rect_filled(cell, r_sm(), mix(v.extreme_bg_color, v.text_color(), 0.12));
+            ui.painter().rect_filled(cell, r_sm(), v.widgets.hovered.weak_bg_fill);
         }
         let col = if on { v.selection.stroke.color } else { v.text_color() };
         ui.painter().text(cell.center(), Align2::CENTER_CENTER, *text, ui_font(13.0), col);
@@ -218,6 +219,7 @@ impl SettingsApp {
         let screens = self.screens.clone();
         egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 14)).show(ui, |ui| {
             ui.set_width(ui.available_width());
+            super::on_card(ui.visuals_mut(), fill);
             let p = &mut self.s.panels[sel];
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
@@ -283,8 +285,7 @@ impl SettingsApp {
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let danger = rivet_look::theme::status(ui.ctx()).danger;
-                    if ui.add(egui::Button::new(egui::RichText::new("Remove Panel").color(danger))).clicked() {
+                    if rivet_look::widgets::danger_button(ui, "Remove Panel").clicked() {
                         ops.push(Op::RemovePanel(sel));
                     }
                 });
