@@ -174,6 +174,9 @@ of the two you checked.
   exclamation marks, no "simply" or "just".
 - One name per thing across the apps: vault (Notes), connection (FTP), panel, item, group,
   plugin, command (a launcher `@word`).
+- Load the `rivet-copy` skill (`.claude/skills/rivet-copy/`) before writing or changing any of
+  these words. A description is one sentence; a longer explanation goes in
+  `docs/guide-backlog.md`, which the user docs will be written from.
 
 **Changelogs**
 - Each app's `CHANGELOG.md` has a `## Unreleased` section at the top. Add a bullet there for

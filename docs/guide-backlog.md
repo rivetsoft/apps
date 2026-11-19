@@ -1,0 +1,66 @@
+# User guide backlog
+
+What the user docs will be written from. When a description in an app is cut down to one
+sentence, the full explanation goes here, under the app and the page, with the place it came from.
+Once the docs exist, each entry becomes a page or section, and the app gets a "Learn more" link to
+it.
+
+## Rivet Shell
+
+### Plugins: hooks
+
+From `settings_app/plugins.rs`, Hooks section.
+
+A hook is a command that runs when something happens in the shell. The command receives
+`RIVET_EVENT` (the event's name) and, for some events, more details as `RIVET_` variables:
+
+| Event | Details |
+| --- | --- |
+| An idle step was reached | `RIVET_STAGE`: dim, lock, screen-off, suspend |
+| Someone came back after idle | `RIVET_STAGE` |
+| The wallpaper changed | `RIVET_PATH` |
+| The style switched between dark and light | `RIVET_MODE`: dark, light |
+| A notification arrived | `RIVET_APP`, `RIVET_SUMMARY`, `RIVET_BODY`, `RIVET_URGENCY` |
+| Do Not Disturb turned on or off | `RIVET_ON`: true, false |
+| The active workspace changed | `RIVET_KEY`, `RIVET_NAME` |
+| What's playing changed | `RIVET_TITLE`, `RIVET_ARTIST`, `RIVET_PLAYER`, `RIVET_PLAYING` |
+
+### Plugins: writing your own
+
+From `settings_app/plugins.rs`, the removed "Write a plugin" section. `apps/rivet-shell/PLUGINS.md`
+is the full reference.
+
+A plugin is a folder with a `plugin.conf` (name, exec, mode, interval, events) and a program in
+any language. The program prints what its panel item shows (plain text, or JSON with text, an
+icon, a menu and launcher entries), and it hears about clicks and the hook events. It can also add
+settings and a launcher command (`@name`). Disk Space, Notes and FTP come with the shell as
+examples to copy.
+
+### Panels: zones
+
+From `settings_app/panel_editor.rs`.
+
+A panel has three zones. On a top or bottom panel, Left starts at the panel's left end, Center sits
+in the middle and Right ends at the right end. On a side panel the zones are Top, Middle and Bottom.
+On a side panel, numbers sit under their symbols, the clock wraps onto lines and the window title
+runs downward. When items don't fit, the ones nearest the middle are hidden first.
+
+### Displays and window look: how Rivet Shell changes the compositor's settings
+
+From `settings_app/displays.rs` and `settings_app/window_look.rs`.
+
+Rivet Shell keeps its screen and window settings in a file of its own next to the compositor's
+config (`rivet-shell.kdl` for niri, `rivet-shell.conf` or `rivet-shell.lua` for Hyprland,
+`rivet-shell.conf` for mango). The compositor's config needs one include line at the end so these
+settings take effect; Settings adds it on request and first saves the original as
+`NAME.rivet-backup`. Niri needs version 25.11 or later. "Leave the Screens to …" removes the
+screens from Rivet Shell's file so the compositor's own config sets them again.
+
+### Lock screen
+
+From `settings_app/idle_lock.rs`.
+
+Rivet Shell's lock screen checks the password through PAM, using the "rivet-shell" service if
+`/etc/pam.d/rivet-shell` exists and the "login" service otherwise. With another
+locker, the command must keep running until the screen unlocks, so the shell knows the screen is
+locked. That is why swaylock's `-f` (which makes it return at once) has to be left out.
