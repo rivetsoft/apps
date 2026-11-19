@@ -334,7 +334,8 @@ fn main() -> ExitCode {
                 Ok(RequestNameReply::PrimaryOwner | RequestNameReply::AlreadyOwner) => {
                     Some(Ok(conn))
                 }
-                Ok(_) => Some(Err(conn)),
+                // zbus answers a name someone else holds with NameTaken, not Exists.
+                Ok(_) | Err(zbus::Error::NameTaken) => Some(Err(conn)),
                 Err(_) => None,
             }
         });
