@@ -1429,6 +1429,7 @@ impl RivetApp {
                             changed |= ui.selectable_value(&mut self.s.view, ViewMode::Icons, "Icons").changed();
                             changed |= ui.selectable_value(&mut self.s.view, ViewMode::List, "List").changed();
                             changed |= ui.selectable_value(&mut self.s.view, ViewMode::Compact, "Compact").changed();
+                            changed |= ui.selectable_value(&mut self.s.view, ViewMode::Columns, "Columns").changed();
                         });
                         ui.end_row();
                     });

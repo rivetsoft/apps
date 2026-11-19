@@ -33,7 +33,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 **Getting around**
 - 🪜 **Stepped path bar** — each folder in the path is its own button; click one to jump straight to it
 - 🔮 **Fuzzy suggestions** — type a path and matching folders appear as you go, even from a few scattered letters; Tab completes
-- 🗂️ **Three views** — icons, list and compact, with tabs
+- 🗂️ **Four views** — icons, list, compact and columns (Miller columns: each parent folder side by side), with tabs
 - 🪟 **Split view** (F3) — two folders side by side; drag between them, or Copy / Move to Other Pane
 - 🧭 **Sidebar** — places, bookmarks, drives with usage bars and network shares, or a folder tree; left or right
 - 🔦 **Quick Open** (Ctrl+P) — fuzzy-find any folder and open it
@@ -198,7 +198,7 @@ Rivet talks to X11 or Wayland directly. It does not use GTK or Qt. A normal desk
 | `Ctrl+F` or just type | Filter this folder |
 | `Ctrl+T` / `Ctrl+W` | New / close tab |
 | `Ctrl+H` | Show hidden files |
-| `Ctrl+1` `2` `3` | Icon / list / compact view |
+| `Ctrl+1` `2` `3` `4` | Icon / list / compact / column view |
 | `F2` · `Delete` | Rename (Bulk Rename with several selected) · move to Trash |
 | `Ctrl+M` | Show or hide the menu bar |
 | `Ctrl+P` · `Ctrl+Shift+P` | Quick Open: go to any folder · Quick Actions: any command or option |
@@ -305,7 +305,7 @@ cargo build --release
 | `-h`, `--help` | Show this help and exit |
 | `-V`, `--version` | Print the version and exit |
 | `--home` | Open the home folder |
-| `--view icons\|list\|compact` | Starting view |
+| `--view icons\|list\|compact\|columns` | Starting view |
 | `--tree` | Show the sidebar as a folder tree |
 | `--hide-menubar` | Start with the menu bar hidden |
 | `--decorations` | Use the desktop's title bar |

@@ -149,7 +149,7 @@ Options:
   -h, --help                  Show this help and exit
   -V, --version               Print the version and exit
       --home                  Open the home folder
-      --view MODE             Start in icons, list, or compact view
+      --view MODE             Start in icons, list, compact or columns view
       --tree                  Show the sidebar as a folder tree
       --hide-menubar          Start with the menu bar hidden
       --decorations           Use the desktop's title bar
