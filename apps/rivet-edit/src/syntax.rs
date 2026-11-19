@@ -6,9 +6,9 @@
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
-use eframe::egui::{Color32, FontId, text::LayoutJob};
+use eframe::egui::{Color32, FontId, Galley, Ui, text::LayoutJob};
 use rivet_look::highlight::{self, Colors};
 use tree_sitter_highlight::{HighlightConfiguration, HighlightEvent, Highlighter};
 
@@ -229,33 +229,54 @@ pub fn spans(text: &str, lang: Lang, colors: &Colors) -> Option<Vec<(Range<usize
     Some(out)
 }
 
-/// What the editor shows a file's text with: the layout, cached until the text, the colors or
-/// the font change.
+/// What the editor shows a file's text with: the laid-out text, kept until the text, the colors,
+/// the font, the wrap width or the font atlas change.
+///
+/// The text box asks for its layout every frame. Building the colored job again, or even handing
+/// egui the same job to look up in its own cache, costs time in proportion to the file (tens of
+/// milliseconds a frame for a large one), so the galley is kept here and handed back as it is.
 #[derive(Default)]
 pub struct Cache {
-    key: u64,
-    job: Option<LayoutJob>,
+    /// The file name, language, colors and font it was built with (not the text: the galley
+    /// holds that, and comparing it is far quicker than hashing it).
+    style: u64,
+    wrap: f32,
+    pixels_per_point: f32,
+    /// How full egui's glyph atlas was after laying it out. The atlas only fills up until egui
+    /// starts it over, which leaves this galley pointing at glyphs that are no longer there.
+    atlas_fill: f32,
+    galley: Option<Arc<Galley>>,
 }
 
 impl Cache {
-    /// The laid-out (not yet wrapped) text of `name` in `font`.
-    pub fn job(&mut self, text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId) -> LayoutJob {
+    /// The laid-out text of `name` in `font`, wrapped at `wrap_width`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn galley(&mut self, ui: &Ui, text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId, wrap_width: f32) -> Arc<Galley> {
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        text.hash(&mut h);
         name.hash(&mut h);
         pick.hash(&mut h);
-        font.size.to_bits().hash(&mut h);
+        font.hash(&mut h);
         colors.hash(&mut h);
-        let key = h.finish();
-        if self.key == key
-            && let Some(j) = &self.job
+        let style = h.finish();
+        let pixels_per_point = ui.ctx().pixels_per_point();
+        let atlas_fill = ui.fonts_mut(|f| f.font_atlas_fill_ratio());
+        let same_job = self.style == style && self.galley.as_ref().is_some_and(|g| g.text() == text);
+        if same_job
+            && self.wrap == wrap_width
+            && self.pixels_per_point == pixels_per_point
+            && atlas_fill >= self.atlas_fill
+            && let Some(g) = &self.galley
         {
-            return j.clone();
+            return g.clone();
         }
-        let job = build(text, name, pick, colors, font);
-        self.key = key;
-        self.job = Some(job.clone());
-        job
+        let mut job = match &self.galley {
+            Some(g) if same_job => (*g.job).clone(),
+            _ => build(text, name, pick, colors, font),
+        };
+        job.wrap.max_width = wrap_width;
+        let galley = ui.fonts_mut(|f| f.layout_job(job));
+        *self = Cache { style, wrap: wrap_width, pixels_per_point, atlas_fill: ui.fonts_mut(|f| f.font_atlas_fill_ratio()), galley: Some(galley.clone()) };
+        galley
     }
 }
 
@@ -285,13 +306,13 @@ fn build(text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId) -> 
                 continue;
             }
             if r.start > covered {
-                j.sections.push(section(covered..r.start, colors.text, font));
+                push(&mut j, text, covered..r.start, colors.text, font);
             }
-            j.sections.push(section(r.clone(), c, font));
+            push(&mut j, text, r.clone(), c, font);
             covered = r.end;
         }
         if covered < text.len() {
-            j.sections.push(section(covered..text.len(), colors.text, font));
+            push(&mut j, text, covered..text.len(), colors.text, font);
         }
         return j;
     }
@@ -302,6 +323,27 @@ fn build(text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId) -> 
     let mut j = highlight::layout(text, name, colors, font.clone());
     j.wrap = Default::default();
     j
+}
+
+/// Add a colored run, joined to the one before when it can be: the same color, or either of
+/// them only spaces and line breaks (whose color doesn't show). Fewer, longer runs lay out and
+/// compare quicker; a source file has about one run per token otherwise.
+fn push(j: &mut LayoutJob, text: &str, r: Range<usize>, color: Color32, font: &FontId) {
+    let blank = |r: Range<usize>| text.as_bytes()[r].iter().all(u8::is_ascii_whitespace);
+    if let Some(last) = j.sections.last_mut()
+        && last.byte_range.end.0 == r.start
+    {
+        if last.format.color == color || blank(r.clone()) {
+            last.byte_range.end.0 = r.end;
+            return;
+        }
+        if blank(last.byte_range.start.0..last.byte_range.end.0) {
+            last.format.color = color;
+            last.byte_range.end.0 = r.end;
+            return;
+        }
+    }
+    j.sections.push(section(r, color, font));
 }
 
 fn section(r: Range<usize>, color: Color32, font: &FontId) -> eframe::egui::text::LayoutSection {
@@ -371,6 +413,29 @@ mod tests {
     }
 
     #[test]
+    fn runs_join_across_spaces_and_keep_their_colors() {
+        let c = colors();
+        let text = "fn main() {\n    let x = 1; // hi\n}\n";
+        let j = build(text, "a.rs", Pick::Auto, &c, &FontId::monospace(14.0));
+        // Every byte is in exactly one run, in order.
+        let mut at = 0;
+        for s in &j.sections {
+            assert_eq!(s.byte_range.start.0, at);
+            at = s.byte_range.end.0;
+        }
+        assert_eq!(at, text.len());
+        let color_of = |word: &str| {
+            let i = text.find(word).unwrap();
+            j.sections.iter().find(|s| s.byte_range.start.0 <= i && i < s.byte_range.end.0).unwrap().format.color
+        };
+        assert_eq!(color_of("fn"), c.keyword);
+        assert_eq!(color_of("let"), c.keyword);
+        assert_eq!(color_of("// hi"), c.comment);
+        // Spaces never start a run of their own.
+        assert!(j.sections.iter().all(|s| !text[s.byte_range.start.0..s.byte_range.end.0].trim().is_empty()));
+    }
+
+    #[test]
     fn languages_by_file_name() {
         assert_eq!(Lang::for_file("main.RS"), Some(Lang::Rust));
         assert_eq!(Lang::for_file("Cargo.lock"), Some(Lang::Toml));
@@ -378,3 +443,4 @@ mod tests {
         assert_eq!(language_name("README.md"), "Markdown");
     }
 }
+

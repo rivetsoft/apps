@@ -4,6 +4,8 @@
 
 - Several windows, each its own workspace: New Window (Shift+Ctrl+N), Open Folder in New Window,
   and Open in New Window on a folder in the sidebar; also from the app launcher.
+- Large files scroll and repaint smoothly: the laid-out text is kept between frames instead of
+  being rebuilt and looked up again each time, and only the line numbers on screen are drawn.
 
 ## 0.1.0
 
