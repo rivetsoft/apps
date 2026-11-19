@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Tray icons stay sharp when they're shown in one color (the panel's text or highlight
+  color): their details no longer turn to a gray blur.
 - Settings: Appearance's "Color use" is one choice with a legend of what the accent, secondary
   and tertiary colors are on at that setting. Choices read in title case (Tonal Spot, From the
   Wallpaper, Smart Hide), and hints and tips are reworded to be plainer.
