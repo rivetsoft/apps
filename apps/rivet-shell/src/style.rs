@@ -213,7 +213,8 @@ impl Settings {
 }
 
 /// The theme's primary, secondary and tertiary colours: the desktop's (matugen) when followed,
-/// else made from the accent (secondary: a quieter primary; tertiary: its hue turned a sixth, softened).
+/// the ones chosen with a style and accent of the shell's own, else made from the accent
+/// (secondary: a quieter primary; tertiary: its hue turned a sixth, softened).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Roles {
     pub primary: Color32,
@@ -227,8 +228,11 @@ impl Roles {
         let primary = look.accent(&choice);
         let pal = rivet_look::palette::shown(look.palette(), choice.follow_desktop_colors);
         let hsva = Hsva::from(primary);
-        let secondary = pal.and_then(|p| p.secondary).unwrap_or_else(|| Color32::from(Hsva { s: hsva.s * 0.4, ..hsva }));
-        let tertiary = pal.and_then(|p| p.tertiary).unwrap_or_else(|| Color32::from(Hsva { h: (hsva.h + 1.0 / 6.0).fract(), s: hsva.s * 0.6, v: hsva.v * 0.85, ..hsva }));
+        // With the shell's own style and accent, the two are the ones chosen or made from the
+        // accent: never a theme file's, which may be left from colours used before.
+        let (theme_secondary, theme_tertiary) = if s.own_colors() { s.own_roles() } else { (pal.and_then(|p| p.secondary), pal.and_then(|p| p.tertiary)) };
+        let secondary = theme_secondary.unwrap_or_else(|| Color32::from(Hsva { s: hsva.s * 0.4, ..hsva }));
+        let tertiary = theme_tertiary.unwrap_or_else(|| Color32::from(Hsva { h: (hsva.h + 1.0 / 6.0).fract(), s: hsva.s * 0.6, v: hsva.v * 0.85, ..hsva }));
         Roles { primary, secondary, tertiary }
     }
 

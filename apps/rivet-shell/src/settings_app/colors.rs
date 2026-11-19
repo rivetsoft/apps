@@ -159,6 +159,18 @@ impl SettingsApp {
                 }
             });
             ui.end_row();
+            // What the shell would make from the accent, for the "From the Accent" swatch.
+            let made = Roles::new(&self.look, &Settings { secondary: None, tertiary: None, ..self.s.clone() });
+            ui.label("Secondary");
+            let picked = role_pick(ui, "secondary", &mut self.s.secondary, made.secondary);
+            ui.end_row();
+            ui.label("Tertiary");
+            let picked = role_pick(ui, "tertiary", &mut self.s.tertiary, made.tertiary) || picked;
+            ui.end_row();
+            // A color chosen should show: with Accent Only, nothing would use it.
+            if picked && self.s.color_use == 0 {
+                self.s.color_use = 1;
+            }
             ui.label("Surface");
             self.surfaces(ui);
             ui.end_row();
@@ -201,6 +213,46 @@ impl SettingsApp {
             }
         });
     }
+}
+
+/// A secondary or tertiary colour: made from the accent (None, the first swatch, showing what
+/// that makes), one of the accents, or any colour. True when one was chosen.
+fn role_pick(ui: &mut egui::Ui, salt: &str, slot: &mut Option<[u8; 3]>, made: Color32) -> bool {
+    let v = ui.visuals().clone();
+    let ring = Stroke::new(2.0, v.strong_text_color());
+    let mut chosen = false;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        // From the accent: half the dot in the colour it makes, so it reads as "automatic".
+        let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+        ui.painter().circle_stroke(r.center(), 8.5, Stroke::new(1.5, made));
+        ui.painter().circle_filled(r.center(), 5.0, made);
+        if slot.is_none() {
+            ui.painter().circle_stroke(r.center(), 11.0, ring);
+        }
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("From the accent").clicked() {
+            *slot = None;
+        }
+        ui.add_space(4.0);
+        for (c, name) in ACCENTS {
+            let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+            ui.painter().circle_filled(r.center(), 9.0, Color32::from_rgb(c[0], c[1], c[2]));
+            if *slot == Some(c) {
+                ui.painter().circle_stroke(r.center(), 11.0, ring);
+            }
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(name).clicked() {
+                *slot = Some(c);
+                chosen = true;
+            }
+        }
+        ui.add_space(4.0);
+        let mut c = slot.unwrap_or([made.r(), made.g(), made.b()]);
+        if ui.push_id(salt, |ui| ui.color_edit_button_srgb(&mut c).on_hover_text("Any color")).inner.changed() {
+            *slot = Some(c);
+            chosen = true;
+        }
+    });
+    chosen
 }
 
 /// Surface colours, most contrast first (None: the usual grey), for dark and for light.

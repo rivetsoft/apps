@@ -11,6 +11,12 @@
   Playing's options, on the panel. It listens only while something plays and needs
   `pw-record`, which comes with PipeWire.
 - `rivet-shell msg media` opens the player.
+- With Style and Accent, you can choose the secondary and tertiary colors yourself (a blue
+  secondary beside a pink accent, say), or leave them made from the accent as before.
+- The desktop widgets can be moved: drag the clock or the system widget anywhere on the
+  desktop, and it keeps its place on every screen. Double-click one, or use Reset Positions on
+  the Widgets page, to put it back.
+- The system widget has as much room below its last row as above its first.
 - The shell asks for your password when an app needs administrator rights (installing
   software, changing system settings, `pkexec`), in its own dialog, so no separate polkit
   agent has to be started. Where one is already running, the shell leaves the asking to it.

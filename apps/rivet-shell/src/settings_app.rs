@@ -160,6 +160,14 @@ impl SettingsApp {
             if let (Some((a, b)), Some(p)) = (std::env::var("RIVET_SHELL_SIZE").ok().and_then(|v| v.split_once(':').map(|(a, b)| (a.parse().ok(), b.parse().ok()))), s.panels.first_mut()) {
                 (p.size, p.spacing) = (a, b);
             }
+            // RIVET_SHELL_ROLES=3584e4:e5a50a: a style and accent of the shell's own, with this
+            // secondary and tertiary (a part left empty is made from the accent).
+            if let Ok(r) = std::env::var("RIVET_SHELL_ROLES") {
+                let (a, b) = r.split_once(':').unwrap_or((&r, ""));
+                let hex = |h: &str| u32::from_str_radix(h, 16).ok().filter(|_| h.len() == 6).map(|n| [(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+                (s.follow_desktop_colors, s.secondary, s.tertiary) = (false, hex(a), hex(b));
+                s.palette.clear();
+            }
             // RIVET_SHELL_COLORS=2: how much the secondary and tertiary colours are used.
             if let Some(n) = std::env::var("RIVET_SHELL_COLORS").ok().and_then(|n| n.parse().ok()) {
                 s.color_use = n;
@@ -543,7 +551,8 @@ impl SettingsApp {
                 ui.add_space(4.0);
             }
             // Where the two colours come from: the theme, or (without them there) the accent.
-            let from_theme = self.s.follow_desktop_colors && self.look.palette().is_some_and(|p| p.secondary.is_some() && p.tertiary.is_some());
+            let own = self.s.own_roles();
+            let from_theme = (own.0.is_some() && own.1.is_some()) || (self.s.follow_desktop_colors && self.look.palette().is_some_and(|p| p.secondary.is_some() && p.tertiary.is_some()));
             if self.s.color_use > 0 && self.s.follow_desktop_colors && palette::matugen_template_outdated() {
                 ui.add_space(8.0);
                 hint(ui, "Secondary and tertiary colors look close to the accent because Rivet's colors in matugen are out of date. Update them to get the full range.");
@@ -562,7 +571,7 @@ impl SettingsApp {
                         Err(e) => format!("Couldn't update matugen's template: {e}"),
                     });
                 }
-            } else if self.s.color_use > 0 && !from_theme {
+            } else if self.s.color_use > 0 && !from_theme && (self.s.follow_desktop_colors || !self.s.palette.is_empty()) {
                 ui.add_space(8.0);
                 hint(ui, "This theme has no secondary or tertiary color, so Rivet makes them from the accent.");
             }
@@ -752,6 +761,14 @@ impl SettingsApp {
                 });
                 ui.end_row();
             });
+            ui.add_space(8.0);
+            hint(ui, "Drag a widget on the desktop to move it, or double-click it to put it back.");
+            if self.s.widget_clock_at.is_some() || self.s.widget_system_at.is_some() {
+                ui.add_space(6.0);
+                if ui.button("Reset Positions").on_hover_text("Puts the widgets back on the side chosen above").clicked() {
+                    (self.s.widget_clock_at, self.s.widget_system_at) = (None, None);
+                }
+            }
         });
     }
 

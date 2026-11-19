@@ -200,6 +200,13 @@ impl ShotApp {
             let at = s.panels[0].zones[2].len().saturating_sub(1);
             s.panels[0].zones[2].insert(at, "plugin:disk".into());
         }
+        // RIVET_SHELL_WIDGETS=0.5,0.5:1,1: the clock's and the system widget's dragged places (as
+        // fractions of the room they move in; a part left empty stays in its usual place).
+        if let Ok(w) = std::env::var("RIVET_SHELL_WIDGETS") {
+            let mut it = w.split(':');
+            let pair = |p: Option<&str>| p.and_then(|p| p.split_once(',')).and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
+            (s.widget_clock_at, s.widget_system_at) = (pair(it.next()), pair(it.next()));
+        }
         // RIVET_SHELL_FONTS=base:panel:launcher sets the three fonts (a part left empty follows).
         if let Ok(f) = std::env::var("RIVET_SHELL_FONTS") {
             let mut it = f.split(':').map(str::to_string);
@@ -212,6 +219,13 @@ impl ShotApp {
         // RIVET_SHELL_QUICK=toggles: the quick settings item's symbol.
         if let Ok(q) = std::env::var("RIVET_SHELL_QUICK") {
             s.quick_icon = crate::config::QuickIcon::from(&q);
+        }
+        // RIVET_SHELL_ROLES=3584e4:e5a50a: a style and accent of the shell's own, with this
+        // secondary and tertiary (a part left empty is made from the accent).
+        if let Ok(r) = std::env::var("RIVET_SHELL_ROLES") {
+            let (a, b) = r.split_once(':').unwrap_or((&r, ""));
+            let hex = |h: &str| u32::from_str_radix(h, 16).ok().filter(|_| h.len() == 6).map(|n| [(n >> 16) as u8, (n >> 8) as u8, n as u8]);
+            (s.follow_desktop_colors, s.secondary, s.tertiary) = (false, hex(a), hex(b));
         }
         // RIVET_SHELL_COLORS=2: how much the secondary and tertiary colours are used.
         if let Some(n) = std::env::var("RIVET_SHELL_COLORS").ok().and_then(|n| n.parse().ok()) {

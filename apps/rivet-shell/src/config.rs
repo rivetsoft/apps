@@ -485,6 +485,10 @@ pub struct Settings {
     /// The shell's own background colour in its dark style and in its light one (None: the
     /// usual greys). With the style and accent, when the colours aren't the desktop's or a palette's.
     pub surface_dark: Option<[u8; 3]>,
+    /// With a style and accent of the shell's own: the secondary and tertiary colours chosen
+    /// (None: made from the accent).
+    pub secondary: Option<[u8; 3]>,
+    pub tertiary: Option<[u8; 3]>,
     pub surface_light: Option<[u8; 3]>,
     /// The surface takes a little of the accent, so it changes with it.
     pub surface_tint: bool,
@@ -655,6 +659,11 @@ pub struct Settings {
     pub widget_clock: bool,
     pub widget_system: bool,
     pub widget_side: Side,
+    /// Where each widget was dragged to, as a fraction of the room it can move in (0,0 the top
+    /// left, 1,1 the bottom right), so it keeps its place on screens of any size. None: its
+    /// usual place, on `widget_side`.
+    pub widget_clock_at: Option<(f32, f32)>,
+    pub widget_system_at: Option<(f32, f32)>,
 }
 
 impl Default for Settings {
@@ -663,6 +672,8 @@ impl Default for Settings {
             theme: Mode::System,
             accent: [0xe6, 0x61, 0x00],
             surface_dark: None,
+            secondary: None,
+            tertiary: None,
             surface_light: None,
             surface_tint: false,
             follow_desktop_colors: true,
@@ -760,6 +771,8 @@ impl Default for Settings {
             widget_clock: true,
             widget_system: true,
             widget_side: Side::Left,
+            widget_clock_at: None,
+            widget_system_at: None,
         }
     }
 }
@@ -881,6 +894,8 @@ impl Settings {
                     }
                 }
                 "surface_dark" => self.surface_dark = rgb_from(v),
+                "secondary" => self.secondary = rgb_from(v),
+                "tertiary" => self.tertiary = rgb_from(v),
                 "surface_light" => self.surface_light = rgb_from(v),
                 "surface_tint" => self.surface_tint = b,
                 "follow_desktop_colors" => self.follow_desktop_colors = b,
@@ -1000,6 +1015,8 @@ impl Settings {
                 "widget_clock" => self.widget_clock = b,
                 "widget_system" => self.widget_system = b,
                 "widget_side" => self.widget_side = if v == "right" { Side::Right } else { Side::Left },
+                "widget_clock_at" => self.widget_clock_at = fraction_pair(v),
+                "widget_system_at" => self.widget_system_at = fraction_pair(v),
                 _ => {}
             }
         }
@@ -1071,7 +1088,9 @@ impl Settings {
         }
         t.push_str(&format!("power_style={}\npower_confirm={}\npower_hide={}\n", self.power_style.name(), self.power_confirm, self.power_hide.join(",")));
         t.push_str(&format!("tray_color={}\ntray_passive={}\n", self.tray_color.name(), self.tray_passive));
-        t.push_str(&format!("color_use={}\n", self.color_use));
+        t.push_str(&format!("color_use={}\nsecondary={}\ntertiary={}\n", self.color_use, rgb_text(self.secondary), rgb_text(self.tertiary)));
+        let at = |p: Option<(f32, f32)>| p.map(|(x, y)| format!("{x:.4},{y:.4}")).unwrap_or_default();
+        t.push_str(&format!("widget_clock_at={}\nwidget_system_at={}\n", at(self.widget_clock_at), at(self.widget_system_at)));
         t.push_str(&format!("font={}\nlauncher_font={}\n", font_name(&self.font), font_name(&self.launcher_font)));
         t.push_str(&format!("quick_icon={}\n", self.quick_icon.name()));
         t.push_str(&format!("launcher_icon={}\nlauncher_custom={}\n", self.launcher_icon.name(), self.launcher_custom.replace('\n', "")));
@@ -1243,9 +1262,26 @@ impl Settings {
         if own.is_empty() { &self.font } else { own }
     }
 
+    /// The secondary and tertiary chosen, when the colours are a style and accent of the shell's
+    /// own (with the wallpaper's or a palette's, the theme's own count).
+    pub fn own_roles(&self) -> (Option<eframe::egui::Color32>, Option<eframe::egui::Color32>) {
+        if !self.own_colors() {
+            return (None, None);
+        }
+        let c = |c: Option<[u8; 3]>| c.map(|[r, g, b]| eframe::egui::Color32::from_rgb(r, g, b));
+        (c(self.secondary), c(self.tertiary))
+    }
+
     pub fn choice(&self) -> rivet_look::live::Choice {
         rivet_look::live::Choice { mode: self.theme, accent: self.accent, follow_desktop_colors: self.follow_desktop_colors, text_size: self.text_size }
     }
+}
+
+/// "x,y" with both from 0 to 1 (a widget's place); anything else is None.
+fn fraction_pair(v: &str) -> Option<(f32, f32)> {
+    let (x, y) = v.split_once(',')?;
+    let (x, y) = (x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?);
+    (x.is_finite() && y.is_finite()).then(|| (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)))
 }
 
 #[cfg(test)]
@@ -1256,6 +1292,8 @@ mod tests {
     fn round_trips() {
         let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
+        s.widget_system_at = Some((0.25, 0.5));
+        s.secondary = Some([0x35, 0x84, 0xe4]);
         (s.wallpaper_screens, s.wall_transition, s.wall_transition_ms, s.matugen_screen, s.matugen_contrast) = (vec![("DP-2".into(), "/p/two.png".into())], Transition::Grow, 900, "DP-2".into(), 0.5);
         assert_eq!((s.wallpaper_on("DP-2"), s.wallpaper_on("DP-1"), s.matugen_picture()), ("/p/two.png", "/p/a b.jpg", "/p/two.png"));
         (s.power_style, s.power_confirm, s.power_hide) = (PowerStyle::Grid, false, vec!["suspend".into(), "logout".into()]);

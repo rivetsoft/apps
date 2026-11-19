@@ -184,6 +184,9 @@ pub struct Extra {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Act {
     Launch(String),
+    /// A desktop widget dragged to a new place (a fraction of the room it moves in), or put
+    /// back in its usual place (None).
+    MoveWidget(Widget, Option<(f32, f32)>),
     /// Sound devices and apps: choose, change the volume, mute, move.
     Audio(crate::audio::Job),
     /// A program with no desktop entry, by name.
@@ -650,52 +653,105 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
 
 // ------------------------------------------------------------------ desktop widgets
 
+/// The desktop widgets, each of which can be dragged to a place of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Widget {
+    Clock,
+    System,
+}
+
+/// Where a widget of `size` goes: its saved place in `area`, else `usual`; while it's being
+/// dragged, where the pointer has taken it. Letting go saves the place; a double-click puts it
+/// back in its usual place.
+fn widget_place(ui: &egui::Ui, m: &mut Model, which: Widget, area: Rect, usual: Pos2, size: Vec2) -> Pos2 {
+    let saved = match which {
+        Widget::Clock => m.s.widget_clock_at,
+        Widget::System => m.s.widget_system_at,
+    };
+    let room = (area.size() - size).max(Vec2::ZERO);
+    let base = saved.map(|(fx, fy)| area.min + Vec2::new(room.x * fx, room.y * fy)).unwrap_or(usual);
+    let id = egui::Id::unique(("desktop-widget", which));
+    let resp = ui.interact(Rect::from_min_size(base, size), id, Sense::click_and_drag());
+    let moved = ui.ctx().data_mut(|d| {
+        let by = d.get_temp_mut_or_default::<Vec2>(id);
+        if resp.dragged() {
+            *by += resp.drag_delta();
+        }
+        *by
+    });
+    let at = (base + moved).clamp(area.min, area.min + room);
+    if resp.drag_stopped() {
+        ui.ctx().data_mut(|d| d.remove::<Vec2>(id));
+        let frac = |d: f32, r: f32| if r > 0.0 { (d / r).clamp(0.0, 1.0) } else { 0.0 };
+        if moved != Vec2::ZERO {
+            m.acts.push(Act::MoveWidget(which, Some((frac(at.x - area.left(), room.x), frac(at.y - area.top(), room.y)))));
+        }
+    } else if resp.double_clicked() && saved.is_some() {
+        m.acts.push(Act::MoveWidget(which, None));
+    }
+    at
+}
+
 pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let accent = kit.accent(m.s);
     let full = ui.max_rect();
-    let top = full.top() + crate::panels::room(&m.s.panels, m.output, Edge::Top) + 24.0;
-    let w = 280.0;
     let side = |e: Edge| crate::panels::room(&m.s.panels, m.output, e);
-    let x = if m.s.widget_side == Side::Left { full.left() + side(Edge::Left) + 28.0 } else { full.right() - side(Edge::Right) - 28.0 - w };
-    let mut y = top;
+    // The room the widgets move in: the screen less its panels, with a margin.
+    let area = Rect::from_min_max(Pos2::new(full.left() + side(Edge::Left) + 28.0, full.top() + side(Edge::Top) + 24.0), Pos2::new(full.right() - side(Edge::Right) - 28.0, full.bottom() - side(Edge::Bottom) - 24.0));
+    let w = 280.0;
+    let x = if m.s.widget_side == Side::Left { area.left() } else { area.right() - w };
+    // The next free place in the usual stack, for a widget that hasn't been moved.
+    let mut y = area.top();
     let p = ui.painter().clone();
     let fg = Color32::WHITE;
     if m.s.widget_clock {
         let now = Local::now();
         let t = p.layout_no_wrap(now.format("%H:%M").to_string(), FontId::proportional(64.0), fg);
         let d = p.layout_no_wrap(now.format("%A, %B %-d").to_string(), ui_font(17.0), fg.gamma_multiply(0.88));
+        let size = Vec2::new(t.size().x.max(d.size().x + 3.0), t.size().y + d.size().y - 4.0);
+        let at = widget_place(ui, m, Widget::Clock, area, Pos2::new(x, y), size);
         // A soft shadow behind the text, so it reads on any picture.
-        for (g, at) in [(t.clone(), Pos2::new(x, y)), (d.clone(), Pos2::new(x + 3.0, y + t.size().y - 4.0))] {
+        for (g, at) in [(t.clone(), at), (d.clone(), at + Vec2::new(3.0, t.size().y - 4.0))] {
             p.galley(at + Vec2::new(0.0, 1.0), g.clone(), Color32::from_black_alpha(70));
             p.galley(at, g, fg);
         }
-        y += t.size().y + d.size().y + 18.0;
+        if m.s.widget_clock_at.is_none() {
+            y += t.size().y + d.size().y + 18.0;
+        }
     }
     if m.s.widget_system {
-        let r = Rect::from_min_size(Pos2::new(x, y), Vec2::new(w, 112.0));
+        let st = m.status;
+        // Three rows; the last has a bar under it only for the battery. The card's padding
+        // below its last line matches the padding above its first.
+        let (pad, step) = (16.0, 36.0);
+        let first = pad + 8.0;
+        let last_bottom = first + 2.0 * step + if st.battery.is_some() { 15.0 } else { 8.0 };
+        let size = Vec2::new(w, last_bottom + pad);
+        let at = widget_place(ui, m, Widget::System, area, Pos2::new(x, y), size);
+        let r = Rect::from_min_size(at, size);
         card(&p, r, &v, 0.82, r_lg());
         let txt = v.text_color();
         let weak = v.weak_text_color();
         let (bar2, bar3) = (kit.tone(m.s, crate::style::Slot::Bar2), kit.tone(m.s, crate::style::Slot::Bar3));
         let row = |label: &str, value: String, frac: f32, yy: f32, accent: Color32| {
-            p.text(Pos2::new(r.left() + 16.0, yy), Align2::LEFT_CENTER, label, ui_font(12.5), weak);
-            p.text(Pos2::new(r.right() - 16.0, yy), Align2::RIGHT_CENTER, value, ui_font(12.5), txt);
-            let bar = Rect::from_min_size(Pos2::new(r.left() + 16.0, yy + 10.0), Vec2::new(r.width() - 32.0, 5.0));
+            p.text(Pos2::new(r.left() + pad, yy), Align2::LEFT_CENTER, label, ui_font(12.5), weak);
+            p.text(Pos2::new(r.right() - pad, yy), Align2::RIGHT_CENTER, value, ui_font(12.5), txt);
+            let bar = Rect::from_min_size(Pos2::new(r.left() + pad, yy + 10.0), Vec2::new(r.width() - 2.0 * pad, 5.0));
             p.rect_filled(bar, 3.0, mix(v.panel_fill, txt, 0.12));
             p.rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac.clamp(0.0, 1.0), bar.height())), 3.0, accent);
         };
-        let st = m.status;
-        row("Processor", format!("{:.0}%", st.cpu), st.cpu / 100.0, r.top() + 22.0, accent);
+        let ys = [r.top() + first, r.top() + first + step, r.top() + first + 2.0 * step];
+        row("Processor", format!("{:.0}%", st.cpu), st.cpu / 100.0, ys[0], accent);
         let (used, total) = st.mem;
         let gb = |b: u64| b as f32 / (1u64 << 30) as f32;
-        row("Memory", format!("{:.1} of {:.0} GB", gb(used), gb(total)), if total > 0 { used as f32 / total as f32 } else { 0.0 }, r.top() + 58.0, bar2);
+        row("Memory", format!("{:.1} of {:.0} GB", gb(used), gb(total)), if total > 0 { used as f32 / total as f32 } else { 0.0 }, ys[1], bar2);
         match st.battery {
-            Some((pct, charging)) => row("Battery", format!("{pct}%{}", if charging { ", charging" } else { "" }), pct as f32 / 100.0, r.top() + 94.0, bar3),
+            Some((pct, charging)) => row("Battery", format!("{pct}%{}", if charging { ", charging" } else { "" }), pct as f32 / 100.0, ys[2], bar3),
             None => {
                 let up = crate::sys::uptime();
-                p.text(Pos2::new(r.left() + 16.0, r.top() + 94.0), Align2::LEFT_CENTER, "Up for", ui_font(12.5), weak);
-                p.text(Pos2::new(r.right() - 16.0, r.top() + 94.0), Align2::RIGHT_CENTER, format!("{} h {} min", up / 3600, up / 60 % 60), ui_font(12.5), txt);
+                p.text(Pos2::new(r.left() + pad, ys[2]), Align2::LEFT_CENTER, "Up for", ui_font(12.5), weak);
+                p.text(Pos2::new(r.right() - pad, ys[2]), Align2::RIGHT_CENTER, format!("{} h {} min", up / 3600, up / 60 % 60), ui_font(12.5), txt);
             }
         }
     }

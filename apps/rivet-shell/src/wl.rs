@@ -1218,7 +1218,7 @@ impl Shell {
         // Only what changed changes: surfaces are reshaped in place (never torn down and made
         // again, which makes them flash and moves the windows twice), and only the surfaces that
         // show a setting are drawn again.
-        let look = old.color_use != s.color_use || old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size || old.icon_theme != s.icon_theme || old.palette != s.palette || old.surface_dark != s.surface_dark || old.surface_light != s.surface_light || old.surface_tint != s.surface_tint;
+        let look = old.color_use != s.color_use || old.theme != s.theme || old.accent != s.accent || old.follow_desktop_colors != s.follow_desktop_colors || old.text_size != s.text_size || old.icon_theme != s.icon_theme || old.palette != s.palette || old.surface_dark != s.surface_dark || old.surface_light != s.surface_light || old.surface_tint != s.surface_tint || old.secondary != s.secondary || old.tertiary != s.tertiary;
         let pictures = old.wallpaper != s.wallpaper || old.wallpaper_screens != s.wallpaper_screens;
         let colours = old.matugen_picture() != s.matugen_picture() || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type || old.matugen_contrast != s.matugen_contrast || (s.makes_colors() && !old.makes_colors());
         let panels_changed = old.panels != s.panels;
@@ -1248,7 +1248,7 @@ impl Shell {
             // The control center's Dark Style tile.
             self.redraw_kinds(&[Kind::Popup]);
         }
-        let widgets = old.widget_clock != s.widget_clock || old.widget_system != s.widget_system || old.widget_side != s.widget_side;
+        let widgets = old.widget_clock != s.widget_clock || old.widget_system != s.widget_system || old.widget_side != s.widget_side || old.widget_clock_at != s.widget_clock_at || old.widget_system_at != s.widget_system_at;
         if old.dock_apps != s.dock_apps && s.dock_apps.iter().any(|id| ui::find_app(&self.apps, id).is_none()) {
             // A newly pinned app this list doesn't know yet.
             self.apps = load_apps();
@@ -1744,6 +1744,10 @@ impl Shell {
                     }
                 });
             }
+            Act::MoveWidget(which, at) => self.change_settings(|s| match which {
+                ui::Widget::Clock => s.widget_clock_at = at,
+                ui::Widget::System => s.widget_system_at = at,
+            }),
             Act::Pin(id) => {
                 let apps = self.apps.clone();
                 self.change_settings(|s| {
