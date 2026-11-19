@@ -1,6 +1,6 @@
 //! Column view (Miller columns): the folders above this one side by side, this folder's
 //! column (it has the keyboard and works like the list), and on the right what the chosen
-//! item holds: a folder's contents, or a file's details.
+//! item holds: a folder's contents, or Peek for a file (when the Peek panel is closed).
 //!
 //! Everything follows the tab's location, so history, tabs, split view and the path bar work
 //! as in every other view: clicking in another column goes to that folder with the clicked
@@ -9,8 +9,7 @@
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 use std::path::{Path, PathBuf};
 
-use super::{fmt_time, paint_tex, r_sm, Action, DragFiles, RivetApp};
-use crate::fsops;
+use super::{paint_tex, r_sm, Action, DragFiles, RivetApp};
 use crate::model::{Entry, Location, Tab};
 use crate::settings::ViewMode;
 
@@ -108,8 +107,8 @@ impl RivetApp {
             let sel = self.tab().selected_entries();
             if sel.len() == 1 { Some(sel[0].clone()) } else { None }
         };
-        // The column right of this folder's: a chosen folder's contents, or a chosen file's
-        // details (unless Peek already shows them).
+        // The column right of this folder's: a chosen folder's contents, or Peek for a chosen
+        // file (unless the Peek panel already shows it).
         let next_col = match &chosen {
             Some(e) if e.is_dir => true,
             Some(_) => !self.s.show_peek,
@@ -146,12 +145,10 @@ impl RivetApp {
                             self.side_column(&mut col, ctx, &parents[i], Some(&next), z, row_h, &mut jump);
                         } else if i == parents.len() {
                             self.this_column(&mut col, ctx, z, row_h);
-                        } else if let Some(e) = &chosen {
-                            if e.is_dir {
-                                self.side_column(&mut col, ctx, &e.path, None, z, row_h, &mut jump);
-                            } else {
-                                self.file_column(&mut col, ctx, e);
-                            }
+                        } else if let Some(e) = chosen.as_ref().filter(|e| e.is_dir) {
+                            self.side_column(&mut col, ctx, &e.path, None, z, row_h, &mut jump);
+                        } else {
+                            self.file_column(&mut col, ctx);
                         }
                         shown.push(rect);
                         if !last {
@@ -335,36 +332,11 @@ impl RivetApp {
         self.column_cache.insert(dir.to_path_buf(), listing);
     }
 
-    /// A chosen file's column: a large preview and the basics.
-    fn file_column(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, e: &Entry) {
-        let v = ui.visuals().clone();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("col-file", self.pane_salt, &e.path)).show(ui, |ui| {
-            let width = ui.available_width();
-            let z = (width - 48.0).clamp(64.0, 160.0);
-            ui.add_space(20.0);
-            let (r, _) = ui.allocate_exact_size(Vec2::new(width, z), Sense::hover());
-            let icon_rect = Rect::from_center_size(r.center(), Vec2::splat(z));
-            if let Some(t) = self.entry_texture(ctx, e, z) {
-                let painter = ui.painter().clone();
-                self.icon_lift(ctx, &painter, e, &t, icon_rect, v.dark_mode);
-                paint_tex(ui.painter(), &t, icon_rect, self.tint_for(e));
-            }
-            ui.add_space(12.0);
-            let mut job = egui::text::LayoutJob::simple(e.name.clone(), crate::fonts::ui_font(14.0), v.strong_text_color(), width - 24.0);
-            job.halign = egui::Align::Center;
-            job.wrap.break_anywhere = true;
-            job.wrap.max_rows = 4;
-            let g = ui.painter().layout_job(job);
-            let (r, _) = ui.allocate_exact_size(Vec2::new(width, g.size().y), Sense::hover());
-            ui.painter().galley(Pos2::new(r.center().x, r.top()), g, v.strong_text_color());
-            ui.add_space(4.0);
-            let line = |ui: &mut egui::Ui, text: String| {
-                let (r, _) = ui.allocate_exact_size(Vec2::new(width, 18.0), Sense::hover());
-                let painter = ui.painter().with_clip_rect(r.intersect(ui.clip_rect()));
-                painter.text(r.center(), Align2::CENTER_CENTER, text, crate::fonts::ui_font(12.5), v.weak_text_color());
-            };
-            line(ui, format!("{} — {}", self.mime.describe(&e.mime), fsops::human_size(e.size)));
-            line(ui, format!("Modified {}", fmt_time(e.modified)));
+    /// A chosen file's column: Peek, drawn here while the Peek panel is closed (never both:
+    /// Peek has one preview and one video player).
+    fn file_column(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 10, right: 12, top: 8, bottom: 10 }).show(ui, |ui| {
+            egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("col-peek", self.pane_salt)).show(ui, |ui| self.peek_contents(ui, ctx));
         });
     }
 }
