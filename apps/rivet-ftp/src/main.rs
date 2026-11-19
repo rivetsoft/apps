@@ -6,6 +6,7 @@ mod gui;
 mod listing;
 mod settings;
 mod sftp;
+mod shell;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -34,6 +35,7 @@ Usage:
                                      (or run COMMAND there)
   rivet-ftp sftp NAME                Open the sftp command line there
   rivet-ftp keys                     Your SSH keys, and which connections use them
+  rivet-ftp shell-plugin             Run as Rivet Shell's FTP plugin (the shell starts this)
   rivet-ftp --install-desktop-entry  Add Rivet FTP to the app launcher (for this user)
   rivet-ftp ssh-config               How to reach saved connections from plain ssh,
                                      scp, rsync and git by name
@@ -60,6 +62,7 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         None => return window(None, screenshot),
         Some("open") => return window(args.get(1).cloned(), screenshot),
+        Some("shell-plugin") => return shell::run(),
         _ => {}
     }
     match run(&args) {

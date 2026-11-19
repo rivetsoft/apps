@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Commands in the launcher: `@` and a plugin's word show only that plugin's entries, and the
+  words after it search them (`@ftp work`, `@notes plan`). `@` alone lists the words.
+- An FTP plugin, for Rivet FTP: your saved connections in a panel item's menu, under their
+  groups, and in the launcher (by name, or all of them under `@ftp`). Choosing one opens a new
+  Rivet FTP window connected to it.
+- The Notes plugin finds notes by name under `@notes`, and `@notes some words` makes a note.
+
 - A plugin's panel icon shows in its own colors, or as a solid shape in the panel's text color
   or the accent, like the tray's icons (the item's options, on the Panels page).
 

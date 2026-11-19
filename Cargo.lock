@@ -2429,7 +2429,12 @@ dependencies = [
  "rivet-look",
  "rivet-media",
  "rivet-xdg",
+ "serde_json",
 ]
+
+[[package]]
+name = "rivet-git"
+version = "0.1.0"
 
 [[package]]
 name = "rivet-kit"

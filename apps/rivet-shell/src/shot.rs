@@ -279,7 +279,7 @@ impl ShotApp {
             // RIVET_SHELL_PLUGIN_SAYS=file: the "disk" item is what that file's lines say (a real
             // plugin's output, to see how the shell shows it).
             plugins: if let Some(text) = std::env::var("RIVET_SHELL_PLUGIN_SAYS").ok().and_then(|f| std::fs::read_to_string(f).ok()) {
-                let mut it = crate::plugins::Item { name: std::env::var("RIVET_SHELL_PLUGIN_NAME").unwrap_or_else(|_| "Plugin".into()), ..Default::default() };
+                let mut it = crate::plugins::Item { name: std::env::var("RIVET_SHELL_PLUGIN_NAME").unwrap_or_else(|_| "Plugin".into()), keyword: std::env::var("RIVET_SHELL_PLUGIN_KEYWORD").unwrap_or_default(), ..Default::default() };
                 for line in text.lines().filter(|l| !l.trim().is_empty()) {
                     crate::plugins::take(&mut it, line, false);
                 }

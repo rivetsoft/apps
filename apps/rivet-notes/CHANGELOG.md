@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Rivet Shell's Notes plugin: open tasks and the latest notes on the panel, New Note in the
-  launcher, and a notice when something is due today (turn it on in the shell's Settings,
+  launcher (and `@notes` to find a note by name), and a notice when something is due today (turn it on in the shell's Settings,
   Plugins).
 - `rivet-notes FOLDER --note PATH` opens the window on a note, and `rivet-notes new [--vault
   FOLDER] [TITLE]` makes a note and opens it.

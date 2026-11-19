@@ -33,6 +33,7 @@ exec=./disk.sh /        # from the plugin's folder, with its arguments; or a com
 mode=stream             # poll (the default) or stream
 interval=30             # poll: seconds between runs
 events=unlock,wallpaper # the shell's events it's told of, besides its own clicks
+keyword=disk            # @disk in the launcher shows only its entries
 ```
 
 ## What a plugin says
@@ -70,6 +71,13 @@ only shown. Besides `id`, `label` and `sub`:
 An entry shows in the launcher once something is typed that matches its `label`. With
 `"query": true` it also shows, last, for anything typed, as `label “the words”`. Choosing one
 tells the plugin: `launch`, with the entry's `id` and, for the second kind, the words as `query`.
+An entry has a `sub` (shown after its name in a list) and an `icon` too.
+
+**Commands.** With `keyword=ftp` in its `plugin.conf`, a plugin has a word in the launcher:
+`@ftp` shows only its entries, all of them, and words after it search them by `label` and `sub`
+(`@ftp work`). `@` alone lists the words there are; choosing one types it. An entry with
+`"scoped": true` shows only under the plugin's word, never in an ordinary search: for long
+lists (every note, every bookmark) that shouldn't crowd the apps.
 
 ## Settings of its own
 
@@ -162,4 +170,10 @@ Copy its folder into `~/.local/share/rivet-shell/plugins/` under another name to
 (`exec=rivet-notes shell-plugin`; a program beside the shell's own is found before the ones on
 `PATH`). It uses the rest of what's here: a setting for the vault, a menu with headings and
 tasks' boxes, a badge and a notification when something is due today, and a New Note entry in
-the launcher. Its source is `apps/rivet-notes/src/shell.rs`.
+the launcher (and under `@notes`, every note by name). Its source is
+`apps/rivet-notes/src/shell.rs`.
+
+`data/plugins/ftp` (FTP) is Rivet FTP's (`exec=rivet-ftp shell-plugin`,
+`apps/rivet-ftp/src/shell.rs`), about a hundred lines: the saved connections in the item's menu
+under their groups and in the launcher (`@ftp`), each opening a new Rivet FTP window connected
+to it.

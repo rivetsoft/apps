@@ -18,6 +18,7 @@
 //!                            each event; stream: started once, kept running
 //!   interval=30              seconds between runs (poll)
 //!   events=lock,unlock       the shell's events it's told of (besides its own clicks)
+//!   keyword=ftp              `@ftp` in the launcher shows only its entries
 //!   setting.vault=folder|Vault|The folder to show
 //!                            a setting of its own, shown under it in Settings: its kind
 //!                            (folder, text or toggle), label and hint. The program finds
@@ -28,7 +29,8 @@
 //!   {"text":"42%","icon":"drive-harddisk","tooltip":"…","state":"warning","hidden":false,
 //!    "badge":true,
 //!    "menu":[{"id":"home","label":"/home","sub":"12 GB free"},{"heading":true,"label":"Tasks"}],
-//!    "launcher":[{"id":"new","label":"New Note","sub":"In Notes","icon":"…","query":true}],
+//!    "launcher":[{"id":"new","label":"New Note","sub":"In Notes","icon":"…","query":true,
+//!                 "scoped":false}],
 //!    "notify":{"summary":"…","body":"…"}, "run":"launcher"}
 //! every key optional; keys left out keep what they were (stream) or are empty (poll). `run`
 //! is a `rivet-shell msg` command. A poll plugin may print plain text instead: the first line
@@ -110,6 +112,8 @@ pub struct Manifest {
     pub official: bool,
     /// Its own settings, shown under it in Settings.
     pub settings: Vec<Setting>,
+    /// Its word in the launcher: `@word` there shows only its entries.
+    pub keyword: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -159,6 +163,7 @@ impl Manifest {
                 "exec" => m.exec = v.to_string(),
                 "mode" => m.stream = v == "stream",
                 "interval" => m.interval = v.parse::<u32>().unwrap_or(30).clamp(1, 86_400),
+                "keyword" => m.keyword = v.trim_start_matches('@').to_lowercase().chars().filter(|c| c.is_alphanumeric() || *c == '-').collect(),
                 "events" => m.events = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 k => {
                     if let Some(key) = k.strip_prefix("setting.").filter(|x| !x.is_empty() && x.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')) {
@@ -301,6 +306,8 @@ pub struct LaunchRow {
     pub icon: String,
     /// It takes what's typed: it shows for any search, and is told the words.
     pub query: bool,
+    /// Only under the plugin's own word (`@notes plan`), not in an ordinary search.
+    pub scoped: bool,
 }
 
 /// What a plugin shows on the panel, and in its menu.
@@ -308,6 +315,8 @@ pub struct LaunchRow {
 pub struct Item {
     /// The plugin's name (for its menu's title and hover text).
     pub name: String,
+    /// The plugin's word in the launcher (from its plugin.conf).
+    pub keyword: String,
     pub text: String,
     /// An icon's name in the icon theme, or a picture's path.
     pub icon: String,
@@ -341,11 +350,11 @@ pub struct Asks {
 pub fn take(item: &mut Item, text: &str, fresh: bool) -> Asks {
     let text = text.trim();
     let mut asks = Asks::default();
-    let name = std::mem::take(&mut item.name);
+    let (name, keyword) = (std::mem::take(&mut item.name), std::mem::take(&mut item.keyword));
     if fresh {
         *item = Item::default();
     }
-    item.name = name;
+    (item.name, item.keyword) = (name, keyword);
     let Some(v) = text.starts_with('{').then(|| serde_json::from_str::<serde_json::Value>(text).ok()).flatten() else {
         // Plain text: the text, its tooltip, its state.
         if !text.starts_with('{') {
@@ -387,7 +396,8 @@ pub fn take(item: &mut Item, text: &str, fresh: bool) -> Asks {
     }
     if let Some(rows) = v.get("launcher").and_then(|x| x.as_array()) {
         let f = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-        item.launcher = rows.iter().take(12).map(|r| LaunchRow { id: f(r, "id"), label: f(r, "label"), sub: f(r, "sub"), icon: f(r, "icon"), query: r.get("query").and_then(|x| x.as_bool()).unwrap_or(false) }).filter(|r| !r.label.is_empty() && !r.id.is_empty()).collect();
+        let b = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_bool()).unwrap_or(false);
+        item.launcher = rows.iter().take(400).map(|r| LaunchRow { id: f(r, "id"), label: f(r, "label"), sub: f(r, "sub"), icon: f(r, "icon"), query: b(r, "query"), scoped: b(r, "scoped") }).filter(|r| !r.label.is_empty() && !r.id.is_empty()).collect();
     }
     if let Some(n) = v.get("notify") {
         let f = |k: &str| n.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -484,7 +494,7 @@ impl Plugins {
             let (tx, rx) = mpsc::channel();
             let retired = Arc::new(AtomicBool::new(false));
             let shared = Shared { id: m.id.clone(), items: self.items.clone(), generation: self.generation.clone(), wake: self.wake.clone(), retired: retired.clone() };
-            shared.update(|it| it.name = m.name.clone());
+            shared.update(|it| (it.name, it.keyword) = (m.name.clone(), m.keyword.clone()));
             let (man, set) = (m.clone(), env_of(values, &m.id));
             let theirs = set.clone();
             std::thread::spawn(move || if man.stream { stream(man, theirs, rx, shared) } else { poll(man, theirs, rx, shared) });
@@ -688,8 +698,9 @@ mod tests {
     /// an event it asked for, and both gone once turned off.
     #[test]
     fn takes_settings_rows_and_launcher_entries() {
-        let m = Manifest::parse("notes", Path::new("/p/notes"), true, "name=Notes\nexec=rivet-notes shell-plugin\nsetting.vault=folder|Vault|The folder\nsetting.all=toggle|Every task\nsetting.bad key=text|x\nsetting.word=odd\n").unwrap();
+        let m = Manifest::parse("notes", Path::new("/p/notes"), true, "name=Notes\nkeyword=@Notes\nexec=rivet-notes shell-plugin\nsetting.vault=folder|Vault|The folder\nsetting.all=toggle|Every task\nsetting.bad key=text|x\nsetting.word=odd\n").unwrap();
         assert_eq!(m.settings.iter().map(|s| (s.key.as_str(), s.kind, s.label.as_str(), s.hint.as_str())).collect::<Vec<_>>(), [("vault", SettingKind::Folder, "Vault", "The folder"), ("all", SettingKind::Toggle, "Every task", ""), ("word", SettingKind::Text, "word", "")]);
+        assert_eq!(m.keyword, "notes");
         let values: Values = vec![("notes".into(), "vault".into(), "/v".into()), ("other".into(), "x".into(), "1".into())];
         assert_eq!(env_of(&values, "notes"), [("RIVET_SET_VAULT".to_string(), "/v".to_string())]);
         let mut it = Item::default();

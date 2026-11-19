@@ -62,26 +62,36 @@ fn list_icon(icon: f32) -> f32 {
 /// Something the launcher lists: an app, or an entry a plugin gave.
 enum Entry<'a> {
     App(&'a DesktopApp),
-    Plugin { pid: String, id: String, name: String, icon: String, query: String },
+    Plugin { pid: String, id: String, name: String, sub: String, icon: String, query: String },
+    /// A command's word (`@ftp`), for the plugin called `sub`: choosing it types it.
+    Keyword { word: String, name: String, sub: String, icon: String },
 }
 
 impl Entry<'_> {
     fn name(&self) -> &str {
         match self {
             Entry::App(a) => &a.name,
-            Entry::Plugin { name, .. } => name,
+            Entry::Plugin { name, .. } | Entry::Keyword { name, .. } => name,
+        }
+    }
+    /// A second, weaker part after the name (a list's rows show it).
+    fn sub(&self) -> &str {
+        match self {
+            Entry::App(_) => "",
+            Entry::Plugin { sub, .. } | Entry::Keyword { sub, .. } => sub,
         }
     }
     fn icon(&self, ctx: &egui::Context, kit: &mut Kit, px: f32) -> Option<egui::TextureHandle> {
         match self {
             Entry::App(a) => kit.app_icon(ctx, a, px),
-            Entry::Plugin { icon, .. } => kit.named_icon(ctx, icon, px).or_else(|| kit.named_icon(ctx, "application-x-executable", px)),
+            Entry::Plugin { icon, .. } | Entry::Keyword { icon, .. } => kit.named_icon(ctx, icon, px).or_else(|| kit.named_icon(ctx, "application-x-executable", px)),
         }
     }
     /// Choosing it: the app starts, or the plugin is told (with what was typed).
     fn acts(&self) -> Vec<Act> {
         match self {
             Entry::App(a) => vec![Act::Launch(a.id.clone())],
+            Entry::Keyword { .. } => Vec::new(),
             Entry::Plugin { pid, id, query, .. } => vec![Act::Plugin(pid.clone(), crate::plugins::Event::new("launch", &[("id", id), ("query", query)])), Act::Close],
         }
     }
@@ -91,10 +101,23 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     // A steady cursor: a blinking one redraws the whole launcher twice a second.
     ui.visuals_mut().text_cursor.blink = false;
     let v = ui.visuals().clone();
-    let list = m.s.launch_view == LaunchView::List;
+    // A command: `@word` shows only that plugin's entries, and the words after it search them
+    // (`@ftp work`); `@` alone, or the start of a word, lists the words there are.
+    let command = query.trim_start().strip_prefix('@').map(|q| {
+        let (word, rest) = q.split_once(char::is_whitespace).unwrap_or((q, ""));
+        (word.to_lowercase(), rest.trim().to_string())
+    });
+    // Commands' entries have a second line: always a list.
+    let list = m.s.launch_view == LaunchView::List || command.is_some();
     let icon = m.s.launch_icon.clamp(24, 64) as f32;
     let id = egui::Id::unique("launcher-search");
-    let hint = if m.s.launch_calc { "Search apps, or type a sum…" } else { "Search apps…" };
+    let has_words = m.extra.plugins.iter().any(|(_, it)| !it.keyword.is_empty());
+    let hint = match (m.s.launch_calc, has_words) {
+        (true, true) => "Search apps, type a sum, or @ for more…",
+        (true, false) => "Search apps, or type a sum…",
+        (false, true) => "Search apps, or @ for more…",
+        (false, false) => "Search apps…",
+    };
     let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
         ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text(hint).desired_width(f32::INFINITY))
     });
@@ -110,6 +133,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     let enter = ui.input(|i| i.key_pressed(Key::Enter));
     // A sum: its answer, and Enter copies it.
     if m.s.launch_calc
+        && command.is_none()
         && let Some(answer) = calc(query)
     {
         let text = calc_text(answer);
@@ -124,22 +148,51 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         return;
     }
     // The apps: best matches first when searching, else by name.
-    let mut ranked: Vec<(i32, Entry)> = m.apps.iter().filter_map(|a| quick::fuzzy_score(&a.name, query).map(|s| (s, Entry::App(a)))).collect();
-    // What plugins add, once something is typed: entries whose name matches, and after
-    // everything else the ones that take the words typed (New Note “words”).
+    let mut ranked: Vec<(i32, Entry)> = Vec::new();
     let typed = query.trim().to_string();
-    if !typed.is_empty() {
-        for (pid, it) in &m.extra.plugins {
-            for row in &it.launcher {
-                match quick::fuzzy_score(&row.label, query) {
-                    Some(s) => ranked.push((s, Entry::Plugin { pid: pid.clone(), id: row.id.clone(), name: row.label.clone(), icon: row.icon.clone(), query: String::new() })),
-                    None if row.query => ranked.push((i32::MIN, Entry::Plugin { pid: pid.clone(), id: row.id.clone(), name: format!("{} “{typed}”", row.label), icon: row.icon.clone(), query: typed.clone() })),
-                    None => {}
+    let entry = |pid: &str, row: &crate::plugins::LaunchRow, words: &str| Entry::Plugin { pid: pid.to_string(), id: row.id.clone(), name: if words.is_empty() { row.label.clone() } else { format!("{} “{words}”", row.label) }, sub: row.sub.clone(), icon: row.icon.clone(), query: words.to_string() };
+    match &command {
+        Some((word, rest)) => match m.extra.plugins.iter().find(|(_, it)| !word.is_empty() && &it.keyword == word) {
+            // One plugin's entries: all of them, or the ones the words find; an entry that
+            // takes words comes last with them.
+            Some((pid, it)) => {
+                for (k, row) in it.launcher.iter().enumerate() {
+                    let found = quick::fuzzy_score(&row.label, rest).or_else(|| quick::fuzzy_score(&row.sub, rest).map(|s| s - 1000));
+                    match found {
+                        Some(s) => ranked.push((if rest.is_empty() { -(k as i32) } else { s }, entry(pid, row, ""))),
+                        None if row.query => ranked.push((i32::MIN, entry(pid, row, rest))),
+                        None => {}
+                    }
+                }
+                ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+            }
+            // The words there are, as far as it's typed.
+            None => {
+                for (_, it) in m.extra.plugins.iter().filter(|(_, it)| !it.keyword.is_empty() && it.keyword.starts_with(word.as_str())) {
+                    ranked.push((0, Entry::Keyword { word: it.keyword.clone(), name: format!("@{}", it.keyword), sub: it.name.clone(), icon: it.icon.clone() }));
                 }
             }
+        },
+        None => {
+            // The apps: best matches first when searching, else by name.
+            ranked.extend(m.apps.iter().filter_map(|a| quick::fuzzy_score(&a.name, query).map(|s| (s, Entry::App(a)))));
+            // What plugins add, once something is typed: entries whose name matches, and after
+            // everything else the ones that take the words typed (New Note “words”).
+            if !typed.is_empty() {
+                for (pid, it) in &m.extra.plugins {
+                    for row in it.launcher.iter().filter(|r| !r.scoped) {
+                        match quick::fuzzy_score(&row.label, query) {
+                            Some(s) => ranked.push((s, entry(pid, row, ""))),
+                            None if row.query => ranked.push((i32::MIN, entry(pid, row, &typed))),
+                            None => {}
+                        }
+                    }
+                }
+                ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+            }
         }
-        ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
     }
+    let mut picked: Option<usize> = None;
     // A grid's tile holds the icon over two lines of name.
     let tile = Vec2::new(icon + 56.0, icon + 50.0);
     let cols = if list { 1 } else { ((ui.available_width() + 6.0) / (tile.x + 6.0)).floor().max(1.0) as usize };
@@ -167,8 +220,8 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         }
         *sel = (*sel).min(n - 1);
     }
-    if enter && let Some((_, a)) = ranked.get(*sel) {
-        m.acts.extend(a.acts());
+    if enter && *sel < ranked.len() {
+        picked = Some(*sel);
     }
     let moved = up || down || left || right;
     let mark = |p: &egui::Painter, r: Rect, chosen: bool, hovered: bool| {
@@ -181,7 +234,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     };
     // Whole rows only: the list is as tall as the rows that fit, and while it scrolls a row
     // that's partly out of it isn't drawn (rather than cut through).
-    let (pitch, gap) = pitch(m.s);
+    let (pitch, gap) = if list { (list_icon(icon) + 14.0 + 2.0, 2.0) } else { pitch(m.s) };
     let rows = ((ui.available_height() + gap) / pitch).floor().max(1.0);
     let whole = |ui: &egui::Ui, r: Rect| ui.clip_rect().expand(0.5).contains_rect(r);
     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(rows * pitch - gap).show(ui, |ui| {
@@ -200,7 +253,14 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     }
                     let room = r.right() - ir.right() - 24.0 - if k == *sel { 44.0 } else { 0.0 };
                     let g = crate::ui::one_line(ui.painter(), a.name(), ui_font(14.0), v.text_color(), room);
+                    let after = ir.right() + 12.0 + g.size().x + 12.0;
                     ui.painter().galley(Pos2::new(ir.right() + 12.0, r.center().y - g.size().y / 2.0), g, v.text_color());
+                    // What a plugin's entry says of itself, after its name.
+                    let sub_room = ir.right() + 12.0 + room - after;
+                    if !a.sub().is_empty() && sub_room > 40.0 {
+                        let g = crate::ui::one_line(ui.painter(), a.sub(), ui_font(12.0), v.weak_text_color(), sub_room);
+                        ui.painter().galley(Pos2::new(after, r.center().y - g.size().y / 2.0 + 0.5), g, v.weak_text_color());
+                    }
                     if k == *sel {
                         ui.painter().text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, "Enter", ui_font(11.5), v.weak_text_color());
                     }
@@ -209,7 +269,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     ui.scroll_to_rect(r, None);
                 }
                 if shown && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    m.acts.extend(a.acts());
+                    picked = Some(k);
                 }
             }
         } else {
@@ -233,7 +293,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                         ui.scroll_to_rect(r, None);
                     }
                     if shown && resp.clicked() {
-                        m.acts.extend(a.acts());
+                        picked = Some(k);
                     }
                     if (k + 1) % cols == 0 {
                         ui.end_row();
@@ -242,7 +302,29 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
             });
         }
         if ranked.is_empty() {
-            ui.label(egui::RichText::new("No apps match").color(v.weak_text_color()));
+            let text = match &command {
+                Some((word, _)) if m.extra.plugins.iter().any(|(_, it)| !word.is_empty() && &it.keyword == word) => "Nothing matches",
+                Some(_) => "No command by that name",
+                None => "No apps match",
+            };
+            ui.label(egui::RichText::new(text).color(v.weak_text_color()));
         }
     });
+    // What was chosen: an app or a plugin's entry is told; a command's word is typed in, for
+    // its entries to show.
+    let mut fill = None;
+    match picked.and_then(|k| ranked.get(k)).map(|(_, e)| e) {
+        Some(Entry::Keyword { word, .. }) => fill = Some(format!("@{word} ")),
+        Some(e) => m.acts.extend(e.acts()),
+        None => {}
+    }
+    if let Some(text) = fill {
+        *query = text;
+        *sel = 0;
+        // The cursor after it.
+        let mut st = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
+        st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(query.chars().count()))));
+        st.store(ui.ctx(), id);
+        ui.ctx().request_repaint();
+    }
 }

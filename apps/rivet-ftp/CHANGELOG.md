@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Rivet Shell's FTP plugin: your saved connections on the panel and in the launcher (`@ftp`),
+  each opening a new window connected to it (turn it on in the shell's Settings, Plugins).
 - Ctrl+N makes a new folder and Ctrl+Shift+N opens a new window (File → New Window); a new
   connection is Ctrl+Shift+K. Ctrl+Shift+Tab goes to the previous tab again (Ctrl+Tab used to
   catch it).

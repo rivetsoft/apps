@@ -23,6 +23,8 @@ const EVERY: Duration = Duration::from_secs(20);
 /// Tasks and notes listed at most.
 const TASKS: usize = 8;
 const NOTES: usize = 5;
+/// Notes the launcher can find (`@notes`), the latest first.
+const FIND: usize = 300;
 
 /// A setting the shell passes (`RIVET_SET_NAME`).
 fn setting(name: &str) -> String {
@@ -130,6 +132,9 @@ fn status(dir: Option<&Path>, notes: &[Note], triggers: &[String], all: bool, to
         1 => format!("{name} · 1 task due"),
         n => format!("{name} · {n} tasks due"),
     };
+    // In the launcher: New Note for anything typed, and under `@notes` every note by name.
+    let mut launcher = vec![json!({"id": "new", "label": "New Note", "sub": format!("In {name}"), "icon": "rivet-notes", "query": true})];
+    launcher.extend(latest.iter().take(FIND).map(|n| json!({"id": format!("note:{}", n.rel), "label": n.title, "sub": if n.folder().is_empty() { ago(n.modified) } else { format!("{} · {}", n.folder(), ago(n.modified)) }, "icon": "rivet-notes", "scoped": true})));
     json!({
         "icon": "rivet-notes",
         "text": if due_now > 0 { due_now.to_string() } else { String::new() },
@@ -137,7 +142,7 @@ fn status(dir: Option<&Path>, notes: &[Note], triggers: &[String], all: bool, to
         "state": if due_now > 0 { "accent" } else { "normal" },
         "tooltip": tooltip,
         "menu": menu,
-        "launcher": [{"id": "new", "label": "New Note", "sub": format!("In {name}"), "icon": "rivet-notes", "query": true}],
+        "launcher": launcher,
     })
 }
 
@@ -275,6 +280,7 @@ mod tests {
         assert_eq!((menu[2]["mark"].as_str(), menu[2]["state"].as_str(), menu[2]["id"].as_str()), (Some("/"), Some("accent"), Some("note:Work/Plan.md")));
         assert!(menu.iter().any(|r| r["label"] == "Latest notes"));
         assert_eq!(s["launcher"][0]["query"], true);
+        assert_eq!((s["launcher"].as_array().unwrap().len(), s["launcher"][1]["scoped"].as_bool()), (3, Some(true)));
         // No vault: only the way to choose one.
         let none = status(None, &[], &triggers, false, today);
         assert_eq!(none["menu"][0]["id"], "settings");
