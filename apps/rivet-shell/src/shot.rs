@@ -224,6 +224,10 @@ impl ShotApp {
             s.panels.push(crate::panels::PanelCfg { edge: Edge::Bottom, floating: false, zones: [list(&["workspaces", "window-title"]), list(&["media"]), list(&["system", "clock"])], ..crate::panels::PanelCfg::bare() });
             s.dock = false;
         }
+        if std::env::var_os("RIVET_SHELL_TRAY_PIXMAPS").is_some() && !s.panels[0].zones.iter().flatten().any(|i| i == "tray") {
+            // Real apps' tray icons: the tray at the start of the right zone, to see them.
+            s.panels[0].zones[2].insert(0, "tray".into());
+        }
         if std::env::var("RIVET_SHELL_PANEL_DOCK").as_deref() == Ok("1") {
             // The dock as a panel item, in the left zone, and no dock of its own.
             s.panels[0].zones[0].push("dock".into());
@@ -300,6 +304,11 @@ impl ShotApp {
             },
             tray: {
                 let mut t = crate::tray::demo();
+                // RIVET_SHELL_TRAY_PIXMAPS=a.json,b.json: real apps' icons instead, as saved by
+                // `busctl --user --json=short get-property … IconPixmap`.
+                if let Ok(list) = std::env::var("RIVET_SHELL_TRAY_PIXMAPS") {
+                    t.items = list.split(',').filter_map(|f| crate::tray::demo_from_busctl(std::path::Path::new(f))).collect();
+                }
                 if popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::TrayMenu { .. })) {
                     t.menu = Some((":1.chat/StatusNotifierItem".into(), Some(crate::tray::demo_menu())));
                 }

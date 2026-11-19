@@ -18,29 +18,18 @@ pub fn shown<'a>(m: &'a Model) -> Vec<&'a TrayItem> {
     m.extra.tray.items.iter().filter(|i| m.s.tray_passive || i.status != Status::Passive).collect()
 }
 
-/// White, keeping the shape (and a little of the shading), to tint: as the icon theme's masks.
-fn to_mask(mut img: egui::ColorImage) -> egui::ColorImage {
-    let lum = |p: &Color32| {
-        let [r, g, b, a] = p.to_srgba_unmultiplied();
-        if a == 0 { 0.0 } else { (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0 }
-    };
-    let max = img.pixels.iter().map(lum).fold(0.0f32, f32::max).max(0.05);
-    for p in img.pixels.iter_mut() {
-        let a = p.a() as f32 / 255.0;
-        let l = (lum(p) / max).clamp(0.0, 1.0);
-        let out = (a * (0.45 + 0.55 * l) * 255.0).round() as u8;
-        *p = Color32::from_rgba_premultiplied(out, out, out, out);
-    }
-    img
-}
-
-fn pix_texture(kit: &mut Kit, ctx: &egui::Context, key: &str, stamp: u64, px: &Pixmap, mask: bool) -> Option<egui::TextureHandle> {
-    let k = (format!("{key}:{}", px.w), stamp, mask);
+/// An app's own pixels as a texture `px` pixels square. They're resized here, with a sharp
+/// filter, rather than stretched when drawn: shrinking 22 or 24 px art to the panel's size on the
+/// GPU blurred it. `mask`: white, to be tinted (the icon theme's way, shared).
+fn pix_texture(kit: &mut Kit, ctx: &egui::Context, key: &str, stamp: u64, p: &Pixmap, px: u32, mask: bool) -> Option<egui::TextureHandle> {
+    let k = (format!("{key}:{}:{px}", p.w), stamp, mask);
     if let Some(t) = kit.tray_tex.get(&k) {
         return Some(t.clone());
     }
-    let img = egui::ColorImage::from_rgba_unmultiplied([px.w, px.h], &px.rgba);
-    let img = if mask { to_mask(img) } else { img };
+    let img = image::RgbaImage::from_raw(p.w as u32, p.h as u32, p.rgba.to_vec())?;
+    let img = if img.width() != px || img.height() != px { image::imageops::resize(&img, px, px, image::imageops::FilterType::Lanczos3) } else { img };
+    let img = egui::ColorImage::from_rgba_unmultiplied([px as usize, px as usize], img.as_raw());
+    let img = if mask { rivet_look::icons::to_mask(img) } else { img };
     let t = ctx.load_texture(format!("tray:{}:{stamp}:{mask}", k.0), img, egui::TextureOptions::LINEAR);
     if kit.tray_tex.len() > 96 {
         kit.tray_tex.clear();
@@ -71,7 +60,7 @@ pub fn texture(kit: &mut Kit, ctx: &egui::Context, it: &TrayItem, mask: bool) ->
         }
     }
     let p = pixmap.as_ref().or(it.pixmap.as_ref())?;
-    pix_texture(kit, ctx, &it.key, it.stamp, p, mask)
+    pix_texture(kit, ctx, &it.key, it.stamp, p, px, mask)
 }
 
 /// The panel's tray in `r`: one slot per icon. Click: the app's window (or its menu, for items
@@ -90,7 +79,11 @@ pub fn draw(ui: &mut egui::Ui, r: Rect, down: bool, idx: usize, m: &Model, tex: 
         if resp.hovered() || open {
             p.rect_filled(slot.shrink2(if down { Vec2::new(2.0, 1.0) } else { Vec2::new(1.0, 5.0) }), hover_r, mix(v.panel_fill, v.text_color(), 0.09));
         }
-        let ir = Rect::from_center_size(slot.center(), Vec2::splat(ICON));
+        // On whole pixels, the texture's own size: one texture pixel to one screen pixel (a
+        // half-pixel offset, or a stretch from 22.5 to 23 px, would smear it).
+        let ppp = ui.ctx().pixels_per_point();
+        let side = (ICON * ppp).round() / ppp;
+        let ir = Rect::from_min_size(egui::emath::GuiRounding::round_to_pixels(slot.center() - Vec2::splat(side / 2.0), ppp), Vec2::splat(side));
         match tex.iter().find(|t| t.0 == it.key).and_then(|t| t.1.as_ref()) {
             Some(t) => {
                 p.image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), tint);

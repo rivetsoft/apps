@@ -692,6 +692,32 @@ pub fn demo() -> Tray {
     }
 }
 
+/// A tray item for checks from an app's real pixels, saved by `busctl --user --json=short
+/// get-property … IconPixmap` (the pixmap closest to 32 px, as from the bus).
+pub fn demo_from_busctl(f: &std::path::Path) -> Option<TrayItem> {
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(f).ok()?).ok()?;
+    let mut best: Option<Pixmap> = None;
+    for e in v["data"].as_array()? {
+        let (w, h) = (e[0].as_u64()? as usize, e[1].as_u64()? as usize);
+        let argb: Vec<u8> = e[2].as_array()?.iter().filter_map(|b| b.as_u64().map(|b| b as u8)).collect();
+        if argb.len() != w * h * 4 {
+            continue;
+        }
+        let rgba: Vec<u8> = argb.chunks(4).flat_map(|c| [c[1], c[2], c[3], c[0]]).collect();
+        let p = Pixmap { w, h, rgba: Arc::new(rgba) };
+        // As `pixmap` picks: the smallest at least 32, else the biggest.
+        let better = match &best {
+            None => true,
+            Some(b) => (p.w >= 32 && (b.w < 32 || p.w < b.w)) || (b.w < 32 && p.w > b.w),
+        };
+        if better {
+            best = Some(p);
+        }
+    }
+    let k = f.file_stem()?.to_string_lossy().into_owned();
+    Some(TrayItem { key: format!(":1.{k}/StatusNotifierItem"), id: k.clone(), title: k, pixmap: best, status: Status::Active, stamp: 1, ..Default::default() })
+}
+
 /// A menu for checks.
 pub fn demo_menu() -> Vec<MenuItem> {
     let row = |id: i32, label: &str| MenuItem { id, label: label.into(), enabled: true, ..Default::default() };

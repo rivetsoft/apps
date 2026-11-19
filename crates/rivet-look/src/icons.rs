@@ -530,19 +530,45 @@ impl IconTheme {
     }
 }
 
-/// Turn a full-colour icon into a white silhouette (premultiplied). Brightness is kept
-/// as a gentle opacity variation (relative to the icon's brightest pixel), so the shape
-/// reads as one solid colour while darker details still show through.
-fn to_mask(mut img: egui::ColorImage) -> egui::ColorImage {
+/// Turn a full-colour icon into a white silhouette (premultiplied), to tint. Its light parts are
+/// solid and its dark parts faint, so the details still read once it's one color.
+pub fn to_mask(mut img: egui::ColorImage) -> egui::ColorImage {
+    // How light each pixel is (its color, not counting how see-through it is).
     let lum = |p: &egui::Color32| {
         let [r, g, b, a] = p.to_srgba_unmultiplied();
         if a == 0 { 0.0 } else { (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0 }
     };
-    let max = img.pixels.iter().map(lum).fold(0.0f32, f32::max).max(0.05);
+    // The icon's own dark and light tones: where its darkest and lightest few percent begin,
+    // weighed by how solid each pixel is (so stray edge pixels don't count).
+    let mut solid: Vec<(f32, f32)> = img.pixels.iter().filter(|p| p.a() > 32).map(|p| (lum(p), p.a() as f32)).collect();
+    solid.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let total: f32 = solid.iter().map(|s| s.1).sum();
+    let at = |q: f32| {
+        let mut acc = 0.0;
+        for &(l, a) in &solid {
+            acc += a;
+            if acc >= q * total {
+                return l;
+            }
+        }
+        solid.last().map(|s| s.0).unwrap_or(1.0)
+    };
+    let (dark, light) = (at(0.05), at(0.95));
+    // One tone (a symbolic icon, a plain shape): just its shape. Else the light parts are solid
+    // and the dark parts faint, with a sharp step between (a gentle ramp turned it to mush).
+    let flat = light - dark < 0.2;
+    const FAINT: f32 = 0.3;
     for p in img.pixels.iter_mut() {
         let a = p.a() as f32 / 255.0;
-        let l = (lum(p) / max).clamp(0.0, 1.0);
-        let out = (a * (0.45 + 0.55 * l) * 255.0).round() as u8;
+        let v = if flat {
+            a
+        } else {
+            // A narrow step (55–68% of the way from dark to light): a gradient in the icon falls
+            // to one side or the other instead of banding.
+            let t = (((lum(p) - dark) / (light - dark) - 0.55) / 0.13).clamp(0.0, 1.0);
+            a * (FAINT + (1.0 - FAINT) * t * t * (3.0 - 2.0 * t))
+        };
+        let out = (v * 255.0).round() as u8;
         *p = egui::Color32::from_rgba_premultiplied(out, out, out, out);
     }
     img
