@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new icon in Rivet's pink, to match the rest of the apps and the website.
 - Now Playing does more. A click opens a player with the cover, the album, how far in the
   track is (click the line to jump), and previous, play and next. The item itself shows the
   cover, and its options choose the text and how wide it gets, previous and next buttons,

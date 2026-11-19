@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A new icon in Rivet's pink, to match the rest of the apps and the website.
+
 ## 0.2.0
 
 - Drag a tab to move it: it lifts and follows the pointer with a glow, the

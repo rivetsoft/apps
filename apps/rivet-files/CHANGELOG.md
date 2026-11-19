@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new icon in Rivet's pink, to match the rest of the apps and the website.
 - **Smoother in big folders**: selecting files no longer slows the window down. In a folder of
   100,000 files, choosing one file used to make every frame 15 to 30 times slower, and selecting
   everything (or having Peek open) more than that; now it stays as quick as with nothing selected.

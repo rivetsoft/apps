@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A new icon in Rivet's pink, to match the rest of the apps and the website.
+
 ## 0.3.0
 
 - Rivet Shell's FTP plugin: your saved connections on the panel and in the launcher (`@ftp`),

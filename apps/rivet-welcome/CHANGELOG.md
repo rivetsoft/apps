@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A new icon in Rivet's pink, to match the rest of the apps and the website.
+
 ## 0.1.0
 
 The first version.
