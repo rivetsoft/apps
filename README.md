@@ -56,7 +56,7 @@ wallpaper, which it gives to matugen so every app's colors follow it. Settings i
 **Just started:** not released yet; build it from source.
 [More about Rivet Shell](apps/rivet-shell/README.md)
 
-![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.png)
+![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.jpg)
 
 ## The apps
 
@@ -214,3 +214,5 @@ The top of the repository is only the Cargo workspace. CI builds, tests and lint
 Rivet Edit's file and folder icons are from [Material Design Icons](https://pictogrammers.com/library/mdi/)
 by Pictogrammers, under the Apache License 2.0.
 Rivet Terminal's terminal emulation is [alacritty_terminal](https://github.com/alacritty/alacritty) (Apache License 2.0).
+The wallpaper in Rivet Shell's picture is [Sunset View](https://www.pexels.com/photo/sunset-view-1606327/)
+by Vittorio Staffolani, from Pexels.

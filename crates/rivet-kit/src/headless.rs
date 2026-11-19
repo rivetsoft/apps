@@ -23,6 +23,9 @@ pub fn run(size: [f32; 2], make: impl FnOnce(&eframe::CreationContext) -> Box<dy
     let mut app = make(&cc);
     let mut frame = eframe::Frame::_new_kittest();
     let screen = Rect::from_min_size(Pos2::ZERO, Vec2::new(size[0], size[1]));
+    // RIVET_SHOT_SCALE=2: two pixels to a point, for pictures that stay sharp on dense screens
+    // (the window's size in points is the same; the picture has twice as many pixels each way).
+    let scale = std::env::var("RIVET_SHOT_SCALE").ok().and_then(|v| v.parse::<f32>().ok()).filter(|s| (1.0..=4.0).contains(s)).unwrap_or(1.0);
     let mut textures = crate::soft::Textures::default();
     let mut pending_events: Vec<egui::Event> = Vec::new();
     let start = Instant::now();
@@ -33,10 +36,12 @@ pub fn run(size: [f32; 2], make: impl FnOnce(&eframe::CreationContext) -> Box<dy
             predicted_dt: 1.0 / 60.0,
             focused: false,
             events: std::mem::take(&mut pending_events),
+            // Drawn in memory: no graphics card's limit on a picture's size.
+            max_texture_side: Some(8192),
             ..Default::default()
         };
         if let Some(info) = raw.viewports.get_mut(&ViewportId::ROOT) {
-            info.native_pixels_per_point = Some(1.0);
+            info.native_pixels_per_point = Some(scale);
             info.inner_rect = Some(screen);
             info.outer_rect = Some(screen);
             info.focused = Some(false);
@@ -60,7 +65,7 @@ pub fn run(size: [f32; 2], make: impl FnOnce(&eframe::CreationContext) -> Box<dy
                 ViewportCommand::Screenshot(callback) => {
                     let prims = ctx.tessellate(out.shapes.clone(), out.pixels_per_point);
                     let clear = app.clear_color(&ctx.global_style().visuals);
-                    let image = crate::soft::render(&prims, &textures, [size[0] as usize, size[1] as usize], clear);
+                    let image = crate::soft::render_scaled(&prims, &textures, [(size[0] * scale).round() as usize, (size[1] * scale).round() as usize], clear, scale);
                     callback.complete(Arc::new(image));
                 }
                 _ => {}

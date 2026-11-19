@@ -3,7 +3,7 @@
 A desktop shell for Wayland, in the Rivet apps' look: a panel, a dock, desktop widgets and the
 wallpaper, with a settings window. **Just started**: not released yet; build it from source.
 
-![Rivet Shell: the panel, widgets and dock over a wallpaper](../../docs/screenshots/shell-wide.png)
+![Rivet Shell: the panel, widgets and dock over a wallpaper](../../docs/screenshots/shell-wide.jpg)
 
 - **Panel**: a launcher button, workspaces (niri, Hyprland, Sway), the focused window's title,
   the clock (click for a calendar), what's playing (click to pause), volume and brightness

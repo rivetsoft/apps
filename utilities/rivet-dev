@@ -54,6 +54,8 @@ Using your build
 Docs and checks
   screenshots                      Regenerate the README screenshots (sample home folder)
   notes-screenshots                Regenerate Rivet Notes' screenshots (demo vault)
+  shell-screenshots WALLPAPER      Regenerate Rivet Shell's README picture over that wallpaper,
+                                   in the colors matugen makes from it (needs matugen)
   ftp-screenshots                  Regenerate Rivet FTP's screenshots (demo server, no network)
   edit-screenshots                 Regenerate Rivet Edit's screenshots (demo project)
   flatpak-sources                  Add new crates from Cargo.lock to the Flatpak's offline list
@@ -94,6 +96,7 @@ case "$cmd" in
     link)          exec sh "$LIB/link.sh" "$@" ;;
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;
     notes-screenshots) exec sh "$LIB/notes-screenshots.sh" "$@" ;;
+    shell-screenshots) exec sh "$LIB/shell-screenshots.sh" "$@" ;;
     ftp-screenshots) exec sh "$LIB/ftp-screenshots.sh" "$@" ;;
     edit-screenshots) exec sh "$LIB/edit-screenshots.sh" "$@" ;;
     flatpak-sources) exec python3 "$LIB/flatpak-sources-sync.py" "$@" ;;

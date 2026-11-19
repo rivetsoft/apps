@@ -28,6 +28,9 @@ pub struct ShotApp {
     extra: Extra,
     apps: Vec<rivet_xdg::launch::DesktopApp>,
     wall: Option<egui::TextureHandle>,
+    /// The wallpaper's picture, until the first frame makes its texture (a large one needs the
+    /// frame's own size limit, not the one before any frame).
+    wall_img: Option<egui::ColorImage>,
     popup: Option<Popup>,
     shot: rivet_kit::Shot,
 }
@@ -107,6 +110,8 @@ impl ShotApp {
     pub fn new(cc: &eframe::CreationContext, path: std::path::PathBuf) -> ShotApp {
         crate::config::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
         let mut s = Settings::default();
+        // Only Rivet's own apps in the dock: pictures of the shell show no other project's icon.
+        s.dock_apps.retain(|a| a.starts_with("rivet-"));
         match std::env::var("RIVET_SHELL_THEME").as_deref() {
             Ok("light") => (s.theme, s.follow_desktop_colors, s.color_mode) = (Mode::Light, false, Mode::Light),
             Ok("dark") => (s.theme, s.follow_desktop_colors) = (Mode::Dark, false),
@@ -226,7 +231,10 @@ impl ShotApp {
         }
         let dir = std::env::temp_dir().join(format!("rivet-shell-shot-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
-        let wall = crate::wall::demo_png(&dir).and_then(|p| crate::wall::thumbnail(&p, 1100)).map(|img| cc.egui_ctx.load_texture("demo-wallpaper", img, egui::TextureOptions::LINEAR));
+        // RIVET_SHELL_WALL=file: that picture as the wallpaper (documentation pictures).
+        let own = std::env::var("RIVET_SHELL_WALL").ok().map(std::path::PathBuf::from).and_then(|p| crate::wall::thumbnail(&p, 3840));
+        let wall_img = own.or_else(|| crate::wall::demo_png(&dir).and_then(|p| crate::wall::thumbnail(&p, 1100)));
+        let _ = cc;
         let _ = std::fs::remove_dir_all(&dir);
         let query = std::env::var("RIVET_SHELL_QUERY").unwrap_or_default();
         // Checks: popups joined to the panel (with RIVET_SHELL_LOOK's `popups=attached`).
@@ -302,7 +310,7 @@ impl ShotApp {
         if popup.as_ref().is_some_and(|p| p.kind == PopupKind::Bluetooth) {
             status.bluetooth = Some(true);
         }
-        ShotApp { s, kit: Kit::new(false), status, extra, apps, wall, popup, shot: rivet_kit::Shot::new(path) }
+        ShotApp { s, kit: Kit::new(false), status, extra, apps, wall: None, wall_img, popup, shot: rivet_kit::Shot::new(path) }
     }
 }
 
@@ -314,9 +322,16 @@ impl eframe::App for ShotApp {
         self.kit.begin(&ctx, &self.s);
         let full = ui.max_rect();
         let p = ui.painter().clone();
+        if let Some(img) = self.wall_img.take() {
+            self.wall = Some(ctx.load_texture("demo-wallpaper", img, egui::TextureOptions::LINEAR));
+        }
         match &self.wall {
             Some(t) => {
-                p.image(t.id(), full, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                // Covering the screen: the picture's middle, in the screen's shape.
+                let [tw, th] = t.size().map(|v| v as f32);
+                let (sx, sy) = if tw / th > full.width() / full.height() { (full.width() / full.height() * th / tw, 1.0) } else { (1.0, full.height() / full.width() * tw / th) };
+                let uv = Rect::from_center_size(Pos2::new(0.5, 0.5), Vec2::new(sx, sy));
+                p.image(t.id(), full, uv, Color32::WHITE);
             }
             None => {
                 p.rect_filled(full, 0.0, ui.visuals().extreme_bg_color);

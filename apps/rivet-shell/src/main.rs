@@ -165,6 +165,12 @@ fn main() -> ExitCode {
                 Err(_) => ExitCode::FAILURE,
             }
         }
+        // The template matugen fills to make Rivet's colors (for scripts that make them
+        // somewhere other than the person's own folders).
+        Some("matugen-template") => {
+            print!("{}", rivet_look::palette::MATUGEN_TEMPLATE);
+            ExitCode::SUCCESS
+        }
         Some("palette") => {
             use rivet_look::schemes::{SCHEMES, Scheme};
             let name = args[1..].join(" ");
@@ -207,7 +213,12 @@ fn main() -> ExitCode {
         }
         None if screenshot.is_some() => {
             let path = screenshot.unwrap_or_default();
-            rivet_kit::headless::run([1100.0, 700.0], move |cc| Box::new(shot::ShotApp::new(cc, path)));
+            // RIVET_SHOT_SIZE=WxH for documentation pictures (1100x700 by default).
+            let size = std::env::var("RIVET_SHOT_SIZE").ok().and_then(|v| {
+                let (w, h) = v.split_once('x')?;
+                Some([w.parse().ok()?, h.parse().ok()?])
+            });
+            rivet_kit::headless::run(size.unwrap_or([1100.0, 700.0]), move |cc| Box::new(shot::ShotApp::new(cc, path)));
             ExitCode::SUCCESS
         }
         None => {

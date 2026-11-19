@@ -78,12 +78,17 @@ pub fn draw(buf: &mut [u8], w: usize, h: usize, order: Order, prims: &[ClippedPr
 
 /// Draw into a new image over a solid colour (0–1, gamma space): screenshots.
 pub fn render(prims: &[ClippedPrimitive], textures: &Textures, size: [usize; 2], clear: [f32; 4]) -> ColorImage {
+    render_scaled(prims, textures, size, clear, 1.0)
+}
+
+/// `render` with `scale` pixels to a point: `size` is in pixels.
+pub fn render_scaled(prims: &[ClippedPrimitive], textures: &Textures, size: [usize; 2], clear: [f32; 4], scale: f32) -> ColorImage {
     let [w, h] = size;
     let c = clear.map(|v| (v.clamp(0.0, 1.0) * 255.0).round() as u8);
     let a = c[3] as f32 / 255.0;
     let px = [(c[0] as f32 * a) as u8, (c[1] as f32 * a) as u8, (c[2] as f32 * a) as u8, c[3]];
     let mut buf: Vec<u8> = px.iter().copied().cycle().take(w * h * 4).collect();
-    draw(&mut buf, w, h, Order::Rgba, prims, textures, 1.0);
+    draw(&mut buf, w, h, Order::Rgba, prims, textures, scale);
     let pixels = buf.as_chunks::<4>().0.iter().map(|p| Color32::from_rgba_premultiplied(p[0], p[1], p[2], p[3])).collect();
     ColorImage::new([w, h], pixels)
 }
