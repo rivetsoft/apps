@@ -1,6 +1,6 @@
 [package]
 name = "rivet"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2024"
 # let-chains (`if let … && let …`)
 rust-version = "1.88"

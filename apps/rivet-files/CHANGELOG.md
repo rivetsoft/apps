@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0
 
 - Tabs look and work like Rivet Edit's and Rivet Terminal's (one shared strip): drag a tab to
   move it, with a glow, and when there are too many to fit they scroll, with
