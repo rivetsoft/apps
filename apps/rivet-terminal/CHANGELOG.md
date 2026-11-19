@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Drag a tab to move it: it lifts and follows the pointer with a glow, the
   tabs it passes slide aside, and it glides into place when let go. Ctrl+Shift+, and
