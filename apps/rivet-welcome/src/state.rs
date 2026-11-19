@@ -2,7 +2,7 @@
 //! counts.
 
 use crate::catalog::{self, Entry, Kind};
-use crate::local::{self, Installed};
+use crate::local::{self, Installed, Running};
 use crate::releases::{Release, Version};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -28,6 +28,12 @@ impl Row {
         } else {
             self.latest.as_ref()
         }
+    }
+
+    /// Rivet Welcome running without being installed: the release that would install it.
+    pub fn install_copy(&self) -> Option<&(Release, Version)> {
+        let i = self.installed.as_ref()?;
+        (i.running != Running::No).then_some(self.latest.as_ref()).flatten()
     }
 
     pub fn is_welcome(&self) -> bool {
@@ -85,6 +91,7 @@ mod tests {
             path: "/x".into(),
             version: Version::parse(v),
             ours,
+            running: Running::No,
         });
         Row {
             entry,
@@ -103,6 +110,13 @@ mod tests {
         assert!(row("files", Some(("0.6.0", false))).update().is_none());
         assert!(row("files", None).installable().is_some());
         assert!(row("shell", None).installable().is_none());
+        // Rivet Welcome from an AppImage: here already, so no Install and no update to count,
+        // though a copy can still be installed when asked for.
+        let mut w = row("welcome", Some(("0.0.1", false)));
+        w.installed.as_mut().unwrap().running = Running::AppImage;
+        assert!(w.installable().is_none() && w.update().is_none());
+        assert!(w.install_copy().is_some());
+        assert!(row("files", Some(("0.6.0", false))).install_copy().is_none());
         let rows = [
             row("files", Some(("0.6.0", true))),
             row("notes", Some(("0.1.0", true))),

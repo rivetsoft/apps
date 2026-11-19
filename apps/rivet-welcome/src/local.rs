@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::catalog::Entry;
+use crate::catalog::{Entry, Kind};
 use crate::releases::Version;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -15,6 +15,19 @@ pub struct Installed {
     /// In ~/.local/bin, so Rivet Welcome can update and remove it. Otherwise it came from
     /// somewhere else (a distribution package, AUR, a build) and is left alone.
     pub ours: bool,
+    /// Set for Rivet Welcome when it isn't installed anywhere and this is it, running.
+    pub running: Running,
+}
+
+/// How this program is running, when it wasn't found installed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Running {
+    /// Found installed: the usual case.
+    No,
+    /// From an AppImage: one file, nothing installed.
+    AppImage,
+    /// From a folder that isn't on PATH (an unpacked download, a build).
+    Folder,
 }
 
 /// Where programs are installed (the release archives' installers use the same folder).
@@ -93,10 +106,20 @@ fn pretend(e: &Entry) -> Option<Option<Installed>> {
         .split(',')
         .filter_map(|p| p.split_once('='))
         .find(|(id, _)| *id == e.id)
-        .map(|(_, v)| Installed {
-            path: bin_home().join(&e.bin),
-            version: Version::parse(v),
-            ours: true,
+        .map(|(_, v)| match v {
+            // `welcome=appimage`: Rivet Welcome as it is when run from an AppImage.
+            "appimage" => Installed {
+                path: "/home/you/Rivet_Welcome.AppImage".into(),
+                version: Version::parse(env!("CARGO_PKG_VERSION")),
+                ours: false,
+                running: Running::AppImage,
+            },
+            _ => Installed {
+                path: bin_home().join(&e.bin),
+                version: Version::parse(v),
+                ours: true,
+                running: Running::No,
+            },
         });
     Some(found)
 }
@@ -106,16 +129,43 @@ pub fn detect(e: &Entry) -> Option<Installed> {
     if let Some(p) = pretend(e) {
         return p;
     }
-    let path = find(&e.bin)?;
-    let version = version_of(&path);
-    // A program by that name that isn't a Rivet app isn't this app.
-    version.as_ref()?;
-    let ours = path.parent() == Some(bin_home().as_path());
+    let found = find(&e.bin).and_then(|path| {
+        let version = version_of(&path);
+        // A program by that name that isn't a Rivet app isn't this app.
+        version.as_ref()?;
+        let ours = path.parent() == Some(bin_home().as_path());
+        Some(Installed {
+            path,
+            version,
+            ours,
+            running: Running::No,
+        })
+    });
+    // Rivet Welcome is here even when it isn't installed: someone is looking at it.
+    found.or_else(|| (e.kind == Kind::Welcome).then(this_program).flatten())
+}
+
+/// This program as it is running now: the AppImage it came in, or the file itself.
+fn this_program() -> Option<Installed> {
+    let exe = std::env::current_exe().ok()?;
+    let (path, running) = match appimage(&exe) {
+        Some(file) => (file, Running::AppImage),
+        None => (exe, Running::Folder),
+    };
     Some(Installed {
         path,
-        version,
-        ours,
+        version: Version::parse(env!("CARGO_PKG_VERSION")),
+        ours: false,
+        running,
     })
+}
+
+/// The AppImage file this program was started from. Both variables are checked against where
+/// the program is, since a program started by another AppImage inherits that one's.
+fn appimage(exe: &Path) -> Option<PathBuf> {
+    let file = PathBuf::from(std::env::var_os("APPIMAGE")?);
+    let dir = PathBuf::from(std::env::var_os("APPDIR")?);
+    (file.is_absolute() && exe.starts_with(&dir)).then_some(file)
 }
 
 /// Start the app (detached; it outlives this window).

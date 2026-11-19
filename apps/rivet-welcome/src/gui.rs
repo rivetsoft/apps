@@ -19,7 +19,7 @@ use rivet_look::{fonts, palette};
 
 use crate::catalog::Kind;
 use crate::install::{self, Progress, Stage};
-use crate::local;
+use crate::local::{self, Running};
 use crate::releases::{self, Release};
 use crate::settings::{self, Settings};
 use crate::state::{self, Row};
@@ -274,7 +274,11 @@ impl WelcomeApp {
 
     fn start_install(&mut self, i: usize) {
         let Some(row) = self.rows.get(i) else { return };
-        let Some((rel, _)) = row.update().or_else(|| row.installable()) else {
+        let Some((rel, _)) = row
+            .update()
+            .or_else(|| row.installable())
+            .or_else(|| row.install_copy())
+        else {
             return;
         };
         if self.shot.is_some() || self.jobs.contains_key(&row.entry.id) {
@@ -694,7 +698,23 @@ impl WelcomeApp {
                                 .as_ref()
                                 .map(|v| v.to_string())
                                 .unwrap_or_else(|| "Installed".into());
-                            if !inst.ours {
+                            if inst.running != Running::No {
+                                let from = match inst.running {
+                                    Running::AppImage => "an AppImage".to_string(),
+                                    _ => inst
+                                        .path
+                                        .parent()
+                                        .map(|d| d.display().to_string())
+                                        .unwrap_or_default(),
+                                };
+                                let out = match latest {
+                                    Some((_, l)) if inst.version.as_ref().is_some_and(|v| v < l) => {
+                                        format!(" · {l} is out")
+                                    }
+                                    _ => String::new(),
+                                };
+                                ui.label(weak(format!("{have} · running from {from}{out}")));
+                            } else if !inst.ours {
                                 ui.label(weak(format!(
                                     "{have} · installed by your system ({})",
                                     inst.path.display()
@@ -749,6 +769,12 @@ impl WelcomeApp {
                         ui.menu_button(RichText::new("…").strong(), |ui| {
                             if row.latest.is_some() && ui.button("What's New").clicked() {
                                 *act = Some(Act::Notes(i));
+                                ui.close();
+                            }
+                            if row.install_copy().is_some()
+                                && ui.button("Install on This Computer").clicked()
+                            {
+                                *act = Some(Act::Install(i));
                                 ui.close();
                             }
                             if ours && !row.is_welcome() && ui.button("Remove…").clicked() {

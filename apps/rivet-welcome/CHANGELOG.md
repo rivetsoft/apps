@@ -4,6 +4,8 @@
 
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
 - Clicking the tray icon again brings the open window forward instead of opening another one.
+- Opened from an AppImage, Rivet Welcome is listed as running instead of offering to install
+  itself. Install on This Computer is still in its menu if you want it in your app launcher.
 
 ## 0.1.0
 

@@ -104,6 +104,8 @@ fn cli_list() -> ExitCode {
                     .unwrap_or_else(|| "?".into());
                 if i.ours {
                     v
+                } else if i.running != local::Running::No {
+                    format!("{v} (running from {})", i.path.display())
                 } else {
                     format!("{v} (system: {})", i.path.display())
                 }
@@ -186,7 +188,7 @@ fn cli_install(names: &[String]) -> ExitCode {
     }
     let mut failed = false;
     for r in todo {
-        if r.installed.as_ref().is_some_and(|i| !i.ours) {
+        if r.installed.as_ref().is_some_and(|i| !i.ours) && r.install_copy().is_none() {
             eprintln!(
                 "{}: installed by your system ({}); update it there",
                 r.entry.title,
@@ -202,7 +204,9 @@ fn cli_install(names: &[String]) -> ExitCode {
             failed = true;
             continue;
         };
-        if r.installed.as_ref().and_then(|i| i.version.as_ref()) == Some(v) {
+        if r.install_copy().is_none()
+            && r.installed.as_ref().and_then(|i| i.version.as_ref()) == Some(v)
+        {
             println!("{} {v} is already installed.", r.entry.title);
             continue;
         }
