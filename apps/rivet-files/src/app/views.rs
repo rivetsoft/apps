@@ -1,7 +1,6 @@
 //! The file area: icon, list and compact views (columns are in columns.rs), rubber-band selection and context menus.
 
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -180,7 +179,7 @@ impl RivetApp {
                 ui.painter().rect_filled(band, r_xs(), accent.gamma_multiply(0.18));
                 ui.painter().rect_stroke(band, r_xs(), Stroke::new(1.0, accent), StrokeKind::Inside);
                 let t = &mut self.tabs[self.active];
-                let sel: HashSet<PathBuf> = item_rects.iter().filter(|(_, r)| r.intersects(band)).map(|(i, _)| t.entries[t.visible[*i]].path.clone()).collect();
+                let sel: crate::model::Selection = item_rects.iter().filter(|(_, r)| r.intersects(band)).map(|(i, _)| t.entries[t.visible[*i]].path.clone()).collect();
                 t.selected = sel;
                 let clip = ui.clip_rect();
                 if cur.y > clip.bottom() - 20.0 {

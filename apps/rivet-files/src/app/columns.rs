@@ -72,18 +72,43 @@ impl RivetApp {
         v
     }
 
-    /// Another folder's listing, sorted and filtered like the tab's own; read again when the
-    /// folder changes on disk (checked at most once a second). Taken out of the cache while
-    /// it's drawn; put it back with `column_cache.insert`.
-    fn take_listing(&mut self, dir: &Path) -> Tab {
-        if let Some(mut t) = self.column_cache.remove(dir)
-            && (t.last_check.elapsed().as_millis() < 1000 || !t.needs_refresh())
-        {
-            return t;
+    /// Another folder's listing, sorted and filtered like the tab's own. It's read on a
+    /// thread, so the first time there is none yet (`None`; the window is woken when it
+    /// arrives), and when the folder changes on disk (checked at most once a second) the old
+    /// listing shows until the new one is in. Taken out of the cache while it's drawn; put it
+    /// back with `column_cache.insert`.
+    fn take_listing(&mut self, ctx: &egui::Context, dir: &Path) -> Option<Tab> {
+        if let Some(rx) = self.column_jobs.get(dir) {
+            match rx.try_recv() {
+                Ok(t) => {
+                    self.column_jobs.remove(dir);
+                    self.column_cache.insert(dir.to_path_buf(), t);
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.column_jobs.remove(dir);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
         }
-        let mut t = Tab::new(Location::Dir(dir.to_path_buf()));
-        t.reload(&self.mime, &self.s);
-        t
+        let mut cached = self.column_cache.remove(dir);
+        let stale = match cached {
+            Some(ref t) if t.last_check.elapsed().as_millis() < 1000 => false,
+            Some(ref mut t) => t.needs_refresh(),
+            None => true,
+        };
+        if stale && !self.column_jobs.contains_key(dir) {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let (mime, s, ctx, dir2) = (self.mime.clone(), self.s.clone(), ctx.clone(), dir.to_path_buf());
+            std::thread::spawn(move || {
+                let mut t = Tab::new(Location::Dir(dir2));
+                t.reload(&mime, &s);
+                if tx.send(t).is_ok() {
+                    ctx.request_repaint();
+                }
+            });
+            self.column_jobs.insert(dir.to_path_buf(), rx);
+        }
+        cached
     }
 
     fn column_jump(&mut self, dir: PathBuf, select: Option<PathBuf>) {
@@ -103,10 +128,8 @@ impl RivetApp {
     pub(super) fn columns_view(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let Some(dir) = self.current_dir() else { return };
         let parents = Self::column_parents(&dir);
-        let chosen: Option<Entry> = {
-            let sel = self.tab().selected_entries();
-            if sel.len() == 1 { Some(sel[0].clone()) } else { None }
-        };
+        // Only one item chosen has a column of its own (and a large selection is costly to gather).
+        let chosen: Option<Entry> = if self.tab().selected.len() == 1 { self.tab().selected_entries().first().map(|e| (*e).clone()) } else { None };
         // The column right of this folder's: a chosen folder's contents, or Peek for a chosen
         // file (unless the Peek panel already shows it).
         let next_col = match &chosen {
@@ -267,7 +290,8 @@ impl RivetApp {
     /// click (or one click, with single-click opening) opens it.
     #[allow(clippy::too_many_arguments)]
     fn side_column(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, dir: &Path, next: Option<&Path>, z: f32, row_h: f32, jump: &mut Jump) {
-        let listing = self.take_listing(dir);
+        // Still being read: an empty column for the moment.
+        let Some(listing) = self.take_listing(ctx, dir) else { return };
         let m = ctx.input(|i| i.modifiers);
         let target = next.map(Path::to_path_buf);
         egui::ScrollArea::vertical().auto_shrink([false, false]).id_salt(("col", self.pane_salt, dir)).show(ui, |ui| {

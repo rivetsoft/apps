@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Smoother in big folders**: selecting files no longer slows the window down. In a folder of
+  100,000 files, choosing one file used to make every frame 15 to 30 times slower, and selecting
+  everything (or having Peek open) more than that; now it stays as quick as with nothing selected.
+- **Column view keeps up**: the other columns are read in the background, so moving through
+  large folders no longer pauses the window.
+- **Opens sooner**: about 30 ms quicker to the first window (more with a large matugen setup).
+
 ## 0.8.0
 
 - Tabs look and work like Rivet Edit's and Rivet Terminal's (one shared strip): drag a tab to

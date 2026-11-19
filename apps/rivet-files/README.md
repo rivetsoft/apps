@@ -250,8 +250,8 @@ Release build on Fedora, Wayland, NVMe SSD:
 
 | | |
 | --- | --- |
-| Drawing a frame (100,000 items) | ~1.8 ms |
-| Reading 100,000 items | ~152 ms |
+| Drawing a frame (100,000 items, any selection, Peek open or not) | ~1.5–3 ms |
+| Reading 100,000 items | ~140 ms |
 | Sorting 100,000 items by name / type | ~17 ms / ~27 ms |
 | Finding icons for 100,000 items (first time / cached) | ~35 ms / ~14 ms |
 | Indexing an icon theme (once) | ~4 ms |

@@ -186,9 +186,12 @@ pub struct RivetApp {
     icons: IconTheme,
     system_icon_theme: String,
     installed_themes: Vec<String>,
-    mime: MimeDb,
+    /// Shared with the threads that read folders for the column view.
+    mime: Arc<MimeDb>,
     thumbs: Thumbnailer,
     apps: Vec<DesktopApp>,
+    /// The installed apps, while they're still being read at startup (see `apps_ready`).
+    apps_rx: Option<std::sync::mpsc::Receiver<Vec<DesktopApp>>>,
     tabs: Vec<Tab>,
     active: usize,
     clipboard: Option<(Vec<PathBuf>, bool)>,
@@ -274,6 +277,10 @@ pub struct RivetApp {
     pane_salt: u8,
     /// Column view: the other folders' listings (parents and the chosen folder), by path.
     column_cache: std::collections::HashMap<PathBuf, Tab>,
+    /// Column view: folders being read on a thread, each sending back its listing.
+    column_jobs: std::collections::HashMap<PathBuf, std::sync::mpsc::Receiver<Tab>>,
+    /// The status bar's words for the selection, and the selection they were for.
+    status_cache: std::cell::RefCell<Option<((u64, u64), String)>>,
     /// A text field or drop-down list in Preferences was active last frame (Esc then only
     /// leaves it, instead of closing Preferences).
     prefs_busy_last: bool,
@@ -474,7 +481,7 @@ impl RivetApp {
         let ctx = cc.egui_ctx.clone();
         let system_icon_theme = icons::detect_system_theme();
         let theme_name = if settings.icon_theme.is_empty() { system_icon_theme.clone() } else { settings.icon_theme.clone() };
-        let mime = MimeDb::load();
+        let mime = Arc::new(MimeDb::load());
         let start_loc = match start {
             Some(p) if p.to_string_lossy().starts_with("network:") => Location::Network,
             Some(p) if p.is_dir() => Location::Dir(std::fs::canonicalize(&p).unwrap_or(p)),
@@ -490,7 +497,17 @@ impl RivetApp {
             system_icon_theme,
             installed_themes: Vec::new(),
             thumbs: Thumbnailer::new(ctx.clone()),
-            apps: launch::all_apps(),
+            apps: Vec::new(),
+            apps_rx: Some({
+                let (tx, rx) = std::sync::mpsc::channel();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    if tx.send(launch::all_apps()).is_ok() {
+                        ctx.request_repaint();
+                    }
+                });
+                rx
+            }),
             tabs: vec![tab],
             active: 0,
             clipboard: None,
@@ -543,6 +560,8 @@ impl RivetApp {
             pane_rects: [None, None],
             pane_salt: 0,
             column_cache: Default::default(),
+            column_jobs: Default::default(),
+            status_cache: Default::default(),
             prefs_busy_last: false,
             file_list_focus: None,
             kb_nav: false,
@@ -615,8 +634,12 @@ impl RivetApp {
         if let Some(p) = std::env::var_os("RIVET_EXTRA_TAB") {
             app.new_tab(Location::Dir(PathBuf::from(p)));
         }
+        // RIVET_SELECT=0,3,7 selects those items; RIVET_SELECT=all selects every one.
         if let Ok(list) = std::env::var("RIVET_SELECT") {
             let t = &mut app.tabs[app.active];
+            if list.trim() == "all" {
+                t.selected = t.visible.iter().map(|&i| t.entries[i].path.clone()).collect();
+            }
             for n in list.split(',').filter_map(|v| v.trim().parse::<usize>().ok()) {
                 if let Some(&i) = t.visible.get(n) {
                     let p = t.entries[i].path.clone();
@@ -1101,6 +1124,7 @@ impl RivetApp {
             t.reload(&self.mime, &self.s);
         }
         self.column_cache.clear();
+        self.column_jobs.clear();
         self.trash_empty = places::trash_is_empty();
     }
 
@@ -1109,6 +1133,7 @@ impl RivetApp {
             t.resort(&self.mime, &self.s);
         }
         self.column_cache.clear();
+        self.column_jobs.clear();
         self.dirty_settings = true;
     }
 
@@ -1136,6 +1161,23 @@ impl RivetApp {
             }
         }
         self.dirty_settings = true;
+    }
+
+    /// The installed apps are read on a thread at startup (they take a while with many
+    /// installed). They're in long before anyone can click, but a click, key or queued action
+    /// that comes first waits for them, so Open With and default apps never see an empty list.
+    fn apps_ready(&mut self, ctx: &egui::Context) {
+        let Some(rx) = &self.apps_rx else { return };
+        let busy = !self.pending.is_empty() || ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Key { .. } | egui::Event::PointerButton { .. } | egui::Event::Text(_))));
+        let got = if busy { rx.recv().ok() } else { rx.try_recv().ok() };
+        if let Some(apps) = got {
+            self.apps = apps;
+            self.apps_rx = None;
+        } else if busy {
+            // The thread failed; read them here instead.
+            self.apps = launch::all_apps();
+            self.apps_rx = None;
+        }
     }
 
     fn close_tab(&mut self, i: usize, ctx: &egui::Context) {
@@ -2081,7 +2123,9 @@ impl RivetApp {
                 self.dirty_settings = true;
             }
         }
-        let sel = self.tab().selected_paths();
+        // Only gathered for a key that uses it (a large selection is costly to gather).
+        let wants_sel = pressed(Key::F2) || pressed(Key::Enter) || (cmd && pressed(Key::I));
+        let sel = if wants_sel { self.tab().selected_paths() } else { Vec::new() };
         if pressed(Key::F2) && sel.len() == 1 {
             self.pending.push(Action::Rename(sel[0].clone()));
         } else if pressed(Key::F2) && sel.len() > 1 && self.s.bulk_rename && !matches!(self.tab().loc, Location::Trash) {
@@ -2331,6 +2375,7 @@ impl eframe::App for RivetApp {
         if self.frames == 3 && std::env::var_os("RIVET_CRASH_TEST").is_some() {
             panic!("Crash test (RIVET_CRASH_TEST)");
         }
+        self.apps_ready(&ctx);
         self.system_clipboard(&ctx, frame);
         // Split view: a press in a pane makes it the active one first.
         self.split_follow_pointer(&ctx);

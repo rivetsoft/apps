@@ -1,6 +1,7 @@
 //! Folder contents, tabs and navigation history.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -43,6 +44,75 @@ impl Location {
             Location::Dir(p) => Some(p),
             _ => None,
         }
+    }
+}
+
+/// Numbers that change whenever a selection or a folder's shown items do, so what's worked
+/// out from them (the status bar, Peek's summary) is kept until then. One counter for all
+/// tabs, so a number never means two different states.
+static CHANGES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+fn next_change() -> u64 {
+    CHANGES.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The selected paths, and a number that changes whenever they do.
+#[derive(Clone, Debug, Default)]
+pub struct Selection {
+    set: HashSet<PathBuf>,
+    change: u64,
+}
+
+impl Selection {
+    pub fn change(&self) -> u64 {
+        self.change
+    }
+    pub fn contains(&self, p: &Path) -> bool {
+        self.set.contains(p)
+    }
+    pub fn len(&self) -> usize {
+        self.set.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.set.is_empty()
+    }
+    pub fn iter(&self) -> std::collections::hash_set::Iter<'_, PathBuf> {
+        self.set.iter()
+    }
+    pub fn insert(&mut self, p: PathBuf) -> bool {
+        self.change = next_change();
+        self.set.insert(p)
+    }
+    pub fn remove(&mut self, p: &Path) -> bool {
+        self.change = next_change();
+        self.set.remove(p)
+    }
+    pub fn clear(&mut self) {
+        if !self.set.is_empty() {
+            self.change = next_change();
+            self.set.clear();
+        }
+    }
+    pub fn retain(&mut self, f: impl FnMut(&PathBuf) -> bool) {
+        let before = self.set.len();
+        self.set.retain(f);
+        if self.set.len() != before {
+            self.change = next_change();
+        }
+    }
+}
+
+impl FromIterator<PathBuf> for Selection {
+    fn from_iter<I: IntoIterator<Item = PathBuf>>(iter: I) -> Self {
+        Selection { set: iter.into_iter().collect(), change: next_change() }
+    }
+}
+
+impl<'a> IntoIterator for &'a Selection {
+    type Item = &'a PathBuf;
+    type IntoIter = std::collections::hash_set::Iter<'a, PathBuf>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.set.iter()
     }
 }
 
@@ -116,7 +186,7 @@ pub struct Tab {
     pub entries: Vec<Entry>,
     /// Indices into `entries` after hiding/filtering/sorting.
     pub visible: Vec<usize>,
-    pub selected: HashSet<PathBuf>,
+    pub selected: Selection,
     pub anchor: Option<usize>,
     pub cursor: Option<usize>,
     pub filter: String,
@@ -129,6 +199,15 @@ pub struct Tab {
     pub search_rx: Option<Receiver<Vec<PathBuf>>>,
     pub searching: bool,
     pub rubber: Option<eframe::egui::Pos2>,
+    /// Finding the selection without walking the whole folder (see `selected_entries`): each
+    /// path's hash → its index in `entries`, and each entry's place in `visible`. Built by
+    /// `resort`; the path hash map only when `entries` changed.
+    by_hash: HashMap<u64, u32>,
+    hasher: std::hash::RandomState,
+    indexed: Option<usize>,
+    vis_pos: Vec<u32>,
+    /// Changes whenever `entries` or `visible` do (see `selection_key`).
+    view_change: u64,
 }
 
 impl Tab {
@@ -139,7 +218,7 @@ impl Tab {
             forward: vec![],
             entries: vec![],
             visible: vec![],
-            selected: HashSet::new(),
+            selected: Selection::default(),
             anchor: None,
             cursor: None,
             filter: String::new(),
@@ -151,6 +230,11 @@ impl Tab {
             search_rx: None,
             searching: false,
             rubber: None,
+            by_hash: HashMap::new(),
+            hasher: std::hash::RandomState::new(),
+            indexed: None,
+            vis_pos: Vec::new(),
+            view_change: 0,
         }
     }
 
@@ -211,8 +295,11 @@ impl Tab {
             }
         }
         self.entries = entries;
-        let keep: HashSet<PathBuf> = self.entries.iter().map(|e| e.path.clone()).collect();
-        self.selected.retain(|p| keep.contains(p));
+        self.indexed = None;
+        if !self.selected.is_empty() {
+            let keep: HashSet<&Path> = self.entries.iter().map(|e| e.path.as_path()).collect();
+            self.selected.retain(|p| keep.contains(p.as_path()));
+        }
         self.resort(db, settings);
         self.last_check = Instant::now();
     }
@@ -266,13 +353,76 @@ impl Tab {
             if s.sort_desc { o.reverse() } else { o }
         });
         self.visible = vis;
+        self.view_change = next_change();
+        self.index();
+    }
+
+    /// Bring the selection index up to date. `entries` is replaced only by `reload` (which
+    /// marks the index stale) and otherwise only cleared or added to (which changes its length).
+    fn index(&mut self) {
+        if self.indexed != Some(self.entries.len()) {
+            self.by_hash.clear();
+            self.by_hash.reserve(self.entries.len());
+            for (i, e) in self.entries.iter().enumerate() {
+                // On the rare clash the first keeps the slot; lookups check the path and fall
+                // back to walking the folder.
+                self.by_hash.entry(self.hasher.hash_one(&e.path)).or_insert(i as u32);
+            }
+            self.indexed = Some(self.entries.len());
+        }
+        self.vis_pos.clear();
+        self.vis_pos.resize(self.entries.len(), u32::MAX);
+        for (pos, &i) in self.visible.iter().enumerate() {
+            self.vis_pos[i] = pos as u32;
+        }
+    }
+
+    /// The selected entries in folder order, found through the index: `None` when it can't
+    /// answer (a hash clash, or the folder changed since it was built).
+    fn selected_by_index(&self) -> Option<Vec<&Entry>> {
+        let mut found: Vec<(u32, &Entry)> = Vec::with_capacity(self.selected.len());
+        for p in &self.selected {
+            // Not in the map: not in this folder at all.
+            let Some(&i) = self.by_hash.get(&self.hasher.hash_one(p)) else { continue };
+            let e = self.entries.get(i as usize).filter(|e| e.path == *p)?;
+            let pos = *self.vis_pos.get(i as usize)?;
+            if pos != u32::MAX {
+                found.push((pos, e));
+            }
+        }
+        found.sort_unstable_by_key(|&(pos, _)| pos);
+        Some(found.into_iter().map(|(_, e)| e).collect())
     }
 
     pub fn visible_index_of(&self, p: &Path) -> Option<usize> {
+        if self.indexed == Some(self.entries.len())
+            && let Some(&i) = self.by_hash.get(&self.hasher.hash_one(p))
+            && self.entries.get(i as usize).is_some_and(|e| e.path == p)
+            && let Some(&pos) = self.vis_pos.get(i as usize)
+        {
+            return (pos != u32::MAX).then_some(pos as usize);
+        }
         self.visible.iter().position(|&i| self.entries[i].path == p)
     }
 
+    /// Changes whenever the selection or the items it's taken from do: a key for keeping
+    /// what's worked out from the selection.
+    pub fn selection_key(&self) -> (u64, u64) {
+        (self.selected.change(), self.view_change)
+    }
+
+    /// The selected items in the order they're shown. A small selection is found through the
+    /// index; a large one (most of the folder) by walking the folder once.
     pub fn selected_entries(&self) -> Vec<&Entry> {
+        if self.selected.is_empty() {
+            return Vec::new();
+        }
+        if self.selected.len() <= self.visible.len() / 4 + 64
+            && self.indexed == Some(self.entries.len())
+            && let Some(v) = self.selected_by_index()
+        {
+            return v;
+        }
         self.visible
             .iter()
             .map(|&i| &self.entries[i])
@@ -412,6 +562,38 @@ mod tests {
         let mut v = vec!["file10", "File2", "file1", ".hidden", "alpha"];
         v.sort_by(|a, b| super::natural_cmp(a, b));
         assert_eq!(v, vec!["alpha", "file1", "File2", "file10", ".hidden"]);
+    }
+    #[test]
+    fn selection_found_through_the_index() {
+        use super::*;
+        let dir = std::env::temp_dir().join(format!("rivet-sel-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for n in ["b.txt", "a.txt", "c.txt", ".hidden"] {
+            std::fs::write(dir.join(n), "x").unwrap();
+        }
+        let db = crate::mime::MimeDb::load();
+        let s = crate::settings::Settings::default();
+        let mut t = Tab::new(Location::Dir(dir.clone()));
+        t.reload(&db, &s);
+        let names = |t: &Tab| t.selected_entries().iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+        // In the order shown, whatever order they were chosen in; hidden ones left out.
+        let before = t.selection_key();
+        t.selected = [".hidden", "c.txt", "a.txt"].iter().map(|n| dir.join(n)).collect();
+        assert_ne!(t.selection_key(), before);
+        assert_eq!(names(&t), ["a.txt", "c.txt"]);
+        assert_eq!(t.visible_index_of(&dir.join("c.txt")), Some(2));
+        assert_eq!(t.visible_index_of(&dir.join(".hidden")), None);
+        // Items added later (search results arrive like this) are found too.
+        let late = dir.join("d.txt");
+        std::fs::write(&late, "x").unwrap();
+        t.entries.push(Entry::from_path(late.clone(), &db).unwrap());
+        t.resort(&db, &s);
+        t.selected.insert(late);
+        assert_eq!(names(&t), ["a.txt", "c.txt", "d.txt"]);
+        // Everything selected.
+        t.selected = t.visible.iter().map(|&i| t.entries[i].path.clone()).collect();
+        assert_eq!(names(&t), ["a.txt", "b.txt", "c.txt", "d.txt"]);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
     #[test]
     fn mime_guess() {

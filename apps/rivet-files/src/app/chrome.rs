@@ -196,7 +196,8 @@ impl RivetApp {
 
     fn menus(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let in_dir = self.current_dir();
-        let sel = self.tab().selected_paths();
+        // The selection is gathered inside each menu, only while it's open: with a large folder
+        // selected, gathering it every frame would cost more than the whole frame.
         let in_trash = matches!(self.tab().loc, Location::Trash);
         // A slightly wider hover area for File, Edit, View… (their menus set their own spacing).
         ui.spacing_mut().button_padding.x += MENU_EXTRA_PAD;
@@ -221,7 +222,8 @@ impl RivetApp {
                 }
             ui.separator();
             if ui.add(egui::Button::new("Properties").shortcut_text("Ctrl+I")).clicked() {
-                self.pending.push(Action::Properties(sel.first().cloned()));
+                let first = self.tab().selected_entries().first().map(|e| e.path.clone());
+                self.pending.push(Action::Properties(first));
             }
             if in_trash && ui.button("Empty Trash").clicked() {
                 self.pending.push(Action::EmptyTrash);
@@ -236,6 +238,7 @@ impl RivetApp {
         });
         ui.menu_button("Edit", |ui| {
             self.roomy_menu(ui);
+            let sel = self.tab().selected_paths();
             let has = !sel.is_empty();
             let undo_label = self.history.next_undo().map(|s| format!("Undo {}", s.describe())).unwrap_or_else(|| "Undo".into());
             let redo_label = self.history.next_redo().map(|s| format!("Redo {}", s.describe())).unwrap_or_else(|| "Redo".into());
@@ -1108,10 +1111,25 @@ impl RivetApp {
             return m.clone();
         }
         let t = self.tab();
-        let sel = t.selected_entries();
         if t.searching {
             return format!("Searching… {} found", t.visible.len());
         }
+        // Worked out again only when the selection or the folder changes: a large selection
+        // takes longer to sum up than a whole frame.
+        let key = t.selection_key();
+        if let Some((k, text)) = &*self.status_cache.borrow()
+            && *k == key
+        {
+            return text.clone();
+        }
+        let text = self.selection_text();
+        *self.status_cache.borrow_mut() = Some((key, text.clone()));
+        text
+    }
+
+    fn selection_text(&self) -> String {
+        let t = self.tab();
+        let sel = t.selected_entries();
         if sel.is_empty() {
             let n = t.visible.len();
             return format!("{n} item{}", if n == 1 { "" } else { "s" });

@@ -32,6 +32,27 @@ pub(super) struct PeekState {
     /// Direct children of a selected folder: (folders, files).
     counts: Option<(usize, usize)>,
     highlighted: Option<(u64, egui::text::LayoutJob)>,
+    /// The open folder's own entry, for when nothing is selected: (its path, the folder's
+    /// modification time when read, the entry). Reading it counts the folder's items, too
+    /// costly for every frame in a large folder.
+    here: Option<(PathBuf, Option<SystemTime>, Entry)>,
+    /// A selection of several items summed up, and the selection it's for (see `selection_key`).
+    many: Option<((u64, u64), Option<Many>)>,
+}
+
+/// Several selected items, summed up for Peek without copying them.
+#[derive(Clone)]
+struct Many {
+    count: usize,
+    /// The first three, drawn as a little stack.
+    first: Vec<Entry>,
+    folders: usize,
+    files: usize,
+    bytes: u64,
+    /// The most common kinds, most first.
+    kinds: Vec<(String, usize)>,
+    newest: Option<SystemTime>,
+    oldest: Option<SystemTime>,
 }
 
 impl PeekState {
@@ -179,21 +200,27 @@ impl RivetApp {
         self.peek_poll(ctx);
         let v = ui.visuals().clone();
         let weak = v.weak_text_color();
-        let sel: Vec<Entry> = self.tab().selected_entries().into_iter().cloned().collect();
         let width = ui.available_width();
         ui.spacing_mut().item_spacing.y = 6.0;
         let card_fill = crate::palette::mix(v.panel_fill, v.extreme_bg_color, 0.55);
 
-        if sel.len() > 1 {
+        let key = self.tab().selection_key();
+        if self.tab().selected.len() > 1 && self.peek.many.as_ref().map(|m| m.0) != Some(key) {
+            self.peek.many = Some((key, self.peek_summarise()));
+        }
+        if self.tab().selected.len() > 1
+            && let Some((_, Some(many))) = self.peek.many.clone()
+        {
             self.peek.stop();
-            self.peek_many(ui, ctx, &sel, card_fill);
+            self.peek_many(ui, ctx, many, card_fill);
             return;
         }
+        let one = self.tab().selected_entries().first().map(|e| (*e).clone());
         // One item, or the folder you're in when nothing is selected.
-        let here = sel.is_empty();
-        let entry = match sel.into_iter().next() {
+        let here = one.is_none();
+        let entry = match one {
             Some(e) => Some(e),
-            None => self.current_dir().and_then(|d| Entry::from_path(d, &self.mime)),
+            None => self.peek_here(),
         };
         let Some(e) = entry else {
             self.peek.stop();
@@ -659,12 +686,62 @@ impl RivetApp {
     }
 
     /// Several items: their icons fanned out, and totals.
-    fn peek_many(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, sel: &[Entry], card_fill: Color32) {
+    /// The open folder's entry, read again only when the folder changes.
+    fn peek_here(&mut self) -> Option<Entry> {
+        let dir = self.current_dir()?;
+        let mtime = self.tab().dir_mtime;
+        match &self.peek.here {
+            Some((p, m, e)) if *p == dir && *m == mtime => Some(e.clone()),
+            _ => {
+                let e = Entry::from_path(dir.clone(), &self.mime)?;
+                self.peek.here = Some((dir, mtime, e.clone()));
+                Some(e)
+            }
+        }
+    }
+
+    /// Sum up a selection of several items (`None` when fewer than two are shown).
+    fn peek_summarise(&self) -> Option<Many> {
+        let sel = self.tab().selected_entries();
+        if sel.len() < 2 {
+            return None;
+        }
+        let mut m = Many { count: sel.len(), first: sel.iter().take(3).map(|e| (*e).clone()).collect(), folders: 0, files: 0, bytes: 0, kinds: Vec::new(), newest: None, oldest: None };
+        // Counted by file type first, then named: describing a type builds a string.
+        let mut by_mime: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for e in &sel {
+            if e.is_dir {
+                m.folders += 1;
+            } else {
+                m.files += 1;
+                m.bytes += e.size;
+                *by_mime.entry(e.mime.as_str()).or_default() += 1;
+            }
+            if let Some(t) = e.modified {
+                m.newest = Some(m.newest.map_or(t, |n| n.max(t)));
+                m.oldest = Some(m.oldest.map_or(t, |o| o.min(t)));
+            }
+        }
+        if m.folders > 0 {
+            m.kinds.push(("Folder".into(), m.folders));
+        }
+        for (mime, n) in by_mime {
+            let d = self.mime.describe(mime);
+            match m.kinds.iter_mut().find(|(k, _)| *k == d) {
+                Some((_, c)) => *c += n,
+                None => m.kinds.push((d, n)),
+            }
+        }
+        m.kinds.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        Some(m)
+    }
+
+    fn peek_many(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, many: Many, card_fill: Color32) {
         let v = ui.visuals().clone();
         let width = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 150.0), Sense::hover());
         ui.painter().rect_filled(rect, r_md(), card_fill);
-        let shown: Vec<&Entry> = sel.iter().take(3).collect();
+        let shown: Vec<&Entry> = many.first.iter().collect();
         let n = shown.len() as f32;
         for (i, e) in shown.iter().enumerate().rev() {
             let off = (i as f32 - (n - 1.0) / 2.0) * 34.0;
@@ -674,38 +751,25 @@ impl RivetApp {
             }
         }
         ui.add_space(4.0);
-        ui.label(egui::RichText::new(format!("{} items selected", sel.len())).size(16.0).strong());
-        let folders = sel.iter().filter(|e| e.is_dir).count();
-        let files: Vec<&Entry> = sel.iter().filter(|e| !e.is_dir).collect();
-        let bytes: u64 = files.iter().map(|e| e.size).sum();
+        ui.label(egui::RichText::new(format!("{} items selected", many.count)).size(16.0).strong());
+        let (folders, files) = (many.folders, many.files);
         let mut summary = Vec::new();
         if folders > 0 {
             summary.push(format!("{folders} folder{}", if folders == 1 { "" } else { "s" }));
         }
-        if !files.is_empty() {
-            summary.push(format!("{} file{}", files.len(), if files.len() == 1 { "" } else { "s" }));
+        if files > 0 {
+            summary.push(format!("{files} file{}", if files == 1 { "" } else { "s" }));
         }
         ui.label(egui::RichText::new(summary.join(", ")).color(v.weak_text_color()));
         let mut rows: Vec<(String, String)> = Vec::new();
-        if !files.is_empty() {
-            rows.push(("Size".into(), format!("{}{}", fsops::human_size(bytes), if folders > 0 { "\nfiles only" } else { "" })));
+        if files > 0 {
+            rows.push(("Size".into(), format!("{}{}", fsops::human_size(many.bytes), if folders > 0 { "\nfiles only" } else { "" })));
         }
         // The most common kinds, e.g. "3 PNG image, 1 Folder".
-        let mut kinds: Vec<(String, usize)> = Vec::new();
-        for e in sel {
-            let d = if e.is_dir { "Folder".to_string() } else { self.mime.describe(&e.mime) };
-            match kinds.iter_mut().find(|(k, _)| *k == d) {
-                Some((_, n)) => *n += 1,
-                None => kinds.push((d, 1)),
-            }
-        }
-        kinds.sort_by_key(|k| std::cmp::Reverse(k.1));
-        let kind_text: Vec<String> = kinds.iter().take(4).map(|(k, n)| format!("{n} × {k}")).collect();
+        let kind_text: Vec<String> = many.kinds.iter().take(4).map(|(k, n)| format!("{n} × {k}")).collect();
         rows.push(("Kinds".into(), kind_text.join(", ")));
-        let newest = sel.iter().filter_map(|e| e.modified).max();
-        let oldest = sel.iter().filter_map(|e| e.modified).min();
-        rows.push(("Newest".into(), fmt_full(newest)));
-        rows.push(("Oldest".into(), fmt_full(oldest)));
+        rows.push(("Newest".into(), fmt_full(many.newest)));
+        rows.push(("Oldest".into(), fmt_full(many.oldest)));
         let width = ui.available_width();
         self.peek_section(ui, "Selection", rows, card_fill, width);
     }

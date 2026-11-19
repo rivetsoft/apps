@@ -72,8 +72,29 @@ pub fn run(folders: Vec<PathBuf>) {
             let _ = it.find(&refs, 48);
         }
         let warm = ms(t);
+        // Gathering the selection, which the status bar and Peek do every frame.
+        let mut sel_one = Vec::new();
+        let mut sel_all = Vec::new();
+        if let Some(&mid) = tab.visible.get(tab.visible.len() / 2) {
+            tab.selected = std::iter::once(tab.entries[mid].path.clone()).collect();
+            for _ in 0..RUNS {
+                let t = Instant::now();
+                std::hint::black_box(tab.selected_entries());
+                sel_one.push(ms(t));
+            }
+            tab.selected = tab.visible.iter().map(|&i| tab.entries[i].path.clone()).collect();
+            for _ in 0..RUNS {
+                let t = Instant::now();
+                std::hint::black_box(tab.selected_entries());
+                sel_all.push(ms(t));
+            }
+            tab.selected.clear();
+        }
         let n = tab.entries.len();
         println!("\n  folder with {n} items");
+        if !sel_one.is_empty() {
+            println!("    find the selection, one / all {:>8.3} ms / {:.1} ms", median(sel_one), median(sel_all));
+        }
         println!("    read + inspect every item    {:>8.1} ms  ({:.1} µs per item)", median(load.clone()), median(load) * 1000.0 / n.max(1) as f64);
         println!("    sort by name                 {:>8.2} ms", median(sort_name));
         println!("    sort by type                 {:>8.2} ms", median(sort_type));
