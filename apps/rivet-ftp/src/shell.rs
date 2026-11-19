@@ -44,7 +44,7 @@ fn status(items: &[Connection]) -> Value {
         menu.extend(items.iter().filter(|c| c.category.as_deref() == Some(g)).map(row));
     }
     if items.is_empty() {
-        menu.push(json!({"label": "No saved connections", "quiet": true}));
+        menu.push(json!({"label": "No connections yet: add one in Rivet FTP", "quiet": true}));
     }
     menu.push(json!({"heading": true, "label": ""}));
     menu.push(json!({"id": "window", "label": "Open Rivet FTP", "icon": "rivet-ftp"}));
@@ -133,7 +133,7 @@ mod tests {
         assert_eq!((menu[2]["id"].as_str(), menu[2]["sub"].as_str()), (Some("open:Work site"), Some("sftp · me@example.com · /var/www")));
         assert_eq!(s["launcher"].as_array().unwrap().len(), 3);
         assert_eq!(s["tooltip"], "3 connections");
-        assert_eq!(status(&[])["menu"][0]["label"], "No saved connections");
+        assert_eq!(status(&[])["menu"][0]["label"], "No connections yet: add one in Rivet FTP");
         assert_eq!(wanted(r#"{"event":"launch","id":"open:Work site","query":""}"#), Some(Some("Work site".into())));
         assert_eq!(wanted(r#"{"event":"menu","id":"window"}"#), Some(None));
         assert_eq!(wanted(r#"{"event":"click","button":"left"}"#), None);

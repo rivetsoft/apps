@@ -87,7 +87,7 @@ fn status(dir: Option<&Path>, notes: &[Note], triggers: &[String], all: bool, to
     let Some(dir) = dir else {
         return json!({
             "icon": "rivet-notes", "text": "", "badge": false, "state": "normal", "tooltip": "No vault chosen",
-            "menu": [{"id": "settings", "label": "Choose a vault…", "sub": "In Settings, Plugins, under Notes"}],
+            "menu": [{"id": "settings", "label": "Choose a vault…", "sub": "Opens Settings; it's under Plugins, Notes"}],
             "launcher": [],
         });
     };
@@ -110,7 +110,7 @@ fn status(dir: Option<&Path>, notes: &[Note], triggers: &[String], all: bool, to
         menu.push(json!({"id": format!("note:{}", t.note.rel), "label": t.item.title, "sub": sub.join(" · "), "mark": t.item.mark().to_string(), "state": state}));
     }
     if tasks.is_empty() {
-        menu.push(json!({"label": "Nothing to do", "quiet": true}));
+        menu.push(json!({"label": "No open tasks", "quiet": true}));
     } else if tasks.len() > TASKS {
         menu.push(json!({"id": "open", "label": format!("{} more in Notes…", tasks.len() - TASKS), "quiet": true}));
     }

@@ -174,7 +174,7 @@ impl SettingsApp {
             });
         });
         section(ui, "Writing One", &mut |ui| {
-            hint(ui, "A folder with a plugin.conf (name, exec, mode, interval, events) and a program in any language. The program prints what its panel item shows (plain text, or JSON with text, icon, tooltip, state and a menu) and is told of clicks and the events above. The Disk Space plugin that comes with the shell is a short example to copy; PLUGINS.md, beside the shell's README, has the whole of it.");
+            hint(ui, "A folder with a plugin.conf (name, exec, mode, interval, events) and a program in any language. The program prints what its panel item shows (plain text, or JSON: text, icon, a menu, launcher entries) and is told of clicks and the events above. It can ask for settings and a launcher word (@name). Disk Space, Notes and FTP come with the shell as examples to copy; PLUGINS.md, beside the shell's README, has the whole of it.");
         });
     }
 }

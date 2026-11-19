@@ -97,7 +97,7 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
                 if color != s.plugin_icon(pid) {
                     s.set_plugin(pid, crate::plugins::ICON_COLOR, if color == TrayColor::Own { "" } else { color.name() });
                 }
-                note(ui, "Solid draws the icon's shape in the panel's text color (a group's, in a group); Highlight in the accent.");
+                note(ui, "Solid: the icon's shape in the panel's text color (its group's, in a group). Highlight: the same in the accent color.");
             }
             "tray" => {
                 section(ui, "Icons");

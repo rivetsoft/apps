@@ -113,9 +113,9 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     let id = egui::Id::unique("launcher-search");
     let has_words = m.extra.plugins.iter().any(|(_, it)| !it.keyword.is_empty());
     let hint = match (m.s.launch_calc, has_words) {
-        (true, true) => "Search apps, type a sum, or @ for more…",
+        (true, true) => "Search apps, type a sum, or @ for commands…",
         (true, false) => "Search apps, or type a sum…",
-        (false, true) => "Search apps, or @ for more…",
+        (false, true) => "Search apps, or @ for commands…",
         (false, false) => "Search apps…",
     };
     let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
@@ -303,7 +303,8 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         }
         if ranked.is_empty() {
             let text = match &command {
-                Some((word, _)) if m.extra.plugins.iter().any(|(_, it)| !word.is_empty() && &it.keyword == word) => "Nothing matches",
+                Some((word, _)) if m.extra.plugins.iter().any(|(_, it)| !word.is_empty() && &it.keyword == word) => "No matches",
+                Some(_) if !has_words => "No commands yet: plugins add them",
                 Some(_) => "No command by that name",
                 None => "No apps match",
             };
