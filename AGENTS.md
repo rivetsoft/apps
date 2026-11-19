@@ -33,23 +33,91 @@ app, or `--workspace` for everything.
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
 Longer write-ups are in `docs/`. Rivet Shell's plugin API is in `apps/rivet-shell/PLUGINS.md`.
 
-## How the pieces fit
+## What the apps share, and how
 
-- **One look.** Apps take colours, fonts and icons from `rivet-look`, never their own. When
-  something should look the same in two apps, it belongs in `rivet-look`.
-- **Colours come from the wallpaper.** Rivet Shell runs matugen on the picture chosen; every
-  Rivet app watches the colour files and follows them live, with no restart.
-- **The shell does not link the apps.** It reaches them as separate programs. An app joins the
-  shell through a plugin: a folder with a `plugin.conf` whose program is the app itself
-  (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`). The plugin speaks JSON lines; see
-  PLUGINS.md before adding a capability, and add it to the API rather than special-casing one
+Sharing happens in three ways. Know which one you are touching, because each has a different
+blast radius: a crate change rebuilds every app that uses it, a file format change affects
+programs already running, and a program-to-program change needs both ends updated.
+
+### 1. Code, through the crates
+
+No app depends on another app; they only depend on crates. Who uses what:
+
+| Crate | Used by |
+| --- | --- |
+| `rivet-look`, `rivet-kit`, `rivet-xdg` | every app |
+| `rivet-media` | Files, FTP, Shell |
+| `rivet-term` | Terminal (and meant for Edit's panel) |
+| `rivet-connections` | FTP |
+| `rivet-git` | Edit (and meant for a Git app of its own) |
+
+What "the same in every app" means in practice is a module of `rivet-look`:
+
+- `live`: what every app does to look like the others: the desktop's font, the theme from a
+  light or dark choice and an accent, and the desktop's colours followed live.
+- `theme`, `palette`, `fonts`, `icons`: the egui theme, corner radii, status colours, the icon
+  theme and Rivet's own icons. An app never picks a colour or radius of its own.
+- `quick`: the quick panel (Ctrl+P: Quick Open, Quick Actions) and its fuzzy matching. Rivet
+  Shell's launcher ranks with the same `fuzzy_score`.
+- `windows`: windows inside the app (Preferences, About): title bar, drag, resize.
+- `widgets`, `tabdrag`: small drawn controls, and dragging tabs to reorder them.
+- `schemes`: colour schemes for code and terminals. Edit, Terminal and the Shell's palette
+  picker all read the one list, which is how Terminal has Edit's themes.
+- `highlight`: the light code colouring Files' Peek and other previews use.
+
+Before writing something an app needs, look for it here. Before adding to one app something a
+second app will want (a control, a dialog, a file-type rule, a way to launch things), put it in
+the crate. A piece that is still written as part of one app's window needs lifting out first;
+`docs/shared-crates.md` describes that work and what is still to move.
+
+### 2. Files on disk
+
+- **The desktop's colours.** GTK colour files (`@define-color name value;`), the kind matugen
+  and other theme generators write. `rivet-look::palette` reads `~/.config/rivet/colors.css`
+  first (a file just for Rivet, which matugen fills from the template
+  `~/.config/matugen/templates/rivet-colors.css`), then the desktop's `gtk-4.0` and `gtk-3.0`
+  colour files. Every app checks them every two seconds, so a new wallpaper recolours running
+  apps with no restart, under Rivet Shell or any other desktop. Rivet Shell is one producer:
+  it runs matugen on the wallpaper chosen. Changing a colour name means changing the reader
+  and the template together.
+- **Each app's own settings.** `key=value` lines, hand-editable, unknown keys skipped so a
+  newer file still loads: `~/.config/rivet/settings` for Rivet Files (it is the `rivet`
+  program), `~/.config/rivet-NAME/settings` for the rest. An app may read another's file only
+  through code that owns the format: the Notes plugin reads Notes' settings because it is
+  Notes.
+- **Saved connections.** `~/.config/rivet-ftp/connections.conf`, owned by `rivet-connections`,
+  read by Rivet FTP's window and command line, and written out as an ssh config so plain
+  `ssh`, `scp`, `rsync` and `git` reach them by name. Passwords are never in it.
+- **The desktop's own files**, through `rivet-xdg`: bookmarks (`gtk-3.0/bookmarks`), default
+  apps (`mimeapps.list`), user folders, `.desktop` entries. Rivet reads and writes the standard
+  ones, so other desktops' apps see the same bookmarks and defaults.
+
+### 3. Programs talking to each other
+
+- **The file picker.** Rivet Files can be the Open and Save window for every app on the
+  desktop, as an xdg-desktop-portal backend (`apps/rivet-files/src/portal.rs`, `picker.rs`).
+  Other Rivet apps ask the portal, not Rivet Files; Rivet Shell's folder and picture choosers
+  do the same (`src/portal.rs`).
+- **Shell plugins.** An app joins the shell through a plugin: a folder with a `plugin.conf`
+  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`), kept
+  running and speaking JSON lines. The shell shows what it says (a panel item, a menu, launcher
+  entries under `@notes` or `@ftp`) and tells it what was chosen; the app then opens its own
+  window (`rivet-notes FOLDER --note PATH`, `rivet-ftp open NAME`). Read PLUGINS.md before
+  adding a capability, and add it to the API for every plugin rather than special-casing one
   app.
-- **Settings are plain text.** Each app keeps `key=value` lines in
-  `~/.config/APP/settings`, hand-editable, with unknown keys skipped so a newer file still
-  loads. Rivet Shell rereads its file when it changes; its Settings window is a separate
-  process (`rivet-shell settings`) that saves on every change.
-- **Rivet Shell is driven by messages.** `rivet-shell msg COMMAND` talks to the running shell
-  over a socket (`launcher`, `lock`, `volume up`, `reload`…). Compositor key bindings use it.
+- **Messages to the shell.** `rivet-shell msg COMMAND` talks to the running shell over a
+  socket (`launcher`, `lock`, `volume up`, `reload`…). Compositor key bindings use it, and so
+  do plugins (`"run"`). The Settings window is a separate process (`rivet-shell settings`) that
+  saves on every change and tells the shell.
+- **Standard desktop services.** Notifications, the tray, media players and the lock screen
+  use the freedesktop D-Bus interfaces, so Rivet Welcome's tray icon shows in any tray and any
+  app's notifications show in Rivet Shell. Never invent a private channel where a standard one
+  exists.
+- **The dock** starts out with Files, Terminal, Edit and Notes pinned by their desktop ids,
+  which is the only place the shell names the apps.
+
+Every piece must still work alone: an app with no shell, the shell with none of the apps.
+When one is missing, the feature that needs it is left out quietly.
 
 ## Building and checking
 
