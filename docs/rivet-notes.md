@@ -201,7 +201,17 @@ sample shows the editor's fonts as you choose.
 ```sh
 rivet-notes ~/Documents/Notes     # open that folder as a vault
 rivet-notes tags ~/Documents/Notes  # the tags in a vault, most used first
+rivet-notes ~/Documents/Notes --note "Projects/Rivet FTP.md"   # open on that note
+rivet-notes new --vault ~/Documents/Notes Shopping list        # make a note and open it
 ```
+
+## On Rivet Shell's panel
+
+With Rivet Shell, turn on the Notes plugin (Settings, Plugins), choose the vault there, and add
+its item to a panel. Clicking the item lists the vault's open tasks (the ones tagged as todos,
+or every task), most pressing first, and the latest notes; a click opens the note. A dot and a
+number show when tasks are due, with a notification once for what's due today. In the launcher,
+type a title and choose New Note.
 
 ## Next
 

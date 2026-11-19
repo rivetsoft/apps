@@ -10,6 +10,7 @@ mod live;
 mod props;
 mod render;
 mod settings;
+mod shell;
 mod slash;
 mod tasks;
 mod vault;
@@ -17,11 +18,19 @@ mod vault;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+/// The note to open at the start (`--note`), a path inside the vault.
+pub static START_NOTE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 const HELP: &str = "Rivet Notes: Markdown notes in plain folders, with frontmatter and tags
 
 Usage:
   rivet-notes [FOLDER]        Open the window (on FOLDER as the vault, or the last one)
+  rivet-notes [FOLDER] --note PATH
+                              …on that note (PATH from the top of the vault)
+  rivet-notes new [--vault FOLDER] [TITLE]
+                              Make a note and open it
   rivet-notes tags [FOLDER]   List the tags in a vault, with how many notes have each
+  rivet-notes shell-plugin    Run as Rivet Shell's Notes plugin (the shell starts this)
   rivet-notes --install-desktop-entry
                               Add Rivet Notes to the app launcher (for this user)
   rivet-notes -h, --help      This help
@@ -76,6 +85,42 @@ fn main() -> ExitCode {
             screenshot = Some(PathBuf::from(args.remove(i)));
         }
     }
+    // --note PATH and --vault FOLDER, anywhere.
+    let mut take = |flag: &str| {
+        let i = args.iter().position(|a| a == flag)?;
+        args.remove(i);
+        (i < args.len()).then(|| args.remove(i))
+    };
+    let (note, vault_arg) = (take("--note"), take("--vault"));
+    if let Some(n) = note {
+        let _ = START_NOTE.set(n);
+    }
+    let home_path = |a: &str| match a.strip_prefix("~/") {
+        Some(rest) => rivet_xdg::places::home().join(rest),
+        None => PathBuf::from(a),
+    };
+    match args.first().map(String::as_str) {
+        Some("shell-plugin") => return shell::run(),
+        Some("new") => {
+            let dir = vault_arg.as_deref().map(home_path).or_else(|| settings::Settings::load().vaults.into_iter().next());
+            let Some(dir) = dir.filter(|d| d.is_dir()) else {
+                eprintln!("rivet-notes: which vault? (rivet-notes new --vault FOLDER TITLE)");
+                return ExitCode::FAILURE;
+            };
+            let title = args[1..].join(" ");
+            match vault::create_note(&dir, if title.trim().is_empty() { "Untitled" } else { &title }) {
+                Ok(p) => {
+                    let _ = START_NOTE.set(p.strip_prefix(&dir).unwrap_or(&p).to_string_lossy().into_owned());
+                    args = vec![dir.to_string_lossy().into_owned()];
+                }
+                Err(e) => {
+                    eprintln!("rivet-notes: couldn't make the note: {e}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        }
+        _ => {}
+    }
     match args.first().map(String::as_str) {
         Some("-h" | "--help" | "help") => {
             println!("{HELP}");
@@ -118,10 +163,7 @@ fn main() -> ExitCode {
         }
         _ => {}
     }
-    let mut open = args.first().map(|a| match a.strip_prefix("~/") {
-        Some(rest) => rivet_xdg::places::home().join(rest),
-        None => PathBuf::from(a),
-    });
+    let mut open = args.first().map(|a| home_path(a)).or_else(|| vault_arg.as_deref().map(home_path));
     if screenshot.is_some() {
         if open.is_none() && std::env::var_os("RIVET_NOTES_EMPTY").is_none() {
             open = sample_vault();

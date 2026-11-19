@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A Notes plugin, for Rivet Notes: the vault's open tasks and latest notes in a panel item's
+  menu, a dot and a notification when something is due today, and New Note in the launcher
+  (type a title, choose New Note). Its vault is chosen in Settings, Plugins.
+- Plugins can do more: settings of their own, shown under them in Settings (`setting.KEY=` in
+  plugin.conf: a folder, some text or a toggle); entries in the launcher; menus with headings,
+  icons and tasks' boxes; and a dot on their panel item. PLUGINS.md has the whole of it.
+
 - Settings → Panels → Groups shows one group at a time: the groups are tabs in their own
   colors, and the chosen one's settings sit under them, with colors as swatches.
 - The shell uses the theme's secondary and tertiary colours, as much as Appearance's "Colour

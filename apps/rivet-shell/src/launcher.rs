@@ -59,6 +59,34 @@ fn list_icon(icon: f32) -> f32 {
     (icon * 0.67).round().max(18.0)
 }
 
+/// Something the launcher lists: an app, or an entry a plugin gave.
+enum Entry<'a> {
+    App(&'a DesktopApp),
+    Plugin { pid: String, id: String, name: String, icon: String, query: String },
+}
+
+impl Entry<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Entry::App(a) => &a.name,
+            Entry::Plugin { name, .. } => name,
+        }
+    }
+    fn icon(&self, ctx: &egui::Context, kit: &mut Kit, px: f32) -> Option<egui::TextureHandle> {
+        match self {
+            Entry::App(a) => kit.app_icon(ctx, a, px),
+            Entry::Plugin { icon, .. } => kit.named_icon(ctx, icon, px).or_else(|| kit.named_icon(ctx, "application-x-executable", px)),
+        }
+    }
+    /// Choosing it: the app starts, or the plugin is told (with what was typed).
+    fn acts(&self) -> Vec<Act> {
+        match self {
+            Entry::App(a) => vec![Act::Launch(a.id.clone())],
+            Entry::Plugin { pid, id, query, .. } => vec![Act::Plugin(pid.clone(), crate::plugins::Event::new("launch", &[("id", id), ("query", query)])), Act::Close],
+        }
+    }
+}
+
 pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: bool, m: &mut Model, kit: &mut Kit) {
     // A steady cursor: a blinking one redraws the whole launcher twice a second.
     ui.visuals_mut().text_cursor.blink = false;
@@ -96,8 +124,20 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         return;
     }
     // The apps: best matches first when searching, else by name.
-    let mut ranked: Vec<(i32, &DesktopApp)> = m.apps.iter().filter_map(|a| quick::fuzzy_score(&a.name, query).map(|s| (s, a))).collect();
-    if !query.is_empty() {
+    let mut ranked: Vec<(i32, Entry)> = m.apps.iter().filter_map(|a| quick::fuzzy_score(&a.name, query).map(|s| (s, Entry::App(a)))).collect();
+    // What plugins add, once something is typed: entries whose name matches, and after
+    // everything else the ones that take the words typed (New Note “words”).
+    let typed = query.trim().to_string();
+    if !typed.is_empty() {
+        for (pid, it) in &m.extra.plugins {
+            for row in &it.launcher {
+                match quick::fuzzy_score(&row.label, query) {
+                    Some(s) => ranked.push((s, Entry::Plugin { pid: pid.clone(), id: row.id.clone(), name: row.label.clone(), icon: row.icon.clone(), query: String::new() })),
+                    None if row.query => ranked.push((i32::MIN, Entry::Plugin { pid: pid.clone(), id: row.id.clone(), name: format!("{} “{typed}”", row.label), icon: row.icon.clone(), query: typed.clone() })),
+                    None => {}
+                }
+            }
+        }
         ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
     }
     // A grid's tile holds the icon over two lines of name.
@@ -128,7 +168,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         *sel = (*sel).min(n - 1);
     }
     if enter && let Some((_, a)) = ranked.get(*sel) {
-        m.acts.push(Act::Launch(a.id.clone()));
+        m.acts.extend(a.acts());
     }
     let moved = up || down || left || right;
     let mark = |p: &egui::Painter, r: Rect, chosen: bool, hovered: bool| {
@@ -155,11 +195,11 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                 if shown {
                     mark(ui.painter(), r, k == *sel, resp.hovered());
                     let ir = Rect::from_center_size(Pos2::new(r.left() + 10.0 + li / 2.0, r.center().y), Vec2::splat(li));
-                    if let Some(t) = kit.app_icon(ui.ctx(), a, li) {
+                    if let Some(t) = a.icon(ui.ctx(), kit, li) {
                         ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                     }
                     let room = r.right() - ir.right() - 24.0 - if k == *sel { 44.0 } else { 0.0 };
-                    let g = crate::ui::one_line(ui.painter(), &a.name, ui_font(14.0), v.text_color(), room);
+                    let g = crate::ui::one_line(ui.painter(), a.name(), ui_font(14.0), v.text_color(), room);
                     ui.painter().galley(Pos2::new(ir.right() + 12.0, r.center().y - g.size().y / 2.0), g, v.text_color());
                     if k == *sel {
                         ui.painter().text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, "Enter", ui_font(11.5), v.weak_text_color());
@@ -169,7 +209,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     ui.scroll_to_rect(r, None);
                 }
                 if shown && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    m.acts.push(Act::Launch(a.id.clone()));
+                    m.acts.extend(a.acts());
                 }
             }
         } else {
@@ -180,10 +220,10 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     if shown {
                         mark(ui.painter(), r, k == *sel, resp.hovered());
                         let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 9.0 + icon / 2.0), Vec2::splat(icon));
-                        if let Some(t) = kit.app_icon(ui.ctx(), a, icon) {
+                        if let Some(t) = a.icon(ui.ctx(), kit, icon) {
                             ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                         }
-                        let mut job = egui::text::LayoutJob::single_section(a.name.clone(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
+                        let mut job = egui::text::LayoutJob::single_section(a.name().to_string(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
                         job.wrap = egui::text::TextWrapping { max_width: r.width() - 8.0, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
                         job.halign = egui::Align::Center;
                         let g = ui.painter().layout_job(job);
@@ -193,7 +233,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                         ui.scroll_to_rect(r, None);
                     }
                     if shown && resp.clicked() {
-                        m.acts.push(Act::Launch(a.id.clone()));
+                        m.acts.extend(a.acts());
                     }
                     if (k + 1) % cols == 0 {
                         ui.end_row();

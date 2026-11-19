@@ -272,8 +272,16 @@ impl ShotApp {
             audio: crate::audio::demo(),
             join: None,
             // RIVET_SHELL_PLUGIN=1: a plugin's item on the first panel (RIVET_SHELL_POPUP=plugin: its menu).
-            plugins: if on("RIVET_SHELL_PLUGIN") {
-                let row = |id: &str, label: &str, sub: &str| crate::plugins::MenuRow { id: id.into(), label: label.into(), sub: sub.into() };
+            // RIVET_SHELL_PLUGIN_SAYS=file: the "disk" item is what that file's lines say (a real
+            // plugin's output, to see how the shell shows it).
+            plugins: if let Some(text) = std::env::var("RIVET_SHELL_PLUGIN_SAYS").ok().and_then(|f| std::fs::read_to_string(f).ok()) {
+                let mut it = crate::plugins::Item { name: std::env::var("RIVET_SHELL_PLUGIN_NAME").unwrap_or_else(|_| "Plugin".into()), ..Default::default() };
+                for line in text.lines().filter(|l| !l.trim().is_empty()) {
+                    crate::plugins::take(&mut it, line, false);
+                }
+                vec![("disk".to_string(), it)]
+            } else if on("RIVET_SHELL_PLUGIN") {
+                let row = |id: &str, label: &str, sub: &str| crate::plugins::MenuRow { id: id.into(), label: label.into(), sub: sub.into(), ..Default::default() };
                 vec![("disk".to_string(), crate::plugins::Item { name: "Disk Space".into(), text: "212 GB".into(), icon: "drive-harddisk".into(), tooltip: "212 GB free on /".into(), menu: vec![row("/", "/", "212 GB free of 476 GB"), row("/home", "/home", "640 GB free of 1.8 TB"), row("/boot", "/boot", "410 MB free of 1 GB")], ..Default::default() })]
             } else {
                 Vec::new()

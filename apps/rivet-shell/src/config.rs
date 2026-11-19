@@ -536,6 +536,8 @@ pub struct Settings {
     /// shell's events (event, command), by event.
     pub plugins: Vec<String>,
     pub hooks: Vec<(String, String)>,
+    /// The plugins' own settings: (plugin, key, value), `plugin.ID.KEY=value`.
+    pub plugin_set: crate::plugins::Values,
     pub launch_view: LaunchView,
     pub launch_place: LaunchPlace,
     pub launch_size: LaunchSize,
@@ -649,6 +651,7 @@ impl Default for Settings {
             osd_keys: true,
             plugins: Vec::new(),
             hooks: Vec::new(),
+            plugin_set: Vec::new(),
             launch_view: LaunchView::Grid,
             launch_place: LaunchPlace::Center,
             launch_size: LaunchSize::Medium,
@@ -771,6 +774,10 @@ impl Settings {
             if let Some(name) = k.strip_prefix("display.").filter(|n| !n.is_empty()) {
                 self.displays.retain(|d| d.name != name);
                 self.displays.push(crate::displays::Display::parse(name, v));
+                continue;
+            }
+            if let Some((id, key)) = k.strip_prefix("plugin.").and_then(|r| r.split_once('.')).filter(|(i, k)| !i.is_empty() && !k.is_empty()) {
+                self.set_plugin(id, key, v.trim());
                 continue;
             }
             if let Some(ev) = k.strip_prefix("hook.").filter(|n| !n.is_empty()) {
@@ -1003,6 +1010,9 @@ impl Settings {
         for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
             t.push_str(&format!("hook.{ev}={}\n", one(cmd)));
         }
+        for (id, key, v) in &self.plugin_set {
+            t.push_str(&format!("plugin.{id}.{key}={}\n", one(v)));
+        }
         for (i, p) in self.panels.iter().enumerate() {
             t.push_str(&format!("panel.{i}={}\n", p.text()));
         }
@@ -1031,6 +1041,20 @@ impl Settings {
     /// The picture the colours are made from.
     pub fn matugen_picture(&self) -> &str {
         self.wallpaper_on(&self.matugen_screen)
+    }
+
+    /// A plugin's setting ("" when it was never set).
+    pub fn plugin_value(&self, id: &str, key: &str) -> &str {
+        self.plugin_set.iter().find(|(p, k, _)| p == id && k == key).map(|(_, _, v)| v.as_str()).unwrap_or("")
+    }
+
+    /// Set a plugin's setting (an empty value forgets it).
+    pub fn set_plugin(&mut self, id: &str, key: &str, value: &str) {
+        self.plugin_set.retain(|(p, k, _)| !(p == id && k == key));
+        if !value.is_empty() {
+            self.plugin_set.push((id.to_string(), key.to_string(), value.to_string()));
+            self.plugin_set.sort();
+        }
     }
 
     pub fn save(&self) {
@@ -1183,7 +1207,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, plugins: vec!["disk".into()], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

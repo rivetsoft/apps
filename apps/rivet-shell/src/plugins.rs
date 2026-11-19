@@ -18,10 +18,17 @@
 //!                            each event; stream: started once, kept running
 //!   interval=30              seconds between runs (poll)
 //!   events=lock,unlock       the shell's events it's told of (besides its own clicks)
+//!   setting.vault=folder|Vault|The folder to show
+//!                            a setting of its own, shown under it in Settings: its kind
+//!                            (folder, text or toggle), label and hint. The program finds
+//!                            the value in its environment (`RIVET_SET_VAULT`), and is
+//!                            started again when it changes
 //!
 //! What a plugin says (poll: its whole output; stream: a line at a time) is a JSON object:
 //!   {"text":"42%","icon":"drive-harddisk","tooltip":"…","state":"warning","hidden":false,
-//!    "menu":[{"id":"home","label":"/home","sub":"12 GB free"}],
+//!    "badge":true,
+//!    "menu":[{"id":"home","label":"/home","sub":"12 GB free"},{"heading":true,"label":"Tasks"}],
+//!    "launcher":[{"id":"new","label":"New Note","sub":"In Notes","icon":"…","query":true}],
 //!    "notify":{"summary":"…","body":"…"}, "run":"launcher"}
 //! every key optional; keys left out keep what they were (stream) or are empty (poll). `run`
 //! is a `rivet-shell msg` command. A poll plugin may print plain text instead: the first line
@@ -30,7 +37,8 @@
 //! What a plugin is told: poll plugins in the environment (`RIVET_EVENT=click`,
 //! `RIVET_BUTTON=left`…), stream plugins as a JSON line on their input
 //! (`{"event":"click","button":"left"}`). Its own events: `start`, `poll`, `click` (button:
-//! left, middle, right), `scroll` (direction: up, down), `menu` (id: the row clicked).
+//! left, middle, right), `scroll` (direction: up, down), `menu` (id: the row clicked),
+//! `launch` (id: its launcher entry chosen; query: what was typed, for an entry with `query`).
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -100,6 +108,33 @@ pub struct Manifest {
     pub events: Vec<String>,
     /// From the shell's own folders (else the person's).
     pub official: bool,
+    /// Its own settings, shown under it in Settings.
+    pub settings: Vec<Setting>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum SettingKind {
+    #[default]
+    Text,
+    Folder,
+    Toggle,
+}
+
+/// A setting a plugin asks for: `setting.KEY=kind|Label|Hint`.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Setting {
+    pub key: String,
+    pub kind: SettingKind,
+    pub label: String,
+    pub hint: String,
+}
+
+/// The values of plugins' settings: (plugin, key, value).
+pub type Values = Vec<(String, String, String)>;
+
+/// One plugin's values, as its program's environment has them (`RIVET_SET_KEY`).
+fn env_of(values: &Values, id: &str) -> Vec<(String, String)> {
+    values.iter().filter(|(p, _, _)| p == id).map(|(_, k, v)| (format!("RIVET_SET_{}", k.to_uppercase().replace('-', "_")), v.clone())).collect()
 }
 
 impl Manifest {
@@ -121,19 +156,36 @@ impl Manifest {
                 "mode" => m.stream = v == "stream",
                 "interval" => m.interval = v.parse::<u32>().unwrap_or(30).clamp(1, 86_400),
                 "events" => m.events = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
-                _ => {}
+                k => {
+                    if let Some(key) = k.strip_prefix("setting.").filter(|x| !x.is_empty() && x.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')) {
+                        let mut parts = v.splitn(3, '|').map(str::trim);
+                        let kind = match parts.next().unwrap_or("") {
+                            "folder" => SettingKind::Folder,
+                            "toggle" => SettingKind::Toggle,
+                            _ => SettingKind::Text,
+                        };
+                        let label = parts.next().filter(|l| !l.is_empty()).unwrap_or(key).to_string();
+                        m.settings.push(Setting { key: key.to_string(), kind, label, hint: parts.next().unwrap_or("").to_string() });
+                    }
+                }
             }
         }
         (!m.exec.is_empty()).then_some(m)
     }
 
-    /// The program to run: a path from the plugin's folder, else a command.
-    fn command(&self) -> Command {
+    /// The program to run: a path from the plugin's folder, else a program beside the shell's
+    /// own (another Rivet app's), else a command.
+    fn command(&self, set: &[(String, String)]) -> Command {
         let mut parts = self.exec.split_whitespace();
         let prog = parts.next().unwrap_or_default();
         let local = self.dir.join(prog);
-        let mut c = if prog.contains('/') || local.is_file() { Command::new(local) } else { Command::new(prog) };
-        c.args(parts).current_dir(&self.dir).env("RIVET_PLUGIN", &self.id).env("RIVET_PLUGIN_DIR", &self.dir);
+        let beside = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join(prog))).filter(|p| p.is_file());
+        let mut c = match beside {
+            _ if prog.contains('/') || local.is_file() => Command::new(local),
+            Some(b) => Command::new(b),
+            None => Command::new(prog),
+        };
+        c.args(parts).current_dir(&self.dir).env("RIVET_PLUGIN", &self.id).env("RIVET_PLUGIN_DIR", &self.dir).envs(set.iter().cloned());
         c
     }
 }
@@ -224,6 +276,27 @@ pub struct MenuRow {
     pub id: String,
     pub label: String,
     pub sub: String,
+    /// A title over the rows after it (a line, when it has no label), not a row to click.
+    pub heading: bool,
+    /// An icon's name, or a picture's path.
+    pub icon: String,
+    /// A task's box before the label: ' ' (to do), '/' (started) or 'x' (done).
+    pub mark: Option<char>,
+    /// The colour of its second line.
+    pub state: State,
+    /// In weaker text (a note more than a thing).
+    pub quiet: bool,
+}
+
+/// An entry a plugin puts in the launcher.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct LaunchRow {
+    pub id: String,
+    pub label: String,
+    pub sub: String,
+    pub icon: String,
+    /// It takes what's typed: it shows for any search, and is told the words.
+    pub query: bool,
 }
 
 /// What a plugin shows on the panel, and in its menu.
@@ -237,7 +310,10 @@ pub struct Item {
     pub tooltip: String,
     pub state: State,
     pub hidden: bool,
+    /// A dot on the item: something wants attention.
+    pub badge: bool,
     pub menu: Vec<MenuRow>,
+    pub launcher: Vec<LaunchRow>,
     /// It stopped and couldn't be started again.
     pub failed: bool,
 }
@@ -294,7 +370,20 @@ pub fn take(item: &mut Item, text: &str, fresh: bool) -> Asks {
     }
     if let Some(rows) = v.get("menu").and_then(|x| x.as_array()) {
         let f = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-        item.menu = rows.iter().take(40).map(|r| MenuRow { id: f(r, "id"), label: f(r, "label"), sub: f(r, "sub") }).filter(|r| !r.label.is_empty()).collect();
+        let b = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_bool()).unwrap_or(false);
+        item.menu = rows
+            .iter()
+            .take(60)
+            .map(|r| MenuRow { id: f(r, "id"), label: f(r, "label"), sub: f(r, "sub"), heading: b(r, "heading"), icon: f(r, "icon"), mark: f(r, "mark").chars().next().map(|c| c.to_ascii_lowercase()).filter(|c| matches!(c, ' ' | '/' | 'x')), state: state(&f(r, "state")), quiet: b(r, "quiet") })
+            .filter(|r| !r.label.is_empty() || r.heading)
+            .collect();
+    }
+    if let Some(h) = v.get("badge").and_then(|x| x.as_bool()) {
+        item.badge = h;
+    }
+    if let Some(rows) = v.get("launcher").and_then(|x| x.as_array()) {
+        let f = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        item.launcher = rows.iter().take(12).map(|r| LaunchRow { id: f(r, "id"), label: f(r, "label"), sub: f(r, "sub"), icon: f(r, "icon"), query: r.get("query").and_then(|x| x.as_bool()).unwrap_or(false) }).filter(|r| !r.label.is_empty() && !r.id.is_empty()).collect();
     }
     if let Some(n) = v.get("notify") {
         let f = |k: &str| n.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
@@ -338,6 +427,10 @@ enum Tell {
 
 struct Running {
     manifest: Manifest,
+    /// Its settings as it was started with them.
+    set: Vec<(String, String)>,
+    /// Set when it's stopped: what it still says is dropped (another run may have its place).
+    retired: Arc<AtomicBool>,
     tx: Sender<Tell>,
 }
 
@@ -364,13 +457,14 @@ impl Plugins {
 
     /// Start the plugins turned on that aren't running, stop the ones turned off (or changed,
     /// or gone).
-    pub fn sync(&mut self, enabled: &[String]) {
+    pub fn sync(&mut self, enabled: &[String], values: &Values) {
         let found = if enabled.is_empty() { Vec::new() } else { found() };
         let want: Vec<&Manifest> = found.iter().filter(|m| enabled.contains(&m.id)).collect();
         let mut changed = false;
         self.running.retain(|r| {
-            let keep = want.iter().any(|m| **m == r.manifest);
+            let keep = want.iter().any(|m| **m == r.manifest && env_of(values, &m.id) == r.set);
             if !keep {
+                r.retired.store(true, Ordering::Relaxed);
                 let _ = r.tx.send(Tell::Stop);
                 changed = true;
             }
@@ -384,11 +478,13 @@ impl Plugins {
                 continue;
             }
             let (tx, rx) = mpsc::channel();
-            let shared = Shared { id: m.id.clone(), items: self.items.clone(), generation: self.generation.clone(), wake: self.wake.clone() };
+            let retired = Arc::new(AtomicBool::new(false));
+            let shared = Shared { id: m.id.clone(), items: self.items.clone(), generation: self.generation.clone(), wake: self.wake.clone(), retired: retired.clone() };
             shared.update(|it| it.name = m.name.clone());
-            let man = m.clone();
-            std::thread::spawn(move || if man.stream { stream(man, rx, shared) } else { poll(man, rx, shared) });
-            self.running.push(Running { manifest: m.clone(), tx });
+            let (man, set) = (m.clone(), env_of(values, &m.id));
+            let theirs = set.clone();
+            std::thread::spawn(move || if man.stream { stream(man, theirs, rx, shared) } else { poll(man, theirs, rx, shared) });
+            self.running.push(Running { manifest: m.clone(), set, retired, tx });
             changed = true;
         }
         if changed {
@@ -429,10 +525,14 @@ struct Shared {
     items: Arc<Mutex<Items>>,
     generation: Arc<AtomicU64>,
     wake: Arc<dyn Fn() + Send + Sync>,
+    retired: Arc<AtomicBool>,
 }
 
 impl Shared {
     fn update(&self, f: impl FnOnce(&mut Item)) {
+        if self.retired.load(Ordering::Relaxed) {
+            return;
+        }
         let changed = match self.items.lock() {
             Ok(mut items) => {
                 let at = match items.iter().position(|(i, _)| i == &self.id) {
@@ -472,6 +572,9 @@ impl Shared {
     }
 
     fn gone(&self) {
+        if self.retired.load(Ordering::Relaxed) {
+            return;
+        }
         if let Ok(mut items) = self.items.lock() {
             items.retain(|(i, _)| i != &self.id);
         }
@@ -481,10 +584,10 @@ impl Shared {
 }
 
 /// A poll plugin: run now, every `interval`, and for each event; what it prints is its item.
-fn poll(m: Manifest, rx: Receiver<Tell>, shared: Shared) {
+fn poll(m: Manifest, set: Vec<(String, String)>, rx: Receiver<Tell>, shared: Shared) {
     let mut ev = Event::new("start", &[]);
     loop {
-        let mut c = m.command();
+        let mut c = m.command(&set);
         c.envs(ev.env()).stdin(Stdio::null()).stderr(Stdio::inherit());
         match c.output() {
             Ok(out) => shared.said(&m.name, &String::from_utf8_lossy(&out.stdout), true),
@@ -504,7 +607,7 @@ fn poll(m: Manifest, rx: Receiver<Tell>, shared: Shared) {
 
 /// A stream plugin: kept running (started again when it stops, a few times a minute at
 /// most); each line it prints updates its item, and events are written to it.
-fn stream(m: Manifest, rx: Receiver<Tell>, shared: Shared) {
+fn stream(m: Manifest, set: Vec<(String, String)>, rx: Receiver<Tell>, shared: Shared) {
     let mut starts: Vec<Instant> = Vec::new();
     let shared = Arc::new(shared);
     'run: loop {
@@ -522,7 +625,7 @@ fn stream(m: Manifest, rx: Receiver<Tell>, shared: Shared) {
             }
         }
         starts.push(now);
-        let mut c = m.command();
+        let mut c = m.command(&set);
         c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit());
         let mut child = match c.spawn() {
             Ok(c) => c,
@@ -580,6 +683,24 @@ mod tests {
     /// Real programs: a poll plugin run for its start and for a click, a stream plugin told of
     /// an event it asked for, and both gone once turned off.
     #[test]
+    fn takes_settings_rows_and_launcher_entries() {
+        let m = Manifest::parse("notes", Path::new("/p/notes"), true, "name=Notes\nexec=rivet-notes shell-plugin\nsetting.vault=folder|Vault|The folder\nsetting.all=toggle|Every task\nsetting.bad key=text|x\nsetting.word=odd\n").unwrap();
+        assert_eq!(m.settings.iter().map(|s| (s.key.as_str(), s.kind, s.label.as_str(), s.hint.as_str())).collect::<Vec<_>>(), [("vault", SettingKind::Folder, "Vault", "The folder"), ("all", SettingKind::Toggle, "Every task", ""), ("word", SettingKind::Text, "word", "")]);
+        let values: Values = vec![("notes".into(), "vault".into(), "/v".into()), ("other".into(), "x".into(), "1".into())];
+        assert_eq!(env_of(&values, "notes"), [("RIVET_SET_VAULT".to_string(), "/v".to_string())]);
+        let mut it = Item::default();
+        take(&mut it, r#"{"badge":true,"menu":[{"heading":true,"label":"Tasks"},{"heading":true},{"id":"a","label":"Call","sub":"Today","mark":"/","state":"accent"},{"label":"Nothing","quiet":true},{"id":"x"}],"launcher":[{"id":"new","label":"New Note","query":true},{"label":"no id"}]}"#, false);
+        assert!(it.badge);
+        assert_eq!(it.menu.len(), 4);
+        assert!(it.menu[0].heading && it.menu[1].heading && it.menu[1].label.is_empty());
+        assert_eq!((it.menu[2].mark, it.menu[2].state, it.menu[3].quiet), (Some('/'), State::Accent, true));
+        assert_eq!(it.launcher, [LaunchRow { id: "new".into(), label: "New Note".into(), query: true, ..Default::default() }]);
+        // Left out later: kept.
+        take(&mut it, r#"{"text":"2"}"#, false);
+        assert!(it.badge && it.launcher.len() == 1);
+    }
+
+    #[test]
     fn runs_plugins() {
         use std::os::unix::fs::PermissionsExt;
         let root = std::env::temp_dir().join(format!("rivet-shell-plugins-{}", std::process::id()));
@@ -595,7 +716,8 @@ mod tests {
         // SAFETY: only this test reads the variable.
         unsafe { std::env::set_var("RIVET_SHELL_PLUGINS", &root) };
         let mut p = Plugins::new(|| {});
-        p.sync(&["poller".to_string(), "streamer".to_string(), "missing".to_string()]);
+        let none = Values::new();
+        p.sync(&["poller".to_string(), "streamer".to_string(), "missing".to_string()], &none);
         let wait = |p: &Plugins, id: &str, text: &str| {
             let end = Instant::now() + Duration::from_secs(5);
             while Instant::now() < end {
@@ -617,10 +739,18 @@ mod tests {
         assert!(wait(&p, "streamer", "locked"), "{:?}", p.get());
         assert_eq!(item(&p.get(), "streamer").map(|i| i.icon.clone()), Some("x".into()));
         assert_eq!(item(&p.get(), "poller").map(|i| i.text.clone()), Some("click left".into()));
+        // A setting of its own: in its environment, and it's run again when it changes.
+        make("asker", "name=Asker\nexec=./run.sh\ninterval=600\nsetting.place=folder|Place|Where\n", "#!/bin/sh\necho \"at $RIVET_SET_PLACE\"\n");
+        let on = ["poller".to_string(), "streamer".to_string(), "asker".to_string()];
+        p.sync(&on, &none);
+        assert!(wait(&p, "asker", "at"), "{:?}", p.get());
+        p.sync(&on, &vec![("asker".to_string(), "place".to_string(), "/tmp".to_string())]);
+        assert!(wait(&p, "asker", "at /tmp"), "{:?}", p.get());
+        assert_eq!(item(&p.get(), "streamer").map(|i| i.text.clone()), Some("locked".into()));
         // Turned off: stopped, and its item goes.
-        p.sync(&["poller".to_string()]);
+        p.sync(&["poller".to_string()], &none);
         assert!(item(&p.get(), "streamer").is_none());
-        p.sync(&[]);
+        p.sync(&[], &none);
         let end = Instant::now() + Duration::from_secs(5);
         while Instant::now() < end && !p.get().is_empty() {
             std::thread::sleep(Duration::from_millis(20));

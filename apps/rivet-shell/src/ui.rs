@@ -679,41 +679,105 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
 
 const PLUGIN_ROW: f32 = 44.0;
 
-fn plugin_menu_height(m: &Model, id: &str) -> f32 {
-    let rows = crate::plugins::item(&m.extra.plugins, id).map(|i| i.menu.len()).unwrap_or(0);
-    28.0 + 34.0 + rows.max(1) as f32 * (PLUGIN_ROW + 2.0)
+/// A menu row's height: a heading (a line, when it has no words), one line, or two.
+fn plugin_row_height(row: &crate::plugins::MenuRow) -> f32 {
+    match row {
+        r if r.heading && r.label.is_empty() => 11.0,
+        r if r.heading => 28.0,
+        r if r.sub.is_empty() => 34.0,
+        _ => PLUGIN_ROW,
+    }
 }
 
-/// A plugin's menu: its name, then the rows it gave; a click tells the plugin which.
-fn plugin_menu(ui: &mut egui::Ui, id: &str, m: &mut Model) {
+const PLUGIN_W: f32 = 340.0;
+
+fn plugin_menu_height(m: &Model, id: &str) -> f32 {
+    let rows = crate::plugins::item(&m.extra.plugins, id).map(|i| i.menu.iter().map(|r| plugin_row_height(r) + 2.0).sum::<f32>()).unwrap_or(0.0);
+    28.0 + 34.0 + rows.max(PLUGIN_ROW)
+}
+
+/// A plugin's menu: its name, then the rows it gave (headings, tasks' boxes, icons); a click
+/// tells the plugin which.
+fn plugin_menu(ui: &mut egui::Ui, id: &str, m: &mut Model, kit: &mut Kit) {
     let v = ui.visuals().clone();
     let Some(item) = crate::plugins::item(&m.extra.plugins, id).cloned() else {
         m.acts.push(Act::Close);
         return;
     };
+    let accent = kit.accent(m.s);
+    let sc = rivet_look::theme::status(ui.ctx());
     ui.spacing_mut().item_spacing.y = 2.0;
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), Sense::hover());
     ui.painter().text(Pos2::new(r.left() + 4.0, r.center().y - 2.0), Align2::LEFT_CENTER, &item.name, ui_font(14.5), v.strong_text_color());
-    if !item.text.is_empty() {
-        ui.painter().text(Pos2::new(r.right() - 4.0, r.center().y - 2.0), Align2::RIGHT_CENTER, &item.text, ui_font(12.5), v.weak_text_color());
+    if !item.tooltip.is_empty() || !item.text.is_empty() {
+        // What the item says, beside the name: its hover text when that's short, else its text.
+        let side = if !item.tooltip.is_empty() && item.tooltip.chars().count() <= 30 && !item.tooltip.starts_with(&item.name) { &item.tooltip } else { &item.text };
+        ui.painter().text(Pos2::new(r.right() - 4.0, r.center().y - 2.0), Align2::RIGHT_CENTER, side, ui_font(12.5), v.weak_text_color());
     }
     egui::ScrollArea::vertical().auto_shrink([false, true]).show(ui, |ui| {
         for row in &item.menu {
-            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), PLUGIN_ROW), Sense::click());
-            if resp.hovered() {
+            let h = plugin_row_height(row);
+            if row.heading {
+                let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
+                if row.label.is_empty() {
+                    ui.painter().line_segment([Pos2::new(r.left() + 4.0, r.center().y), Pos2::new(r.right() - 4.0, r.center().y)], Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.1)));
+                } else {
+                    ui.painter().text(Pos2::new(r.left() + 6.0, r.bottom() - 9.0), Align2::LEFT_CENTER, &row.label, ui_font(11.5), v.weak_text_color());
+                }
+                continue;
+            }
+            let acts = !row.id.is_empty();
+            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), if acts { Sense::click() } else { Sense::hover() });
+            if acts && resp.hovered() {
                 hover_fill(ui.painter(), r, &v);
             }
-            let p = ui.painter();
-            if row.sub.is_empty() {
-                let g = one_line(p, &row.label, ui_font(13.5), v.text_color(), r.width() - 20.0);
-                p.galley(Pos2::new(r.left() + 10.0, r.center().y - g.size().y / 2.0), g, v.text_color());
-            } else {
-                let g = one_line(p, &row.label, ui_font(13.5), v.text_color(), r.width() - 20.0);
-                p.galley(Pos2::new(r.left() + 10.0, r.top() + 5.0), g, v.text_color());
-                let g = one_line(p, &row.sub, ui_font(11.5), v.weak_text_color(), r.width() - 20.0);
-                p.galley(Pos2::new(r.left() + 10.0, r.top() + 24.0), g, v.weak_text_color());
+            let p = ui.painter().clone();
+            let mut x = r.left() + 10.0;
+            // What's before the words: a task's box, or an icon.
+            if let Some(mark) = row.mark {
+                let b = Rect::from_center_size(Pos2::new(x + 8.0, if row.sub.is_empty() { r.center().y } else { r.top() + 14.0 }), Vec2::splat(14.0));
+                let line = mix(v.panel_fill, v.text_color(), 0.55);
+                match mark {
+                    'x' => {
+                        p.rect_filled(b, 4.0, accent);
+                        let c = b.center();
+                        p.line(vec![c + Vec2::new(-3.5, 0.0), c + Vec2::new(-1.0, 2.5), c + Vec2::new(3.5, -2.5)], Stroke::new(1.6, v.panel_fill));
+                    }
+                    '/' => {
+                        p.rect_stroke(b, 4.0, Stroke::new(1.3, accent), egui::StrokeKind::Inside);
+                        p.rect_filled(Rect::from_min_max(Pos2::new(b.left() + 3.5, b.center().y - 1.0), Pos2::new(b.right() - 3.5, b.center().y + 1.0)), 1.0, accent);
+                    }
+                    _ => {
+                        p.rect_stroke(b, 4.0, Stroke::new(1.3, line), egui::StrokeKind::Inside);
+                    }
+                }
+                x += 26.0;
+            } else if !row.icon.is_empty() {
+                let ir = Rect::from_center_size(Pos2::new(x + 9.0, r.center().y), Vec2::splat(18.0));
+                if let Some(t) = kit.named_icon(ui.ctx(), &row.icon, 18.0) {
+                    p.image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                }
+                x += 28.0;
             }
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            let room = r.right() - 10.0 - x;
+            let main = if row.quiet { v.weak_text_color() } else { v.text_color() };
+            let size = if row.quiet { 12.5 } else { 13.5 };
+            if row.sub.is_empty() {
+                let g = one_line(&p, &row.label, ui_font(size), main, room);
+                p.galley(Pos2::new(x, r.center().y - g.size().y / 2.0), g, main);
+            } else {
+                let g = one_line(&p, &row.label, ui_font(size), main, room);
+                p.galley(Pos2::new(x, r.top() + 5.0), g, main);
+                let col = match row.state {
+                    crate::plugins::State::Normal => v.weak_text_color(),
+                    crate::plugins::State::Accent => accent,
+                    crate::plugins::State::Warning => sc.warning,
+                    crate::plugins::State::Danger => sc.danger,
+                };
+                let g = one_line(&p, &row.sub, ui_font(11.5), col, room);
+                p.galley(Pos2::new(x, r.top() + 24.0), g, col);
+            }
+            if acts && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                 m.acts.push(Act::Plugin(id.to_string(), crate::plugins::Event::new("menu", &[("id", &row.id)])));
                 m.acts.push(Act::Close);
             }
@@ -766,7 +830,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Notifications => Vec2::new(crate::notes_pop::WIDTH, crate::notes_pop::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
-        PopupKind::Plugin { id } => Vec2::new(300.0, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Plugin { id } => Vec2::new(PLUGIN_W, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::TrayMenu { path, .. } => Vec2::new(260.0, crate::tray_ui::menu_height(m, path).min(full.height() - inset - MARGIN - 8.0)),
     };
     let mut anchored = false;
@@ -861,7 +925,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Notifications => crate::notes_pop::popup(&mut child, m, kit),
         PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
         PopupKind::TrayMenu { key, path } => crate::tray_ui::menu(&mut child, key, path, m),
-        PopupKind::Plugin { id } => plugin_menu(&mut child, id, m),
+        PopupKind::Plugin { id } => plugin_menu(&mut child, id, m, kit),
     }
 }
 

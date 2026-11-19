@@ -1,7 +1,8 @@
 # Rivet Shell plugins and hooks
 
 A plugin is a folder with a `plugin.conf` and a program. The shell runs the program, shows what
-it says as an item on a panel (with a menu when it gives one), and tells it what happens.
+it says as an item on a panel (with a menu when it gives one), lists its entries in the launcher,
+shows its settings in Settings, and tells it what happens.
 Plugins are separate programs in any language: one that crashes or hangs can't take the shell
 with it.
 
@@ -45,9 +46,46 @@ A JSON object; every key is optional.
 | `tooltip` | Shown on hover |
 | `state` | `normal`, `accent`, `warning` or `danger`: the text's colour |
 | `hidden` | `true` takes the item off the panel for now |
-| `menu` | Rows shown when the item is clicked: `[{"id":"…","label":"…","sub":"…"}]` |
+| `badge` | `true` puts a dot on the item: something wants attention |
+| `menu` | Rows shown when the item is clicked: `[{"id":"…","label":"…","sub":"…"}]` (more below) |
+| `launcher` | Entries in the launcher: `[{"id":"…","label":"…","icon":"…","query":true}]` (more below) |
 | `notify` | A notification: `{"summary":"…","body":"…"}` |
 | `run` | A `rivet-shell msg` command for the shell: `"launcher"`, `"volume up"`, `"lock"`… |
+
+### Menu rows
+
+A row with an `id` can be clicked (the plugin is told: `menu`, with the `id`); one without is
+only shown. Besides `id`, `label` and `sub`:
+
+| Key | What |
+| --- | --- |
+| `heading` | `true`: a small title over the rows after it, or a line when it has no `label` |
+| `icon` | An icon before the label |
+| `mark` | A task's box before the label: `" "` to do, `"/"` started, `"x"` done |
+| `state` | The colour of `sub`: `normal`, `accent`, `warning`, `danger` |
+| `quiet` | `true`: in weaker text |
+
+### Launcher entries
+
+An entry shows in the launcher once something is typed that matches its `label`. With
+`"query": true` it also shows, last, for anything typed, as `label “the words”`. Choosing one
+tells the plugin: `launch`, with the entry's `id` and, for the second kind, the words as `query`.
+
+## Settings of its own
+
+A plugin asks for settings in its `plugin.conf`; they show under it in Settings, Plugins, while
+it's on:
+
+```ini
+setting.vault=folder|Vault|The folder of notes to show
+setting.label=text|Label|What to call it
+setting.all_tasks=toggle|Show every task
+```
+
+The kind (`folder`, `text` or `toggle`), then the label, then a hint. The program finds each in
+its environment as `RIVET_SET_` and the key in capitals (`RIVET_SET_VAULT=/home/me/Notes`; a
+toggle that's on is `true`; one never set is missing), and is started again when one changes.
+They're kept in the shell's settings file as `plugin.ID.KEY=value`.
 
 ## The two modes
 
@@ -79,6 +117,7 @@ Its own item's events, always:
 | `click` | `button`: `left`, `middle`, `right` |
 | `scroll` | `direction`: `up`, `down` |
 | `menu` | `id`: the row clicked |
+| `launch` | `id`: its launcher entry chosen; `query`: the words typed, or empty |
 
 The shell's events, when listed in `events=` (and for hooks):
 
@@ -112,9 +151,15 @@ hook.idle=[ "$RIVET_STAGE" = screen-off ] && openrgb --profile off
 
 Each is a shell line, run when its event happens.
 
-## An example
+## Examples
 
 `data/plugins/disk` (Disk Space) is a stream plugin in bash, about fifty lines: free space on
 the panel, turning orange and red as the disk fills; a menu of every disk, which opens the one
 clicked; one notification when it's nearly full; and a refresh when the screen is unlocked.
 Copy its folder into `~/.local/share/rivet-shell/plugins/` under another name to start your own.
+
+`data/plugins/notes` (Notes) is only a `plugin.conf`: its program is another app, Rivet Notes
+(`exec=rivet-notes shell-plugin`; a program beside the shell's own is found before the ones on
+`PATH`). It uses the rest of what's here: a setting for the vault, a menu with headings and
+tasks' boxes, a badge and a notification when something is due today, and a New Note entry in
+the launcher. Its source is `apps/rivet-notes/src/shell.rs`.

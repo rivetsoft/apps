@@ -6,13 +6,30 @@ use rivet_look::palette::mix;
 use rivet_look::theme::{r_md, r_sm};
 
 use super::{SettingsApp, grid, hint, section};
-use crate::plugins::{EVENTS, found_cached, user_dir};
+use crate::plugins::{EVENTS, SettingKind, found_cached, user_dir};
 
 impl SettingsApp {
     pub(super) fn plugins_page(&mut self, ui: &mut egui::Ui) {
         let v = ui.visuals().clone();
         let accent = v.selection.bg_fill;
         let found = found_cached();
+        // A folder chosen with the picker, for a plugin's setting.
+        if let Some((id, key, rx)) = &self.plugin_pick {
+            match rx.try_recv() {
+                Ok(answer) => {
+                    match answer {
+                        Ok(Some(p)) => self.s.set_plugin(&id.clone(), &key.clone(), &p.to_string_lossy()),
+                        Ok(None) => {}
+                        Err(e) => self.note = Some(format!("Couldn't open the file picker: {e}")),
+                    }
+                    self.plugin_pick = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(200)),
+                Err(_) => self.plugin_pick = None,
+            }
+        }
+        let can_pick = self.plugin_pick.is_none() && self.shot.is_none();
+        let mut ask: Option<(String, String, String)> = None;
         section(ui, "Installed", &mut |ui| {
             let s = &mut self.s;
             if found.is_empty() {
@@ -78,6 +95,43 @@ impl SettingsApp {
                             }
                         });
                     });
+                    // Its own settings, while it's on.
+                    if on && !m.settings.is_empty() {
+                        ui.add_space(8.0);
+                        ui.indent(("shell-plugin-set", &m.id), |ui| {
+                            grid(ui, &format!("shell-plugin-set-{}", m.id), &mut |ui| {
+                                for set in &m.settings {
+                                    let mut value = s.plugin_value(&m.id, &set.key).to_string();
+                                    let before = value.clone();
+                                    match set.kind {
+                                        SettingKind::Toggle => {
+                                            ui.label("");
+                                            let mut yes = value == "true";
+                                            ui.checkbox(&mut yes, &set.label).on_hover_text(&set.hint);
+                                            value = if yes { "true".into() } else { String::new() };
+                                        }
+                                        SettingKind::Text => {
+                                            ui.label(&set.label);
+                                            ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint));
+                                        }
+                                        SettingKind::Folder => {
+                                            ui.label(&set.label);
+                                            ui.horizontal(|ui| {
+                                                ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint));
+                                                if ui.add_enabled(can_pick, egui::Button::new("Choose…")).clicked() {
+                                                    ask = Some((m.id.clone(), set.key.clone(), set.label.clone()));
+                                                }
+                                            });
+                                        }
+                                    }
+                                    if value != before {
+                                        s.set_plugin(&m.id, &set.key, value.trim());
+                                    }
+                                    ui.end_row();
+                                }
+                            });
+                        });
+                    }
                 });
                 ui.add_space(4.0);
             }
@@ -91,6 +145,14 @@ impl SettingsApp {
             });
             hint(ui, "A plugin is a program that runs as you: turn on only ones you trust. Third-party plugins live in your plugins folder; official ones come with the shell.");
         });
+        if let Some((id, key, title)) = ask {
+            let start = Some(self.s.plugin_value(&id, &key)).filter(|v| !v.is_empty()).map(crate::wall::expand).or_else(|| Some(rivet_xdg::places::home()));
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let _ = tx.send(crate::portal::choose(crate::portal::Pick::Folder, &title, start.as_deref()));
+            });
+            self.plugin_pick = Some((id, key, rx));
+        }
         section(ui, "Hooks", &mut |ui| {
             hint(ui, "Your own commands, run when something happens. Each is a shell line; what comes with the event is in its environment (RIVET_EVENT, and the names shown on hover as RIVET_PATH, RIVET_STAGE…).");
             ui.add_space(8.0);

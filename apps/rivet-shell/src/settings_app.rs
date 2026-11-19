@@ -87,6 +87,8 @@ pub struct SettingsApp {
     picker: crate::wall_pick::Picker,
     /// The file picker's answer, on its way.
     picking: Option<Receiver<(crate::portal::Pick, Result<Option<PathBuf>, String>)>>,
+    /// A folder being chosen for a plugin's setting: (plugin, key), and the picker's answer.
+    plugin_pick: Option<(String, String, Receiver<Result<Option<PathBuf>, String>>)>,
     /// The screen pictures are being chosen for (none: every screen without its own).
     wall_screen: String,
     add_filter: String,
@@ -204,6 +206,11 @@ impl SettingsApp {
             if let Ok(g) = std::env::var("RIVET_SHELL_GROUPS") {
                 s.panels[0].groups = g.split(';').map(crate::panels::Group::parse).collect();
             }
+            // Checks: RIVET_SHELL_PLUGINS_ON=notes,disk turns those plugins on.
+            if let Ok(p) = std::env::var("RIVET_SHELL_PLUGINS_ON") {
+                s.plugins = p.split(',').map(String::from).collect();
+                s.set_plugin("notes", "vault", "~/Documents/Notes");
+            }
             // Checks: a look for the panels and dock (as in the settings file).
             if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
                 s.look = crate::style::Style::parse(&l, '=', ';');
@@ -228,6 +235,7 @@ impl SettingsApp {
             apps,
             picker: Default::default(),
             picking: None,
+            plugin_pick: None,
             wall_screen: std::env::var("RIVET_SHELL_WALL_SCREEN").ok().filter(|_| shot.is_some()).unwrap_or_default(),
             add_filter: String::new(),
             screens: if shot.is_some() { vec!["DP-1".into(), "HDMI-A-1".into()] } else { crate::sys::screens(crate::sys::Compositor::detect()) },

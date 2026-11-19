@@ -618,6 +618,13 @@ fn plugin_draw(ui: &mut egui::Ui, b: &mut Bar, pid: &str, r: Rect) {
             p.galley(Pos2::new(at, r.center().y - g.size().y / 2.0), g, col);
         }
     }
+    // Something wants attention: a dot at the icon's corner (the item's, when it has no icon).
+    if it.badge && !it.failed {
+        let c = if b.vert || text.is_empty() || icon.is_none() { Pos2::new(r.center().x + 7.0, r.center().y - 7.0) } else { Pos2::new(r.left() + PAD + ICON - 1.0, r.center().y - 7.0) };
+        let c = if icon.is_none() { Pos2::new(r.right() - 4.0, r.top() + 6.0) } else { c };
+        p.circle_filled(c, 4.0, b.v.panel_fill);
+        p.circle_filled(c, 3.0, b.accent);
+    }
     let tip = if it.failed { format!("{} stopped", it.name) } else if it.tooltip.is_empty() { it.name.clone() } else { it.tooltip.clone() };
     let has_menu = !it.menu.is_empty();
     let hovered = resp.hovered();

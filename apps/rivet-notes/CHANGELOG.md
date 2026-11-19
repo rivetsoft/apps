@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Rivet Shell's Notes plugin: open tasks and the latest notes on the panel, New Note in the
+  launcher, and a notice when something is due today (turn it on in the shell's Settings,
+  Plugins).
+- `rivet-notes FOLDER --note PATH` opens the window on a note, and `rivet-notes new [--vault
+  FOLDER] [TITLE]` makes a note and opens it.
+
 ## 0.2.0
 
 - Code blocks take Rivet's own code colors (a color for keywords, strings, numbers, functions

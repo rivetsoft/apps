@@ -18,3 +18,4 @@ rivet-look = { path = "../../crates/rivet-look" }
 rivet-xdg = { path = "../../crates/rivet-xdg" }
 chrono = "0.4.45"
 eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
+serde_json = "1.0.154"

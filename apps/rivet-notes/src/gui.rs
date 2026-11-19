@@ -264,7 +264,8 @@ impl NotesApp {
         if let Some(v) = start {
             app.open_vault(v);
         }
-        if let Ok(rel) = std::env::var("RIVET_NOTES_OPEN")
+        // A note to start on: `--note` on the command line (RIVET_NOTES_OPEN for checks).
+        if let Some(rel) = std::env::var("RIVET_NOTES_OPEN").ok().or_else(|| crate::START_NOTE.get().cloned())
             && let Some(v) = &app.vault
         {
             let p = v.join(rel);
@@ -577,16 +578,8 @@ impl NotesApp {
 
     pub(super) fn new_note(&mut self, folder: &str, title: &str) {
         let Some(v) = self.vault.clone() else { return };
-        let dir = v.join(folder);
-        let _ = std::fs::create_dir_all(&dir);
-        let path = vault::note_file(&dir, title);
-        let mut fm = Frontmatter::default();
-        fm.set("title", Value::Text(title.trim().to_string()));
-        fm.set("created", Value::Text(chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()));
-        fm.set("tags", Value::List(Vec::new()));
-        let text = vault::join(Some(&fm), "\n");
-        match std::fs::write(&path, text) {
-            Ok(()) => {
+        match vault::create_note(&v.join(folder), title) {
+            Ok(path) => {
                 self.rescan();
                 self.open_note(&path);
             }

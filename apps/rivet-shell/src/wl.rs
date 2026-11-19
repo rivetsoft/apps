@@ -332,7 +332,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     shell.set_notifications();
     shell.set_ai();
     shell.apply_comp();
-    shell.plugins.sync(&shell.s.plugins.clone());
+    shell.plugins.sync(&shell.s.plugins.clone(), &shell.s.plugin_set.clone());
     shell.event("start", &[]);
     let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle: LoopHandle<Shell> = event_loop.handle();
@@ -1129,8 +1129,8 @@ impl Shell {
         let pictures = old.wallpaper != s.wallpaper || old.wallpaper_screens != s.wallpaper_screens;
         let colours = old.matugen_picture() != s.matugen_picture() || old.color_mode != s.color_mode || old.scheme_type != s.scheme_type || old.matugen_contrast != s.matugen_contrast || (s.makes_colors() && !old.makes_colors());
         let panels_changed = old.panels != s.panels;
-        if old.plugins != s.plugins {
-            self.plugins.sync(&s.plugins);
+        if old.plugins != s.plugins || old.plugin_set != s.plugin_set {
+            self.plugins.sync(&s.plugins, &s.plugin_set);
         }
         if old.wallpaper != s.wallpaper {
             self.event("wallpaper", &[("path", &s.wallpaper)]);

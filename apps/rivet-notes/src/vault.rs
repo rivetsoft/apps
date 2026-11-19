@@ -360,6 +360,19 @@ pub fn note_file(dir: &Path, title: &str) -> PathBuf {
     p
 }
 
+/// Make a new, empty note called `title` in `dir`: its file, with the title, when it was made
+/// and no tags in its frontmatter.
+pub fn create_note(dir: &Path, title: &str) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(dir)?;
+    let path = note_file(dir, title);
+    let mut fm = Frontmatter::default();
+    fm.set("title", Value::Text(title.trim().to_string()));
+    fm.set("created", Value::Text(chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()));
+    fm.set("tags", Value::List(Vec::new()));
+    std::fs::write(&path, join(Some(&fm), "\n"))?;
+    Ok(path)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
