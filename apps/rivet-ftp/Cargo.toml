@@ -1,6 +1,6 @@
 [package]
 name = "rivet-ftp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "A dual-pane file-transfer client (SFTP, FTP, FTPS) for Linux, built on Rivet's core"

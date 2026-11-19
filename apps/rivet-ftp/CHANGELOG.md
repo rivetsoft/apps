@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - Rivet Shell's FTP plugin: your saved connections on the panel and in the launcher (`@ftp`),
   each opening a new window connected to it (turn it on in the shell's Settings, Plugins).
