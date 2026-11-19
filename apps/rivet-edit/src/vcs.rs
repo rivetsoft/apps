@@ -52,7 +52,7 @@ impl Op {
     /// What's happening, for the status bar ("Pushing…").
     pub fn doing(&self) -> &'static str {
         match self {
-            Op::Init(_) => "Making a repository…",
+            Op::Init(_) => "Creating a repository…",
             Op::Stage(_) | Op::StageAll => "Staging…",
             Op::Unstage(_) | Op::UnstageAll => "Unstaging…",
             Op::Discard { .. } => "Discarding changes…",
@@ -385,7 +385,7 @@ impl Git {
         if let Op::Init(dir) = &op {
             let dir = dir.clone();
             self.spawn(move || {
-                let r = Repo::init(&dir).map(|_| "Made a Git repository".to_string());
+                let r = Repo::init(&dir).map(|_| "Created a Git repository".to_string());
                 Done::Op(o, r)
             });
             // Look for it again once made.
@@ -453,7 +453,7 @@ fn run_op(repo: &Repo, op: &Op, branch: &rivet_git::Branch) -> rivet_git::Result
         }
         Op::UndoCommit => {
             repo.undo_commit()?;
-            "Undid the last commit; its changes are staged".into()
+            "Undid the last commit. Its changes are staged.".into()
         }
         Op::Checkout { name, remote } => {
             repo.checkout(name, *remote)?;
@@ -461,7 +461,7 @@ fn run_op(repo: &Repo, op: &Op, branch: &rivet_git::Branch) -> rivet_git::Result
         }
         Op::CreateBranch(name) => {
             repo.create_branch(name)?;
-            format!("Made the branch {name} and switched to it")
+            format!("Created branch {name} and switched to it")
         }
         Op::Fetch => {
             repo.fetch()?;

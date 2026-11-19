@@ -316,7 +316,7 @@ impl EditApp {
             ui.spacing_mut().item_spacing.x = 2.0;
             let changes = self.git.status.as_ref().map(|s| s.entries.len()).unwrap_or(0);
             let git_label = if changes > 0 { format!("GIT {changes}") } else { "GIT".to_string() };
-            for (side, label, tip) in [(editing::Side::Files, "FILES", "The folder's files"), (editing::Side::Search, "SEARCH", "Search the folder (Shift+Ctrl+F)"), (editing::Side::Git, git_label.as_str(), "Git: changes, commits and branches (Shift+Ctrl+G)")] {
+            for (side, label, tip) in [(editing::Side::Files, "FILES", "The folder's files"), (editing::Side::Search, "SEARCH", "Search the folder (Shift+Ctrl+F)"), (editing::Side::Git, git_label.as_str(), "Changes, commits and branches (Shift+Ctrl+G)")] {
                 let on = self.side == side;
                 let col = if on { v.text_color() } else { v.weak_text_color() };
                 let b = egui::Button::new(egui::RichText::new(label).font(fonts::ui_font(11.5)).strong().color(col)).frame_when_inactive(false).corner_radius(r_sm());
@@ -869,7 +869,7 @@ impl EditApp {
                 };
                 super::scm::glyph(ui.painter(), Rect::from_center_size(Pos2::new(r.left() + 11.0, r.center().y), Vec2::splat(12.0)), super::scm::Glyph::Branch, col);
                 ui.painter().galley(Pos2::new(r.left() + 22.0, r.center().y - g.size().y / 2.0), g, col);
-                if resp.on_hover_text("The Git branch: click to switch to another").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                if resp.on_hover_text("Current Git branch. Click to switch.").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     open_branches = true;
                 }
             }
@@ -890,20 +890,20 @@ impl EditApp {
                     }
                     if let Some((sum, errors)) = complete::diag_summary(&diags) {
                         let st = status(&ctx);
-                        ui.label(egui::RichText::new(sum).color(if errors { st.danger } else { st.warning })).on_hover_text("Point at a wavy line to read it");
+                        ui.label(egui::RichText::new(sum).color(if errors { st.danger } else { st.warning })).on_hover_text("Hover a wavy underline to read the problem");
                     }
                     // The language and the indentation: click either to change it.
                     let lang = crate::syntax::shown_name(&t.name(), &t.text, t.lang);
-                    let tip = if t.lang == crate::syntax::Pick::Auto { "Told from the file; click to choose another" } else { "Chosen by hand; click to change" };
+                    let tip = if t.lang == crate::syntax::Pick::Auto { "Detected from the file. Click to change." } else { "Set by you. Click to change." };
                     if status_button(ui, lang).on_hover_text(tip).clicked() {
                         open_quick = Some(quick::QuickKind::Language);
                     }
-                    if status_button(ui, &t.indent.label()).on_hover_text("Tabs or spaces, and how many; click to change").clicked() {
+                    if status_button(ui, &t.indent.label()).on_hover_text("Indentation for this file. Click to change.").clicked() {
                         open_quick = Some(quick::QuickKind::Indent);
                     }
                     ui.label(egui::RichText::new(format!("Ln {}, Col {}", t.line_col.0, t.line_col.1)).color(weak));
                     if t.sels.len() >= 2 {
-                        ui.label(egui::RichText::new(format!("{} cursors", t.sels.len())).color(weak)).on_hover_text("Esc goes back to one");
+                        ui.label(egui::RichText::new(format!("{} cursors", t.sels.len())).color(weak)).on_hover_text("Esc returns to one cursor");
                     }
                 }
             });
@@ -1137,7 +1137,7 @@ impl EditApp {
             match next.take().unwrap() {
                 Prompt::CloseTab(i) => {
                     let name = names.get(i).cloned().unwrap_or_default();
-                    title(ui, &format!("Save changes to {name}?"), "They'll be lost if you don't.");
+                    title(ui, &format!("Save changes to {name}?"), "Your changes will be lost if you don't save them.");
                     match buttons(ui, &["Save", "Don't Save", "Cancel"]) {
                         Some(0) => act = Some(Box::new(move |a: &mut EditApp| {
                             if a.save(i) {
@@ -1170,7 +1170,7 @@ impl EditApp {
                     }
                 }
                 Prompt::SaveAs { tab, mut path } => {
-                    title(ui, "Save As", "Where to save the new file (folders are made as needed).");
+                    title(ui, "Save As", "Type where to save it. Missing folders are created.");
                     let enter = field(ui, &mut path, "~/file.txt");
                     match buttons(ui, &["Save", "Cancel"]) {
                         Some(0) => act = Some(save_as(tab, path.clone())),
@@ -1181,7 +1181,7 @@ impl EditApp {
                     }
                 }
                 Prompt::ReplaceInFiles { matches, files } => {
-                    title(ui, &format!("Replace {matches} match{} in {files} file{}?", if matches == 1 { "" } else { "es" }, if files == 1 { "" } else { "s" }), "Files open in tabs change there (save them after); the others are saved straight away.");
+                    title(ui, &format!("Replace {matches} match{} in {files} file{}?", if matches == 1 { "" } else { "es" }, if files == 1 { "" } else { "s" }), "Open files change in their tabs, unsaved. Files that aren't open are saved right away.");
                     match buttons(ui, &["Replace", "Cancel"]) {
                         Some(0) => act = Some(Box::new(|a: &mut EditApp| a.replace_in_files())),
                         Some(_) => {}
@@ -1191,7 +1191,7 @@ impl EditApp {
                 }
                 Prompt::NewFile { folder, mut name } => {
                     let where_ = if folder.is_empty() { ws.clone() } else { format!("{ws}/{folder}") };
-                    title(ui, "New File", &format!("In {where_}. Type a path like src/new.rs to make folders too."));
+                    title(ui, "New File", &format!("In {where_}. Type a path like src/new.rs to create folders too."));
                     let enter = field(ui, &mut name, "name.rs");
                     match buttons(ui, &["Create", "Cancel"]) {
                         Some(0) => act = Some(new_file(folder.clone(), name.clone())),
@@ -1203,7 +1203,7 @@ impl EditApp {
                 }
                 Prompt::NewFolder { folder, mut name } => {
                     let where_ = if folder.is_empty() { ws.clone() } else { format!("{ws}/{folder}") };
-                    title(ui, "New Folder", &format!("In {where_}. Type a/b to make both."));
+                    title(ui, "New Folder", &format!("In {where_}. Type a/b to create both."));
                     let enter = field(ui, &mut name, "folder name");
                     let make = |folder: String, name: String| -> Act { Box::new(move |a: &mut EditApp| a.make_folder(&folder, &name)) };
                     match buttons(ui, &["Create", "Cancel"]) {
@@ -1215,7 +1215,7 @@ impl EditApp {
                     }
                 }
                 Prompt::Rename { rel, mut name } => {
-                    title(ui, "Rename", &format!("A new name for {rel}. Open tabs follow it."));
+                    title(ui, "Rename", &format!("A new name for {rel}. Tabs open on it keep working."));
                     let enter = field(ui, &mut name, "new name");
                     let go = |rel: String, name: String| -> Act { Box::new(move |a: &mut EditApp| a.rename_path(&rel, &name)) };
                     match buttons(ui, &["Rename", "Cancel"]) {
@@ -1230,10 +1230,10 @@ impl EditApp {
                     let all: Vec<&String> = tracked.iter().chain(&untracked).collect();
                     let name = |p: &String| p.rsplit('/').next().unwrap_or(p).to_string();
                     let (head, sub, yes) = match (tracked.len(), untracked.len()) {
-                        (1, 0) => (format!("Discard the changes to {}?", name(&tracked[0])), "It goes back to how it's staged. This can't be undone.".to_string(), "Discard Changes"),
-                        (0, 1) => (format!("Delete {}?", name(&untracked[0])), "It's new and not tracked by Git, so it can't be brought back.".to_string(), "Delete File"),
-                        (t, 0) => (format!("Discard the changes to {t} files?"), "They go back to how they're staged. This can't be undone.".to_string(), "Discard Changes"),
-                        (t, u) => (format!("Discard the changes to {} files?", all.len()), format!("{t} go back to how they're staged, and {u} new file{} deleted. This can't be undone.", if u == 1 { " is" } else { "s are" }), "Discard All"),
+                        (1, 0) => (format!("Discard the changes to {}?", name(&tracked[0])), "It goes back to its staged version. This can't be undone.".to_string(), "Discard Changes"),
+                        (0, 1) => (format!("Delete {}?", name(&untracked[0])), "Git doesn't track it yet, so it can't be recovered.".to_string(), "Delete File"),
+                        (t, 0) => (format!("Discard the changes to {t} files?"), "They go back to their staged versions. This can't be undone.".to_string(), "Discard Changes"),
+                        (t, u) => (format!("Discard the changes to {} files?", all.len()), format!("{t} go back to their staged versions and {u} new file{} deleted. This can't be undone.", if u == 1 { " is" } else { "s are" }), "Discard All"),
                     };
                     title(ui, &head, &sub);
                     match buttons(ui, &[yes, "Cancel"]) {
@@ -1247,7 +1247,7 @@ impl EditApp {
                 }
                 Prompt::Trash { rel, dir } => {
                     let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-                    title(ui, &format!("Move {name} to the Trash?"), if dir { "The folder and everything in it. You can bring it back from the Trash." } else { "You can bring it back from the Trash. A tab open on it closes." });
+                    title(ui, &format!("Move {name} to the Trash?"), if dir { "The folder and everything in it. You can restore it from the Trash." } else { "You can restore it from the Trash. Its tab, if open, closes." });
                     match buttons(ui, &["Move to Trash", "Cancel"]) {
                         Some(0) => {
                             let r = rel.clone();

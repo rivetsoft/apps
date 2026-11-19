@@ -185,11 +185,11 @@ impl EditApp {
             return;
         }
         let Some(repo) = self.git.repo.clone() else {
-            ui.label(small("This folder isn't in a Git repository."));
+            ui.label(small("This folder isn't a Git repository yet."));
             ui.add_space(8.0);
             let busy = self.git.running.is_some();
             let b = egui::Button::new(egui::RichText::new("Initialize Repository").color(v.selection.stroke.color)).fill(v.selection.bg_fill).corner_radius(r_sm()).min_size(Vec2::new(ui.available_width(), 28.0));
-            if ui.add_enabled(!busy && self.root.is_some(), b).on_hover_text("Run git init in the workspace folder").clicked()
+            if ui.add_enabled(!busy && self.root.is_some(), b).on_hover_text("Runs git init in this folder").clicked()
                 && let Some(r) = self.root.clone()
             {
                 self.git.run(Op::Init(r));
@@ -214,8 +214,8 @@ impl EditApp {
                 (true, a, b) => format!("  {}{}", if b > 0 { format!("↓{b} ") } else { String::new() }, if a > 0 { format!("↑{a}") } else { String::new() }),
             };
             let tip = match &st.branch.upstream {
-                Some(u) => format!("On {label}, following {u}. Click to switch branch"),
-                None => format!("On {label}, not published yet. Click to switch branch"),
+                Some(u) => format!("On {label}, tracking {u}. Click to switch branch."),
+                None => format!("On {label}, not pushed to a remote yet. Click to switch branch."),
             };
             let (r, resp) = ui.allocate_exact_size(Vec2::new((ui.available_width() - 52.0).max(60.0), 24.0), Sense::click());
             if resp.hovered() {
@@ -234,7 +234,7 @@ impl EditApp {
             let sync_tip = if self.git.syncing() {
                 "Working…".to_string()
             } else if st.branch.upstream.is_none() {
-                "Publish the branch (push it to the remote)".into()
+                "Publish: push this branch to the remote".into()
             } else {
                 format!("Sync: pull{}, then push{}", if st.branch.behind > 0 { format!(" {}", st.branch.behind) } else { String::new() }, if st.branch.ahead > 0 { format!(" {}", st.branch.ahead) } else { String::new() })
             };
@@ -289,7 +289,7 @@ impl EditApp {
             ask = Some(Ask::Commit);
         }
         let focused = ui.memory(|m| m.has_focus(mid));
-        let hint = if self.git.amend { "Message (empty keeps the last one)".to_string() } else { format!("Message (Ctrl+Enter to commit on {})", st.branch.label()) };
+        let hint = if self.git.amend { "Message (leave empty to keep the last one)".to_string() } else { format!("Message (Ctrl+Enter to commit on {})", st.branch.label()) };
         egui::Frame::NONE
             .fill(palette::mix(v.extreme_bg_color, v.text_color(), 0.05))
             .stroke(if focused { Stroke::new(1.3, v.selection.bg_fill) } else { Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color) })
@@ -313,11 +313,11 @@ impl EditApp {
         };
         let can = can && !busy && conflicts == 0 && (self.git.amend || !self.git.message.trim().is_empty());
         let tip = if conflicts > 0 {
-            "Settle the merge's conflicts first"
+            "Resolve the merge conflicts first"
         } else if staged_n == 0 && unstaged_n > 0 && !self.git.amend {
-            "Nothing is staged: this stages every change, then commits"
+            "Nothing is staged, so this stages every change, then commits"
         } else {
-            "Commit what's staged (Ctrl+Enter in the message)"
+            "Commits what's staged (Ctrl+Enter in the message)"
         };
         let fg = if can { v.selection.stroke.color } else { weak };
         let b = egui::Button::new(egui::RichText::new(label).color(fg).strong()).fill(if can { v.selection.bg_fill } else { palette::mix(v.panel_fill, v.text_color(), 0.06) }).corner_radius(r_sm()).min_size(Vec2::new(ui.available_width(), 28.0));
@@ -403,7 +403,7 @@ impl EditApp {
                             }
                         }
                         List::Conflicts => {
-                            if btn(ui, Glyph::Plus, "Mark all as settled (stage them)", "s") {
+                            if btn(ui, Glyph::Plus, "Mark all resolved (stages them)", "s") {
                                 ask = Some(Ask::Op(Op::Stage(st.conflicted().map(|e| e.path.clone()).collect())));
                             }
                         }
@@ -470,10 +470,10 @@ impl EditApp {
                                 }
                             }
                             List::Changes | List::Conflicts => {
-                                if btn(ui, Glyph::Plus, if list == List::Conflicts { "Mark as settled (stage it)" } else { "Stage" }, "s") {
+                                if btn(ui, Glyph::Plus, if list == List::Conflicts { "Mark resolved (stages it)" } else { "Stage" }, "s") {
                                     ask = Some(Ask::Op(Op::Stage(vec![e.path.clone()])));
                                 }
-                                if list == List::Changes && btn(ui, Glyph::Undo, if e.untracked() { "Delete this new file…" } else { "Discard changes…" }, "d") {
+                                if list == List::Changes && btn(ui, Glyph::Undo, if e.untracked() { "Delete this untracked file…" } else { "Discard changes…" }, "d") {
                                     let (t, u) = split(std::iter::once(e));
                                     ask = Some(Ask::Discard(t, u));
                                 }
@@ -561,7 +561,7 @@ impl EditApp {
     pub(crate) fn commit(&mut self) {
         let Some(st) = &self.git.status else { return };
         if st.conflicted().count() > 0 {
-            self.note = Some(("Settle the merge's conflicts first".into(), true));
+            self.note = Some(("Resolve the merge conflicts first".into(), true));
             return;
         }
         let amend = self.git.amend;
@@ -583,7 +583,7 @@ impl EditApp {
     /// The branch list (Switch Branch).
     pub(crate) fn open_branches(&mut self) {
         if self.git.repo.is_none() {
-            self.note = Some(("The workspace isn't in a Git repository".into(), true));
+            self.note = Some(("This folder isn't a Git repository".into(), true));
             return;
         }
         self.git.branches = None;
@@ -594,11 +594,11 @@ impl EditApp {
     /// Stage (or unstage) the open file as it is on disk.
     pub(crate) fn stage_open(&mut self, stage: bool) {
         let Some(rel) = self.tabs.get(self.active).and_then(|t| t.path.as_ref()).and_then(|p| self.git.rel(p)) else {
-            self.note = Some(("This file isn't in the workspace's Git repository".into(), true));
+            self.note = Some(("This file isn't in the folder's Git repository".into(), true));
             return;
         };
         if self.tabs.get(self.active).is_some_and(Tab::dirty) {
-            self.note = Some(("Staged as saved: the changes not saved yet aren't included".into(), false));
+            self.note = Some(("Staged the saved file. Unsaved edits aren't included.".into(), false));
         }
         self.git.run(if stage { Op::Stage(vec![rel]) } else { Op::Unstage(vec![rel]) });
     }
@@ -754,10 +754,10 @@ impl EditApp {
                             act = Some("prev");
                         }
                         ui.add_space(6.0);
-                        if ui.add(egui::Button::new("Revert").corner_radius(r_sm())).on_hover_text("Put these lines back as staged (Undo brings them back)").clicked() {
+                        if ui.add(egui::Button::new("Revert").corner_radius(r_sm())).on_hover_text("Restores the staged lines. Ctrl+Z undoes this.").clicked() {
                             act = Some("revert");
                         }
-                        if rel.is_some() && ui.add_enabled(self.git.running.is_none(), egui::Button::new("Stage").corner_radius(r_sm())).on_hover_text("Stage just this change").clicked() {
+                        if rel.is_some() && ui.add_enabled(self.git.running.is_none(), egui::Button::new("Stage").corner_radius(r_sm())).on_hover_text("Stages only this change").clicked() {
                             act = Some("stage");
                         }
                     });

@@ -53,6 +53,7 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("Open a folder", "Ctrl+O"),
             ("New file", "Ctrl+N"),
             ("Save", "Ctrl+S"),
+            ("Undo / redo", "Ctrl+Z / Shift+Ctrl+Z"),
             ("Close the tab", "Ctrl+W"),
             ("Go to a line", "Ctrl+G"),
             ("Go to Definition", "F12  or  Ctrl+click"),
@@ -89,6 +90,14 @@ const KEYS: &[(&str, &[(&str, &str)])] = &[
             ("New line below / above", "Ctrl+Enter / Shift+Ctrl+Enter"),
             ("Wrap long lines", "Alt+Z"),
             ("Suggestions", "Ctrl+Space"),
+        ],
+    ),
+    (
+        "Git",
+        &[
+            ("Git panel", "Shift+Ctrl+G"),
+            ("Commit (in the message)", "Ctrl+Enter"),
+            ("Next / previous change", "Alt+F5 / Shift+Alt+F5"),
         ],
     ),
     (
@@ -219,8 +228,8 @@ impl EditApp {
                                                     ui.label(egui::RichText::new(p.source_label()).small().color(weak)).on_hover_text(p.source.display().to_string());
                                                 });
                                             }
-                                            (None, true) => hint(ui, "No desktop color file was found, so the style and accent below are used."),
-                                            _ => hint(ui, "The style and accent below are used."),
+                                            (None, true) => hint(ui, "No desktop colors were found, so the style and accent below apply."),
+                                            _ => hint(ui, "The style and accent below apply."),
                                         }
                                     });
                                     let manual = rivet_look::palette::shown(pal.as_ref(), self.s.follow_desktop_colors).is_none();
@@ -268,7 +277,7 @@ impl EditApp {
                                         });
                                         if !manual {
                                             ui.add_space(10.0);
-                                            hint(ui, "Your desktop colors are in charge. Turn off Follow desktop colors to choose a style and accent here.");
+                                            hint(ui, "Set by your desktop colors. Turn off Follow desktop colors to choose your own.");
                                         }
                                     });
                                     section(ui, "Icons", &mut |ui| {
@@ -287,7 +296,7 @@ impl EditApp {
                                             ui.end_row();
                                         });
                                         ui.add_space(6.0);
-                                        hint(ui, "By type: Material Design Icons, a color for each kind of file, leaning a little toward your accent. Rivet's own icons take your accent color; the desktop's are the ones your other apps use.");
+                                        hint(ui, "By type gives each kind of file its own colored icon, tinted toward your accent. Desktop icon theme matches your other apps.");
                                     });
                                 }
                                 Page::Editor => {
@@ -316,7 +325,7 @@ impl EditApp {
                                             ui.end_row();
                                         });
                                         ui.add_space(6.0);
-                                        hint(ui, "Colors the code only; the tabs and sidebar keep the app's look. Shift+Ctrl+P, then Color Theme, tries them as you move through the list.");
+                                        hint(ui, "Changes only the code, not the tabs or sidebar. To preview themes live, press Shift+Ctrl+P and choose Color Theme.");
                                     });
                                     section(ui, "Text", &mut |ui| {
                                         grid(ui, "edit-text", &mut |ui| {
@@ -334,13 +343,13 @@ impl EditApp {
                                             ui.end_row();
                                             ui.label("Line height");
                                             ui.add(egui::Slider::new(&mut self.s.line_height, 1.0..=2.0).step_by(0.05).fixed_decimals(2).suffix("×"))
-                                                .on_hover_text("The space each line takes: 1.00 is as the font sets it, 1.50 half as much again");
+                                                .on_hover_text("1.00× is the font's own spacing; 1.50× adds half a line");
                                             ui.end_row();
                                         });
                                     });
                                     section(ui, "Indentation", &mut |ui| {
                                         ui.checkbox(&mut self.s.detect_indent, "Follow each file's own indentation");
-                                        hint(ui, "Tabs or spaces, and how many, told from the file when it's opened. The status bar shows it; click there to change one file's.");
+                                        hint(ui, "Matches tabs or spaces, and their width, to each file you open. Click the indentation in the status bar to change one file.");
                                         ui.add_space(10.0);
                                         grid(ui, "edit-indent", &mut |ui| {
                                             ui.label("Otherwise indent with");
@@ -360,14 +369,14 @@ impl EditApp {
                                     });
                                     section(ui, "Suggestions and errors", &mut |ui| {
                                         ui.checkbox(&mut self.s.autocomplete, "Suggest as you type");
-                                        hint(ui, "Ctrl+Space shows suggestions any time. Enter or Tab puts one in; Esc closes them.");
+                                        hint(ui, "Press Ctrl+Space for suggestions any time. Enter or Tab inserts one; Esc closes the list.");
                                         ui.add_space(8.0);
-                                        ui.checkbox(&mut self.s.lsp, "Use the language's server");
-                                        hint(ui, "Smarter suggestions, and errors underlined as you go, from the server installed for each language: rust-analyzer, clangd, pyright, typescript-language-server, gopls and others. Without one, suggestions come from the file's own words.");
+                                        ui.checkbox(&mut self.s.lsp, "Use language servers");
+                                        hint(ui, "Underlines errors and gives smarter suggestions, using each language's installed server (rust-analyzer, clangd, pyright, gopls…). Without one, suggestions come from words in the file.");
                                     });
                                     section(ui, "Keys", &mut |ui| {
                                         ui.checkbox(&mut self.s.vim_keys, "Vim keys");
-                                        hint(ui, "Normal, Insert and Visual modes: counts, d c y with motions and text objects (ciw, di( …), p, u, Ctrl+R, the . repeat, / ? n N * search, and :w :q :wq :s. The status bar shows the mode.");
+                                        hint(ui, "Normal, Insert and Visual modes, with counts, motions, text objects, the . repeat, search, and :w :q :s. The status bar shows the mode. The Keyboard page lists them all.");
                                     });
                                     section(ui, "Layout", &mut |ui| {
                                         ui.checkbox(&mut self.s.word_wrap, "Wrap long lines");
@@ -377,18 +386,18 @@ impl EditApp {
                                 Page::Window => {
                                     section(ui, "Show", &mut |ui| {
                                         ui.checkbox(&mut self.s.show_menubar, "Menu bar");
-                                        hint(ui, "Hidden, its menus fold into the menu button. Ctrl+M switches.");
+                                        hint(ui, "When off, the menus move into the menu button at the top left. Ctrl+M turns it on or off.");
                                         ui.add_space(6.0);
-                                        ui.checkbox(&mut self.s.show_sidebar, "Sidebar (files and search)");
-                                        hint(ui, "F9 switches.");
+                                        ui.checkbox(&mut self.s.show_sidebar, "Sidebar (files, search and Git)");
+                                        hint(ui, "F9 shows or hides it.");
                                         ui.add_space(6.0);
                                         ui.checkbox(&mut self.s.show_statusbar, "Status bar");
                                     });
                                     section(ui, "Recent folders and files", &mut |ui| {
                                         let n = self.s.recent.len();
                                         ui.horizontal(|ui| {
-                                            ui.label(if n == 0 { "None yet.".to_string() } else { format!("{n} remembered for the start page.") });
-                                            if n > 0 && ui.button("Forget Them").clicked() {
+                                            ui.label(if n == 0 { "None yet.".to_string() } else { format!("{n} shown on the start page.") });
+                                            if n > 0 && ui.button("Clear List").clicked() {
                                                 self.s.recent.clear();
                                             }
                                         });

@@ -685,7 +685,7 @@ impl EditApp {
             let now = mtime(p);
             if now != t.disk {
                 if t.dirty() {
-                    self.note = Some((format!("{} changed on disk; saving here will replace that", t.name()), true));
+                    self.note = Some((format!("{} changed on disk. Saving here will overwrite that change.", t.name()), true));
                     t.disk = now;
                 } else if let Ok(text) = workspace::read_text(p) {
                     t.text = text.clone();

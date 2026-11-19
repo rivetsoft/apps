@@ -295,7 +295,7 @@ impl EditApp {
             Cmd::Branches => self.open_branches(),
             Cmd::Git(op) => {
                 if !self.git.run(op) {
-                    self.note = Some(("Git is busy; try again when it's done".into(), true));
+                    self.note = Some(("Git is still working. Try again in a moment.".into(), true));
                 }
             }
             Cmd::Recent(p) => {
@@ -320,7 +320,7 @@ impl EditApp {
         if changed {
             t.preview = false;
         }
-        self.note = Some((if changed { format!("Indentation is now {}", if tabs { "tabs" } else { "spaces" }) } else { "The indentation was already like that".into() }, false));
+        self.note = Some((if changed { format!("Indentation is now {}", if tabs { "tabs" } else { "spaces" }) } else { "The indentation already matches".into() }, false));
     }
 
     /// Draw the open quick panel, if any, and act on what's chosen.
@@ -569,7 +569,7 @@ impl EditApp {
                 if create {
                     rows.push(QuickRow::Command { group: "New".into(), label: format!("Create Branch “{typed}” Here"), keys: String::new(), state: None });
                 }
-                let empty = if list.is_none() { "Reading the branches…" } else { "No matching branches; type a name to make one" };
+                let empty = if list.is_none() { "Reading the branches…" } else { "No matching branches. Type a name to create one." };
                 let text = QuickText { hint: "Switch to a branch, or type a new one's name…", empty, legend: "Enter switch   ·   Esc close" };
                 match panel.show(ctx, "edit-quick-branches", &rows, &text, search.as_ref()) {
                     Some(QuickEvent::Pick(i)) => {
