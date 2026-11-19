@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Faster drawing**: a full screen draws in about a third of the time, a whole row of text at
+  a time, with runs of one background as one rectangle. The screen is copied out quickly and
+  drawn after, so a program's output keeps streaming in while a frame is drawn (`cat` of a big
+  file finishes sooner).
+- Columns line up with the font's real advance, so long lines of text stay on the grid.
+- The scrollback marker and the bell flash show while a program hides the cursor.
+
 ## 0.1.0
 
 The first version.

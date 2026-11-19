@@ -76,14 +76,22 @@ struct Memo {
 
 /// The size of one cell for this font.
 pub fn cell_size(ctx: &egui::Context, font: &FontId) -> Vec2 {
-    let w = ctx.fonts_mut(|f| f.glyph_width(font, 'M'));
-    let h = ctx.fonts_mut(|f| f.row_height(font));
+    // The advance of a long line over its length, not one rounded glyph width: rows are laid
+    // out as whole lines of text, so the columns have to match where the glyphs really land.
+    const N: usize = 64;
+    let (w, h) = ctx.fonts_mut(|f| {
+        let g = f.layout_no_wrap("M".repeat(N), font.clone(), Color32::WHITE);
+        (g.size().x / N as f32, f.row_height(font))
+    });
     Vec2::new(w.max(1.0), h.ceil().max(1.0))
 }
 
 /// How many columns and lines fit in `rect`.
 pub fn fit(ctx: &egui::Context, style: &Style, rect: Rect) -> Size {
-    let c = cell_size(ctx, &style.font);
+    fit_cells(ctx, style, rect, cell_size(ctx, &style.font))
+}
+
+fn fit_cells(ctx: &egui::Context, style: &Style, rect: Rect, c: Vec2) -> Size {
     let inner = rect.shrink(style.padding);
     let ppp = ctx.pixels_per_point();
     Size {
@@ -303,7 +311,7 @@ pub fn show(ui: &mut egui::Ui, id: egui::Id, rect: Rect, session: &mut Session, 
     let cell = cell_size(&ctx, &style.font);
     let inner = rect.shrink(style.padding);
     // Fit the screen to the space.
-    let size = fit(&ctx, style, rect);
+    let size = fit_cells(&ctx, style, rect, cell);
     session.resize(size);
     if resp.clicked() || resp.drag_started() || resp.secondary_clicked() {
         resp.request_focus();
@@ -498,172 +506,289 @@ fn clear_selection_if_typing(session: &Session) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw(ui: &egui::Ui, rect: Rect, inner: Rect, cell: Vec2, session: &Session, style: &Style, focused: bool, link: Option<(usize, usize, usize)>, now: f64) {
-    let p = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+/// A stretch of one row: columns `a..b`.
+struct Span {
+    row: usize,
+    a: usize,
+    b: usize,
+    color: Color32,
+}
+
+/// Plain ASCII text along a row (spaces included), in sections of one colour and slant.
+struct Run {
+    row: usize,
+    col: usize,
+    /// The column after its last character.
+    end: usize,
+    text: String,
+    sections: Vec<(std::ops::Range<usize>, Color32, bool)>,
+    bold: bool,
+    /// Something drawn on its own came after it, so nothing more joins it.
+    closed: bool,
+}
+
+/// A wide or unusual character, centred in its cell(s).
+struct Glyph {
+    row: usize,
+    col: usize,
+    text: String,
+    fg: Color32,
+    wide: bool,
+}
+
+/// What's on screen, taken while the terminal is locked so it can be laid out and painted
+/// without holding up the reader thread (output keeps streaming in while a frame is drawn).
+struct Snapshot {
+    bg: Color32,
+    fills: Vec<Span>,
+    underlines: Vec<Span>,
+    doubles: Vec<Span>,
+    strikes: Vec<Span>,
+    runs: Vec<Run>,
+    glyphs: Vec<Glyph>,
+    offset: i32,
+    /// Row, column, character, its colour and background, wide.
+    cursor: Option<(usize, usize, char, Color32, Color32, bool)>,
+    cursor_shape: alacritty_terminal::vte::ansi::CursorShape,
+    history: usize,
+    screen_lines: usize,
+}
+
+/// Add columns `a..b` of `row` to the last span when they continue it in the same colour.
+fn extend(spans: &mut Vec<Span>, row: usize, a: usize, b: usize, color: Color32) {
+    if let Some(s) = spans.last_mut()
+        && s.row == row
+        && s.b == a
+        && s.color == color
+    {
+        s.b = b;
+    } else {
+        spans.push(Span { row, a, b, color });
+    }
+}
+
+fn snapshot(session: &Session, style: &Style) -> Snapshot {
+    use alacritty_terminal::vte::ansi::{Color, NamedColor};
     let c = &style.colors;
     let term = session.term.lock();
     let set = |k: usize| term.colors()[k];
     let content = term.renderable_content();
-    let bg = c.resolve(alacritty_terminal::vte::ansi::Color::Named(alacritty_terminal::vte::ansi::NamedColor::Background), &set);
-    p.rect_filled(rect, style.radius, bg);
+    let bg = c.resolve(Color::Named(NamedColor::Background), &set);
     let offset = content.display_offset as i32;
     let sel = content.selection;
-    let cursor = content.cursor;
+    let cur = content.cursor;
     let show_cursor = content.mode.contains(TermMode::SHOW_CURSOR) && offset == 0;
-    let font = &style.font;
-    let mut italic = font.clone();
-    italic.family = font.family.clone();
-    let x0 = inner.left();
-    // One run of text: consecutive cells with the same look.
-    struct Run {
-        row: usize,
-        col: usize,
-        text: String,
-        fg: Color32,
-        flags: Flags,
-    }
-    let mut runs: Vec<Run> = Vec::new();
-    let mut cursor_cell: Option<(usize, usize, char, Color32, Color32, bool)> = None;
+    let mut snap = Snapshot {
+        bg,
+        fills: Vec::new(),
+        underlines: Vec::new(),
+        doubles: Vec::new(),
+        strikes: Vec::new(),
+        runs: Vec::new(),
+        glyphs: Vec::new(),
+        offset,
+        cursor: None,
+        cursor_shape: cur.shape,
+        history: 0,
+        screen_lines: 0,
+    };
+    // A cell's colours (before the selection), from its own and its look.
+    let colors_of = |cfg: Color, cbg: Color, flags: Flags| {
+        let mut fg = c.resolve(cfg, &set);
+        let mut bg = c.resolve(cbg, &set);
+        if style.bold_is_bright
+            && flags.contains(Flags::BOLD)
+            && let Color::Named(n) = cfg
+            && (n as usize) < 8
+        {
+            fg = c.resolve(Color::Indexed(n as u8 + 8), &set);
+        }
+        if flags.contains(Flags::DIM) {
+            fg = mix(fg, bg, 0.4);
+        }
+        if flags.contains(Flags::INVERSE) {
+            std::mem::swap(&mut fg, &mut bg);
+        }
+        (fg, bg)
+    };
+    const LOOK: Flags = Flags::BOLD.union(Flags::DIM).union(Flags::INVERSE);
+    let (plain, blank) = (Color::Named(NamedColor::Foreground), Color::Named(NamedColor::Background));
+    let mut last = ((plain, blank, Flags::empty()), colors_of(plain, blank, Flags::empty()));
     for indexed in content.display_iter {
-        let cell_ref = indexed.cell;
-        let flags = cell_ref.flags;
-        if flags.contains(Flags::WIDE_CHAR_SPACER) || flags.contains(Flags::LEADING_WIDE_CHAR_SPACER) {
+        let cell = indexed.cell;
+        let flags = cell.flags;
+        if flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER) {
             continue;
         }
         let row = (indexed.point.line.0 + offset) as usize;
         let col = indexed.point.column.0;
-        let mut fg = c.resolve(cell_ref.fg, &set);
-        let mut cbg = c.resolve(cell_ref.bg, &set);
-        if style.bold_is_bright
-            && flags.contains(Flags::BOLD)
-            && let alacritty_terminal::vte::ansi::Color::Named(n) = cell_ref.fg
-            && (n as usize) < 8
-        {
-            fg = c.resolve(alacritty_terminal::vte::ansi::Color::Indexed(n as u8 + 8), &set);
-        }
-        if flags.contains(Flags::DIM) {
-            fg = mix(fg, cbg, 0.4);
-        }
-        if flags.contains(Flags::INVERSE) {
-            std::mem::swap(&mut fg, &mut cbg);
-        }
+        // Most of a screen is blank: nothing to draw there.
+        let ch = cell.c;
         let selected = sel.is_some_and(|s| s.contains(indexed.point));
+        if (ch == ' ' || ch == '\0') && cell.bg == blank && !selected && !flags.intersects(Flags::INVERSE | Flags::ALL_UNDERLINES) && !(show_cursor && cur.point == indexed.point) {
+            continue;
+        }
+        // Neighbouring cells mostly look the same: resolve their colours once.
+        let key = (cell.fg, cell.bg, flags & LOOK);
+        if last.0 != key {
+            last = (key, colors_of(cell.fg, cell.bg, flags));
+        }
+        let (fg, mut cbg) = last.1;
         if selected {
             cbg = c.selection;
         }
         let wide = flags.contains(Flags::WIDE_CHAR);
-        let w = if wide { 2.0 } else { 1.0 };
-        let pos = Pos2::new(x0 + col as f32 * cell.x, inner.top() + row as f32 * cell.y);
+        let end = col + if wide { 2 } else { 1 };
         if cbg != bg {
-            p.rect_filled(Rect::from_min_size(pos, Vec2::new(cell.x * w, cell.y)), 0.0, cbg);
+            extend(&mut snap.fills, row, col, end, cbg);
         }
-        let is_cursor = show_cursor && cursor.point.line == indexed.point.line && cursor.point.column == indexed.point.column;
-        if is_cursor {
-            cursor_cell = Some((row, col, cell_ref.c, fg, cbg, wide));
+        if show_cursor && cur.point == indexed.point {
+            snap.cursor = Some((row, col, cell.c, fg, cbg, wide));
         }
-        let ch = cell_ref.c;
-        if ch == ' ' || ch == '\0' || flags.contains(Flags::HIDDEN) {
-            // Underlines still show under spaces.
-            if flags.intersects(Flags::ALL_UNDERLINES) {
-                p.line_segment([pos + Vec2::new(0.0, cell.y - 1.5), pos + Vec2::new(cell.x * w, cell.y - 1.5)], Stroke::new(1.0, fg));
+        // Underlines show under spaces too.
+        if flags.intersects(Flags::ALL_UNDERLINES) {
+            extend(&mut snap.underlines, row, col, end, fg);
+            if flags.contains(Flags::DOUBLE_UNDERLINE) {
+                extend(&mut snap.doubles, row, col, end, fg);
             }
+        }
+        if ch == ' ' || ch == '\0' || flags.contains(Flags::HIDDEN) {
             continue;
         }
-        let mut s = String::new();
-        s.push(ch);
-        if let Some(z) = cell_ref.zerowidth() {
-            s.extend(z);
+        if flags.contains(Flags::STRIKEOUT) {
+            extend(&mut snap.strikes, row, col, end, fg);
         }
-        // Plain ASCII joins the run before it; anything else stands alone in its cell(s).
-        let keep = ch.is_ascii() && !wide && cell_ref.zerowidth().is_none();
-        if keep
-            && let Some(r) = runs.last_mut()
-            && r.row == row
-            && r.col + r.text.chars().count() == col
-            && r.fg == fg
-            && r.flags == flags
-            && r.text.is_ascii()
-        {
-            r.text.push(ch);
-            continue;
-        }
-        runs.push(Run { row, col, text: s, fg, flags });
-    }
-    for r in &runs {
-        let pos = Pos2::new(x0 + r.col as f32 * cell.x, inner.top() + r.row as f32 * cell.y);
-        let n = r.text.chars().count();
-        if r.text.is_ascii() {
-            let fmt = egui::TextFormat { font_id: font.clone(), color: r.fg, italics: r.flags.contains(Flags::ITALIC), ..Default::default() };
-            let job = egui::text::LayoutJob::single_section(r.text.clone(), fmt);
-            let g = p.layout_job(job);
-            p.galley(pos, g.clone(), r.fg);
-            if r.flags.contains(Flags::BOLD) {
-                p.galley(pos + Vec2::new(0.55, 0.0), g, r.fg);
+        let zerowidth = cell.zerowidth();
+        let bold = flags.contains(Flags::BOLD);
+        let italic = flags.contains(Flags::ITALIC);
+        if ch.is_ascii() && !wide && zerowidth.is_none() {
+            // Plain ASCII joins the row's run (across the blanks since it), else starts one.
+            let run = match snap.runs.last_mut() {
+                Some(r) if r.row == row && !r.closed && r.bold == bold && r.end <= col => r,
+                _ => {
+                    snap.runs.push(Run { row, col, end: col, text: String::new(), sections: Vec::new(), bold, closed: false });
+                    snap.runs.last_mut().unwrap()
+                }
+            };
+            for _ in run.end..col {
+                run.text.push(' ');
+            }
+            let at = run.text.len();
+            run.text.push(ch);
+            run.end = col + 1;
+            match run.sections.last_mut() {
+                Some((range, f, i)) if *f == fg && *i == italic => range.end = run.text.len(),
+                Some((range, ..)) => {
+                    // The blanks before it belong to the section before.
+                    range.end = at;
+                    run.sections.push((at..run.text.len(), fg, italic));
+                }
+                None => run.sections.push((0..run.text.len(), fg, italic)),
             }
         } else {
-            // A wide or unusual character: centred in its cells.
-            let w = if r.flags.contains(Flags::WIDE_CHAR) { 2.0 } else { 1.0 };
-            p.text(pos + Vec2::new(cell.x * w / 2.0, cell.y / 2.0), Align2::CENTER_CENTER, &r.text, font.clone(), r.fg);
-        }
-        let width = if r.text.is_ascii() { n as f32 } else if r.flags.contains(Flags::WIDE_CHAR) { 2.0 } else { 1.0 } * cell.x;
-        if r.flags.intersects(Flags::ALL_UNDERLINES) {
-            let y = pos.y + cell.y - 1.5;
-            p.line_segment([Pos2::new(pos.x, y), Pos2::new(pos.x + width, y)], Stroke::new(1.0, r.fg));
-            if r.flags.contains(Flags::DOUBLE_UNDERLINE) {
-                p.line_segment([Pos2::new(pos.x, y - 2.5), Pos2::new(pos.x + width, y - 2.5)], Stroke::new(1.0, r.fg));
+            // A wide or unusual character stands alone in its cell(s).
+            if let Some(r) = snap.runs.last_mut()
+                && r.row == row
+            {
+                r.closed = true;
             }
-        }
-        if r.flags.contains(Flags::STRIKEOUT) {
-            let y = pos.y + cell.y * 0.55;
-            p.line_segment([Pos2::new(pos.x, y), Pos2::new(pos.x + width, y)], Stroke::new(1.0, r.fg));
+            let mut text = String::new();
+            text.push(ch);
+            if let Some(z) = zerowidth {
+                text.extend(z);
+            }
+            snap.glyphs.push(Glyph { row, col, text, fg, wide });
         }
     }
+    if show_cursor && snap.cursor.is_none() {
+        snap.cursor = Some(((cur.point.line.0 + offset).max(0) as usize, cur.point.column.0, ' ', c.fg, bg, false));
+    }
+    snap.history = term.grid().history_size();
+    snap.screen_lines = term.grid().screen_lines();
+    snap
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw(ui: &egui::Ui, rect: Rect, inner: Rect, cell: Vec2, session: &Session, style: &Style, focused: bool, link: Option<(usize, usize, usize)>, now: f64) {
+    let snap = snapshot(session, style);
+    let p = ui.painter().with_clip_rect(rect.intersect(ui.clip_rect()));
+    let c = &style.colors;
+    let bg = snap.bg;
+    let font = &style.font;
+    let (x0, y0) = (inner.left(), inner.top());
+    let at = |row: usize, col: usize| Pos2::new(x0 + col as f32 * cell.x, y0 + row as f32 * cell.y);
+    p.rect_filled(rect, style.radius, bg);
+    for s in &snap.fills {
+        p.rect_filled(Rect::from_min_max(at(s.row, s.a), at(s.row + 1, s.b)), 0.0, s.color);
+    }
+    for r in snap.runs {
+        let pos = at(r.row, r.col);
+        let mut job = egui::text::LayoutJob { text: r.text, ..Default::default() };
+        for (range, color, italics) in r.sections {
+            job.sections.push(egui::text::LayoutSection { leading_space: 0.0, byte_range: range.start.into()..range.end.into(), format: egui::TextFormat { font_id: font.clone(), color, italics, ..Default::default() } });
+        }
+        let g = p.layout_job(job);
+        if r.bold {
+            p.galley(pos + Vec2::new(0.55, 0.0), g.clone(), c.fg);
+        }
+        p.galley(pos, g, c.fg);
+    }
+    for g in snap.glyphs {
+        let w = if g.wide { 2.0 } else { 1.0 };
+        p.text(at(g.row, g.col) + Vec2::new(cell.x * w / 2.0, cell.y / 2.0), Align2::CENTER_CENTER, g.text, font.clone(), g.fg);
+    }
+    let line = |spans: &[Span], dy: f32| {
+        for s in spans {
+            let y = y0 + s.row as f32 * cell.y + dy;
+            p.line_segment([Pos2::new(x0 + s.a as f32 * cell.x, y), Pos2::new(x0 + s.b as f32 * cell.x, y)], Stroke::new(1.0, s.color));
+        }
+    };
+    line(&snap.underlines, cell.y - 1.5);
+    line(&snap.doubles, cell.y - 4.0);
+    line(&snap.strikes, cell.y * 0.55);
     // The link under the pointer (Ctrl held).
     if let Some((row, a, b)) = link {
-        let y = inner.top() + (row as f32 + 1.0) * cell.y - 1.0;
+        let y = y0 + (row as f32 + 1.0) * cell.y - 1.0;
         p.line_segment([Pos2::new(x0 + a as f32 * cell.x, y), Pos2::new(x0 + b as f32 * cell.x, y)], Stroke::new(1.2, c.cursor));
     }
     // The cursor: solid when focused, an outline when not.
-    if show_cursor {
-        let (row, col, ch, fg, cbg, wide) = cursor_cell.unwrap_or(((cursor.point.line.0 + offset).max(0) as usize, cursor.point.column.0, ' ', c.fg, bg, false));
-        let pos = Pos2::new(x0 + col as f32 * cell.x, inner.top() + row as f32 * cell.y);
+    if let Some((row, col, ch, fg, cbg, wide)) = snap.cursor {
+        let pos = at(row, col);
         let w = if wide { cell.x * 2.0 } else { cell.x };
         let r = Rect::from_min_size(pos, Vec2::new(w, cell.y));
-        let shape = match cursor.shape {
-            alacritty_terminal::vte::ansi::CursorShape::Beam => CursorStyle::Beam,
-            alacritty_terminal::vte::ansi::CursorShape::Underline => CursorStyle::Underline,
-            alacritty_terminal::vte::ansi::CursorShape::Hidden => {
-                drop(term);
-                return;
-            }
-            _ => style.cursor,
+        let shape = match snap.cursor_shape {
+            alacritty_terminal::vte::ansi::CursorShape::Beam => Some(CursorStyle::Beam),
+            alacritty_terminal::vte::ansi::CursorShape::Underline => Some(CursorStyle::Underline),
+            alacritty_terminal::vte::ansi::CursorShape::Hidden => None,
+            _ => Some(style.cursor),
         };
-        if !focused {
-            p.rect_stroke(r.shrink(0.5), 1.0, Stroke::new(1.0, c.cursor), egui::StrokeKind::Inside);
-        } else {
-            match shape {
-                CursorStyle::Block => {
-                    p.rect_filled(r, 1.0, c.cursor);
-                    if ch != ' ' && ch != '\0' {
-                        let on = if rivet_look::palette::luminance(c.cursor) > 0.55 { mix(cbg, Color32::BLACK, 0.6) } else { mix(fg, Color32::WHITE, 0.6) };
-                        p.text(r.center(), Align2::CENTER_CENTER, ch, font.clone(), on);
-                    }
+        match shape {
+            None => {}
+            Some(_) if !focused => {
+                p.rect_stroke(r.shrink(0.5), 1.0, Stroke::new(1.0, c.cursor), egui::StrokeKind::Inside);
+            }
+            Some(CursorStyle::Block) => {
+                p.rect_filled(r, 1.0, c.cursor);
+                if ch != ' ' && ch != '\0' {
+                    let on = if rivet_look::palette::luminance(c.cursor) > 0.55 { mix(cbg, Color32::BLACK, 0.6) } else { mix(fg, Color32::WHITE, 0.6) };
+                    p.text(r.center(), Align2::CENTER_CENTER, ch, font.clone(), on);
                 }
-                CursorStyle::Beam => {
-                    p.rect_filled(Rect::from_min_size(pos, Vec2::new(2.0, cell.y)), 0.0, c.cursor);
-                }
-                CursorStyle::Underline => {
-                    p.rect_filled(Rect::from_min_size(pos + Vec2::new(0.0, cell.y - 2.0), Vec2::new(w, 2.0)), 0.0, c.cursor);
-                }
+            }
+            Some(CursorStyle::Beam) => {
+                p.rect_filled(Rect::from_min_size(pos, Vec2::new(2.0, cell.y)), 0.0, c.cursor);
+            }
+            Some(CursorStyle::Underline) => {
+                p.rect_filled(Rect::from_min_size(pos + Vec2::new(0.0, cell.y - 2.0), Vec2::new(w, 2.0)), 0.0, c.cursor);
             }
         }
     }
     // Scrolled back: where in the history, on the right edge.
+    let offset = snap.offset;
     if offset > 0 {
-        let total = term.grid().history_size() as f32 + term.grid().screen_lines() as f32;
-        let h = (term.grid().screen_lines() as f32 / total * rect.height()).max(24.0);
-        let top = rect.top() + (1.0 - (offset as f32 + term.grid().screen_lines() as f32) / total) * (rect.height() - h).max(0.0) / (1.0 - term.grid().screen_lines() as f32 / total).max(0.001);
+        let lines = snap.screen_lines as f32;
+        let total = snap.history as f32 + lines;
+        let h = (lines / total * rect.height()).max(24.0);
+        let top = rect.top() + (1.0 - (offset as f32 + lines) / total) * (rect.height() - h).max(0.0) / (1.0 - lines / total).max(0.001);
         p.rect_filled(Rect::from_min_size(Pos2::new(rect.right() - 5.0, top.clamp(rect.top(), rect.bottom() - h)), Vec2::new(3.0, h)), 2.0, mix(bg, c.fg, 0.35));
         let label = format!("↑ {offset}");
         p.text(Pos2::new(rect.right() - 12.0, rect.top() + 8.0), Align2::RIGHT_TOP, label, FontId::proportional(11.0), mix(bg, c.fg, 0.55));
