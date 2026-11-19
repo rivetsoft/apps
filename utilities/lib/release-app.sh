@@ -6,7 +6,7 @@
 #   utilities/rivet-dev release notes --publish  the same, then send the code and the tag to GitHub
 #                                                and create a GitHub pre-release with the files
 #
-# The archive holds the program (linked for an old glibc, so it runs on older systems too), its
+# Also an AppImage of the same program. The archive holds the program (linked for an old glibc, so it runs on older systems too), its
 # desktop file and icon, README, CHANGELOG, licenses, and install.sh. These apps are released as
 # GitHub pre-releases, so the repository's "latest release" stays Rivet Files'.
 set -e
@@ -19,6 +19,7 @@ VERSION=$(app_version)
 ARCH=$(uname -m)
 NAME="$DIST_NAME-$VERSION-$ARCH-linux"
 TAG="$TAG_PREFIX$VERSION"
+APPIMAGE="$(echo "$TITLE" | tr ' ' _)-$VERSION-$ARCH.AppImage"
 
 if [ -n "$(git status --porcelain)" ]; then
     echo "Commit your changes first (the release is built from the current commit)." >&2
@@ -37,7 +38,7 @@ HEAD_COMMIT=$(git rev-parse HEAD)
 check_tag || { echo "Run utilities/rivet-dev bump $APP_ID, then this again." >&2; exit 1; }
 NOTES="dist/notes-$DIST_NAME-$VERSION.md"
 if [ -n "$RESUME" ]; then
-    if [ ! -f "dist/$NAME.tar.gz" ] || [ ! -f "$NOTES" ]; then
+    if [ ! -f "dist/$NAME.tar.gz" ] || [ ! -f "dist/$APPIMAGE" ] || [ ! -f "$NOTES" ]; then
         echo "$TAG is already made, but its files aren't in dist/ any more." >&2
         echo "Rebuild them from the tag (git checkout $TAG; utilities/rivet-dev release $APP_ID; git checkout main), then run this again." >&2
         exit 1
@@ -61,6 +62,8 @@ chmod +x "$STAGE/install.sh"
 tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
 rm -rf "$STAGE"
 (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
+# The same program as one AppImage file (nothing to install).
+sh ./utilities/lib/appimage.sh "$APP_ID"
 
 awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "$NOTES"
 if [ -n "$STABLE" ]; then ALPHA=; else ALPHA="
@@ -70,6 +73,15 @@ cat >> "$NOTES" <<EOF
 
 ### Install
 $ALPHA
+**AppImage (one file, nothing to install):** download \`$APPIMAGE\`, then
+
+\`\`\`sh
+chmod +x $APPIMAGE
+./$APPIMAGE
+\`\`\`
+
+**Archive:** download \`$NAME.tar.gz\`, then:
+
 \`\`\`sh
 tar xzf $NAME.tar.gz
 cd $NAME
@@ -80,7 +92,7 @@ Portable $ARCH build, linked against glibc $GLIBC_LINK_VERSION. Or build from so
 EOF
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$TITLE $VERSION"
-echo "Built dist/$NAME.tar.gz, tagged $TAG."
+echo "Built dist/$NAME.tar.gz and dist/$APPIMAGE, tagged $TAG."
 fi
 
 if [ "$1" = "--publish" ]; then
@@ -90,7 +102,7 @@ if [ "$1" = "--publish" ]; then
     else
         # A full release or a pre-release (STABLE, in apps.sh); never "latest" (Rivet Files').
         if [ -n "$STABLE" ]; then PRE=--prerelease=false; else PRE=--prerelease; fi
-        gh release create "$TAG" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
+        gh release create "$TAG" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" "dist/$APPIMAGE" "dist/$APPIMAGE.sha256" \
             --title "$TITLE $VERSION" --notes-file "$NOTES" "$PRE" --latest=false
     fi
     gh release view "$TAG" --json url -q .url

@@ -25,8 +25,8 @@ Releasing
                                    Set the app's next version; "## Unreleased" in its
                                    CHANGELOG.md becomes its section; commits the release
   release [APP]                    Build the app's downloads in dist/ and tag it — on this
-                                   computer only, nothing goes online (Rivet Files: tarball +
-                                   AppImage; the others: a tarball)
+                                   computer only, nothing goes online (a tarball and an
+                                   AppImage, for every app)
   release [APP] --publish          The same, then send code + tag to GitHub and create the
                                    GitHub release with the files (Edit, Terminal and Notes as
                                    full releases, FTP and Welcome as pre-releases; "latest
@@ -41,7 +41,8 @@ Releasing
   aur-bump X.Y.Z                   Update the AUR PKGBUILDs for a published release
 
 Building
-  appimage                         dist/Rivet_Files-VERSION-ARCH.AppImage (needs squashfs-tools)
+  appimage [APP]                   dist/Rivet_Files-VERSION-ARCH.AppImage, or that app's (needs
+                                   squashfs-tools)
   portable                         Release binary linked against glibc 2.31 (via Zig)
   portable-bin                     Print the path of that binary
   check-glibc --max V FILE…        Fail if FILE needs a GLIBC symbol newer than V
