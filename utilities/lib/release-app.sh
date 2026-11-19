@@ -63,12 +63,13 @@ rm -rf "$STAGE"
 (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
 
 awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "$NOTES"
+if [ -n "$STABLE" ]; then ALPHA=; else ALPHA="
+$TITLE is an early alpha: keep backups of what you use it with.
+"; fi
 cat >> "$NOTES" <<EOF
 
 ### Install
-
-$TITLE is an early alpha: keep backups of what you use it with.
-
+$ALPHA
 \`\`\`sh
 tar xzf $NAME.tar.gz
 cd $NAME
@@ -87,8 +88,10 @@ if [ "$1" = "--publish" ]; then
     if github_release_exists; then
         echo "GitHub already has the $TAG release."
     else
+        # A full release or a pre-release (STABLE, in apps.sh); never "latest" (Rivet Files').
+        if [ -n "$STABLE" ]; then PRE=--prerelease=false; else PRE=--prerelease; fi
         gh release create "$TAG" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
-            --title "$TITLE $VERSION" --notes-file "$NOTES" --prerelease --latest=false
+            --title "$TITLE $VERSION" --notes-file "$NOTES" "$PRE" --latest=false
     fi
     gh release view "$TAG" --json url -q .url
 fi

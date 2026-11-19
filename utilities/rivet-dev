@@ -28,8 +28,9 @@ Releasing
                                    computer only, nothing goes online (Rivet Files: tarball +
                                    AppImage; the others: a tarball)
   release [APP] --publish          The same, then send code + tag to GitHub and create the
-                                   GitHub release with the files (the others as pre-releases,
-                                   so "latest release" stays Rivet Files')
+                                   GitHub release with the files (Edit, Terminal and Notes as
+                                   full releases, FTP and Welcome as pre-releases; "latest
+                                   release" stays Rivet Files')
   release-all [--publish] [--dry-run] [--yes] [--only edit,terminal] [--no-checks]
                                    Every app one at a time: shows its state, skips it when
                                    nothing changed, asks release / skip / stop, then runs its

@@ -9,17 +9,20 @@
 # Rivet Files keeps plain vX.Y.Z tags so its downloads, Flatpak and AUR packages carry on.
 
 app_select() {
+    # STABLE=1: published as a full release, not a pre-release (Rivet Welcome badges
+    # pre-releases "Alpha"). Rivet Files is always "latest"; the others never are.
+    STABLE=
     case "${1:-files}" in
         files | rivet-files | rivet)
             APP_ID=files APP=apps/rivet-files PKG=rivet BIN=rivet TITLE="Rivet Files" TAG_PREFIX=v DIST_NAME=rivet-files ;;
         ftp | rivet-ftp)
             APP_ID=ftp APP=apps/rivet-ftp PKG=rivet-ftp BIN=rivet-ftp TITLE="Rivet FTP" TAG_PREFIX=rivet-ftp-v DIST_NAME=rivet-ftp ;;
         notes | rivet-notes)
-            APP_ID=notes APP=apps/rivet-notes PKG=rivet-notes BIN=rivet-notes TITLE="Rivet Notes" TAG_PREFIX=rivet-notes-v DIST_NAME=rivet-notes ;;
+            APP_ID=notes APP=apps/rivet-notes PKG=rivet-notes BIN=rivet-notes TITLE="Rivet Notes" TAG_PREFIX=rivet-notes-v DIST_NAME=rivet-notes STABLE=1 ;;
         edit | rivet-edit)
-            APP_ID=edit APP=apps/rivet-edit PKG=rivet-edit BIN=rivet-edit TITLE="Rivet Edit" TAG_PREFIX=rivet-edit-v DIST_NAME=rivet-edit ;;
+            APP_ID=edit APP=apps/rivet-edit PKG=rivet-edit BIN=rivet-edit TITLE="Rivet Edit" TAG_PREFIX=rivet-edit-v DIST_NAME=rivet-edit STABLE=1 ;;
         terminal | term | rivet-terminal)
-            APP_ID=terminal APP=apps/rivet-terminal PKG=rivet-terminal BIN=rivet-terminal TITLE="Rivet Terminal" TAG_PREFIX=rivet-terminal-v DIST_NAME=rivet-terminal ;;
+            APP_ID=terminal APP=apps/rivet-terminal PKG=rivet-terminal BIN=rivet-terminal TITLE="Rivet Terminal" TAG_PREFIX=rivet-terminal-v DIST_NAME=rivet-terminal STABLE=1 ;;
         welcome | rivet-welcome)
             APP_ID=welcome APP=apps/rivet-welcome PKG=rivet-welcome BIN=rivet-welcome TITLE="Rivet Welcome" TAG_PREFIX=rivet-welcome-v DIST_NAME=rivet-welcome ;;
         *)
