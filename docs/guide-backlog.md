@@ -36,6 +36,19 @@ icon, a menu and launcher entries), and it hears about clicks and the hook event
 settings and a launcher command (`@name`). Disk Space, Notes and FTP come with the shell as
 examples to copy.
 
+### Plugins: getting more
+
+From `settings_app/plugins.rs`, the Get Plugins window ("Other people make third-party plugins. A
+plugin can do anything you can, so turn on only ones you trust.").
+
+The list is `plugins/registry.json` in Rivet's repository. Each listing names one archive and its
+checksum, and the shell refuses a download that doesn't match, so what is installed is the file
+that was read when the listing was accepted. Installing copies the plugin into
+`~/.local/share/rivet-shell/plugins/`; it runs only once it's turned on. Remove deletes that folder
+and keeps the plugin's settings. View Source opens the plugin's own page. A plugin that isn't in
+the list can be installed from a terminal (`rivet-shell plugin install FILE`), with no checksum
+to check it against. `apps/rivet-shell/PLUGINS.md` has how to share one.
+
 ### Panels: zones
 
 From `settings_app/panel_editor.rs`.

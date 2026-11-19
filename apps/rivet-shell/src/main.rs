@@ -24,6 +24,7 @@ mod media_pop;
 mod notes;
 mod notes_pop;
 mod panels;
+mod plugin_store;
 mod plugins;
 mod polkit;
 mod portal;
@@ -54,6 +55,10 @@ Usage:
   rivet-shell colors PICTURE        Make the desktop's colors from a picture with matugen
   rivet-shell palette [NAME|none]   Use a built-in palette for the colors instead (no name:
                                     list them)
+  rivet-shell plugin list|available|install NAME|remove NAME
+                                    Plugins from other people: the ones installed, the ones
+                                    shared, and adding or removing one. install also takes a
+                                    .tar.gz, a plugin's folder or an address
   rivet-shell ai                    AI plan usage, as the panel's AI item reads it
   rivet-shell lock                  Lock the screen (the shell does this itself when idle
                                     and before sleep); --preview shows it without locking
@@ -146,6 +151,68 @@ fn settings_window(screenshot: Option<PathBuf>) -> ExitCode {
             eprintln!("rivet-shell: couldn't open the settings window: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+/// `rivet-shell plugin …`: the plugins installed and shared, and adding or removing one.
+fn plugin_command(args: &[String]) -> ExitCode {
+    let fail = |e: String| {
+        eprintln!("rivet-shell: {e}");
+        ExitCode::FAILURE
+    };
+    let on = config::Settings::load().plugins;
+    match (args.first().map(String::as_str), args.get(1)) {
+        (Some("list"), _) => {
+            for m in plugins::found() {
+                let from = if m.official { "official" } else { "third-party" };
+                println!("{:<14} {:<20} {:<12} {}", m.id, m.name, from, if on.contains(&m.id) { "on" } else { "off" });
+            }
+            ExitCode::SUCCESS
+        }
+        (Some("available"), _) => match plugin_store::fetch() {
+            Ok(list) => {
+                let have = plugins::found();
+                for l in &list {
+                    let mark = if have.iter().any(|m| m.id == l.id) { "  (installed)" } else { "" };
+                    println!("{:<14} {:<20} {:<8} {}{mark}", l.id, l.name, l.version, l.description);
+                }
+                if list.is_empty() {
+                    println!("No plugins are shared yet.");
+                }
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(e),
+        },
+        (Some("install"), Some(what)) => {
+            // A name from the list, else a file, a folder or an address.
+            let local = what.contains('/') || what.contains('.') || std::path::Path::new(what).exists();
+            let done = if local {
+                plugin_store::install_from(what)
+            } else {
+                plugin_store::fetch().and_then(|list| match list.iter().find(|l| &l.id == what) {
+                    Some(l) => plugin_store::install(l),
+                    None => Err(format!("no plugin called {what} is shared (see rivet-shell plugin available)")),
+                })
+            };
+            match done {
+                Ok(m) => {
+                    let _ = ipc::send("changed");
+                    let next = if on.contains(&m.id) { "" } else { " Turn it on in Settings, Plugins." };
+                    println!("Installed {} in {}.{next}", m.name, m.dir.display());
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(e),
+            }
+        }
+        (Some("remove"), Some(id)) => match plugin_store::remove(id) {
+            Ok(()) => {
+                let _ = ipc::send("changed");
+                println!("Removed {id}.");
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail(e),
+        },
+        _ => fail("plugin what? (list, available, install NAME, remove NAME)".into()),
     }
 }
 
@@ -257,6 +324,7 @@ fn main() -> ExitCode {
             let _ = ipc::send("changed");
             ExitCode::SUCCESS
         }
+        Some("plugin") => plugin_command(&args[1..]),
         Some("msg") => {
             let line = args[1..].join(" ");
             if line.is_empty() {

@@ -256,9 +256,17 @@ pub fn found() -> Vec<Manifest> {
     out
 }
 
+static CACHE: Mutex<Option<(Instant, Vec<Manifest>)>> = Mutex::new(None);
+
+/// Read the folders again next time: a plugin was installed or removed.
+pub fn forget_found() {
+    if let Ok(mut c) = CACHE.lock() {
+        *c = None;
+    }
+}
+
 /// `found`, read at most every couple of seconds (for what's drawn every frame).
 pub fn found_cached() -> Vec<Manifest> {
-    static CACHE: Mutex<Option<(Instant, Vec<Manifest>)>> = Mutex::new(None);
     let Ok(mut c) = CACHE.lock() else { return found() };
     match &*c {
         Some((at, list)) if at.elapsed() < Duration::from_secs(2) => list.clone(),

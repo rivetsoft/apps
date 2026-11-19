@@ -105,6 +105,8 @@ the crate. A piece that is still written as part of one app's window needs lifti
   window (`rivet-notes FOLDER --note PATH`, `rivet-ftp open NAME`). Read PLUGINS.md before
   adding a capability, and add it to the API for every plugin rather than special-casing one
   app.
+  Plugins from other people are listed in `plugins/registry.json`, which the shell
+  (`src/plugin_store.rs`) and the website both read; a listing is added by pull request.
 - **Messages to the shell.** `rivet-shell msg COMMAND` talks to the running shell over a
   socket (`launcher`, `lock`, `volume up`, `reload`…). Compositor key bindings use it, and so
   do plugins (`"run"`). The Settings window is a separate process (`rivet-shell settings`) that

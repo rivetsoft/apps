@@ -14,7 +14,7 @@ happens (Settings, Plugins, Hooks).
 | Folder | What |
 | --- | --- |
 | `PREFIX/share/rivet-shell/plugins/NAME/` (beside the program, and each of `$XDG_DATA_DIRS`) | Official: they come with the shell |
-| `~/.local/share/rivet-shell/plugins/NAME/` | Third-party: yours, or ones you installed |
+| `~/.local/share/rivet-shell/plugins/NAME/` | Third-party: yours, or ones you installed (see Installing one) |
 | `$RIVET_SHELL_PLUGINS/NAME/` | While you write one |
 
 The folder's name is the plugin's id. A plugin does nothing until it's turned on in Settings,
@@ -146,6 +146,62 @@ The shell's events, when listed in `events=` (and for hooks):
 In the environment (poll plugins, hooks) each comes as `RIVET_` and its name in capitals:
 `RIVET_EVENT=idle RIVET_STAGE=screen-off`. Every plugin also gets `RIVET_PLUGIN` (its id) and
 `RIVET_PLUGIN_DIR` (its folder).
+
+## Installing one
+
+In Settings, Plugins, Get Plugins lists every plugin: the ones that come with the shell and the
+ones other people have shared, with a switch between the two. Install puts a shared one in your
+plugins folder, and it stays off until you turn it on. One you installed has Remove
+and, when the list has a newer version, Update. From a terminal:
+
+```sh
+rivet-shell plugin available            # the shared plugins
+rivet-shell plugin install weather      # one of them, by its id
+rivet-shell plugin install ./weather-1.0.tar.gz   # or an archive, a plugin's folder, or an address
+rivet-shell plugin list                 # what's installed, and whether it's on
+rivet-shell plugin remove weather
+```
+
+Removing a plugin deletes its folder and keeps your settings for it.
+
+## Sharing a plugin
+
+The list is [`plugins/registry.json`](../../plugins/registry.json) in Rivet's repository. To add
+a plugin, open a pull request that adds a listing:
+
+```json
+{
+  "id": "weather",
+  "name": "Weather",
+  "description": "Today's forecast on the panel, and the week in its menu.",
+  "author": "Your Name",
+  "homepage": "https://github.com/you/rivet-weather",
+  "version": "1.0",
+  "download": "https://github.com/you/rivet-weather/releases/download/v1.0/weather-1.0.tar.gz",
+  "sha256": "the archive's SHA-256, as sha256sum prints it"
+}
+```
+
+- `id` is the folder the plugin is installed as: small letters, digits, `-` and `_`. It can't be
+  the id of a plugin that comes with the shell.
+- `download` is an `https` address of a `.tar.gz` holding the plugin's folder (or its files at
+  the top), with `plugin.conf` in it. Point it at a file that never changes, such as a release
+  asset or a tagged archive, since the shell refuses a download that doesn't match `sha256`.
+- `version` is the same text as `version=` in the plugin's `plugin.conf`. The shell offers an
+  update when the two differ.
+- `homepage` is where the source can be read.
+- Links inside the archive may only point inside the plugin's own folder.
+
+A listing names one exact file, so what people install is the file that was read when the pull
+request was accepted. A new version is another pull request that changes `version`, `download`
+and `sha256`.
+
+To try a listing before proposing it, point the shell at a list of your own; a list read from a
+file may name archives on your computer with `file://`:
+
+```sh
+RIVET_SHELL_REGISTRY=./my-registry.json rivet-shell plugin install weather
+```
 
 ## Hooks
 

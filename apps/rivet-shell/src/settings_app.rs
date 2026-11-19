@@ -91,6 +91,7 @@ pub struct SettingsApp {
     /// A folder being chosen for a plugin's setting: (plugin, key), and the picker's answer.
     #[allow(clippy::type_complexity)]
     plugin_pick: Option<(String, String, Receiver<Result<Option<PathBuf>, String>>)>,
+    store: plugins::Store,
     /// The screen pictures are being chosen for (none: every screen without its own).
     wall_screen: String,
     add_filter: String,
@@ -250,6 +251,8 @@ impl SettingsApp {
             picker: Default::default(),
             picking: None,
             plugin_pick: None,
+            // Checks: RIVET_SHELL_PLUGIN_REMOVING=ID shows the question Remove asks.
+            store: plugins::Store::asking(std::env::var("RIVET_SHELL_PLUGIN_REMOVING").ok().filter(|_| shot.is_some())),
             wall_screen: std::env::var("RIVET_SHELL_WALL_SCREEN").ok().filter(|_| shot.is_some()).unwrap_or_default(),
             add_filter: String::new(),
             screens: if shot.is_some() { vec!["DP-1".into(), "HDMI-A-1".into()] } else { crate::sys::screens(crate::sys::Compositor::detect()) },
@@ -471,6 +474,9 @@ impl eframe::App for SettingsApp {
                 });
             });
         });
+        if self.page == Page::Plugins {
+            self.plugin_overlay(&ctx);
+        }
         if self.s != before {
             self.s.save();
             self.s_mtime = crate::config::mtime();

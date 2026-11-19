@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Plugins from other people: Get Plugins, on Settings' Plugins page, lists the ones that have
+  been shared beside the shell's own, and installs and updates them. One you install stays off
+  until you turn it on, and has Remove on the page. `rivet-shell plugin` does the same from a
+  terminal.
 - Settings: text fields, slider tracks, buttons and switches now stand out from their card in
   every color scheme, and Remove Panel is an outlined button instead of bright red text.
 - Lighter on the computer. The shell used to start six small programs every second to ask
