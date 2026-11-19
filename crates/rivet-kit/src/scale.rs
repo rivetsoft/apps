@@ -14,7 +14,7 @@ pub fn cover_bgra(rgba: Vec<u8>, iw: u32, ih: u32, w: u32, h: u32) -> Option<Vec
     let how = fr::ResizeOptions::new().resize_alg(fr::ResizeAlg::Convolution(fr::FilterType::Bilinear)).fit_into_destination(Some((0.5, 0.5))).use_alpha(false);
     fr::Resizer::new().resize(&src, &mut dst, &how).ok()?;
     let mut out = dst.into_vec();
-    for p in out.chunks_exact_mut(4) {
+    for p in out.as_chunks_mut::<4>().0 {
         p.swap(0, 2);
         p[3] = 255;
     }

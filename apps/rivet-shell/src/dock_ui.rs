@@ -35,6 +35,7 @@ pub fn width(items: &Icons) -> Option<f32> {
 }
 
 /// Draw it in `r`. `popup` makes an app's menu, opening under the panel at `x`.
+#[allow(clippy::too_many_arguments)]
 pub fn draw(ui: &mut egui::Ui, r: Rect, idx: usize, m: &Model, items: &Icons, accent: Color32, hover_r: f32, popup: &dyn Fn(PopupKind, f32) -> Act, acts: &mut Vec<Act>) {
     let v = ui.visuals().clone();
     let p = ui.painter().clone();

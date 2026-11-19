@@ -256,6 +256,7 @@ fn level_w(b: &Bar, show: Show, icon_w: f32, text: &str) -> f32 {
 
 /// Draw a level item in `r`: its symbol (`icon_w` wide, drawn by `icon` around the point given)
 /// and its percent.
+#[allow(clippy::too_many_arguments)]
 fn level(p: &egui::Painter, r: Rect, down: bool, show: Show, icon_w: f32, text: &str, col: Color32, icon: impl FnOnce(Pos2)) {
     let cy = r.center().y;
     if down {
@@ -480,6 +481,7 @@ fn layout(ui: &mut egui::Ui, b: &mut Bar, cfg: &PanelCfg, bar: Rect) {
             x += w + gap;
         }
         // Each run of a group's items: its background, then the items in its colours.
+        #[allow(clippy::type_complexity)]
         let mut runs: Vec<(std::ops::Range<usize>, Option<usize>, Option<Rect>, [bool; 2])> = Vec::new();
         let mut k = 0;
         while k < cells.len() {

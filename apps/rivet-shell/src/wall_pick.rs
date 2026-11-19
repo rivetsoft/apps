@@ -62,6 +62,7 @@ impl Picker {
 
     /// The chooser: the folder's row, what's in it, and the pictures (in a scrolling area at
     /// most `max_h` tall). `now` is the picture showing; `can_ask`: the desktop's picker is free.
+    #[allow(clippy::too_many_arguments)]
     pub fn ui(&mut self, ui: &mut egui::Ui, dir: &Path, recent: &[String], now: &str, accent: Color32, can_ask: bool, max_h: f32) -> Out {
         let mut out = Out::default();
         let weak = ui.visuals().weak_text_color();

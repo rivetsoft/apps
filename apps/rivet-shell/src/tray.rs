@@ -451,7 +451,7 @@ fn pixmap(v: &Value) -> Option<Pixmap> {
     let (w, h, px) = best?;
     let bytes: Vec<u8> = px.iter().map(|b| if let Value::U8(b) = b { *b } else { 0 }).collect();
     let mut rgba = Vec::with_capacity(bytes.len());
-    for p in bytes.chunks_exact(4) {
+    for p in bytes.as_chunks::<4>().0 {
         rgba.extend_from_slice(&[p[1], p[2], p[3], p[0]]);
     }
     Some(Pixmap { w: w as usize, h: h as usize, rgba: Arc::new(rgba) })
@@ -596,6 +596,7 @@ fn read_menu(conn: &Connection, key: &str) -> Option<Vec<MenuItem>> {
     let path = menu_path(conn, key)?;
     let _ = conn.call_method(Some(name), path.as_str(), Some(MENU), "AboutToShow", &(0i32,));
     let m = conn.call_method(Some(name), path.as_str(), Some(MENU), "GetLayout", &(0i32, -1i32, Vec::<String>::new())).ok()?;
+    #[allow(clippy::type_complexity)]
     let (_rev, (_id, _props, kids)): (u32, (i32, HashMap<String, OwnedValue>, Vec<OwnedValue>)) = m.body().deserialize().ok()?;
     Some(kids.iter().filter_map(|k| menu_item(k)).collect())
 }

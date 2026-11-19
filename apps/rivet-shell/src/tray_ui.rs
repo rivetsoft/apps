@@ -65,6 +65,7 @@ pub fn texture(kit: &mut Kit, ctx: &egui::Context, it: &TrayItem, mask: bool) ->
 
 /// The panel's tray in `r`: one slot per icon. Click: the app's window (or its menu, for items
 /// that are only a menu); right click: its menu; middle click: its second action; scroll: sent on.
+#[allow(clippy::too_many_arguments)]
 pub fn draw(ui: &mut egui::Ui, r: Rect, down: bool, idx: usize, m: &Model, tex: &[(String, Option<egui::TextureHandle>)], tint: Color32, accent: Color32, hover_r: f32, popup: &dyn Fn(String, f32) -> Act, acts: &mut Vec<Act>) {
     let v = ui.visuals().clone();
     let p = ui.painter().clone();

@@ -312,6 +312,7 @@ pub struct Gallery {
     /// The folder and its folders' modified times when last listed.
     stamp: Vec<(PathBuf, Option<SystemTime>)>,
     pictures: Vec<Picture>,
+    #[allow(clippy::type_complexity)]
     listing: Option<Receiver<(PathBuf, Vec<Picture>, Vec<(PathBuf, Option<SystemTime>)>)>>,
     /// Whether the folder has been listed at least once (vs. still being read).
     listed: bool,

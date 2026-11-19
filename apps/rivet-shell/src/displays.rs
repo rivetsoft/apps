@@ -160,7 +160,7 @@ fn from_hyprland(text: &str) -> Result<Vec<Output>, String> {
     Ok(v.as_array()
         .ok_or("Hyprland's monitors couldn't be read")?
         .iter()
-        .filter_map(|o| {
+        .map(|o| {
             let name = text_of(o, "name");
             let current = Mode { w: num(o, "width") as u32, h: num(o, "height") as u32, mhz: (num(o, "refreshRate") * 1000.0).round() as u32 };
             // "2560x1440@59.95Hz".
@@ -177,7 +177,7 @@ fn from_hyprland(text: &str) -> Result<Vec<Output>, String> {
             // The nearest listed mode to the one running (Hyprland rounds the rate).
             let mode = modes.iter().copied().filter(|m| (m.w, m.h) == (current.w, current.h)).min_by_key(|m| m.mhz.abs_diff(current.mhz));
             let now = Display { name: name.clone(), on, mode: mode.filter(|_| on), scale: (num(o, "scale") as f32).max(0.25), pos: (num(o, "x") as i32, num(o, "y") as i32), rotate: (t % 4) * 90, flip: t >= 4, vrr: o.get("vrr").and_then(|x| x.as_bool()).unwrap_or(false) };
-            Some(Output { name, what: format!("{} {}", text_of(o, "make"), text_of(o, "model")).trim().to_string(), preferred: modes[0], modes, vrr_supported: true, now })
+            Output { name, what: format!("{} {}", text_of(o, "make"), text_of(o, "model")).trim().to_string(), preferred: modes[0], modes, vrr_supported: true, now }
         })
         .collect())
 }
