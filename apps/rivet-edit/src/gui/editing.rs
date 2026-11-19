@@ -33,6 +33,7 @@ pub(crate) enum Side {
     #[default]
     Files,
     Search,
+    Git,
 }
 
 /// A finished workspace search: the files with matches and whether it stopped at the limit.

@@ -10,6 +10,7 @@ mod editing;
 mod navigate;
 mod prefs;
 mod quick;
+mod scm;
 mod treemenu;
 mod vimkeys;
 
@@ -54,6 +55,8 @@ pub(crate) struct Tab {
     pub indent: crate::ops::Indent,
     /// Undo and redo.
     pub hist: crate::history::History,
+    /// Its changes against the staged copy, for the gutter.
+    pub gutter: crate::vcs::Gutter,
 }
 
 impl Tab {
@@ -98,6 +101,8 @@ pub(crate) enum Prompt {
     Trash { rel: String, dir: bool },
     /// Replace the workspace search's matches in every file.
     ReplaceInFiles { matches: usize, files: usize },
+    /// Discard changes to tracked files and delete new ones (paths in the repository).
+    Discard { tracked: Vec<String>, untracked: Vec<String> },
 }
 
 pub struct EditApp {
@@ -170,6 +175,10 @@ pub struct EditApp {
     allow_close: bool,
     /// A scheme shown while the theme list is open (before it's chosen).
     pub(crate) scheme_preview: Option<String>,
+    /// The workspace's Git repository: status, staged copies, commands running.
+    pub(crate) git: crate::vcs::Git,
+    /// The box open on one change in the gutter.
+    pub(crate) peek: Option<scm::Peek>,
 }
 
 /// Start the window on these: folders (the first is the workspace) and files.
@@ -266,7 +275,11 @@ impl EditApp {
             inject: Vec::new(),
             allow_close: false,
             scheme_preview: None,
+            git: Default::default(),
+            peek: None,
         };
+        // Checks run git on the window's thread, so the picture has its answers.
+        app.git.sync = app.shot.is_some();
         if let Some(f) = start.folder {
             app.open_folder(f);
         }
@@ -302,6 +315,16 @@ impl EditApp {
             bar.replace = r.unwrap_or_default();
             app.find = Some(bar);
         }
+        // RIVET_EDIT_SIDE=git shows the Git panel; RIVET_EDIT_PEEK=N opens the box on the open
+        // file's change N (from 1).
+        if std::env::var("RIVET_EDIT_SIDE").is_ok_and(|s| s == "git") {
+            app.side = editing::Side::Git;
+        }
+        if let Some(n) = std::env::var("RIVET_EDIT_PEEK").ok().and_then(|v| v.parse::<usize>().ok())
+            && let Some(p) = app.tabs.get(app.active).and_then(|t| t.path.clone())
+        {
+            app.peek = Some(scm::Peek { path: p, hunk: n.saturating_sub(1) });
+        }
         if let Ok(q) = std::env::var("RIVET_EDIT_SEARCH") {
             app.side = editing::Side::Search;
             app.search.q.text = q;
@@ -318,6 +341,7 @@ impl EditApp {
                 "language" => quick::QuickKind::Language,
                 "indent" => quick::QuickKind::Indent,
                 "folder" => quick::QuickKind::Browse { files: false, window: false },
+                "branches" => quick::QuickKind::Branches,
                 _ => quick::QuickKind::Files,
             };
             app.open_quick(kind);
@@ -501,7 +525,7 @@ impl EditApp {
         match workspace::read_text(&p) {
             Ok(text) => {
                 let indent = self.indent_for(&text);
-                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default() };
+                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default(), gutter: Default::default() };
                 // A new preview takes the old one's place (when it wasn't changed).
                 match self.tabs.iter().position(|t| t.preview && !t.dirty()).filter(|_| preview) {
                     Some(i) => {
@@ -535,7 +559,7 @@ impl EditApp {
 
     pub(crate) fn new_tab(&mut self) {
         let indent = self.default_indent();
-        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default() });
+        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default(), gutter: Default::default() });
         self.active = self.tabs.len() - 1;
     }
 
@@ -572,6 +596,7 @@ impl EditApp {
                 t.disk = mtime(&p);
                 self.note = Some((format!("Saved {}", t.name()), false));
                 self.lsp.saved(&p);
+                self.git.poke();
                 true
             }
             Err(e) => {
@@ -635,6 +660,23 @@ impl EditApp {
     }
 
     /// Files changed elsewhere: reloaded when they have no changes here.
+    /// Git's tick: the status now and then, staged copies for the open files, and what
+    /// finished (a note, and files a command changed on disk read again).
+    fn git_tick(&mut self, ctx: &egui::Context) {
+        let open: Vec<PathBuf> = self.tabs.iter().filter_map(|t| t.path.clone()).collect();
+        let focused = ctx.input(|i| i.focused);
+        let was_running = self.git.running.is_some();
+        let news = self.git.tick(ctx, self.root.as_deref(), &open, focused);
+        if news.note.is_some() {
+            self.note = news.note;
+        }
+        // A command that may have changed files (discard, pull, switching branch): read them.
+        if was_running && self.git.running.is_none() {
+            self.check_disk();
+            self.rescan();
+        }
+    }
+
     fn check_disk(&mut self) {
         for t in &mut self.tabs {
             let Some(p) = &t.path else { continue };
@@ -664,6 +706,21 @@ impl EditApp {
         let k = |m: Modifiers, key: Key| KeyboardShortcut::new(m, key);
         // Shifted ones first: a plain Ctrl+P pattern also matches with Shift held.
         let new_window = ctx.input_mut(|i| i.consume_shortcut(&k(shift, Key::N)));
+        // Git: the panel (Shift+Ctrl+G, as in VS Code), the next and previous change (Alt+F5).
+        let (git, change_back, change) = ctx.input_mut(|i| {
+            (
+                i.consume_shortcut(&k(shift, Key::G)),
+                i.consume_shortcut(&k(Modifiers { shift: true, ..alt }, Key::F5)),
+                i.consume_shortcut(&k(alt, Key::F5)),
+            )
+        });
+        if git {
+            self.show_git();
+            ctx.memory_mut(|m| m.request_focus(egui::Id::unique("git-message")));
+        }
+        if (change || change_back) && !self.tabs.is_empty() {
+            self.step_change(change_back);
+        }
         let (cmds, files, save_all, save, new, open, close, goto, sidebar, wrap, prefs, menubar, next, bigger, smaller) = ctx.input_mut(|i| {
             (
                 i.consume_shortcut(&k(shift, Key::P)),
@@ -848,6 +905,7 @@ impl eframe::App for EditApp {
         }
         let now = ctx.input(|i| i.time);
         self.take_scan(&ctx);
+        self.git_tick(&ctx);
         if self.shot.is_none() && now - self.checked_at > 2.0 {
             self.checked_at = now;
             self.check_disk();

@@ -16,6 +16,7 @@ path = "src/main.rs"
 rivet-kit = { path = "../../crates/rivet-kit" }
 rivet-look = { path = "../../crates/rivet-look" }
 rivet-xdg = { path = "../../crates/rivet-xdg" }
+rivet-git = { path = "../../crates/rivet-git" }
 eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
 tree-sitter = "0.27"
 tree-sitter-highlight = "0.27"

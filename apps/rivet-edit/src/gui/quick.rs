@@ -39,6 +39,8 @@ pub(crate) enum QuickKind {
     Language,
     /// The open tab's indentation: tabs or spaces, how many, convert, detect.
     Indent,
+    /// Git branches to switch to, or a new one named by what's typed.
+    Branches,
     /// Type a path; `files` also lists (and opens) files, else only folders; `window` opens the
     /// folder chosen in a new window.
     Browse { files: bool, window: bool },
@@ -77,6 +79,13 @@ enum Cmd {
     ConvertIndent(bool),
     Reload,
     Recent(PathBuf),
+    ShowGit,
+    Commit,
+    StageFile(bool),
+    StageAll,
+    NextChange(bool),
+    Branches,
+    Git(crate::vcs::Op),
 }
 
 struct Action {
@@ -212,6 +221,22 @@ impl EditApp {
         add("Editor", "Convert Indentation to Tabs", "", None, Cmd::ConvertIndent(true), has_tab);
         add("App", "Preferences", "Ctrl+,", None, Cmd::Preferences, true);
         add("Workspace", "Reload Files", "", None, Cmd::Reload, has_root);
+        let repo = self.git.repo.is_some();
+        let up = self.git.status.as_ref().is_some_and(|s| s.branch.upstream.is_some());
+        add("Git", "Show Git", "Shift+Ctrl+G", None, Cmd::ShowGit, has_root);
+        add("Git", "Commit", "", None, Cmd::Commit, repo);
+        add("Git", "Stage This File", "", None, Cmd::StageFile(true), repo && has_tab);
+        add("Git", "Unstage This File", "", None, Cmd::StageFile(false), repo && has_tab);
+        add("Git", "Stage All Changes", "", None, Cmd::StageAll, repo);
+        add("Git", "Next Change", "Alt+F5", None, Cmd::NextChange(false), has_tab);
+        add("Git", "Previous Change", "Shift+Alt+F5", None, Cmd::NextChange(true), has_tab);
+        add("Git", "Switch Branch…", "", None, Cmd::Branches, repo);
+        add("Git", "Fetch", "", None, Cmd::Git(crate::vcs::Op::Fetch), repo);
+        add("Git", "Pull", "", None, Cmd::Git(crate::vcs::Op::Pull), repo && up);
+        add("Git", if up { "Push" } else { "Publish Branch" }, "", None, Cmd::Git(crate::vcs::Op::Push), repo);
+        add("Git", "Sync (Pull, then Push)", "", None, Cmd::Git(crate::vcs::Op::Sync), repo && up);
+        add("Git", "Undo Last Commit", "", None, Cmd::Git(crate::vcs::Op::UndoCommit), repo);
+        add("Git", "Initialize Repository", "", None, Cmd::ShowGit, has_root && !repo && !self.git.looking);
         for p in &self.s.recent {
             if Some(p) != self.root.as_ref() {
                 out.push(Action { group: "Recent", label: format!("Open {}", tilde(p).trim_end_matches('/')), keys: "", state: None, cmd: Cmd::Recent(p.clone()) });
@@ -260,6 +285,19 @@ impl EditApp {
             Cmd::Indentation => self.open_quick(QuickKind::Indent),
             Cmd::ConvertIndent(tabs) => self.convert_indent(tabs),
             Cmd::Reload => self.rescan(),
+            Cmd::ShowGit => self.show_git(),
+            Cmd::Commit => self.commit(),
+            Cmd::StageFile(on) => self.stage_open(on),
+            Cmd::StageAll => {
+                self.git.run(crate::vcs::Op::StageAll);
+            }
+            Cmd::NextChange(back) => self.step_change(back),
+            Cmd::Branches => self.open_branches(),
+            Cmd::Git(op) => {
+                if !self.git.run(op) {
+                    self.note = Some(("Git is busy; try again when it's done".into(), true));
+                }
+            }
             Cmd::Recent(p) => {
                 if p.is_dir() {
                     self.open_folder(p);
@@ -512,6 +550,47 @@ impl EditApp {
                     None => {}
                 }
             }
+            QuickKind::Branches => {
+                if self.git.branches.is_none() {
+                    self.git.load_branches();
+                }
+                let list = self.git.branches.clone();
+                let typed = q.trim().replace(' ', "-");
+                let mut ranked: Vec<(i32, usize)> = list.iter().flatten().enumerate().filter_map(|(i, b)| fuzzy_score(&b.name, &q).map(|v| (v, i))).collect();
+                if !q.is_empty() {
+                    ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+                }
+                // A name typed that's no branch yet: offer to make it.
+                let create = !typed.is_empty() && list.as_ref().is_some_and(|l| !l.iter().any(|b| b.name == typed));
+                let now = chrono::Utc::now().timestamp();
+                // The branches matching first; making a new one last (Enter takes the best match).
+                let b = list.as_deref().unwrap_or_default();
+                let mut rows: Vec<QuickRow> = ranked.iter().map(|(_, i)| QuickRow::Command { group: if b[*i].remote { "Remote".into() } else { "Branch".into() }, label: b[*i].name.clone(), keys: ago(now - b[*i].time), state: b[*i].current.then_some(true) }).collect();
+                if create {
+                    rows.push(QuickRow::Command { group: "New".into(), label: format!("Create Branch “{typed}” Here"), keys: String::new(), state: None });
+                }
+                let empty = if list.is_none() { "Reading the branches…" } else { "No matching branches; type a name to make one" };
+                let text = QuickText { hint: "Switch to a branch, or type a new one's name…", empty, legend: "Enter switch   ·   Esc close" };
+                match panel.show(ctx, "edit-quick-branches", &rows, &text, search.as_ref()) {
+                    Some(QuickEvent::Pick(i)) => {
+                        if create && i == ranked.len() {
+                            self.git.run(crate::vcs::Op::CreateBranch(typed));
+                        } else if let Some((_, k)) = ranked.get(i) {
+                            let br = &b[*k];
+                            if !br.current {
+                                self.git.run(crate::vcs::Op::Checkout { name: br.name.clone(), remote: br.remote });
+                            }
+                        }
+                        keep = false;
+                    }
+                    Some(QuickEvent::Close) => keep = false,
+                    None => {
+                        if list.is_none() {
+                            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                        }
+                    }
+                }
+            }
             QuickKind::Line => {
                 let lines = self.tabs.get(self.active).map(|t| t.text.lines().count().max(1)).unwrap_or(1);
                 let n = q.parse::<usize>().ok().filter(|n| *n >= 1);
@@ -612,4 +691,18 @@ impl EditApp {
             self.quick = Some((kind, panel));
         }
     }
+}
+
+/// How long ago, shortly ("3 days").
+fn ago(secs: i64) -> String {
+    let s = secs.max(0);
+    let (n, unit) = match s {
+        0..60 => return "just now".into(),
+        60..3600 => (s / 60, "minute"),
+        3600..86_400 => (s / 3600, "hour"),
+        86_400..2_592_000 => (s / 86_400, "day"),
+        2_592_000..31_536_000 => (s / 2_592_000, "month"),
+        _ => (s / 31_536_000, "year"),
+    };
+    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
 }

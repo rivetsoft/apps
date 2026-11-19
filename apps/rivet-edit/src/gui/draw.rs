@@ -190,6 +190,45 @@ impl EditApp {
                 self.active = (self.active + 1) % self.tabs.len();
             }
         });
+        ui.menu_button("Git", |ui| {
+            menu_style(ui);
+            let repo = self.git.repo.is_some();
+            let busy = self.git.running.is_some();
+            let up = self.git.status.as_ref().is_some_and(|s| s.branch.upstream.is_some());
+            if item(ui, "Show Git", "Shift+Ctrl+G", self.root.is_some()) {
+                self.show_git();
+            }
+            ui.separator();
+            if item(ui, "Commit", "", repo && !busy) {
+                self.commit();
+            }
+            if item(ui, "Stage This File", "", repo && !busy && has_tab) {
+                self.stage_open(true);
+            }
+            if item(ui, "Unstage This File", "", repo && !busy && has_tab) {
+                self.stage_open(false);
+            }
+            ui.separator();
+            if item(ui, "Next Change", "Alt+F5", has_tab) {
+                self.step_change(false);
+            }
+            if item(ui, "Previous Change", "Shift+Alt+F5", has_tab) {
+                self.step_change(true);
+            }
+            ui.separator();
+            if item(ui, "Switch Branch…", "", repo && !busy) {
+                self.open_branches();
+            }
+            if item(ui, "Fetch", "", repo && !busy) {
+                self.git.run(crate::vcs::Op::Fetch);
+            }
+            if item(ui, "Pull", "", repo && !busy && up) {
+                self.git.run(crate::vcs::Op::Pull);
+            }
+            if item(ui, if up || !repo { "Push" } else { "Publish Branch" }, "", repo && !busy) {
+                self.git.run(crate::vcs::Op::Push);
+            }
+        });
         ui.menu_button("Help", |ui| {
             menu_style(ui);
             if item(ui, "About Rivet Edit", "", true) {
@@ -275,7 +314,9 @@ impl EditApp {
         ui.horizontal(|ui| {
             ui.set_min_height(26.0);
             ui.spacing_mut().item_spacing.x = 2.0;
-            for (side, label, tip) in [(editing::Side::Files, "FILES", "The folder's files"), (editing::Side::Search, "SEARCH", "Search the folder (Shift+Ctrl+F)")] {
+            let changes = self.git.status.as_ref().map(|s| s.entries.len()).unwrap_or(0);
+            let git_label = if changes > 0 { format!("GIT {changes}") } else { "GIT".to_string() };
+            for (side, label, tip) in [(editing::Side::Files, "FILES", "The folder's files"), (editing::Side::Search, "SEARCH", "Search the folder (Shift+Ctrl+F)"), (editing::Side::Git, git_label.as_str(), "Git: changes, commits and branches (Shift+Ctrl+G)")] {
                 let on = self.side == side;
                 let col = if on { v.text_color() } else { v.weak_text_color() };
                 let b = egui::Button::new(egui::RichText::new(label).font(fonts::ui_font(11.5)).strong().color(col)).frame_when_inactive(false).corner_radius(r_sm());
@@ -291,6 +332,10 @@ impl EditApp {
         if self.side == editing::Side::Search {
             ui.add_space(4.0);
             self.search_panel(ui);
+            return;
+        }
+        if self.side == editing::Side::Git {
+            self.git_panel(ui);
             return;
         }
         if self.scan_running() && self.files.is_empty() {
@@ -325,7 +370,8 @@ impl EditApp {
         let mut pick = None;
         egui::ScrollArea::vertical().id_salt("edit-tree").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
-            tree(ui, "", 0, &self.folders, &self.files, &self.open_dirs, &folder_icons, &icons, open_rel.as_deref(), &mut pick);
+            let marks = Marks { files: &self.git.marks, dirs: &self.git.marked_dirs };
+            tree(ui, "", 0, &self.folders, &self.files, &self.open_dirs, &folder_icons, &icons, open_rel.as_deref(), &marks, &mut pick);
             // The space below the tree: the workspace's own menu.
             let h = (ui.available_height()).max(30.0);
             let (_, below) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
@@ -574,6 +620,12 @@ impl EditApp {
         let mut layout_out: Option<editing::LastLayout> = None;
         let alt_click = std::mem::take(&mut self.alt_click);
         let mark_color = accent;
+        // Git: the changes since staged, and the change whose box is open.
+        self.update_gutter();
+        let open_path = self.tabs.get(self.active).and_then(|t| t.path.clone());
+        let peek_k = self.peek.as_ref().filter(|p| open_path.as_ref() == Some(&p.path)).map(|p| p.hunk);
+        let mut change_click: Option<usize> = None;
+        let mut peek_at: Option<(Rect, f32, f32)> = None;
         let Some(t) = self.tabs.get_mut(self.active) else { return };
         let name = t.name();
         let (pick, ind) = (t.lang, t.indent);
@@ -607,7 +659,7 @@ impl EditApp {
         let digits = lines.to_string().len().max(3) as f32;
         let char_w = ctx.fonts_mut(|f| f.glyph_width(&font, '0'));
         let gutter = if numbers { digits * char_w + 28.0 } else { 14.0 };
-        let Tab { text, cache, line_col, .. } = t;
+        let Tab { text, cache, line_col, gutter: changes, .. } = t;
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| cache.galley(ui, buf.as_str(), &name, pick, &colors, &font, if wrap { wrap_w } else { f32::INFINITY });
         let area = ui.available_rect_before_wrap();
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(Vec2::new(0.0, 4.0))).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -671,6 +723,17 @@ impl EditApp {
                         }
                     }
                 }
+                // Git's marks between the numbers and the text; a click opens a change's box.
+                let marks = EditApp::paint_changes(ui, &out.galley, out.galley_pos, ui.clip_rect(), left + gutter - 9.0, &changes.hunks, peek_k);
+                for (k, r) in &marks {
+                    let hit = ui.interact(r.expand2(Vec2::new(4.0, 0.0)), id.with(("git-change", *k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    if hit.clicked() {
+                        change_click = Some(*k);
+                    }
+                    if peek_k == Some(*k) {
+                        peek_at = Some((*r, out.galley_pos.x, ui.clip_rect().right() - out.galley_pos.x - 24.0));
+                    }
+                }
                 // Vim's Normal and Visual modes: a block cursor on the character.
                 if vim_block && let Some(r) = out.cursor_range {
                     let at = if vim_visual { egui::text::CCursor::new(vim_head) } else { r.primary };
@@ -719,6 +782,11 @@ impl EditApp {
             });
         });
         self.last_layout = layout_out;
+        if let (Some(k), Some(p)) = (change_click, open_path) {
+            self.peek = if peek_k == Some(k) { None } else { Some(super::scm::Peek { path: p, hunk: k }) };
+        } else if let Some((r, x, w)) = peek_at {
+            self.peek_box(&ctx, r, x, w, &font);
+        }
         // What this frame changed, for undo.
         if let Some(t) = self.tabs.get_mut(self.active) {
             let now = editing::sels_now(&ctx, id, t);
@@ -765,6 +833,7 @@ impl EditApp {
     fn status_line(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let mut open_quick: Option<quick::QuickKind> = None;
+        let mut open_branches = false;
         let v = ui.visuals().clone();
         let weak = v.weak_text_color();
         let ws_icon = self.icon(&ctx, &["folder-symbolic"], 14.0);
@@ -777,6 +846,31 @@ impl EditApp {
                     ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(weak));
                 }
                 ui.label(egui::RichText::new(w).color(weak)).on_hover_text(self.root.as_ref().map(|r| r.display().to_string()).unwrap_or_default());
+            }
+            // The branch: click to switch.
+            if let Some(st) = &self.git.status {
+                let b = &st.branch;
+                let mut words = b.label();
+                if b.ahead > 0 || b.behind > 0 {
+                    words.push_str(&format!("  {}{}", if b.behind > 0 { format!("↓{} ", b.behind) } else { String::new() }, if b.ahead > 0 { format!("↑{}", b.ahead) } else { String::new() }));
+                }
+                if let Some(op) = &self.git.running {
+                    words = format!("{words}  ·  {}", op.doing());
+                }
+                ui.add_space(4.0);
+                let g = ui.painter().layout_no_wrap(words, egui::TextStyle::Body.resolve(ui.style()), weak);
+                let (r, resp) = ui.allocate_exact_size(g.size() + Vec2::new(30.0, 4.0), Sense::click());
+                let col = if resp.hovered() {
+                    ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
+                    v.text_color()
+                } else {
+                    weak
+                };
+                super::scm::glyph(ui.painter(), Rect::from_center_size(Pos2::new(r.left() + 11.0, r.center().y), Vec2::splat(12.0)), super::scm::Glyph::Branch, col);
+                ui.painter().galley(Pos2::new(r.left() + 22.0, r.center().y - g.size().y / 2.0), g, col);
+                if resp.on_hover_text("The Git branch: click to switch to another").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    open_branches = true;
+                }
             }
             if let Some((m, bad)) = self.note.as_ref().filter(|_| !cmdline_open) {
                 ui.add_space(10.0);
@@ -817,6 +911,9 @@ impl EditApp {
         self.vim_cmdline(ui, bar);
         if let Some(k) = open_quick {
             self.open_quick(k);
+        }
+        if open_branches {
+            self.open_branches();
         }
     }
 
@@ -1128,6 +1225,25 @@ impl EditApp {
                         None => next = Some(Prompt::Rename { rel, name }),
                     }
                 }
+                Prompt::Discard { tracked, untracked } => {
+                    let all: Vec<&String> = tracked.iter().chain(&untracked).collect();
+                    let name = |p: &String| p.rsplit('/').next().unwrap_or(p).to_string();
+                    let (head, sub, yes) = match (tracked.len(), untracked.len()) {
+                        (1, 0) => (format!("Discard the changes to {}?", name(&tracked[0])), "It goes back to how it's staged. This can't be undone.".to_string(), "Discard Changes"),
+                        (0, 1) => (format!("Delete {}?", name(&untracked[0])), "It's new and not tracked by Git, so it can't be brought back.".to_string(), "Delete File"),
+                        (t, 0) => (format!("Discard the changes to {t} files?"), "They go back to how they're staged. This can't be undone.".to_string(), "Discard Changes"),
+                        (t, u) => (format!("Discard the changes to {} files?", all.len()), format!("{t} go back to how they're staged, and {u} new file{} deleted. This can't be undone.", if u == 1 { " is" } else { "s are" }), "Discard All"),
+                    };
+                    title(ui, &head, &sub);
+                    match buttons(ui, &[yes, "Cancel"]) {
+                        Some(0) => act = Some(Box::new(move |a: &mut EditApp| {
+                            a.git.run(crate::vcs::Op::Discard { tracked, untracked });
+                        })),
+                        Some(_) => {}
+                        None if esc => {}
+                        None => next = Some(Prompt::Discard { tracked, untracked }),
+                    }
+                }
                 Prompt::Trash { rel, dir } => {
                     let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
                     title(ui, &format!("Move {name} to the Trash?"), if dir { "The folder and everything in it. You can bring it back from the Trash." } else { "You can bring it back from the Trash. A tab open on it closes." });
@@ -1212,6 +1328,12 @@ fn new_file(folder: String, name: String) -> Act {
     })
 }
 
+/// Git's marks for the tree: changed files (by path in the workspace), and folders with any.
+struct Marks<'a> {
+    files: &'a HashMap<String, rivet_git::Change>,
+    dirs: &'a HashSet<String>,
+}
+
 /// A folder (and what's in it) in the tree, then its files.
 #[allow(clippy::too_many_arguments)]
 fn tree(
@@ -1224,6 +1346,7 @@ fn tree(
     folder_icons: &HashMap<String, Option<egui::TextureHandle>>,
     icons: &HashMap<String, Option<egui::TextureHandle>>,
     open: Option<&str>,
+    marks: &Marks,
     pick: &mut Option<Pick>,
 ) {
     let parent_of = |f: &str| f.rsplit_once('/').map(|(p, _)| p.to_string()).unwrap_or_default();
@@ -1243,7 +1366,13 @@ fn tree(
         if let Some(Some(t)) = folder_icons.get(sub) {
             paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(x + 20.0, rect.center().y), Vec2::splat(16.0)), Color32::WHITE);
         }
-        ui.painter().with_clip_rect(rect).text(Pos2::new(x + 32.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), v.text_color());
+        // A folder holding changes: a dot at the right, its name tinted.
+        let changed = marks.dirs.contains(sub);
+        let fg = if changed { palette::mix(v.text_color(), status(ui.ctx()).warning, 0.45) } else { v.text_color() };
+        ui.painter().with_clip_rect(rect.with_max_x(rect.right() - 16.0)).text(Pos2::new(x + 32.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), fg);
+        if changed {
+            ui.painter().circle_filled(Pos2::new(rect.right() - 10.0, rect.center().y), 2.5, status(ui.ctx()).warning.gamma_multiply(0.8));
+        }
         if resp.clicked() {
             *pick = Some(Pick::Fold(sub.clone()));
         }
@@ -1257,7 +1386,7 @@ fn tree(
         if is_open {
             let top = rect.bottom();
             let guide = ui.painter().add(egui::Shape::Noop);
-            tree(ui, sub, depth + 1, folders, files, open_dirs, folder_icons, icons, open, pick);
+            tree(ui, sub, depth + 1, folders, files, open_dirs, folder_icons, icons, open, marks, pick);
             let bottom = ui.min_rect().bottom();
             if bottom > top + 1.0 {
                 let col = palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.16 } else { 0.20 });
@@ -1280,9 +1409,23 @@ fn tree(
         if let Some(Some(t)) = icons.get(name) {
             paint_tex(ui.painter(), t, Rect::from_center_size(Pos2::new(x + 8.0, rect.center().y), Vec2::splat(16.0)), Color32::WHITE);
         }
-        let fg = if on { v.strong_text_color() } else { v.text_color() };
-        ui.painter().with_clip_rect(rect).text(Pos2::new(x + 22.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), fg);
-        let resp = resp.on_hover_text(format!("{f}\nClick to preview · double-click or Ctrl+click to keep open"));
+        // Git: changed files tinted, with their letter at the right (as VS Code shows them).
+        let mark = marks.files.get(f.as_str()).copied();
+        let base = if on { v.strong_text_color() } else { v.text_color() };
+        let fg = match mark {
+            Some(c) => palette::mix(base, super::scm::change_color(ui.ctx(), c), 0.6),
+            None => base,
+        };
+        let right = if mark.is_some() { rect.right() - 22.0 } else { rect.right() };
+        ui.painter().with_clip_rect(rect.with_max_x(right)).text(Pos2::new(x + 22.0, rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.0), fg);
+        if let Some(c) = mark {
+            ui.painter().text(Pos2::new(rect.right() - 11.0, rect.center().y), Align2::CENTER_CENTER, c.letter(), fonts::ui_font(11.5), super::scm::change_color(ui.ctx(), c));
+        }
+        let tip = match mark {
+            Some(c) => format!("{f} · {}\nClick to preview · double-click or Ctrl+click to keep open", c.words()),
+            None => format!("{f}\nClick to preview · double-click or Ctrl+click to keep open"),
+        };
+        let resp = resp.on_hover_text(tip);
         resp.context_menu(|ui| {
             let mut act = None;
             treemenu::tree_menu(ui, f, false, &mut act);

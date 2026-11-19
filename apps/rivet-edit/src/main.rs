@@ -3,6 +3,7 @@
 mod gui;
 mod find;
 mod history;
+mod vcs;
 mod lsp;
 mod ops;
 mod schemes;

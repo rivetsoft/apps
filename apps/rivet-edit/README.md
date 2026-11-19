@@ -35,6 +35,17 @@ fonts and icons, the same menus, Preferences and quick panel.
   (Ctrl+= and Ctrl+-), and your choice of monospace font.
 - Saves safely (write, then rename), keeps a file's permissions, reloads files changed elsewhere,
   and asks before closing or quitting with changes.
+- **Git** (Shift+Ctrl+G):
+  - A panel with conflicts, staged changes and changes not staged yet: stage, unstage or discard
+    a file, or a whole section.
+  - Commit with a message (Ctrl+Enter), amend the last commit, or undo it.
+  - Switch or make branches from the panel or the status bar, and sync, fetch, pull, push or
+    publish.
+  - Changed files are colored in the tree.
+  - The gutter marks what changed since staged. Click a mark to see the old lines, revert that
+    change or stage just it.
+  - It runs your `git`, so your config, hooks and credentials apply. The git work is the shared
+    `rivet-git` crate.
 
 <table>
   <tr>
@@ -73,7 +84,9 @@ fonts and icons, the same menus, Preferences and quick panel.
 | Alt+Up/Down, Shift+Alt+Up/Down | Move the lines, copy the lines |
 | Shift+Ctrl+K, Ctrl+L | Delete the lines, select the line |
 | Ctrl+/ , Ctrl+] / Ctrl+[ | Comment the lines out (or back in), indent / outdent |
-| Ctrl+Enter / Shift+Ctrl+Enter | A new line below / above |
+| Ctrl+Enter / Shift+Ctrl+Enter | A new line below / above (in the Git panel's message, Ctrl+Enter commits) |
+| Shift+Ctrl+G | The Git panel, ready to write a commit message |
+| Alt+F5 / Shift+Alt+F5 | The next / previous change since staged |
 
 ### Vim keys
 

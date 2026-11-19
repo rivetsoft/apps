@@ -2397,6 +2397,7 @@ dependencies = [
  "chrono",
  "eframe",
  "regex",
+ "rivet-git",
  "rivet-kit",
  "rivet-look",
  "rivet-xdg",

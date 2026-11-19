@@ -196,6 +196,7 @@ it shows what changed, skips apps with nothing new, and asks release, skip or st
 | `apps/rivet-terminal` | Rivet Terminal (just started): code, data, changelog |
 | `apps/rivet-welcome` | Rivet Welcome (just started): installs and updates the apps, with a tray icon |
 | `crates/rivet-term` | Shared: the terminal (a shell in a pseudo-terminal, drawn as a widget); Rivet Terminal's, and later Rivet Edit's panel |
+| `crates/rivet-git` | Shared: Git with no user interface (status, changed lines, staging, commits, branches, sync), by running `git`; Rivet Edit's Git panel, and later a Git app's |
 | `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
 | `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |
 | `crates/rivet-kit` | Shared: a software renderer for egui (screenshots, and Rivet Shell's surfaces) |

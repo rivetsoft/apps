@@ -13,6 +13,25 @@
   menu): typing undoes a word at a time, every command (moving lines, commenting, several
   cursors, replace, Vim's changes) is a step of its own, and undo brings every cursor back.
   Each step keeps only what changed, not a copy of the file.
+- Git, in the spirit of VS Code's and Zed's:
+  - A Git panel in the sidebar (Shift+Ctrl+G) lists merge conflicts, staged changes and changes
+    not staged yet. Hover a file to stage, unstage or discard it, or a section to do all of its
+    files.
+  - Write a message and commit (Ctrl+Enter); with nothing staged, Commit All stages everything
+    first. You can also amend the last commit or undo it.
+  - The branch shows in the panel and the status bar, with how far it is ahead of and behind
+    its upstream. Click it to switch branch, or type a new name to make one.
+  - Sync (pull, then push), fetch, pull, push and publishing a new branch are in the panel's
+    more menu, the Git menu and Commands. A folder that isn't a repository gets an Initialize
+    Repository button.
+  - The tree colors changed files and shows their letter (M, A, U, D), with a dot on folders
+    that hold changes.
+  - The gutter marks lines added, changed and deleted since staged, including edits not saved
+    yet. Click a mark to see the old lines, revert that change, stage just it, or step to the
+    next one (Alt+F5, Shift+Alt+F5).
+  - The git work is the new shared `rivet-git` crate, which has no user interface, so a Git app
+    can be built on it later. It runs the `git` program, so your own config, hooks, credentials
+    and signing all apply.
 
 ## 0.1.0
 
