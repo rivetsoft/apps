@@ -1212,8 +1212,11 @@ impl RivetApp {
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
         let v = ui.visuals().clone();
         let accent = accent_color(&self.s);
+        // The current place: the selected tile used across the apps (a soft fill, an accent edge).
         if active {
-            ui.painter().rect_filled(rect, r_md(), accent);
+            let (fill, stroke) = super::selected_tile(&v, v.panel_fill);
+            ui.painter().rect_filled(rect, r_md(), fill);
+            ui.painter().rect_stroke(rect, r_md(), stroke, StrokeKind::Inside);
         } else if resp.hovered() {
             ui.painter().rect_filled(rect, r_md(), v.widgets.hovered.weak_bg_fill);
         }
@@ -1221,7 +1224,7 @@ impl RivetApp {
         if droppable && resp.dnd_hover_payload::<DragFiles>().is_some() {
             ui.painter().rect_stroke(rect, r_md(), Stroke::new(2.0, accent), StrokeKind::Inside);
         }
-        let fg = if active { v.selection.stroke.color } else { v.text_color() };
+        let fg = if active { v.strong_text_color() } else { v.text_color() };
         let row_mid = if usage.is_some() { rect.top() + 15.0 * sc + grow / 2.0 } else { rect.center().y };
         // With icons off the text starts where an icon would have been.
         let icon_rect = if isz > 0.0 {
@@ -1229,16 +1232,8 @@ impl RivetApp {
         } else {
             Rect::from_center_size(Pos2::new(rect.left() + 2.0, row_mid), Vec2::new(0.0, 16.0))
         };
-        if active {
-            // On the highlight: single-colour icon in the highlight's text colour, or a backdrop.
-            if isz > 0.0 {
-                match self.accent_icon(ctx, icon, isz) {
-                    Some((t, true)) => paint_tex(ui.painter(), &t, icon_rect, fg),
-                    Some((t, false)) => paint_tex(ui.painter(), &t, icon_rect, fg),
-                    None => {}
-                }
-            }
-        } else if isz > 0.0
+        // Icons keep their colors on the tile.
+        if isz > 0.0
             && let Some(t) = self.icon(ctx, icon, isz) {
                 paint_tex(ui.painter(), &t, icon_rect, Color32::WHITE);
             }
@@ -1249,10 +1244,11 @@ impl RivetApp {
         ui.painter().galley(Pos2::new(icon_rect.right() + 12.0, icon_rect.center().y - g.size().y / 2.0), g, fg);
         if let Some(u) = usage {
             let bar = Rect::from_min_max(Pos2::new(icon_rect.right() + 12.0, rect.bottom() - 9.0), Pos2::new(text_right, rect.bottom() - 6.0));
-            ui.painter().rect_filled(bar, 1.5, if active { Color32::from_white_alpha(80) } else { v.widgets.inactive.bg_fill });
+            ui.painter().rect_filled(bar, 1.5, v.widgets.inactive.bg_fill);
             let mut filled = bar;
             filled.set_right(bar.left() + bar.width() * u.clamp(0.0, 1.0));
-            let c = if u > 0.9 { super::status(ui.ctx()).danger } else if active { v.selection.stroke.color } else { accent };
+            // The theme's tertiary color; red when nearly full.
+            let c = if u > 0.9 { super::status(ui.ctx()).danger } else { self.theme_trio().2 };
             ui.painter().rect_filled(filled, 1.5, c);
         }
         let mut eject_clicked = false;
@@ -1437,12 +1433,15 @@ impl RivetApp {
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0 * crate::fonts::scale().max(1.0) + (isz - 16.0).max(0.0)), Sense::click());
             let active = current.as_deref() == Some(p.as_path());
             let v = ui.visuals().clone();
+            // The current folder: the selected tile used across the apps.
             if active {
-                ui.painter().rect_filled(rect, r_md(), accent);
+                let (fill, stroke) = super::selected_tile(&v, v.panel_fill);
+                ui.painter().rect_filled(rect, r_md(), fill);
+                ui.painter().rect_stroke(rect, r_md(), stroke, StrokeKind::Inside);
             } else if resp.hovered() {
                 ui.painter().rect_filled(rect, r_md(), v.widgets.hovered.weak_bg_fill);
             }
-            let fg = if active { v.selection.stroke.color } else { v.text_color() };
+            let fg = if active { v.strong_text_color() } else { v.text_color() };
             let x = rect.left() + 4.0 + depth as f32 * 14.0;
             let expanded = self.tree_expanded.contains(&p);
             let chev = Rect::from_min_size(Pos2::new(x, rect.top()), Vec2::new(14.0, rect.height()));
@@ -1458,15 +1457,8 @@ impl RivetApp {
                 None => vec!["folder"],
             };
             let ir = Rect::from_min_size(Pos2::new(chev.right() + 2.0, rect.center().y - isz / 2.0), Vec2::new(isz, isz.max(1.0)));
-            if active {
-                if isz > 0.0 {
-                    match self.accent_icon(ctx, &icon, isz) {
-                        Some((t, true)) => paint_tex(ui.painter(), &t, ir, fg),
-                        Some((t, false)) => paint_tex(ui.painter(), &t, ir, fg),
-                        None => {}
-                    }
-                }
-            } else if isz > 0.0
+            // Icons keep their colors on the tile.
+            if isz > 0.0
                 && let Some(t) = self.icon(ctx, &icon, isz) {
                     paint_tex(ui.painter(), &t, ir, Color32::WHITE);
                 }

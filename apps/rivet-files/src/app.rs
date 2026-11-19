@@ -898,14 +898,6 @@ impl RivetApp {
         self.icons.texture(ctx, names, icon_px(px * ppp))
     }
 
-    /// An icon for a highlighted row: the very same icon shown when it isn't highlighted,
-    /// recolored into one solid color (tint it with the highlight's text color).
-    /// Returns (texture, is_single_color).
-    fn accent_icon(&mut self, ctx: &egui::Context, names: &[&str], px: f32) -> Option<(egui::TextureHandle, bool)> {
-        let ppp = ctx.pixels_per_point();
-        self.icons.mask(ctx, names, icon_px(px * ppp)).map(|t| (t, true))
-    }
-
     fn entry_texture(&mut self, ctx: &egui::Context, e: &Entry, px: f32) -> Option<egui::TextureHandle> {
         // Terminal mode shows glyphs in the file list; pictures are seen in Peek and Preview.
         if self.s.show_thumbnails && !self.s.terminal && px >= 32.0 && !e.is_dir && thumbs::thumbnailable(&e.mime)
