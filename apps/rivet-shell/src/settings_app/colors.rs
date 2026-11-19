@@ -82,7 +82,7 @@ impl SettingsApp {
     fn wallpaper_colors(&mut self, ui: &mut egui::Ui) {
         ui.checkbox(&mut self.s.matugen, "Make colors with matugen when the wallpaper changes");
         if !self.s.matugen {
-            hint(ui, "The shell uses the colors another tool writes to the GTK color files.");
+            hint(ui, "The shell follows the colors another theme tool sets for the desktop.");
             return;
         }
         if !has_matugen() {
@@ -124,7 +124,7 @@ impl SettingsApp {
                 ui.end_row();
             }
             ui.label("Rivet apps");
-            if ui.button("Add Rivet's Colors to matugen").on_hover_text("Adds Rivet's template to matugen's config, so matugen writes the color file Rivet apps read").clicked() {
+            if ui.button("Add Rivet's Colors to matugen").on_hover_text("Rivet apps then change color with the wallpaper, like the rest of the desktop").clicked() {
                 self.note = Some(match palette::install_matugen_template() {
                     Ok(m) => m,
                     Err(e) => format!("Couldn't update matugen's config: {e}"),
@@ -163,7 +163,7 @@ impl SettingsApp {
             self.surfaces(ui);
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut self.s.surface_tint, "Tint the surface with the accent").on_hover_text("Mixes a little of the accent into the surface, and follows it when it changes");
+            ui.checkbox(&mut self.s.surface_tint, "Tint the surface with the accent");
             ui.end_row();
         });
     }

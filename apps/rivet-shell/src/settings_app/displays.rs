@@ -94,7 +94,7 @@ impl SettingsApp {
         let now = ctx.input(|i| i.time);
         let Some(t) = target.filter(|t| displays::supported(t.format) || shot) else {
             section(ui, "Displays", &mut |ui| {
-                hint(ui, &format!("Screens can be set here on niri and Hyprland (through hyprland.conf). This session runs {}, so use its own settings.", comp.name()));
+                hint(ui, &format!("Screens can be set here on niri and Hyprland. This session runs {0}, so set them in {0}'s own settings.", comp.name()));
             });
             return;
         };
@@ -228,7 +228,7 @@ impl SettingsApp {
         if clash && st.drag.is_none() {
             ui.label(egui::RichText::new("Two screens overlap. Drag them apart, then apply.").small().color(rivet_look::theme::status(&ctx).warning));
         } else {
-            hint(ui, "Drag each screen to match where it sits on your desk; it snaps to the others' edges. Sizes are shown after scaling.");
+            hint(ui, "Drag each screen to where it sits on your desk.");
         }
         ui.add_space(14.0);
         // ---- the chosen screen
@@ -335,7 +335,7 @@ impl SettingsApp {
                 st.msg = Some(comp::add_include(&t, look.as_ref(), &self.s.displays).map(|_| format!("Added. The original is saved as {name}.rivet-backup.")));
                 ctx.data_mut(|d| d.remove::<(f64, bool)>(key));
             }
-            hint(ui, &format!("Adds one line at the end ({}) so settings here override earlier ones. Backs up the file first.", comp::include_line(&t)));
+            hint(ui, &format!("Adds one line to the end of {name} so screen settings made here take effect. A copy of the original is saved first."));
             ui.add_space(10.0);
         }
         let mut apply = false;
@@ -352,7 +352,7 @@ impl SettingsApp {
             }
             if !self.s.displays.is_empty() && st.pending.is_none() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(format!("Leave the Screens to {}", comp.name())).on_hover_text(format!("Removes the screens from {ours} so {name} sets them again")).clicked() {
+                    if ui.button(format!("Leave the Screens to {}", comp.name())).on_hover_text(format!("Stop setting screens here and let {} manage them again", comp.name())).clicked() {
                         leave = true;
                     }
                 });
@@ -402,7 +402,7 @@ impl SettingsApp {
             Some(Err(e)) => {
                 ui.label(egui::RichText::new(e).color(rivet_look::theme::status(&ctx).danger));
             }
-            None => hint(ui, &format!("Apply writes to {ours} (included by {name}) and asks you to confirm. With no answer in {} seconds, the screens revert.", KEEP_FOR.as_secs())),
+            None => hint(ui, &format!("After you apply, you have {} seconds to keep the changes. If you don't, the screens go back to how they were.", KEEP_FOR.as_secs())),
         }
     }
 }

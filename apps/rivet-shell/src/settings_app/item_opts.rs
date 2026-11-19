@@ -97,21 +97,21 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
                 if color != s.plugin_icon(pid) {
                     s.set_plugin(pid, crate::plugins::ICON_COLOR, if color == TrayColor::Own { "" } else { color.name() });
                 }
-                note(ui, "Solid: the icon's shape in the panel's text color (its group's, in a group). Highlight: the same in the accent color.");
+                note(ui, "Solid draws the icon in the panel's text color. Highlight draws it in the accent color.");
             }
             "tray" => {
                 section(ui, "Icons");
                 icon_tiles(ui, &mut s.tray_color, TrayColor::ALL.map(TrayColor::label), accent);
-                note(ui, "Recolored icons keep their shapes in one color, so the tray matches the panel.");
+                note(ui, "Solid draws icons in the panel's text color. Highlight draws them in the accent color.");
                 section(ui, "Shows");
-                toggle(ui, "Show passive icons", Some("Icons an app marks as having nothing to report"), &mut s.tray_passive, accent);
-                note(ui, "Click an icon to open its app, right-click for its menu, middle-click for its second action. Icons from older X11 apps need xembed-sni-proxy.");
+                toggle(ui, "Show passive icons", Some("Icons for apps with nothing to tell you right now"), &mut s.tray_passive, accent);
+                note(ui, "Some older apps' icons only show if xembed-sni-proxy is installed.");
             }
             "dock" => {
                 section(ui, "Shows");
                 toggle(ui, "Open apps too", Some("After the pinned ones"), &mut s.dock_open_apps, accent);
                 toggle(ui, "A dot under open apps", None, &mut s.dock_running, accent);
-                note(ui, "Shows the same apps as the dock and shares its settings: pinning or moving an app in one changes both. Right-click an app to pin or move it.");
+                note(ui, "Shows the dock's apps. Pinning or moving one here changes the dock too.");
             }
             "volume" => {
                 section(ui, "Shows");
@@ -291,7 +291,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
     });
     match s.launcher_icon {
         LauncherIcon::Grid => {}
-        LauncherIcon::System => note(ui, "Your system's logo from the icon theme. Falls back to the grid if the theme has none."),
+        LauncherIcon::System => note(ui, "Your system's logo, or the grid if the icon theme has none."),
         LauncherIcon::Custom => {
             // The file picker's answer, asked for on a thread (kept with the card).
             let key = egui::Id::unique("launcher-icon-pick");
@@ -309,7 +309,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.add_enabled(asked.is_none(), egui::Button::new("Choose…")).on_hover_text("A picture, with the file picker").clicked() {
+                if ui.add_enabled(asked.is_none(), egui::Button::new("Choose…")).clicked() {
                     let (tx, rx) = mpsc::channel();
                     let start = crate::wall::expand(s.launcher_custom.trim()).parent().map(std::path::Path::to_path_buf);
                     std::thread::spawn(move || {
@@ -319,7 +319,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
                 }
                 ui.add(egui::TextEdit::singleline(&mut s.launcher_custom).hint_text("Icon name or picture").desired_width(f32::INFINITY));
             });
-            note(ui, "An icon name from the icon theme (such as start-here), or a PNG, SVG, JPEG or WebP picture. Shown in its own colors.");
+            note(ui, "An icon name such as start-here, or a picture. It keeps its own colors.");
         }
     }
 }
@@ -378,7 +378,7 @@ fn workspaces(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
     if s.ws_style != WsStyle::Dots {
         section(ui, "Each shows its");
         segmented(ui, &mut s.ws_names, &[(true, "Name"), (false, "Number")]);
-        note(ui, "The workspace's name if it has one, otherwise its number.");
+        note(ui, "Workspaces without a name show their number.");
     }
     section(ui, "Behavior");
     toggle(ui, "Hide empty workspaces", Some("The one you're on always shows"), &mut s.ws_hide_empty, accent);
@@ -506,7 +506,7 @@ fn ai(ui: &mut egui::Ui, s: &mut Settings) {
     });
     note(
         ui,
-        &format!("Claude, Codex and Grok use their own sign-ins. OpenRouter and DeepSeek take OPENROUTER_API_KEY and DEEPSEEK_API_KEY from the environment or {}.", crate::ai::env_file().display()),
+        &format!("Claude, Codex and Grok use the sign-in from their own apps. For OpenRouter or DeepSeek, add your key to {} as OPENROUTER_API_KEY or DEEPSEEK_API_KEY.", crate::ai::env_file().display()),
     );
 }
 

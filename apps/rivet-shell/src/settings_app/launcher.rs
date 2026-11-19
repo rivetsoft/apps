@@ -81,12 +81,8 @@ impl SettingsApp {
                 ui.end_row();
             });
             if s.launch_place == LaunchPlace::Panel {
-                hint(ui, "Opens from the panel you clicked, floating or attached like its other popups. Opened with a key, it comes from the screen's first panel at the Apps button's end, or the middle if there's no panel.");
+                hint(ui, "Opens from the panel you clicked. Opened with a key, it comes from the first panel.");
             }
-            hint(ui, match s.launch_view {
-                LaunchView::Grid => "Icons in rows, each above its name. Arrow keys move in every direction.",
-                LaunchView::List => "One row per app, with smaller icons. Up and Down move through them.",
-            });
         });
         section(ui, "Text", &mut |ui| {
             let follow = super::font_pick::like_appearance(&self.s.font);
@@ -101,7 +97,7 @@ impl SettingsApp {
                 });
                 ui.end_row();
             });
-            hint(ui, "Changes only the launcher. The rest of the shell uses the font set in Appearance.");
+            hint(ui, "The rest of the shell uses the font set in Appearance.");
         });
         section(ui, "As you type", &mut |ui| {
             let s = &mut self.s;

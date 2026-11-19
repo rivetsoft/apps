@@ -217,6 +217,10 @@ impl SettingsApp {
             if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
                 s.look = crate::style::Style::parse(&l, '=', ';');
             }
+            // Checks: the dock's own look, so its Reset buttons show (RIVET_SHELL_DOCK_LOOK=radius=4).
+            if let Ok(l) = std::env::var("RIVET_SHELL_DOCK_LOOK") {
+                s.dock_look = crate::style::Style::parse(&l, '=', ';');
+            }
         }
         let shot_mode = shot.is_some();
         let page = match std::env::var("RIVET_SHELL_PAGE").as_deref() {
@@ -283,7 +287,18 @@ fn section(ui: &mut egui::Ui, title: &str, body: &mut dyn FnMut(&mut egui::Ui)) 
     ui.add_space(22.0);
 }
 
+/// Whether the compositor tells the shell which workspaces have windows (niri, Hyprland, mango),
+/// which Smart Hide and the dock's open-app dots need. Screenshots draw as if it does.
+pub(super) fn knows_windows() -> bool {
+    use crate::sys::Compositor;
+    matches!(Compositor::detect(), Compositor::Niri | Compositor::Hyprland | Compositor::Mango) || std::env::args().any(|a| a == "--screenshot")
+}
+
 fn hint(ui: &mut egui::Ui, text: &str) {
+    // A choice whose label says it all passes "", and nothing is drawn.
+    if text.is_empty() {
+        return;
+    }
     let weak = ui.visuals().weak_text_color();
     ui.add(egui::Label::new(egui::RichText::new(text).small().color(weak)).wrap());
 }
@@ -403,28 +418,10 @@ impl eframe::App for SettingsApp {
                     ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
                     ui.spacing_mut().button_padding = Vec2::new(10.0, 4.0);
                     if self.page != Page::About {
-                        ui.horizontal(|ui| {
-                            ui.vertical(|ui| {
-                                ui.spacing_mut().item_spacing.y = 3.0;
-                                ui.label(egui::RichText::new(self.page.label()).size(21.0).strong());
-                                ui.label(egui::RichText::new(nav::about(self.page)).size(12.5).color(v.weak_text_color()));
-                            });
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                let running = self.shot.is_some() || crate::ipc::running();
-                                if running {
-                                    // A small pill: a dot and the word.
-                                    let ok = rivet_look::theme::status(ui.ctx()).success;
-                                    let g = ui.painter().layout_no_wrap("Shell running".into(), fonts::ui_font(11.5), ok);
-                                    let (r, _) = ui.allocate_exact_size(Vec2::new(g.size().x + 30.0, 24.0), Sense::hover());
-                                    ui.painter().rect_filled(r, 12.0, palette::mix(v.panel_fill, ok, 0.13));
-                                    ui.painter().circle_filled(Pos2::new(r.left() + 12.0, r.center().y), 3.0, ok);
-                                    ui.painter().galley(Pos2::new(r.left() + 20.0, r.center().y - g.size().y / 2.0), g, ok);
-                                } else if ui.button("Start the Shell").on_hover_text("Run rivet-shell in this session").clicked()
-                                    && let Ok(exe) = std::env::current_exe()
-                                {
-                                    let _ = std::process::Command::new(exe).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn();
-                                }
-                            });
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing.y = 3.0;
+                            ui.label(egui::RichText::new(self.page.label()).size(21.0).strong());
+                            ui.label(egui::RichText::new(nav::about(self.page)).size(12.5).color(v.weak_text_color()));
                         });
                         ui.add_space(18.0);
                     }
@@ -549,9 +546,9 @@ impl SettingsApp {
             let from_theme = self.s.follow_desktop_colors && self.look.palette().is_some_and(|p| p.secondary.is_some() && p.tertiary.is_some());
             if self.s.color_use > 0 && self.s.follow_desktop_colors && palette::matugen_template_outdated() {
                 ui.add_space(8.0);
-                hint(ui, "matugen has an older Rivet template without secondary and tertiary colors, so they're made from the accent and look close to it. Update the template to fix this.");
+                hint(ui, "Secondary and tertiary colors look close to the accent because Rivet's colors in matugen are out of date. Update them to get the full range.");
                 ui.add_space(4.0);
-                if ui.button("Update the Template").on_hover_text("Rewrites Rivet's template in matugen's folder, then remakes the colors").clicked() {
+                if ui.button("Update Rivet's Colors").on_hover_text("Updates Rivet's colors in matugen and recolors the desktop now").clicked() {
                     self.note = Some(match palette::install_matugen_template() {
                         Ok(_) => {
                             let pic = std::path::PathBuf::from(self.s.matugen_picture());
@@ -567,7 +564,7 @@ impl SettingsApp {
                 }
             } else if self.s.color_use > 0 && !from_theme {
                 ui.add_space(8.0);
-                hint(ui, "This theme has no secondary or tertiary color, so they're made from the accent: a quieter shade and a neighboring hue.");
+                hint(ui, "This theme has no secondary or tertiary color, so Rivet makes them from the accent.");
             }
         });
         section(ui, "Text", &mut |ui| {
@@ -606,7 +603,7 @@ impl SettingsApp {
     fn notifications_page(&mut self, ui: &mut egui::Ui) {
         section(ui, "Notifications", &mut |ui| {
             ui.checkbox(&mut self.s.notifications, "Show apps' notifications");
-            hint(ui, "Cards in the screen's corner, with a history in quick settings. If another notification program is running (mako, dunst or another shell), it shows them instead.");
+            hint(ui, "Past notifications stay in quick settings. If mako, dunst or another shell is running, it shows them instead.");
         });
         section(ui, "On-screen display", &mut |ui| {
             ui.checkbox(&mut self.s.osd, "Show volume and brightness as they change");
@@ -620,7 +617,7 @@ impl SettingsApp {
             });
             let tool = ["gammastep", "hyprsunset", "wlsunset"].into_iter().find(|t| crate::sys::has(t));
             hint(ui, &match tool {
-                Some(t) => format!("Turn it on in quick settings; {t} warms the colors."),
+                Some(_) => "Turn Night Light on in quick settings.".to_string(),
                 None => "Needs gammastep, hyprsunset or wlsunset. Install one to use Night Light.".to_string(),
             });
         });
@@ -649,6 +646,7 @@ impl SettingsApp {
 
     fn dock_page(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        let knows_windows = knows_windows();
         section(ui, "Dock", &mut |ui| {
             ui.checkbox(&mut self.s.dock, "Show the dock");
             ui.add_space(8.0);
@@ -668,17 +666,19 @@ impl SettingsApp {
                 hint(
                     ui,
                     match self.s.dock_hide {
-                        DockHide::Never => "The dock always shows.",
-                        DockHide::Auto => "The dock slides away; move the pointer to the bottom edge to bring it back.",
-                        DockHide::Smart => "The dock shows while the workspace has no windows, and slides away once it has some; the bottom edge brings it back (niri, Hyprland; elsewhere like Auto-Hide).",
+                        DockHide::Never => "",
+                        DockHide::Auto => "The dock slides away until you move the pointer to the bottom edge.",
+                        DockHide::Smart => if knows_windows { "The dock shows on an empty workspace and slides away when a window opens." } else { "Smart Hide needs niri, Hyprland or mango; here it works like Auto-Hide." },
                     },
                 );
                 ui.add_space(6.0);
                 ui.add_enabled_ui(self.s.dock_hide == DockHide::Never, |ui| {
                     ui.checkbox(&mut self.s.dock_reserve, "Keep windows clear of the dock");
                 });
-                ui.checkbox(&mut self.s.dock_running, "A dot under apps with windows open (niri, Hyprland)");
-                ui.checkbox(&mut self.s.dock_open_apps, "Also show open apps that aren't pinned (right-click one to pin it)");
+                if knows_windows {
+                    ui.checkbox(&mut self.s.dock_running, "A dot under apps with windows open");
+                    ui.checkbox(&mut self.s.dock_open_apps, "Show open apps that aren't pinned");
+                }
             });
         });
         self.dock_look_section(ui);

@@ -33,7 +33,7 @@ impl SettingsApp {
         section(ui, "Installed", &mut |ui| {
             let s = &mut self.s;
             if found.is_empty() {
-                hint(ui, "No plugins yet. A plugin is a folder with a plugin.conf and a program. Put one in your plugins folder to see it here.");
+                hint(ui, "No plugins yet. Put one in your plugins folder and it shows here.");
             }
             for m in &found {
                 let mut on = s.plugins.contains(&m.id);
@@ -77,12 +77,7 @@ impl SettingsApp {
                             if !m.version.is_empty() {
                                 by.push(format!("version {}", m.version));
                             }
-                            by.push(if m.stream { "keeps running".to_string() } else { format!("runs every {} s", m.interval) });
-                            if !m.events.is_empty() {
-                                by.push(format!("hears of: {}", m.events.join(", ")));
-                            }
                             hint(ui, &by.join(" · "));
-                            hint(ui, &m.dir.display().to_string());
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if !on {
@@ -137,13 +132,13 @@ impl SettingsApp {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button("Open Plugins Folder").on_hover_text(user_dir().display().to_string()).clicked() {
+                if ui.button("Open Plugins Folder").clicked() {
                     let dir = user_dir();
                     let _ = std::fs::create_dir_all(&dir);
                     crate::sys::spawn("xdg-open", &[&dir.display().to_string()]);
                 }
             });
-            hint(ui, "Plugins run as you, with your permissions. Only turn on ones you trust. Official plugins come with the shell; others go in your plugins folder.");
+            hint(ui, "A plugin can do anything you can, so turn on only ones you trust.");
         });
         if let Some((id, key, title)) = ask {
             let start = Some(self.s.plugin_value(&id, &key)).filter(|v| !v.is_empty()).map(crate::wall::expand).or_else(|| Some(rivet_xdg::places::home()));
@@ -154,13 +149,19 @@ impl SettingsApp {
             self.plugin_pick = Some((id, key, rx));
         }
         section(ui, "Hooks", &mut |ui| {
-            hint(ui, "Shell commands that run when an event happens. Event details are in environment variables: RIVET_EVENT, plus the ones shown on hover (RIVET_PATH, RIVET_STAGE…).");
+            hint(ui, "Run a command of your own when one of these happens.");
             ui.add_space(8.0);
             let hooks = &mut self.s.hooks;
             grid(ui, "shell-hooks", &mut |ui| {
                 for (name, what, with) in EVENTS {
-                    let tip = if with.is_empty() { format!("hook.{name}") } else { format!("hook.{name} · comes with {with}") };
-                    ui.label(*what).on_hover_text(tip);
+                    let label = ui.label(*what);
+                    // What the command can read: each detail is a RIVET_ variable, then its values if they're fixed.
+                    if !with.is_empty() {
+                        let (keys, values) = with.split_once(": ").unwrap_or((with, ""));
+                        let vars: Vec<String> = keys.split(", ").map(|k| format!("RIVET_{}", k.to_uppercase())).collect();
+                        let values = if values.is_empty() { String::new() } else { format!(" ({values})") };
+                        label.on_hover_text(format!("Your command can read {}{values}", vars.join(", ")));
+                    }
                     let mut cmd = hooks.iter().find(|(e, _)| e == name).map(|(_, c)| c.clone()).unwrap_or_default();
                     if ui.add(egui::TextEdit::singleline(&mut cmd).desired_width(300.0).font(egui::TextStyle::Monospace).hint_text("a command")).changed() {
                         hooks.retain(|(e, _)| e != name);
@@ -172,9 +173,6 @@ impl SettingsApp {
                     ui.end_row();
                 }
             });
-        });
-        section(ui, "Write a plugin", &mut |ui| {
-            hint(ui, "A folder with a plugin.conf (name, exec, mode, interval, events) and a program in any language. The program prints what its panel item shows (plain text, or JSON: text, icon, a menu, launcher entries) and hears about clicks and the events above. It can also add settings and a launcher command (@name). Disk Space, Notes and FTP come with the shell as examples to copy. PLUGINS.md, next to the shell's README, has the full reference.");
         });
     }
 }

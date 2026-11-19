@@ -43,7 +43,7 @@ impl SettingsApp {
                 let warn = rivet_look::theme::status(ui.ctx()).warning;
                 ui.label(egui::RichText::new(format!("{d} is also running, so each step would happen twice. Stop {d}, or turn this off and let {d} handle idle.")).color(warn));
             } else {
-                hint(ui, "Each step starts after this long without keyboard or mouse input. A playing video or Keep Awake in quick settings delays them.");
+                hint(ui, "Each step counts from your last key press or mouse move. Playing video and Keep Awake hold them off.");
             }
             if !s.idle_on {
                 return;
@@ -65,7 +65,7 @@ impl SettingsApp {
             });
             ui.add_space(8.0);
             ui.checkbox(&mut s.idle_media, "Not while music or a video plays");
-            hint(ui, "Applies to any player shown in the panel's Now Playing item.");
+            hint(ui, "Any player that shows in Now Playing counts.");
         });
         section(ui, "Lock screen", &mut |ui| {
             let s = &mut self.s;
@@ -86,9 +86,8 @@ impl SettingsApp {
                 ui.checkbox(&mut s.lock_blur, "Blur the wallpaper");
                 ui.checkbox(&mut s.lock_power, "Show suspend, restart and shut down buttons");
                 ui.add_space(4.0);
-                hint(ui, &format!("Your password is checked with PAM (the \"{}\" service).", crate::auth::service()));
                 ui.add_space(6.0);
-                if ui.button("Try It").on_hover_text("Shows the lock screen without locking. Type your password to test it, or press Escape.").clicked()
+                if ui.button("Try It").on_hover_text("Shows the lock screen without locking anything. Press Escape to leave.").clicked()
                     && let Ok(exe) = std::env::current_exe()
                 {
                     {
@@ -101,7 +100,7 @@ impl SettingsApp {
                     ui.add(egui::TextEdit::singleline(&mut s.lock_cmd).desired_width(260.0).font(egui::TextStyle::Monospace));
                     ui.end_row();
                 });
-                hint(ui, "The command must keep running until the screen unlocks, so the shell knows it's locked. For swaylock, leave out -f.");
+                hint(ui, "Use a locker that stays open until you unlock, so the shell knows the screen is locked. With swaylock, leave out -f.");
             }
         });
         section(ui, "Keys", &mut |ui| {

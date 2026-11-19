@@ -7,15 +7,6 @@ use super::{SettingsApp, grid, hint, section};
 use crate::comp;
 use crate::sys::Compositor;
 
-/// "~/.config/niri/config.kdl" rather than the whole path.
-fn short(p: &std::path::Path) -> String {
-    let s = p.display().to_string();
-    match std::env::var("HOME") {
-        Ok(h) if !h.is_empty() && s.starts_with(&h) => format!("~{}", &s[h.len()..]),
-        _ => s,
-    }
-}
-
 fn name(p: &std::path::Path) -> String {
     p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
@@ -48,20 +39,17 @@ impl SettingsApp {
 
         section(ui, "Window Look", &mut |ui| {
             let Some(t) = &target else {
-                hint(ui, &format!("Gaps, borders and corners can be set here on niri, Hyprland and mango. This session runs {}, so use its own settings.", comp.name()));
+                hint(ui, &format!("Gaps, borders and corners can be set here on niri, Hyprland and mango. This session runs {0}, so set them in {0}'s own settings.", comp.name()));
                 return;
             };
             let s = &mut self.s;
             ui.label(egui::RichText::new(format!("{} is running", comp.name())).strong());
-            hint(ui, &format!("Its config: {}", short(&t.main)));
             ui.add_space(6.0);
             ui.checkbox(&mut s.comp_on, format!("Set {}'s gaps, borders and corners here", comp.name()));
-            hint(ui, &format!("Rivet Shell writes them to {} and keeps it up to date. Borders can follow the accent as the wallpaper changes.", short(&t.ours)));
+            hint(ui, "Borders can follow the accent and change with the wallpaper.");
             if s.comp_on {
                 ui.add_space(8.0);
-                if included {
-                    hint(ui, &format!("✓ {} includes it.", name(&t.main)));
-                } else {
+                if !included {
                     let warn = rivet_look::theme::status(ui.ctx()).warning;
                     ui.label(egui::RichText::new(format!("{} doesn't include it yet, so these don't show.", name(&t.main))).color(warn));
                     ui.add_space(4.0);
@@ -71,7 +59,7 @@ impl SettingsApp {
                         msg = Some(comp::add_include(t, Some(&look), &s.displays).map(|_| format!("Added. The original is saved as {}.rivet-backup.", name(&t.main))));
                         ctx.data_mut(|d| d.remove::<(f64, bool)>(key));
                     }
-                    hint(ui, &format!("Adds one line at the end ({}) so settings here override earlier ones. Backs up the file first.{}", comp::include_line(t), if t.comp == Compositor::Niri { " Needs niri 25.11 or later." } else { "" }));
+                    hint(ui, &format!("Adds one line to the end of {} so these settings take effect. A copy of the original is saved first.{}", name(&t.main), if t.comp == Compositor::Niri { " Needs niri 25.11 or later." } else { "" }));
                 }
                 match &msg {
                     Some(Ok(m)) => hint(ui, m),

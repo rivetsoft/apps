@@ -71,7 +71,7 @@ impl SettingsApp {
                 }
             }
             ui.add_space(8.0);
-            hint(ui, "Used for apps in the dock, launcher, panels and tray. Missing icons come from the theme it inherits from.");
+            hint(ui, "Used for apps in the dock, launcher, panels and tray.");
         });
     }
 }

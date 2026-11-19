@@ -120,7 +120,7 @@ impl SettingsApp {
             let stroke = Stroke::new(1.0, if resp.hovered() { accent } else { mix(v.panel_fill, v.text_color(), 0.25) });
             ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
             ui.painter().text(r.center(), Align2::CENTER_CENTER, "+  New Panel", ui_font(13.0), if resp.hovered() { v.strong_text_color() } else { v.text_color() });
-            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Add a panel along the bottom (change its edge below)").clicked() {
+            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Adds a panel along the bottom of the screen").clicked() {
                 ops.push(Op::AddPanel);
             }
         });
@@ -264,13 +264,14 @@ impl SettingsApp {
             let edge = p.edge.label().to_lowercase();
             match p.hide {
                 DockHide::Never => {}
-                DockHide::Auto => hint(ui, &format!("The panel slides away and windows use its room; move the pointer to the screen's {edge} edge to bring it back.")),
-                DockHide::Smart => hint(ui, &format!("The panel shows while the workspace is empty and slides away once a window opens. Move the pointer to the screen's {edge} edge to bring it back. On compositors other than niri and Hyprland, works like Auto-Hide.")),
+                DockHide::Auto => hint(ui, &format!("The panel slides away until you move the pointer to the screen's {edge} edge.")),
+                DockHide::Smart if super::knows_windows() => hint(ui, &format!("The panel shows on an empty workspace and slides away when a window opens. The {edge} edge brings it back.")),
+                DockHide::Smart => hint(ui, "Smart Hide needs niri, Hyprland or mango; here it works like Auto-Hide."),
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                if ui.button("Duplicate").on_hover_text("Make a copy of this panel").clicked() {
+                if ui.button("Duplicate").clicked() {
                     ops.push(Op::Duplicate(sel));
                 }
                 if n > 1 {
@@ -550,9 +551,9 @@ impl SettingsApp {
         });
         ui.add_space(14.0);
         if panel.vertical() {
-            hint(ui, "Zones: Top starts at the panel's top end, Middle sits in the middle, Bottom ends at its bottom end. On a side panel, symbols sit above numbers, the clock wraps onto lines and the window title runs downward. Items that don't fit are dropped from the inner end.");
+            hint(ui, "On a side panel, numbers sit under their symbols, the clock wraps onto lines and the window title runs downward. If items don't fit, the ones nearest the middle are hidden first.");
         } else {
-            hint(ui, "Zones: Left starts at the panel's left end, Center sits in the middle, Right ends at its right end. On a narrow screen, items that don't fit are dropped from the inner end. Plugins you turn on appear under Add Item.");
+            hint(ui, "If items don't fit on a narrow screen, the ones nearest the middle are hidden first. Plugins you turn on appear under Add Item.");
         }
     }
 }
@@ -625,12 +626,12 @@ impl SettingsApp {
         let (bar, side) = (p.bar().round() as u32, p.vertical());
         super::section(ui, "Groups", &mut |ui| {
             if p.groups.is_empty() {
-                hint(ui, "Grouped items share a background and colors, and a group can show its first few items and fold the rest behind an arrow. To start one, point at an item above and click its ring.");
+                hint(ui, "Grouped items share one background, and a group can fold extra items behind an arrow. To make a group, point at an item above and click its ring.");
                 return;
             }
             hint(ui, "Choose a group to change it. To move an item between groups, click its numbered chip in the list above.");
             ui.add_space(6.0);
-            ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape").on_hover_text("Neighboring groups with backgrounds join with no gap between them");
+            ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape");
             ui.add_space(12.0);
             // The groups as tabs, each in its own colours; one's settings show at a time.
             let sel_id = egui::Id::unique(("shell-group-sel", sel));
@@ -675,7 +676,7 @@ impl SettingsApp {
                         paints(ui, (sel, g, "bg"), &mut group.bg, true, "Soft", &colors);
                         if group.bg.is_some() {
                             ui.add_space(8.0);
-                            ui.checkbox(&mut group.gradient, "Fade").on_hover_text("A gradient along the panel, from the background color to a darker shade of it");
+                            ui.checkbox(&mut group.gradient, "Fade").on_hover_text("Fades the background to a darker shade along the panel");
                         }
                     });
                     ui.end_row();

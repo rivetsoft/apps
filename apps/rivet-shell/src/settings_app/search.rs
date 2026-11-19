@@ -102,7 +102,6 @@ pub const INDEX: &[Entry] = &[
     e(Page::Launcher, "Keys", "Open the launcher with a key", "bind shortcut hotkey msg"),
     e(Page::Plugins, "Installed", "Plugins", "extensions addons add-ons third-party official panel item install enable"),
     e(Page::Plugins, "Hooks", "Hooks", "run a command script event on lock unlock idle wallpaper notification workspace media"),
-    e(Page::Plugins, "Write a plugin", "Write a plugin", "develop api plugin.conf json example"),
     e(Page::Widgets, "On the desktop", "Desktop clock", "widget date large"),
     e(Page::Widgets, "On the desktop", "System widget", "processor cpu memory ram battery"),
     e(Page::Widgets, "On the desktop", "Widgets side", "left right"),

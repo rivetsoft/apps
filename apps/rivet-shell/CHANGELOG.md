@@ -7,6 +7,13 @@
 - Settings: Appearance's "Color use" is one choice with a legend of what the accent, secondary
   and tertiary colors are on at that setting. Choices read in title case (Tonal Spot, From the
   Wallpaper, Smart Hide), and hints and tips are reworded to be plainer.
+- Settings speaks plainly: descriptions say what a setting does for you, without file names,
+  services or variables, and settings whose name says it all have no description. The "Shell
+  running" badge, the plugin-writing notes and plugins' folder paths are gone.
+- A panel's or the dock's own look is easier to read: a row you've changed gets a Reset button
+  that puts it back to Appearance's value, in place of the "Appearance" chip on every row.
+- Smart Hide and the dock's open-app dots say they work on mango too. The dots and open apps only
+  appear where the compositor supports them.
 - Commands in the launcher: `@` and a plugin's word show only that plugin's entries, and the
   words after it search them (`@ftp work`, `@notes plan`). `@` alone lists the words.
 - An FTP plugin, for Rivet FTP: your saved connections in a panel item's menu, under their
