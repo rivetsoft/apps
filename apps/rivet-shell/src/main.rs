@@ -4,6 +4,7 @@
 mod ai;
 mod ai_pop;
 mod audio;
+mod auth_pop;
 mod auth;
 mod bar;
 mod cc;
@@ -23,6 +24,7 @@ mod notes;
 mod notes_pop;
 mod panels;
 mod plugins;
+mod polkit;
 mod portal;
 mod power_ui;
 mod quick;
@@ -61,11 +63,15 @@ Usage:
                                     reload, quit
   rivet-shell --install-desktop-entry
                                     Add Rivet Shell Settings to the app launcher (for this user)
+  rivet-shell --install-service     Start the shell with your session as a systemd service
+                                    (for this user); --remove-service takes it out again
   rivet-shell -h, --help            This help
   rivet-shell -V, --version         The version
 
 Start it from your compositor (niri: spawn-at-startup \"rivet-shell\"; Hyprland: exec-once =
-rivet-shell; Sway: exec rivet-shell) and bind a key to `rivet-shell msg launcher`. It needs the
+rivet-shell; Sway: exec rivet-shell), or as a service with --install-service where the
+compositor starts systemd's graphical session (niri-session, uwsm). Bind a key to
+`rivet-shell msg launcher`. It needs the
 layer-shell protocol (niri, Hyprland, Sway, river, labwc, Wayfire, COSMIC; not GNOME), and
 matugen for colors from the wallpaper.";
 
@@ -83,6 +89,42 @@ fn install_desktop_entry() -> Result<PathBuf, String> {
     }
     let _ = std::process::Command::new("update-desktop-database").arg(data.join("applications")).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
     Ok(entry)
+}
+
+const SERVICE: &str = "rivet-shell.service";
+
+fn systemctl(args: &[&str]) -> Result<(), String> {
+    let out = std::process::Command::new("systemctl").arg("--user").args(args).output().map_err(|_| "systemctl isn't installed, so there's no service to set up here".to_string())?;
+    if out.status.success() { Ok(()) } else { Err(format!("systemctl --user {} failed: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim())) }
+}
+
+/// Write the service for this user (with this program's own path) and turn it on, so the
+/// shell starts with the graphical session.
+fn install_service() -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("couldn't find this program: {e}"))?;
+    let unit = rivet_xdg::places::config_home().join("systemd/user").join(SERVICE);
+    // Quoted as systemd reads it, for a path with spaces.
+    let quoted = format!("\"{}\"", exe.display().to_string().replace('\\', "\\\\").replace('"', "\\\""));
+    let text = include_str!("../data/rivet-shell.service").replace("ExecStart=rivet-shell", &format!("ExecStart={quoted}"));
+    if let Some(d) = unit.parent() {
+        std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&unit, text).map_err(|e| format!("couldn't write {}: {e}", unit.display()))?;
+    systemctl(&["daemon-reload"])?;
+    systemctl(&["enable", SERVICE])?;
+    Ok(unit)
+}
+
+fn remove_service() -> Result<PathBuf, String> {
+    let unit = rivet_xdg::places::config_home().join("systemd/user").join(SERVICE);
+    if !unit.exists() {
+        return Err("the service isn't installed for this user".into());
+    }
+    // Turned off, not stopped: a shell on screen stays until the session ends.
+    let _ = systemctl(&["disable", SERVICE]);
+    std::fs::remove_file(&unit).map_err(|e| format!("couldn't remove {}: {e}", unit.display()))?;
+    systemctl(&["daemon-reload"])?;
+    Ok(unit)
 }
 
 fn settings_window(screenshot: Option<PathBuf>) -> ExitCode {
@@ -126,6 +168,26 @@ fn main() -> ExitCode {
         Some("--install-desktop-entry") => match install_desktop_entry() {
             Ok(p) => {
                 println!("Added {}", p.display());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("rivet-shell: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("--install-service") => match install_service() {
+            Ok(p) => {
+                println!("Added {}\nRivet Shell now starts with your session. Take its line out of your compositor's settings, then log in again or run: systemctl --user start {SERVICE}", p.display());
+                ExitCode::SUCCESS
+            }
+            Err(e) => {
+                eprintln!("rivet-shell: {e}");
+                ExitCode::FAILURE
+            }
+        },
+        Some("--remove-service") => match remove_service() {
+            Ok(p) => {
+                println!("Removed {}\nStart Rivet Shell from your compositor's settings from now on.", p.display());
                 ExitCode::SUCCESS
             }
             Err(e) => {
@@ -224,7 +286,8 @@ fn main() -> ExitCode {
         None => {
             if ipc::running() {
                 eprintln!("rivet-shell: already running in this session (rivet-shell msg quit stops it)");
-                return ExitCode::FAILURE;
+                // Its own number, so the service doesn't keep trying.
+                return ExitCode::from(3);
             }
             // The watcher: it starts the shell proper, and again if that one crashes
             // (RIVET_SHELL_NO_WATCH=1 runs the shell directly, for a debugger).

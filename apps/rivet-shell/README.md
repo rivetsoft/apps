@@ -19,6 +19,9 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   and the notification history.
 - **Notifications**: the shell is the desktop's notification service (cards in the corner, with
   the apps' buttons; urgent ones stay until closed), unless another one (mako, dunst) runs.
+- **Password prompt**: when an app needs administrator rights (installing software, `pkexec`),
+  the shell asks for the password in its own dialog, as the session's polkit agent, unless
+  another agent is already running.
 - **On-screen display**: volume and brightness show as they change, from keys or anywhere else.
 - **Dock**: pinned apps, then open apps that aren't pinned; a dot under the ones with windows
   open (niri, Hyprland); right-click an icon to pin, unpin or move it. It can auto-hide (back when the pointer
@@ -53,6 +56,14 @@ Start it with your session and bind a key to the launcher:
 | niri | `spawn-at-startup "rivet-shell"` | `Mod+Space { spawn "rivet-shell" "msg" "launcher"; }` |
 | Hyprland | `exec-once = rivet-shell` | `bind = SUPER, SPACE, exec, rivet-shell msg launcher` |
 | Sway | `exec rivet-shell` | `bindsym $mod+space exec rivet-shell msg launcher` |
+
+Or run it as a systemd service, which starts it with the session and again if it stops by
+accident. This works where the compositor starts systemd's graphical session (`niri-session`,
+uwsm); take the shell's line out of the compositor's settings when you use it:
+
+```sh
+rivet-shell --install-service     # --remove-service takes it out again
+```
 
 It needs a compositor with the wlr layer-shell protocol (niri, Hyprland, Sway, river, labwc,
 Wayfire, COSMIC; not GNOME). Volume uses `wpctl` (PipeWire), brightness `brightnessctl`, Wi-Fi

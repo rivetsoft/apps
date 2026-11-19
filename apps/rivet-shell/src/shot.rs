@@ -2,7 +2,7 @@
 //! widgets, the panel, the dock, a popup when asked), drawn by the same code as the real shell,
 //! with made-up status, so checks never show the person's wallpaper or machine.
 //!
-//! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|notifications|dock-menu, RIVET_SHELL_THEME=light|dark,
+//! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|notifications|dock-menu|auth (the password dialog), RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
 //! RIVET_SHELL_OSD=1|caps (the volume or Caps Lock display), RIVET_SHELL_POPUP=sound, RIVET_SHELL_QUERY=text (typed into the launcher),
 //! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style), RIVET_SHELL_LEVELS=both|icon|text
@@ -253,6 +253,7 @@ impl ShotApp {
             Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("auth") => Some(Popup { kind: PopupKind::Auth { typed: "secret".into(), round: 1 }, anchor_x: 0.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("plugin") => Some(Popup { kind: PopupKind::Plugin { id: "disk".into() }, anchor_x: 640.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("tray") => Some(Popup { kind: PopupKind::TrayMenu { key: ":1.chat/StatusNotifierItem".into(), path: Vec::new() }, anchor_x: 760.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("panel-dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-files".into(), pinned: true }, anchor_x: 330.0, output: String::new(), focus: false, from: Some((Edge::Top, if attached { 40.0 } else { 44.0 })), attach: attached.then_some(0), panel: Some(0), join: None }),
@@ -287,6 +288,7 @@ impl ShotApp {
             ai: demo_ai(),
             audio: crate::audio::demo(),
             join: None,
+            auth: Some(crate::polkit::demo()),
             // RIVET_SHELL_PLUGIN=1: a plugin's item on the first panel (RIVET_SHELL_POPUP=plugin: its menu).
             // RIVET_SHELL_PLUGIN_SAYS=file: the "disk" item is what that file's lines say (a real
             // plugin's output, to see how the shell shows it).

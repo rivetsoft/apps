@@ -85,6 +85,9 @@ pub enum PopupKind {
     Plugin { id: String },
     /// A tray icon's menu: its item, and the submenus opened (outermost first).
     TrayMenu { key: String, path: Vec<i32> },
+    /// The password dialog, when an app needs an administrator's say-so: what's typed, and
+    /// the try it was typed for.
+    Auth { typed: String, round: u64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,7 +129,7 @@ impl Popup {
     }
     /// Whether it needs the keyboard (the launcher's search; Esc for the others).
     pub fn wants_keyboard(&self) -> bool {
-        matches!(self.kind, PopupKind::Launcher { .. } | PopupKind::Network { .. })
+        matches!(self.kind, PopupKind::Launcher { .. } | PopupKind::Network { .. } | PopupKind::Auth { .. })
     }
 }
 
@@ -168,6 +171,8 @@ pub struct Extra {
     pub plugins: crate::plugins::Items,
     /// A popup joined to a panel: the panel, and where along it (screen points).
     pub join: Option<(usize, f32, f32)>,
+    /// The password being asked for (while its dialog is open).
+    pub auth: Option<crate::polkit::View>,
 }
 
 /// What the person asked for, done by whoever runs the shell.
@@ -219,6 +224,8 @@ pub enum Act {
     Tray(crate::tray::Job),
     /// Something for a plugin: a click on its item, a row of its menu.
     Plugin(String, crate::plugins::Event),
+    /// What was typed into the password dialog.
+    Auth(String),
 }
 
 /// Each surface's look: colours and fonts (following the desktop), and icons.
@@ -844,6 +851,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Plugin { id } => Vec2::new(PLUGIN_W, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::TrayMenu { path, .. } => Vec2::new(260.0, crate::tray_ui::menu_height(m, path).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Auth { .. } => Vec2::new(crate::auth_pop::WIDTH, crate::auth_pop::height(m, ui.ctx())),
     };
     let mut anchored = false;
     // Joined to a panel, it stays along the straight part of the panel's side (clear of
@@ -867,6 +875,10 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         }
         PopupKind::Power { .. } if crate::power_ui::centred(m.s) => {
             ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(90));
+            Rect::from_center_size(full.center(), size)
+        }
+        PopupKind::Auth { .. } => {
+            ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(110));
             Rect::from_center_size(full.center(), size)
         }
         PopupKind::DockMenu { .. } if pop.from.is_none() => {
@@ -898,7 +910,9 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     // Outside the card: close.
     let back = ui.interact(full, egui::Id::unique("popup-back"), Sense::click());
     let outside = ui.input(|i| i.pointer.interact_pos().is_some_and(|p| !rect.contains(p)));
-    if (back.clicked() || back.secondary_clicked()) && outside || esc {
+    // The password dialog stays through a click outside it (Esc or Cancel turns it away).
+    let stays = matches!(pop.kind, PopupKind::Auth { .. });
+    if (back.clicked() || back.secondary_clicked()) && outside && !stays || esc {
         m.acts.push(Act::Close);
     }
     match pop.attach.filter(|_| anchored && pop.from.is_some()) {
@@ -921,6 +935,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::DockMenu { .. } | PopupKind::TrayMenu { .. } => 6.0,
         PopupKind::Control { .. } => crate::quick::PAD,
         PopupKind::Notifications => crate::notes_pop::PAD,
+        PopupKind::Auth { .. } => crate::auth_pop::PAD,
         _ => 14.0,
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(pad)).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -938,6 +953,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
         PopupKind::TrayMenu { key, path } => crate::tray_ui::menu(&mut child, key, path, m),
         PopupKind::Plugin { id } => plugin_menu(&mut child, id, m, kit),
+        PopupKind::Auth { typed, round } => crate::auth_pop::popup(&mut child, typed, round, m, kit),
     }
 }
 

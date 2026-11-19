@@ -54,6 +54,8 @@ pub enum Msg {
     Wall { path: PathBuf, size: (u32, u32), pixels: Option<Vec<u8>> },
     Matugen(Result<(), String>),
     Note(NoteMsg),
+    /// From the password prompt's threads.
+    Polkit(crate::polkit::Event),
     Apps(Vec<rivet_xdg::launch::DesktopApp>),
     /// Caps Lock (else Num Lock) turned on or off.
     LockKey { caps: bool, on: bool },
@@ -174,6 +176,8 @@ pub struct Shell {
     // ---- notifications, the on-screen display, night light, keep awake
     notes: Notes,
     note_server: Option<notes::Server>,
+    /// The password prompt, while the shell is the session's polkit agent.
+    polkit: Option<crate::polkit::Agent>,
     dnd: bool,
     osd: Option<(OsdKind, u32, bool)>,
     osd_until: Option<Instant>,
@@ -308,6 +312,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         dock_key: (0, false),
         notes: Notes::default(),
         note_server: None,
+        polkit: None,
         dnd: false,
         osd: None,
         osd_until: None,
@@ -330,6 +335,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         exit: false,
     };
     shell.set_notifications();
+    shell.set_polkit();
     shell.set_ai();
     shell.apply_comp();
     shell.plugins.sync(&shell.s.plugins.clone(), &shell.s.plugin_set.clone());
@@ -499,6 +505,40 @@ impl Shell {
             Ok(s) => self.note_server = Some(s),
             Err(e) => eprintln!("rivet-shell: notifications: {e}"),
         }
+    }
+
+    /// Be the session's password prompt (or stop), as the setting says. Where another prompt
+    /// already answers for the session, or there's no polkit, the shell goes without.
+    fn set_polkit(&mut self) {
+        if !self.s.ask_passwords {
+            if self.polkit.take().is_some() {
+                self.sync_auth();
+            }
+            return;
+        }
+        if self.polkit.is_some() {
+            return;
+        }
+        let tx = self.tx.clone();
+        match crate::polkit::Agent::start(move |e| {
+            let _ = tx.send(Msg::Polkit(e));
+        }) {
+            Ok(a) => self.polkit = Some(a),
+            Err(e) => eprintln!("rivet-shell: password prompt: {e}"),
+        }
+    }
+
+    /// The password dialog follows what's being asked: opened for a request, closed when none
+    /// is left.
+    fn sync_auth(&mut self) {
+        let asking = self.polkit.as_ref().is_some_and(|a| a.view().is_some());
+        let open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Auth { .. }));
+        if asking && !open {
+            self.open_popup(Popup::at(PopupKind::Auth { typed: String::new(), round: 0 }, f32::NAN, ""));
+        } else if !asking && open {
+            self.close_popup();
+        }
+        self.redraw_kinds(&[Kind::Popup]);
     }
 
     /// The notification cards' surface: made, resized or taken away to fit the cards on screen.
@@ -729,6 +769,10 @@ impl Shell {
     }
 
     fn open_popup(&mut self, p: Popup) {
+        // The password dialog is answered before anything else opens.
+        if !matches!(p.kind, PopupKind::Auth { .. }) && self.popup.as_ref().is_some_and(|o| matches!(o.kind, PopupKind::Auth { .. })) {
+            return;
+        }
         // The same popup again closes it.
         if self.popup.as_ref().is_some_and(|o| std::mem::discriminant(&o.kind) == std::mem::discriminant(&p.kind)) {
             self.close_popup();
@@ -775,6 +819,8 @@ impl Shell {
     }
 
     fn close_popup(&mut self) {
+        // Closing the password dialog (Esc, Cancel, another popup opened over it) is a no.
+        let auth = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Auth { .. }));
         if self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::TrayMenu { .. })) {
             self.tray.run(crate::tray::Job::CloseMenu);
         }
@@ -787,6 +833,11 @@ impl Shell {
         if let Some(i) = self.surfs.iter().position(|s| s.kind == Kind::Popup) {
             let s = self.surfs.remove(i);
             self.spare = Some((s.ctx, s.kit, s.tex, s.start));
+        }
+        if auth && let Some(a) = self.polkit.as_mut() {
+            a.cancel();
+            // Another request may have been waiting behind it.
+            self.sync_auth();
         }
     }
 
@@ -810,6 +861,11 @@ impl Shell {
                     self.apps = apps;
                     self.reshape_dock(true);
                     self.redraw_kinds(&[Kind::Popup, Kind::Dock]);
+                }
+            }
+            Msg::Polkit(e) => {
+                if self.polkit.as_mut().is_some_and(|a| a.on_event(e)) {
+                    self.sync_auth();
                 }
             }
             Msg::Note(NoteMsg::New(n)) => {
@@ -1145,6 +1201,9 @@ impl Shell {
         if old.notifications != s.notifications {
             self.set_notifications();
         }
+        if old.ask_passwords != s.ask_passwords {
+            self.set_polkit();
+        }
         if old.night_kelvin != s.night_kelvin && self.night.on() {
             self.night.set(true, s.night_kelvin);
         }
@@ -1342,6 +1401,7 @@ impl Shell {
             ai: if matches!(kind, Kind::Panel | Kind::Popup) { self.ai.get() } else { Default::default() },
             tray: if matches!(kind, Kind::Panel | Kind::Popup) { self.tray.get() } else { Default::default() },
             join: if kind == Kind::Panel { self.popup.as_ref().filter(|p| p.output.is_empty() || p.output == self.surfs[i].output_name).and_then(|p| Some((p.attach?, p.join?.0, p.join?.1))) } else { None },
+            auth: if kind == Kind::Popup { self.polkit.as_ref().and_then(|a| a.view()) } else { None },
         };
         let join_was = self.popup.as_ref().and_then(|p| p.join);
         let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, .. } = self;
@@ -1548,6 +1608,14 @@ impl Shell {
             Act::Workspace(k) => sys::focus_workspace(self.comp, &k),
             Act::Open(p) => self.open_popup(p),
             Act::Close => self.close_popup(),
+            Act::Auth(mut text) => {
+                if let Some(a) = self.polkit.as_mut() {
+                    a.answer(&text);
+                }
+                // Overwritten before it's let go, as far as a String allows.
+                unsafe { text.as_bytes_mut() }.iter_mut().for_each(|b| *b = 0);
+                self.redraw_kinds(&[Kind::Popup]);
+            }
             Act::Volume(up) => {
                 sys::change_volume(up);
                 self.live.refresh(false);
@@ -1770,9 +1838,13 @@ impl OutputHandler for Shell {
 impl LayerShellHandler for Shell {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface) {
         if self.surfs.iter().any(|s| &s.layer == layer && s.kind == Kind::Popup) {
-            self.popup = None;
+            let auth = self.popup.take().is_some_and(|p| matches!(p.kind, PopupKind::Auth { .. }));
             self.radio.want(crate::radio::NONE);
             self.audio.want(false);
+            // The compositor took the password dialog away: a no.
+            if auth && let Some(a) = self.polkit.as_mut() {
+                a.cancel();
+            }
         }
         self.surfs.retain(|s| &s.layer != layer);
     }

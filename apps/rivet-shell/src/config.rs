@@ -530,6 +530,9 @@ pub struct Settings {
     pub osd: bool,
     /// Show Caps Lock and Num Lock turning on and off there too.
     pub osd_keys: bool,
+    /// Ask for the password when an app needs an administrator's say-so (be the session's
+    /// polkit agent).
+    pub ask_passwords: bool,
     /// The launcher: a grid or a list, its size, its icons' size (the grid's; a list's are
     /// two thirds of it), whether sums are answered, and whether the screen dims behind it.
     /// The plugins turned on (their folders' names), and the person's own commands for the
@@ -649,6 +652,7 @@ impl Default for Settings {
             notifications: true,
             osd: true,
             osd_keys: true,
+            ask_passwords: true,
             plugins: Vec::new(),
             hooks: Vec::new(),
             plugin_set: Vec::new(),
@@ -893,6 +897,7 @@ impl Settings {
                 "lock_blur" => self.lock_blur = b,
                 "lock_power" => self.lock_power = b,
                 "osd_keys" => self.osd_keys = b,
+                "ask_passwords" => self.ask_passwords = b,
                 "plugins" => self.plugins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "launch_view" => self.launch_view = LaunchView::from(v),
                 "launch_place" => self.launch_place = LaunchPlace::from(v),
@@ -1004,7 +1009,7 @@ impl Settings {
             "idle_on={}\nidle_dim={}\nidle_lock={}\nidle_screen_off={}\nidle_suspend={}\nidle_media={}\nlock_on_sleep={}\nlock_cmd={}\nlock_blur={}\nlock_power={}\n",
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
         ));
-        t.push_str(&format!("osd_keys={}\n", self.osd_keys));
+        t.push_str(&format!("osd_keys={}\nask_passwords={}\n", self.osd_keys, self.ask_passwords));
         t.push_str(&format!("launch_view={}\nlaunch_place={}\nlaunch_size={}\nlaunch_icon={}\nlaunch_calc={}\nlaunch_dim={}\n", self.launch_view.name(), self.launch_place.name(), self.launch_size.name(), self.launch_icon, self.launch_calc, self.launch_dim));
         t.push_str(&format!("plugins={}\n", self.plugins.join(",")));
         for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
@@ -1212,7 +1217,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, ask_passwords: false, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

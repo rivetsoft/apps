@@ -103,6 +103,10 @@ impl SettingsApp {
                 hint(ui, "Use a locker that stays open until you unlock, so the shell knows the screen is locked. With swaylock, leave out -f.");
             }
         });
+        section(ui, "Passwords", &mut |ui| {
+            ui.checkbox(&mut self.s.ask_passwords, "Ask for the password when an app needs administrator rights");
+            hint(ui, "If another password prompt is already running, it asks instead.");
+        });
         section(ui, "Keys", &mut |ui| {
             hint(ui, "Bind this in your compositor's settings to lock right away:");
             ui.add_space(4.0);

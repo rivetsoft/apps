@@ -103,6 +103,7 @@ pub const INDEX: &[Entry] = &[
     e(Page::Plugins, "Installed", "Plugins", "extensions addons add-ons third-party official panel item install enable"),
     e(Page::Plugins, "Hooks", "Hooks", "run a command script event on lock unlock idle wallpaper notification workspace media"),
     e(Page::Widgets, "On the desktop", "Desktop clock", "widget date large"),
+    e(Page::Idle, "Passwords", "Ask for the password for administrator rights", "polkit authentication agent prompt pkexec sudo root admin authorize"),
     e(Page::Widgets, "On the desktop", "System widget", "processor cpu memory ram battery"),
     e(Page::Widgets, "On the desktop", "Widgets side", "left right"),
     // Notifications
@@ -318,7 +319,7 @@ mod tests {
     #[test]
     fn sections_exist() {
         // Every card an entry points to is one a page draws (checked against the source).
-        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs")].concat();
+        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs")].concat();
         for en in INDEX.iter().filter(|e| !e.section.is_empty()) {
             assert!(src.contains(&format!("section(ui, \"{}\"", en.section)), "no card titled {}", en.section);
         }

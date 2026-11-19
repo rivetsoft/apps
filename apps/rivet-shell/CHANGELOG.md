@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The shell asks for your password when an app needs administrator rights (installing
+  software, changing system settings, `pkexec`), in its own dialog, so no separate polkit
+  agent has to be started. Where one is already running, the shell leaves the asking to it.
+  Settings, Idle & Lock has the switch.
+- `rivet-shell --install-service` starts the shell with your session as a systemd service,
+  which also brings it back if it stops by accident; `--remove-service` takes it out. It
+  works where the compositor starts systemd's graphical session (niri-session, uwsm).
 - Tray icons stay sharp when they're shown in one color (the panel's text or highlight
   color): their details no longer turn to a gray blur.
 - Settings: Appearance's "Color use" is one choice with a legend of what the accent, secondary
