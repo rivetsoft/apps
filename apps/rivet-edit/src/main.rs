@@ -8,6 +8,7 @@ mod lsp;
 mod ops;
 mod schemes;
 mod settings;
+mod shell;
 mod syntax;
 mod vim;
 mod workspace;
@@ -23,6 +24,7 @@ Usage:
   rivet-edit --new-window           An empty window (not the last folder)
   rivet-edit --install-desktop-entry
                                     Add Rivet Edit to the app launcher (for this user)
+  rivet-edit shell-plugin           Run as Rivet Shell's Edit plugin (the shell starts this)
   rivet-edit -h, --help             This help
   rivet-edit -V, --version          The version
 
@@ -93,6 +95,7 @@ fn main() -> ExitCode {
             println!("rivet-edit {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
+        Some("shell-plugin") => return shell::run(),
         Some("--new-window") => {
             // An empty window (not the last folder): File, New Window.
             args.remove(0);

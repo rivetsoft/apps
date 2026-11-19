@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- An Edit plugin: Rivet Edit's five most recent folders on the panel and in the launcher
+  (`@edit`). Turn it on in Settings, Plugins.
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
 - Now Playing does more. A click opens a player with the cover, the album, how far in the
   track is (click the line to jump), and previous, play and next. The item itself shows the

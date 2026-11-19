@@ -99,9 +99,9 @@ the crate. A piece that is still written as part of one app's window needs lifti
   Other Rivet apps ask the portal, not Rivet Files; Rivet Shell's folder and picture choosers
   do the same (`src/portal.rs`).
 - **Shell plugins.** An app joins the shell through a plugin: a folder with a `plugin.conf`
-  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`), kept
+  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`, `rivet-edit shell-plugin`), kept
   running and speaking JSON lines. The shell shows what it says (a panel item, a menu, launcher
-  entries under `@notes` or `@ftp`) and tells it what was chosen; the app then opens its own
+  entries under `@notes`, `@ftp` or `@edit`) and tells it what was chosen; the app then opens its own
   window (`rivet-notes FOLDER --note PATH`, `rivet-ftp open NAME`). Read PLUGINS.md before
   adding a capability, and add it to the API for every plugin rather than special-casing one
   app.

@@ -177,3 +177,7 @@ the launcher (and under `@notes`, every note by name). Its source is
 `apps/rivet-ftp/src/shell.rs`), about a hundred lines: the saved connections in the item's menu
 under their groups and in the launcher (`@ftp`), each opening a new Rivet FTP window connected
 to it.
+
+`data/plugins/edit` (Edit) is Rivet Edit's (`exec=rivet-edit shell-plugin`,
+`apps/rivet-edit/src/shell.rs`): the five folders opened most recently in the item's menu and
+in the launcher (`@edit`), each opening in a new Rivet Edit window.
