@@ -4,7 +4,17 @@ These pages are the project's wiki. They're kept in the repository so they chang
 commits as the code. Each page is one plain Markdown file, so it can also be copied into a
 GitHub wiki; links into the code (`../…`) would then need to become full GitHub links.
 
-[Rivet Apps](../README.md) is the front page: the apps, their status, and how the repository is laid out.
+[Rivet Apps](../README.md) is the front page: the apps, their status, and how to install them.
+
+## Building and releasing
+
+- [Development](development.md): building, checking, releasing, and the repository layout
+- [Shared crates](shared-crates.md): which code the apps share, and the order of the move
+
+## Rivet Shell (just started)
+
+- [README](../apps/rivet-shell/README.md): running it, starting it with your session, what it needs
+- [Plugins](../apps/rivet-shell/PLUGINS.md): the plugin API
 
 ## Rivet Files
 
@@ -28,6 +38,7 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 - [Rivet Edit](rivet-edit.md): workspaces, tree-sitter highlighting, Go to File and Commands
 - [README](../apps/rivet-edit/README.md): keys, build and run
 
-## All the apps
+## Rivet Terminal and Rivet Welcome (just started)
 
-- [Shared crates](shared-crates.md): which code the apps share, and the order of the move
+- [Rivet Terminal](../apps/rivet-terminal/README.md): keys, build and run
+- [Rivet Welcome](../apps/rivet-welcome/README.md): installing and updating the apps

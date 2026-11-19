@@ -343,13 +343,11 @@ Preferences → *Add Rivet template to matugen* registers a dedicated template i
 <summary><b>Screenshots, logo and releases</b></summary>
 
 - **QA**: `utilities/rivet-dev qa` opens every dialog and mode looking for crashes, then runs the common file workflows (new folder, rename, Trash and undo, split view copy, compress, bulk rename) — all in a throwaway home folder.
-- **All developer tasks** run through one command: `utilities/rivet-dev help` lists them (the scripts behind it live in `utilities/lib/`).
 - **Screenshots** come from a throwaway sample home folder: `utilities/rivet-dev screenshots`
 - **Logo** master is `apps/rivet-files/data/rivet-files.svg`; regenerate the PNG set with
   `rivet --export-icons apps/rivet-files/data/icons` and copy the 512 px one to `docs/logo.png`
 - **AppImage**: `utilities/rivet-dev appimage` (needs `squashfs-tools`). It links for glibc 2.31 and bundles the keyboard libraries, so the one file runs on Ubuntu 22.04 and Debian 12.
-- **Release**: keep notes under `## Unreleased` in `apps/rivet-files/CHANGELOG.md`. `utilities/rivet-dev bump` (patch, or `minor` / `major` / `X.Y.Z`)
-  sets the version, turns that section into the release's (or writes one from the commits) and commits; then `utilities/rivet-dev release --publish`. Plain `release` only builds and tags on your computer; `push` only sends your commits to GitHub, with no release. The release binary is linked with Zig against glibc 2.31 (not the build machine's libc). CI rejects an ELF that needs a GLIBC symbol newer than 2.35.
+- **Releases** work the same for every app: see [Development](../../docs/development.md#releasing). Rivet Files' tags are plain `vX.Y.Z`, and CI rejects an ELF that needs a GLIBC symbol newer than 2.35.
 
 </details>
 

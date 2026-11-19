@@ -127,85 +127,20 @@ some other way (AUR, a distribution package) are shown but left alone.
 
 ## Install
 
-The shell and every app have their own releases on the [Releases page](https://github.com/ulinaaron/rivet-apps/releases),
-told apart by name and tag:
+Each app is released on its own, with its own version and changelog, on the
+[Releases page](https://github.com/ulinaaron/rivet-apps/releases). Rivet Files has an AppImage,
+Flatpak and AUR packages; the other released apps come as an archive with an installer. Each
+app's README has the steps.
 
-| App | Tags | Downloads |
-| --- | --- | --- |
-| Rivet Shell | `rivet-shell-v…` | Not released yet: build from source |
-| Rivet Files | `v0.6.0` | AppImage, archive, Flatpak bundle; AUR packages. See the [Rivet Files README](apps/rivet-files/README.md#-install) for the libraries the window needs. |
-| Rivet FTP | `rivet-ftp-v0.1.0` | An archive (pre-release) |
-| Rivet Notes | `rivet-notes-v0.1.0` | An archive (pre-release) |
-| Rivet Edit | `rivet-edit-v…` | Not released yet: build from source |
-| Rivet Terminal | `rivet-terminal-v…` | Not released yet: build from source |
-| Rivet Welcome | `rivet-welcome-v…` | Not released yet: build from source |
+[Rivet Welcome](apps/rivet-welcome/README.md) can install and update all of them for you. The
+apps that aren't released yet are built from source: you need Rust 1.88 or newer, then
+`cargo build --release -p rivet-shell` (or `rivet-edit`, `rivet-terminal`, `rivet-welcome`).
 
-For Rivet FTP or Rivet Notes, unpack the archive and run its installer, which puts the program in
-`~/.local/bin` and adds it to your app launcher:
+## Learn more
 
-```sh
-tar xzf rivet-notes-0.1.0-x86_64-linux.tar.gz
-cd rivet-notes-0.1.0-x86_64-linux
-./install.sh
-```
-
-Or let [Rivet Welcome](#rivet-welcome-keeping-it-all-current) install and update them for you,
-or build any of them from source (below).
-
-## Build from source
-
-You need Rust 1.88 or newer. From the top of the repository:
-
-```sh
-cargo build --release -p rivet-shell     # Rivet Shell
-cargo build --release                    # Rivet Files (the default)
-cargo build --release -p rivet-ftp       # Rivet FTP
-cargo build --release -p rivet-notes     # Rivet Notes
-cargo build --release -p rivet-edit      # Rivet Edit
-cargo build --release -p rivet-terminal  # Rivet Terminal
-cargo build --release -p rivet-welcome   # Rivet Welcome
-cargo build --release --workspace        # everything
-
-./target/release/rivet-shell             # in a Wayland session
-./target/release/rivet [FOLDER]
-./target/release/rivet-ftp
-./target/release/rivet-notes [VAULT]
-./target/release/rivet-edit [FOLDER] [FILE...]
-./target/release/rivet-terminal [-d FOLDER] [-e PROGRAM ARGS...]
-./target/release/rivet-welcome [--tray]
-```
-
-`utilities/rivet-dev help` lists the developer tasks: QA, screenshots, packaging and releases.
-Each app is released on its own, with its own version, changelog and tags (`v0.6.0` for Rivet
-Files, `rivet-notes-v0.1.0`, `rivet-ftp-v0.1.0`). `utilities/rivet-dev apps` shows where each
-one stands; then `bump notes` and `release notes` (or `ftp`, or `files`, the default).
-`utilities/rivet-dev install notes` installs one for you from source.
-To release several at once, `utilities/rivet-dev release-all` goes through every app in turn:
-it shows what changed, skips apps with nothing new, and asks release, skip or stop for each
-(`--dry-run` first to see the plan; `--publish` to send each to GitHub as it goes).
-
-## Repository layout
-
-| Folder | What it is |
-| --- | --- |
-| `apps/rivet-shell` | Rivet Shell (just started): the panel, dock, widgets and wallpaper, and its settings |
-| `apps/rivet-files` | Rivet Files: its code, data, changelog and packaging (Flatpak, AUR) |
-| `apps/rivet-ftp` | Rivet FTP (early alpha): code, data, changelog |
-| `apps/rivet-notes` | Rivet Notes (early alpha): code, data, changelog |
-| `apps/rivet-edit` | Rivet Edit (just started): code, data, changelog |
-| `apps/rivet-terminal` | Rivet Terminal (just started): code, data, changelog |
-| `apps/rivet-welcome` | Rivet Welcome (just started): installs and updates the apps, with a tray icon |
-| `crates/rivet-term` | Shared: the terminal (a shell in a pseudo-terminal, drawn as a widget); Rivet Terminal's, and later Rivet Edit's panel |
-| `crates/rivet-git` | Shared: Git with no user interface (status, changed lines, staging, commits, branches, sync), by running `git`; Rivet Edit's Git panel, and later a Git app's |
-| `crates/rivet-xdg` | Shared: XDG folders, bookmarks and drives, file types, default apps and Open With |
-| `crates/rivet-look` | Shared: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |
-| `crates/rivet-kit` | Shared: a software renderer for egui (screenshots, and Rivet Shell's surfaces) |
-| `crates/rivet-media` | Shared: previews, thumbnails and the light box |
-| `crates/rivet-connections` | Shared: saved server connections (Rivet FTP's window, its command line, and `ssh`) |
-| `utilities/` | Developer and release scripts (`utilities/rivet-dev`) |
-| `docs/` | Documentation, written as wiki pages ([index](docs/README.md)) |
-
-The top of the repository is only the Cargo workspace. CI builds, tests and lints all of it.
+- [Documentation](docs/README.md): each app in depth, and the plans
+- [Development](docs/development.md): building, checking, releasing, and the repository layout
+- Each app's README and changelog, linked from its section above
 
 ## License
 
