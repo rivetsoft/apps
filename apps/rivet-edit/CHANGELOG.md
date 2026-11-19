@@ -6,6 +6,9 @@
   and Open in New Window on a folder in the sidebar; also from the app launcher.
 - Large files scroll and repaint smoothly: the laid-out text is kept between frames instead of
   being rebuilt and looked up again each time, and only the line numbers on screen are drawn.
+- Typing in a large file no longer waits for its colors: they're worked out on another thread,
+  and until then the old ones move along with the edit. A large file opens at once, colored a
+  moment later.
 
 ## 0.1.0
 
