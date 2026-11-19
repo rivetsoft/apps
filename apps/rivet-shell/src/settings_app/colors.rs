@@ -57,14 +57,14 @@ impl SettingsApp {
         section(ui, "Colors", &mut |ui| {
             let was = Source::of(&self.s);
             let mut src = was;
-            segmented(ui, &mut src, &[(Source::Wallpaper, "From the wallpaper"), (Source::Palette, "A palette"), (Source::Accent, "Style and accent")]);
+            segmented(ui, &mut src, &[(Source::Wallpaper, "From the Wallpaper"), (Source::Palette, "A Palette"), (Source::Accent, "Style and Accent")]);
             if src != was {
                 src.set(&mut self.s, dark);
             }
             ui.add_space(6.0);
             hint(ui, match src {
-                Source::Wallpaper => "The colors follow the wallpaper, here and in every app that reads the desktop's colors.",
-                Source::Palette => "One ready-made set of colors, for the shell and every Rivet app.",
+                Source::Wallpaper => "Colors come from the wallpaper, in the shell and every app that reads the desktop's colors.",
+                Source::Palette => "A ready-made color set for the shell and every Rivet app.",
                 Source::Accent => "A light or dark style with an accent and a surface color, for the shell and every Rivet app.",
             });
             ui.add_space(12.0);
@@ -80,14 +80,14 @@ impl SettingsApp {
 
     /// The colours made from the wallpaper: by matugen, run here, or by whatever else writes them.
     fn wallpaper_colors(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.s.matugen, "Make them with matugen when the wallpaper changes");
+        ui.checkbox(&mut self.s.matugen, "Make colors with matugen when the wallpaper changes");
         if !self.s.matugen {
-            hint(ui, "The shell follows the colors another tool writes (the GTK color files).");
+            hint(ui, "The shell uses the colors another tool writes to the GTK color files.");
             return;
         }
         if !has_matugen() {
             let warn = rivet_look::theme::status(ui.ctx()).warning;
-            ui.label(egui::RichText::new("matugen isn't installed, so no colors are made. A palette works without it.").small().color(warn));
+            ui.label(egui::RichText::new("matugen isn't installed, so no colors are made. Pick a palette to use colors without it.").small().color(warn));
         }
         ui.add_space(10.0);
         grid(ui, "shell-matugen", &mut |ui| {
@@ -95,16 +95,16 @@ impl SettingsApp {
             segmented(ui, &mut self.s.color_mode, &[(Mode::Dark, "Dark"), (Mode::Light, "Light")]);
             ui.end_row();
             ui.label("Scheme");
-            let shown = self.s.scheme_type.trim_start_matches("scheme-").replace('-', " ");
+            let shown = scheme_name(self.s.scheme_type.trim_start_matches("scheme-"));
             egui::ComboBox::from_id_salt("shell-scheme-type").selected_text(shown).width(200.0).show_ui(ui, |ui| {
                 for t in ["tonal-spot", "content", "expressive", "fidelity", "fruit-salad", "monochrome", "neutral", "rainbow", "vibrant"] {
-                    ui.selectable_value(&mut self.s.scheme_type, format!("scheme-{t}"), t.replace('-', " "));
+                    ui.selectable_value(&mut self.s.scheme_type, format!("scheme-{t}"), scheme_name(t));
                 }
             });
             ui.end_row();
             ui.label("Contrast");
             ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).on_hover_text("Lower for softer colors, higher for stronger ones; 0 is the scheme as designed");
+                ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).on_hover_text("Lower for softer colors, higher for stronger ones. 0 keeps the scheme as designed.");
                 if self.s.matugen_contrast != 0.0 && ui.small_button("Reset").clicked() {
                     self.s.matugen_contrast = 0.0;
                 }
@@ -113,12 +113,12 @@ impl SettingsApp {
             // With pictures per screen: whose picture the colors come from.
             if !self.s.wallpaper_screens.is_empty() || self.screens.len() > 1 {
                 ui.label("Made from");
-                let shown = if self.s.matugen_screen.is_empty() { "The shared picture".to_string() } else { format!("{}'s picture", self.s.matugen_screen) };
+                let shown = if self.s.matugen_screen.is_empty() { "The Shared Picture".to_string() } else { format!("{}'s Picture", self.s.matugen_screen) };
                 egui::ComboBox::from_id_salt("shell-matugen-screen").selected_text(shown).width(200.0).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.s.matugen_screen, String::new(), "The shared picture");
+                    ui.selectable_value(&mut self.s.matugen_screen, String::new(), "The Shared Picture");
                     for name in self.wall_screens() {
                         let own = self.s.has_own_wallpaper(&name);
-                        ui.selectable_value(&mut self.s.matugen_screen, name.clone(), if own { format!("{name}'s picture") } else { format!("{name} (shows the shared picture)") });
+                        ui.selectable_value(&mut self.s.matugen_screen, name.clone(), if own { format!("{name}'s Picture") } else { format!("{name} (Shows the Shared Picture)") });
                     }
                 });
                 ui.end_row();
@@ -142,7 +142,7 @@ impl SettingsApp {
     fn own_colors(&mut self, ui: &mut egui::Ui) {
         grid(ui, "shell-look", &mut |ui| {
             ui.label("Style");
-            segmented(ui, &mut self.s.theme, &[(Mode::System, "Follow system"), (Mode::Light, "Light"), (Mode::Dark, "Dark")]);
+            segmented(ui, &mut self.s.theme, &[(Mode::System, "Follow System"), (Mode::Light, "Light"), (Mode::Dark, "Dark")]);
             ui.end_row();
             ui.label("Accent");
             ui.horizontal(|ui| {
@@ -163,7 +163,7 @@ impl SettingsApp {
             self.surfaces(ui);
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut self.s.surface_tint, "Tint the surface with the accent").on_hover_text("The surface takes a little of the accent, and changes with it");
+            ui.checkbox(&mut self.s.surface_tint, "Tint the surface with the accent").on_hover_text("Mixes a little of the accent into the surface, and follows it when it changes");
             ui.end_row();
         });
     }
@@ -204,5 +204,10 @@ impl SettingsApp {
 }
 
 /// Surface colours, most contrast first (None: the usual grey), for dark and for light.
-const SURFACES_DARK: [(Option<[u8; 3]>, &str); 6] = [(Some([0x00, 0x00, 0x00]), "Black"), (Some([0x0c, 0x0c, 0x0c]), "Near black"), (Some([0x17, 0x17, 0x17]), "Darker"), (Some([0x22, 0x22, 0x22]), "Dark"), (None, "Default"), (Some([0x3e, 0x3e, 0x3e]), "Soft")];
+/// A matugen scheme as a choice shows it: "tonal-spot" as "Tonal Spot".
+fn scheme_name(t: &str) -> String {
+    t.split('-').map(|w| { let mut c = w.chars(); c.next().map(|f| f.to_uppercase().chain(c).collect::<String>()).unwrap_or_default() }).collect::<Vec<_>>().join(" ")
+}
+
+const SURFACES_DARK: [(Option<[u8; 3]>, &str); 6] = [(Some([0x00, 0x00, 0x00]), "Black"), (Some([0x0c, 0x0c, 0x0c]), "Near Black"), (Some([0x17, 0x17, 0x17]), "Darker"), (Some([0x22, 0x22, 0x22]), "Dark"), (None, "Default"), (Some([0x3e, 0x3e, 0x3e]), "Soft")];
 const SURFACES_LIGHT: [(Option<[u8; 3]>, &str); 5] = [(Some([0xff, 0xff, 0xff]), "White"), (Some([0xf5, 0xf5, 0xf6]), "Bright"), (None, "Default"), (Some([0xdd, 0xdd, 0xe0]), "Dim"), (Some([0xce, 0xce, 0xd2]), "Grey")];

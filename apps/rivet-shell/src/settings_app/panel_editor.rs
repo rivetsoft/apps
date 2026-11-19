@@ -228,8 +228,8 @@ impl SettingsApp {
                 segmented(ui, &mut p.floating, &[(true, "Floating"), (false, "Edge to Edge")]);
                 ui.add_space(12.0);
                 ui.label("Screen");
-                egui::ComboBox::from_id_salt(("shell-panel-screen", sel)).selected_text(if p.screen.is_empty() { "Every screen".to_string() } else { p.screen.clone() }).width(170.0).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut p.screen, String::new(), "Every screen");
+                egui::ComboBox::from_id_salt(("shell-panel-screen", sel)).selected_text(if p.screen.is_empty() { "Every Screen".to_string() } else { p.screen.clone() }).width(170.0).show_ui(ui, |ui| {
+                    ui.selectable_value(&mut p.screen, String::new(), "Every Screen");
                     let mut names = screens.clone();
                     if !p.screen.is_empty() && !names.contains(&p.screen) {
                         names.push(p.screen.clone());
@@ -259,22 +259,22 @@ impl SettingsApp {
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
                 ui.label("Hide");
-                segmented(ui, &mut p.hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-hide"), (DockHide::Smart, "Smart hide")]);
+                segmented(ui, &mut p.hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-Hide"), (DockHide::Smart, "Smart Hide")]);
             });
             let edge = p.edge.label().to_lowercase();
             match p.hide {
                 DockHide::Never => {}
                 DockHide::Auto => hint(ui, &format!("The panel slides away and windows use its room; move the pointer to the screen's {edge} edge to bring it back.")),
-                DockHide::Smart => hint(ui, &format!("The panel shows while the workspace has no windows, and slides away once it has some; the screen's {edge} edge brings it back (niri, Hyprland; elsewhere like Auto-hide).")),
+                DockHide::Smart => hint(ui, &format!("The panel shows while the workspace is empty and slides away once a window opens. Move the pointer to the screen's {edge} edge to bring it back. On compositors other than niri and Hyprland, works like Auto-Hide.")),
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                if ui.button("Duplicate").on_hover_text("A copy of this panel, to change").clicked() {
+                if ui.button("Duplicate").on_hover_text("Make a copy of this panel").clicked() {
                     ops.push(Op::Duplicate(sel));
                 }
                 if n > 1 {
-                    if ui.add_enabled(sel > 0, egui::Button::new("Move Earlier")).on_hover_text("Panels on the same edge stack; earlier ones sit nearer the edge").clicked() {
+                    if ui.add_enabled(sel > 0, egui::Button::new("Move Earlier")).on_hover_text("Panels on the same edge stack; earlier ones sit closer to the edge").clicked() {
                         ops.push(Op::MovePanel(sel, -1));
                     }
                     if ui.add_enabled(sel + 1 < n, egui::Button::new("Move Later")).clicked() {
@@ -369,7 +369,7 @@ impl SettingsApp {
                                 glyph::x(ui.painter(), xr.center(), 4.0, v.weak_text_color());
                             }
                             let x_hot = x_resp.hovered();
-                            if x_resp.on_hover_text("Take off the panel").clicked() {
+                            if x_resp.on_hover_text("Remove from the panel").clicked() {
                                 ops.push(Op::RemoveItem(sel, z, k));
                             }
                             // A spacer: its size, in the row.
@@ -378,7 +378,7 @@ impl SettingsApp {
                                 let dr = Rect::from_center_size(xr.center() - Vec2::new(50.0, 0.0), Vec2::new(60.0, 22.0));
                                 // (In a child, so the rows below keep their places.)
                                 let mut at = ui.new_child(egui::UiBuilder::new().max_rect(dr).layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight)));
-                                if at.add(egui::DragValue::new(&mut to).range(crate::panels::SPACER).suffix(" pt").speed(1.0)).on_hover_text("How much room: drag, or click to type").changed() {
+                                if at.add(egui::DragValue::new(&mut to).range(crate::panels::SPACER).suffix(" pt").speed(1.0)).on_hover_text("Width: drag, or click to type a value").changed() {
                                     ops.push(Op::SetItem(sel, z, k, format!("spacer:{to}")));
                                 }
                                 resp.on_hover_cursor(egui::CursorIcon::Grab).on_hover_text(tip);
@@ -423,11 +423,11 @@ impl SettingsApp {
                                         ui.close();
                                     }
                                 }
-                                if ui.button("New group").clicked() {
+                                if ui.button("New Group").clicked() {
                                     ops.push(Op::NewGroup(sel, id.clone()));
                                     ui.close();
                                 }
-                                if mine.is_some() && ui.button("Take out of its group").clicked() {
+                                if mine.is_some() && ui.button("Remove from Group").clicked() {
                                     ops.push(Op::Group(sel, id.clone(), None));
                                     ui.close();
                                 }
@@ -437,7 +437,7 @@ impl SettingsApp {
                         if panel.zones[z].is_empty() {
                             let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::hover());
                             ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, mix(v.faint_bg_color, v.text_color(), 0.18)), egui::StrokeKind::Inside);
-                            ui.painter().text(r.center(), Align2::CENTER_CENTER, "Empty · drop items here", ui_font(12.0), v.weak_text_color());
+                            ui.painter().text(r.center(), Align2::CENTER_CENTER, "Empty · Drop items here", ui_font(12.0), v.weak_text_color());
                             rows.push(Rect::NOTHING);
                         }
                         // Add.
@@ -550,9 +550,9 @@ impl SettingsApp {
         });
         ui.add_space(14.0);
         if panel.vertical() {
-            hint(ui, "Zones: Top starts at the panel's top end, Middle sits in the middle, Bottom ends at its bottom end. Down a side panel a symbol sits over its number, the clock breaks into lines and the window's title runs downward; items that don't fit are left out from the inner end.");
+            hint(ui, "Zones: Top starts at the panel's top end, Middle sits in the middle, Bottom ends at its bottom end. On a side panel, symbols sit above numbers, the clock wraps onto lines and the window title runs downward. Items that don't fit are dropped from the inner end.");
         } else {
-            hint(ui, "Zones: Left starts at the panel's left end, Center sits in the middle, Right ends at its right end. Items that don't fit on a narrow screen are left out from the inner end. Plugins will add their own items here.");
+            hint(ui, "Zones: Left starts at the panel's left end, Center sits in the middle, Right ends at its right end. On a narrow screen, items that don't fit are dropped from the inner end. Plugins you turn on appear under Add Item.");
         }
     }
 }
@@ -625,12 +625,12 @@ impl SettingsApp {
         let (bar, side) = (p.bar().round() as u32, p.vertical());
         super::section(ui, "Groups", &mut |ui| {
             if p.groups.is_empty() {
-                hint(ui, "Items can be grouped: a group's items share a background and take its colours, and it can show its first few and fold the rest behind an arrow. Point at an item above and click its ring to start one.");
+                hint(ui, "Grouped items share a background and colors, and a group can show its first few items and fold the rest behind an arrow. To start one, point at an item above and click its ring.");
                 return;
             }
             hint(ui, "Choose a group to change it. To move an item between groups, click its numbered chip in the list above.");
             ui.add_space(6.0);
-            ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape").on_hover_text("Two groups with backgrounds, side by side on the panel, join with no gap between them");
+            ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape").on_hover_text("Neighboring groups with backgrounds join with no gap between them");
             ui.add_space(12.0);
             // The groups as tabs, each in its own colours; one's settings show at a time.
             let sel_id = egui::Id::unique(("shell-group-sel", sel));
@@ -675,7 +675,7 @@ impl SettingsApp {
                         paints(ui, (sel, g, "bg"), &mut group.bg, true, "Soft", &colors);
                         if group.bg.is_some() {
                             ui.add_space(8.0);
-                            ui.checkbox(&mut group.gradient, "Fade").on_hover_text("A gradient along the panel: from the background's colour to a darker one made from it");
+                            ui.checkbox(&mut group.gradient, "Fade").on_hover_text("A gradient along the panel, from the background color to a darker shade of it");
                         }
                     });
                     ui.end_row();
@@ -687,7 +687,7 @@ impl SettingsApp {
                     ui.label(if side { "Width" } else { "Height" });
                     ui.horizontal(|ui| {
                         let mut own = group.height.is_some();
-                        segmented(ui, &mut own, &[(false, "The panel's"), (true, "Its own")]);
+                        segmented(ui, &mut own, &[(false, "The Panel's"), (true, "Its Own")]);
                         match (own, group.height) {
                             (false, _) => group.height = None,
                             // Starting from what it has now: the panel's items' height.
@@ -696,7 +696,7 @@ impl SettingsApp {
                         }
                         if let Some(h) = group.height.as_mut() {
                             *h = (*h).clamp(crate::panels::GROUP_MIN, bar.max(crate::panels::GROUP_MIN));
-                            ui.add(egui::Slider::new(h, crate::panels::GROUP_MIN..=bar.max(crate::panels::GROUP_MIN)).suffix(" pt")).on_hover_text("Up to the panel's own, where it fills the panel edge to edge");
+                            ui.add(egui::Slider::new(h, crate::panels::GROUP_MIN..=bar.max(crate::panels::GROUP_MIN)).suffix(" pt")).on_hover_text("At the panel's height, the group fills the panel edge to edge");
                         }
                     });
                     ui.end_row();
@@ -719,7 +719,7 @@ impl SettingsApp {
                     ui.end_row();
                 });
                 ui.add_space(10.0);
-                if ui.button(format!("Ungroup {}", g + 1)).on_hover_text("The items stay on the panel").clicked() {
+                if ui.button(format!("Ungroup {}", g + 1)).on_hover_text("Its items stay on the panel").clicked() {
                     remove = Some(g);
                 }
             }

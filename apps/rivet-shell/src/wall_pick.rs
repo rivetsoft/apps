@@ -109,7 +109,7 @@ impl Picker {
         } else if self.gallery.loading() {
             "Looking for pictures…".to_string()
         } else if n == 0 {
-            "No pictures here, or in the folders right inside it (JPEG, PNG or WebP).".to_string()
+            "No JPEG, PNG or WebP pictures here or in its subfolders one level down.".to_string()
         } else {
             let folders = self.gallery.pictures().iter().filter_map(|p| p.path.parent()).filter(|d| *d != dir).collect::<std::collections::HashSet<_>>().len();
             let inside = match folders {

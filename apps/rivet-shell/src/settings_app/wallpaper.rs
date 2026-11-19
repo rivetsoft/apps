@@ -93,14 +93,14 @@ impl SettingsApp {
             ui.spacing_mut().item_spacing.x = 10.0;
             super::panel_editor::segmented(ui, &mut at, &choices);
             self.wall_screen = if at == 0 { String::new() } else { names[at - 1].clone() };
-            if !self.wall_screen.is_empty() && self.s.has_own_wallpaper(&self.wall_screen) && ui.button("Use the Shared Picture").on_hover_text("This screen goes back to the picture every screen shows").clicked() {
+            if !self.wall_screen.is_empty() && self.s.has_own_wallpaper(&self.wall_screen) && ui.button("Use the Shared Picture").on_hover_text("Show the shared wallpaper on this screen").clicked() {
                 let name = self.wall_screen.clone();
                 self.s.set_wallpaper_on(&name, "");
             }
         });
         ui.add_space(4.0);
         let text = if self.wall_screen.is_empty() {
-            "The picture for every screen without one of its own (marked •).".to_string()
+            "Shows on every screen that doesn't have its own picture (marked •).".to_string()
         } else if self.s.has_own_wallpaper(&self.wall_screen) {
             format!("{} has its own picture.", self.wall_screen)
         } else {

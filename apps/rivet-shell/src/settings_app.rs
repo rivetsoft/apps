@@ -504,31 +504,60 @@ impl SettingsApp {
 
     fn appearance_page(&mut self, ui: &mut egui::Ui) {
         self.colors_section(ui);
-        section(ui, "Colour use", &mut |ui| {
-            hint(ui, "How much the shell uses the theme's secondary and tertiary colours beside the accent.");
-            ui.add_space(8.0);
-            panel_editor::segmented(ui, &mut self.s.color_use, &[(0, "Accent Only"), (1, "Some"), (2, "A Lot")]);
-            ui.add_space(6.0);
-            hint(ui, match self.s.color_use {
-                0 => "Everything lit is in the accent.",
-                1 => "Switches and quick settings that are on take the secondary colour; notifications the tertiary; the system widget's bars one each.",
-                _ => "As Some, and sliders and the thing in use in a list take the secondary; running apps' dots and what's playing the tertiary.",
+        section(ui, "Color use", &mut |ui| {
+            grid(ui, "shell-color-use", &mut |ui| {
+                ui.label("Other theme colors");
+                panel_editor::segmented(ui, &mut self.s.color_use, &[(0, "Accent Only"), (1, "Some"), (2, "A Lot")]);
+                ui.end_row();
             });
+            ui.add_space(14.0);
+            // What each colour is on at this setting, beside the colour itself.
+            let colors = crate::style::Roles::new(&self.look, &self.s);
+            let rows = [
+                ("Accent", colors.primary, if self.s.color_use == 0 { "Everything highlighted" } else { "Everything else highlighted" }),
+                ("Secondary", colors.secondary, match self.s.color_use {
+                    0 => "",
+                    1 => "Switches and quick settings that are on, the memory bar",
+                    _ => "Switches and quick settings that are on, the memory bar, sliders, the selected item in a list",
+                }),
+                ("Tertiary", colors.tertiary, match self.s.color_use {
+                    0 => "",
+                    1 => "Notifications, the battery bar",
+                    _ => "Notifications, the battery bar, running-app dots, Now Playing",
+                }),
+            ];
+            let (text, weak) = (ui.visuals().text_color(), ui.visuals().weak_text_color());
+            for (name, color, on) in rows {
+                let used = !on.is_empty();
+                ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(16.0, 16.0), Sense::hover());
+                    if used {
+                        ui.painter().circle_filled(r.center(), 7.0, color);
+                    } else {
+                        ui.painter().circle_stroke(r.center(), 6.5, egui::Stroke::new(1.0, weak));
+                    }
+                    ui.add_space(4.0);
+                    let (nr, _) = ui.allocate_exact_size(Vec2::new(84.0, 16.0), Sense::hover());
+                    ui.painter().text(nr.left_center(), egui::Align2::LEFT_CENTER, name, egui::TextStyle::Body.resolve(ui.style()), if used { text } else { weak });
+                    ui.add(egui::Label::new(egui::RichText::new(if used { on } else { "Not used" }).color(weak)).wrap());
+                });
+                ui.add_space(4.0);
+            }
             // Where the two colours come from: the theme, or (without them there) the accent.
             let from_theme = self.s.follow_desktop_colors && self.look.palette().is_some_and(|p| p.secondary.is_some() && p.tertiary.is_some());
             if self.s.color_use > 0 && self.s.follow_desktop_colors && palette::matugen_template_outdated() {
                 ui.add_space(8.0);
-                hint(ui, "matugen's template for Rivet is an older one that leaves out the secondary and tertiary colours, so they're being made from the accent and look close to it.");
+                hint(ui, "matugen has an older Rivet template without secondary and tertiary colors, so they're made from the accent and look close to it. Update the template to fix this.");
                 ui.add_space(4.0);
-                if ui.button("Update the Template").on_hover_text("Rewrites Rivet's template in matugen's folder, then makes the colours again").clicked() {
+                if ui.button("Update the Template").on_hover_text("Rewrites Rivet's template in matugen's folder, then remakes the colors").clicked() {
                     self.note = Some(match palette::install_matugen_template() {
                         Ok(_) => {
                             let pic = std::path::PathBuf::from(self.s.matugen_picture());
                             if self.s.makes_colors() && pic.is_file() {
                                 crate::wall::run_matugen(&pic, self.s.color_mode, &self.s.scheme_type, self.s.matugen_contrast, |_| {});
-                                "The template was updated and the colours are being made again.".to_string()
+                                "Template updated. Remaking the colors now.".to_string()
                             } else {
-                                "The template was updated; the colours follow the next time matugen runs.".to_string()
+                                "Template updated. The colors change the next time matugen runs.".to_string()
                             }
                         }
                         Err(e) => format!("Couldn't update matugen's template: {e}"),
@@ -536,14 +565,14 @@ impl SettingsApp {
                 }
             } else if self.s.color_use > 0 && !from_theme {
                 ui.add_space(8.0);
-                hint(ui, "This theme gives no secondary or tertiary colour, so they're made from the accent: a quieter one, and a neighbouring hue.");
+                hint(ui, "This theme has no secondary or tertiary color, so they're made from the accent: a quieter shade and a neighboring hue.");
             }
         });
         section(ui, "Text", &mut |ui| {
             grid(ui, "shell-text", &mut |ui| {
                 ui.label("Font");
                 ui.horizontal(|ui| {
-                    font_pick::font_pick(ui, "shell-font", &mut self.s.font, &format!("Like the desktop ({})", font_pick::desktop_name()));
+                    font_pick::font_pick(ui, "shell-font", &mut self.s.font, &format!("Like the Desktop ({})", font_pick::desktop_name()));
                     if !self.s.font.is_empty() && ui.small_button("Reset").clicked() {
                         self.s.font.clear();
                     }
@@ -551,7 +580,7 @@ impl SettingsApp {
                 ui.end_row();
                 ui.label("Text size");
                 ui.horizontal(|ui| {
-                    if ui.selectable_label(self.s.text_size == 0.0, "Like the desktop").clicked() {
+                    if ui.selectable_label(self.s.text_size == 0.0, "Like the Desktop").clicked() {
                         self.s.text_size = 0.0;
                     }
                     for (pt, label) in [(12.5, "Small"), (13.5, "Medium"), (15.0, "Large")] {
@@ -575,7 +604,7 @@ impl SettingsApp {
     fn notifications_page(&mut self, ui: &mut egui::Ui) {
         section(ui, "Notifications", &mut |ui| {
             ui.checkbox(&mut self.s.notifications, "Show apps' notifications");
-            hint(ui, "Cards in the screen's corner, and a history in quick settings. If another notification program is running (mako, dunst or another shell), it keeps them instead.");
+            hint(ui, "Cards in the screen's corner, with a history in quick settings. If another notification program is running (mako, dunst or another shell), it shows them instead.");
         });
         section(ui, "On-screen display", &mut |ui| {
             ui.checkbox(&mut self.s.osd, "Show volume and brightness as they change");
@@ -589,8 +618,8 @@ impl SettingsApp {
             });
             let tool = ["gammastep", "hyprsunset", "wlsunset"].into_iter().find(|t| crate::sys::has(t));
             hint(ui, &match tool {
-                Some(t) => format!("Turned on in quick settings; {t} makes the colors warmer."),
-                None => "Needs gammastep, hyprsunset or wlsunset installed.".to_string(),
+                Some(t) => format!("Turn it on in quick settings; {t} warms the colors."),
+                None => "Needs gammastep, hyprsunset or wlsunset. Install one to use Night Light.".to_string(),
             });
         });
         section(ui, "Keys", &mut |ui| {
@@ -629,8 +658,8 @@ impl SettingsApp {
                     ui.label("Hide");
                     ui.horizontal(|ui| {
                         ui.selectable_value(&mut self.s.dock_hide, DockHide::Never, "Never");
-                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Auto, "Auto-hide");
-                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Smart, "Smart hide");
+                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Auto, "Auto-Hide");
+                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Smart, "Smart Hide");
                     });
                     ui.end_row();
                 });
@@ -639,7 +668,7 @@ impl SettingsApp {
                     match self.s.dock_hide {
                         DockHide::Never => "The dock always shows.",
                         DockHide::Auto => "The dock slides away; move the pointer to the bottom edge to bring it back.",
-                        DockHide::Smart => "The dock shows while the workspace has no windows, and slides away once it has some; the bottom edge brings it back (niri, Hyprland; elsewhere like Auto-hide).",
+                        DockHide::Smart => "The dock shows while the workspace has no windows, and slides away once it has some; the bottom edge brings it back (niri, Hyprland; elsewhere like Auto-Hide).",
                     },
                 );
                 ui.add_space(6.0);
@@ -647,7 +676,7 @@ impl SettingsApp {
                     ui.checkbox(&mut self.s.dock_reserve, "Keep windows clear of the dock");
                 });
                 ui.checkbox(&mut self.s.dock_running, "A dot under apps with windows open (niri, Hyprland)");
-                ui.checkbox(&mut self.s.dock_open_apps, "Open apps that aren't pinned show too (right-click one to pin it)");
+                ui.checkbox(&mut self.s.dock_open_apps, "Also show open apps that aren't pinned (right-click one to pin it)");
             });
         });
         self.dock_look_section(ui);
@@ -666,17 +695,17 @@ impl SettingsApp {
                     }
                     match a {
                         Some(a) => ui.label(&a.name),
-                        None => ui.label(egui::RichText::new(format!("{id} (not installed)")).color(ui.visuals().weak_text_color())),
+                        None => ui.label(egui::RichText::new(format!("{id} (Not Installed)")).color(ui.visuals().weak_text_color())),
                     };
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         if rivet_look::widgets::trash_button(ui).on_hover_text("Unpin").clicked() {
                             op = Some((i, 0));
                         }
-                        if rivet_look::widgets::arrow_button(ui, false, i + 1 < n).on_hover_text("Move right").clicked() {
+                        if rivet_look::widgets::arrow_button(ui, false, i + 1 < n).on_hover_text("Move Right").clicked() {
                             op = Some((i, 1));
                         }
-                        if rivet_look::widgets::arrow_button(ui, true, i > 0).on_hover_text("Move left").clicked() {
+                        if rivet_look::widgets::arrow_button(ui, true, i > 0).on_hover_text("Move Left").clicked() {
                             op = Some((i, -1));
                         }
                     });
@@ -739,7 +768,7 @@ impl SettingsApp {
             let w = ui.available_width().min(420.0);
             ui.allocate_ui_with_layout(Vec2::new(w, 0.0), egui::Layout::top_down(egui::Align::Center), |ui| {
                 ui.set_width(w);
-                ui.add(egui::Label::new("A panel, dock, desktop widgets and wallpaper for Wayland compositors with the layer-shell protocol, in the Rivet apps' look.").halign(egui::Align::Center).wrap());
+                ui.add(egui::Label::new("A panel, dock, desktop widgets and wallpaper for Wayland compositors that support layer-shell, styled to match the Rivet apps.").halign(egui::Align::Center).wrap());
             });
             ui.add_space(10.0);
             let keys = egui::RichText::new("Bind a key to open the launcher:  rivet-shell msg launcher").font(fonts::ui_font(12.0)).color(weak);

@@ -81,11 +81,11 @@ impl SettingsApp {
                 ui.end_row();
             });
             if s.launch_place == LaunchPlace::Panel {
-                hint(ui, "It opens from the panel it was opened on, like that panel's other popups (joined to it when they are). Opened with a key, it comes from the screen's first panel, at the end with the Apps button; with no panel there, in the middle.");
+                hint(ui, "Opens from the panel you clicked, floating or attached like its other popups. Opened with a key, it comes from the screen's first panel at the Apps button's end, or the middle if there's no panel.");
             }
             hint(ui, match s.launch_view {
-                LaunchView::Grid => "Icons in rows, each over its name; the arrow keys move in every direction.",
-                LaunchView::List => "A row for each app, with smaller icons; up and down move through them.",
+                LaunchView::Grid => "Icons in rows, each above its name. Arrow keys move in every direction.",
+                LaunchView::List => "One row per app, with smaller icons. Up and Down move through them.",
             });
         });
         section(ui, "Text", &mut |ui| {
@@ -101,18 +101,18 @@ impl SettingsApp {
                 });
                 ui.end_row();
             });
-            hint(ui, "The launcher's own font; the rest of the shell keeps Appearance's.");
+            hint(ui, "Changes only the launcher. The rest of the shell uses the font set in Appearance.");
         });
-        section(ui, "As You Type", &mut |ui| {
+        section(ui, "As you type", &mut |ui| {
             let s = &mut self.s;
             ui.checkbox(&mut s.launch_calc, "Answer sums");
-            hint(ui, "Type 12*4 or (3+5)/2 and Enter copies the answer.");
+            hint(ui, "Type 12*4 or (3+5)/2, then press Enter to copy the answer.");
         });
-        section(ui, "Behind It", &mut |ui| {
+        section(ui, "Behind the launcher", &mut |ui| {
             let middle = self.s.launch_place == LaunchPlace::Center;
             ui.add_enabled(middle, egui::Checkbox::new(&mut self.s.launch_dim, "Dim the screen"));
             if !middle {
-                hint(ui, "Only when it opens in the middle.");
+                hint(ui, "Only when the launcher opens in the middle.");
             }
         });
         section(ui, "Keys", &mut |ui| {

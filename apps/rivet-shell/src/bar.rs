@@ -1107,7 +1107,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                 let own = b.m.s.look.highlight.is_some() || b.m.s.panels.get(b.idx).is_some_and(|c| c.look.highlight.is_some());
                 p.circle_filled(r.center() + Vec2::new(6.0, -6.0), 3.5, if own { accent } else { b.roles.tone(style::Slot::Notify, b.m.s.color_use) });
             }
-            let tip = if ex.dnd { "Do not disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
+            let tip = if ex.dnd { "Do Not Disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
             if resp.on_hover_text(tip).clicked() {
                 let a = b.popup(PopupKind::Notifications, b.at(r));
                 b.acts.push(a);

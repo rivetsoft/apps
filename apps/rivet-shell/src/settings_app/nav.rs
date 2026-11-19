@@ -12,16 +12,16 @@ pub(super) const GROUPS: &[(&str, &[Page])] = &[("Look", &[Page::Wallpaper, Page
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
     match page {
-        Page::Wallpaper => "The picture behind everything, and how a new one comes in",
-        Page::Appearance => "Colors, text, and how panels and windows look",
-        Page::Panel => "The bars along the screen's edges, and what's on each",
+        Page::Wallpaper => "The desktop picture and how a new one appears",
+        Page::Appearance => "Colors, text, and the look of panels and windows",
+        Page::Panel => "The bars along the screen's edges and the items on each",
         Page::Dock => "Pinned and open apps along the bottom",
-        Page::Widgets => "The clock and the system's readings on the desktop",
-        Page::Launcher => "The app launcher: a grid or a list, its size, and what it answers as you type",
-        Page::Notifications => "Notification cards, the volume and brightness display, night light",
-        Page::Displays => "Each screen's resolution, scale and rotation, and where they sit",
-        Page::Idle => "What happens as the computer sits untouched, and the lock screen",
-        Page::Plugins => "Programs that add to the shell, and your own commands for what happens",
+        Page::Widgets => "A clock and system readings on the desktop",
+        Page::Launcher => "Grid or list, size, and what the launcher answers as you type",
+        Page::Notifications => "Notification cards, the volume and brightness display, and Night Light",
+        Page::Displays => "Resolution, scale, rotation and arrangement of each screen",
+        Page::Idle => "What happens when the computer is idle, and the lock screen",
+        Page::Plugins => "Plugins that add to the shell, and commands that run on events",
         Page::About => "",
     }
 }

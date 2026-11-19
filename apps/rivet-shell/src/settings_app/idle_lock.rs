@@ -36,14 +36,14 @@ fn time_combo(ui: &mut egui::Ui, id: &str, v: &mut u32) {
 impl SettingsApp {
     pub(super) fn idle_page(&mut self, ui: &mut egui::Ui) {
         let other = crate::idle::other_daemon();
-        section(ui, "When Idle", &mut |ui| {
+        section(ui, "When idle", &mut |ui| {
             let s = &mut self.s;
-            ui.checkbox(&mut s.idle_on, "Rivet Shell watches for idle");
+            ui.checkbox(&mut s.idle_on, "Let Rivet Shell handle idle");
             if let Some(d) = &other {
                 let warn = rivet_look::theme::status(ui.ctx()).warning;
-                ui.label(egui::RichText::new(format!("{d} is running too, so these would happen twice. Stop it, or turn this off and leave idle to it.")).color(warn));
+                ui.label(egui::RichText::new(format!("{d} is also running, so each step would happen twice. Stop {d}, or turn this off and let {d} handle idle.")).color(warn));
             } else {
-                hint(ui, "Each step comes after this long without the keyboard or mouse. Apps playing a video, or Keep Awake in quick settings, hold it off.");
+                hint(ui, "Each step starts after this long without keyboard or mouse input. A playing video or Keep Awake in quick settings delays them.");
             }
             if !s.idle_on {
                 return;
@@ -65,16 +65,16 @@ impl SettingsApp {
             });
             ui.add_space(8.0);
             ui.checkbox(&mut s.idle_media, "Not while music or a video plays");
-            hint(ui, "Any player that shows in the panel's media item.");
+            hint(ui, "Applies to any player shown in the panel's Now Playing item.");
         });
-        section(ui, "Lock Screen", &mut |ui| {
+        section(ui, "Lock screen", &mut |ui| {
             let s = &mut self.s;
             ui.checkbox(&mut s.lock_on_sleep, "Lock before the computer sleeps");
             ui.add_space(6.0);
             let mut own = s.lock_cmd.trim().is_empty();
             ui.horizontal(|ui| {
-                ui.radio_value(&mut own, true, "Rivet Shell's lock screen");
-                ui.radio_value(&mut own, false, "Another program");
+                ui.radio_value(&mut own, true, "Rivet Shell's Lock Screen");
+                ui.radio_value(&mut own, false, "Another Program");
             });
             if own && !s.lock_cmd.trim().is_empty() {
                 s.lock_cmd.clear();
@@ -84,11 +84,11 @@ impl SettingsApp {
             ui.add_space(6.0);
             if own {
                 ui.checkbox(&mut s.lock_blur, "Blur the wallpaper");
-                ui.checkbox(&mut s.lock_power, "Suspend, restart and shut down on it");
+                ui.checkbox(&mut s.lock_power, "Show suspend, restart and shut down buttons");
                 ui.add_space(4.0);
                 hint(ui, &format!("Your password is checked with PAM (the \"{}\" service).", crate::auth::service()));
                 ui.add_space(6.0);
-                if ui.button("Try it").on_hover_text("Shows the lock screen without locking: type your password to check it, or press Escape").clicked()
+                if ui.button("Try It").on_hover_text("Shows the lock screen without locking. Type your password to test it, or press Escape.").clicked()
                     && let Ok(exe) = std::env::current_exe()
                 {
                     {
@@ -101,11 +101,11 @@ impl SettingsApp {
                     ui.add(egui::TextEdit::singleline(&mut s.lock_cmd).desired_width(260.0).font(egui::TextStyle::Monospace));
                     ui.end_row();
                 });
-                hint(ui, "It must stay running until it's unlocked (for swaylock, leave out -f), so the shell knows the screen is locked.");
+                hint(ui, "The command must keep running until the screen unlocks, so the shell knows it's locked. For swaylock, leave out -f.");
             }
         });
         section(ui, "Keys", &mut |ui| {
-            hint(ui, "Bind this in your compositor's settings to lock at once:");
+            hint(ui, "Bind this in your compositor's settings to lock right away:");
             ui.add_space(4.0);
             ui.label(egui::RichText::new("rivet-shell msg lock").monospace().size(12.0));
             hint(ui, "loginctl lock-session does the same, while the shell runs.");

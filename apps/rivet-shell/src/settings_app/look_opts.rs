@@ -91,7 +91,7 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
                     own.tint = None;
                 }
                 let mut t = now.tint * 100.0;
-                if ui.add(egui::Slider::new(&mut t, 0.0..=100.0).step_by(5.0).fixed_decimals(0).suffix("%")).on_hover_text("How much of the background colour the surface takes").changed() {
+                if ui.add(egui::Slider::new(&mut t, 0.0..=100.0).step_by(5.0).fixed_decimals(0).suffix("%")).on_hover_text("How much of the background color the surface takes").changed() {
                     own.tint = Some(t / 100.0);
                 }
             });
@@ -181,7 +181,7 @@ impl SettingsApp {
         let base_font = super::font_pick::like_appearance(&self.s.font);
         section(ui, "Look", &mut |ui| {
             if !floating {
-                hint(ui, "Edge to edge panels have square corners.");
+                hint(ui, "Edge-to-edge panels have square corners.");
             }
             // Where the bar sits: these are the panel's own (not Appearance's).
             let p = &mut self.s.panels[sel];
@@ -199,7 +199,7 @@ impl SettingsApp {
                 ui.label(if side { "Width" } else { "Height" });
                 ui.horizontal(|ui| {
                     let mut v = p.bar() as u32;
-                    if ui.add(egui::Slider::new(&mut v, crate::panels::SIZE).suffix(" pt")).on_hover_text("How thick the bar is; its symbols and text keep their size").changed() {
+                    if ui.add(egui::Slider::new(&mut v, crate::panels::SIZE).suffix(" pt")).on_hover_text("The bar's thickness. Its symbols and text keep their size.").changed() {
                         p.size = Some(v);
                     }
                     if p.size.is_some() && ui.small_button("Reset").clicked() {
@@ -210,7 +210,7 @@ impl SettingsApp {
                 ui.label("Between items");
                 ui.horizontal(|ui| {
                     let mut v = p.spacing() as u32;
-                    if ui.add(egui::Slider::new(&mut v, 0..=crate::panels::SPACING_MAX).suffix(" pt")).on_hover_text("The room between one item and the next").changed() {
+                    if ui.add(egui::Slider::new(&mut v, 0..=crate::panels::SPACING_MAX).suffix(" pt")).on_hover_text("Space between one item and the next").changed() {
                         p.spacing = Some(v);
                     }
                     if p.spacing.is_some() && ui.small_button("Reset").clicked() {
@@ -221,7 +221,7 @@ impl SettingsApp {
                 ui.label("From the screen's edge");
                 ui.horizontal(|ui| {
                     let mut o = p.off() as u32;
-                    if ui.add_enabled(floating, egui::Slider::new(&mut o, 0..=max).suffix(" pt")).on_hover_text("How far the bar floats from the screen's edge, and from the edge's ends").on_disabled_hover_text("An edge to edge panel sits on the edge").changed() {
+                    if ui.add_enabled(floating, egui::Slider::new(&mut o, 0..=max).suffix(" pt")).on_hover_text("How far the bar floats from the screen's edge, and from the edge's ends").on_disabled_hover_text("Edge-to-edge panels sit on the edge").changed() {
                         p.offset = Some(o);
                     }
                     if p.offset.is_some() && floating && ui.small_button("Reset").clicked() {
@@ -229,10 +229,10 @@ impl SettingsApp {
                     }
                 });
                 ui.end_row();
-                ui.label("Room before windows");
+                ui.label("Space before windows");
                 ui.horizontal(|ui| {
                     let mut g = p.gap() as u32;
-                    if ui.add(egui::Slider::new(&mut g, 0..=max).suffix(" pt")).on_hover_text("Kept clear between the bar and windows, on top of the bar itself").changed() {
+                    if ui.add(egui::Slider::new(&mut g, 0..=max).suffix(" pt")).on_hover_text("Extra space kept clear between the bar and windows").changed() {
                         p.gap = Some(g);
                     }
                     if p.gap.is_some() && ui.small_button("Reset").clicked() {

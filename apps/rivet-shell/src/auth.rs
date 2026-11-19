@@ -136,7 +136,7 @@ pub fn check(user: &str, password: &str) -> Result<(), String> {
     let mut h: *mut c_void = std::ptr::null_mut();
     let r = unsafe { pam_start(service.as_ptr(), user_c.as_ptr(), &conv, &mut h) };
     if r != PAM_SUCCESS || h.is_null() {
-        return Err("Couldn't start checking passwords (PAM)".into());
+        return Err("Couldn't check passwords: PAM didn't start".into());
     }
     let r = unsafe { pam_authenticate(h, 0) };
     let why = if r == PAM_SUCCESS {

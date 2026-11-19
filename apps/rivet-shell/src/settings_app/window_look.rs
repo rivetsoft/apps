@@ -48,7 +48,7 @@ impl SettingsApp {
 
         section(ui, "Window Look", &mut |ui| {
             let Some(t) = &target else {
-                hint(ui, &format!("Gaps, borders and corners can be set for niri, Hyprland and mango. This session is {}, so they're left to its own settings.", comp.name()));
+                hint(ui, &format!("Gaps, borders and corners can be set here on niri, Hyprland and mango. This session runs {}, so use its own settings.", comp.name()));
                 return;
             };
             let s = &mut self.s;
@@ -56,7 +56,7 @@ impl SettingsApp {
             hint(ui, &format!("Its config: {}", short(&t.main)));
             ui.add_space(6.0);
             ui.checkbox(&mut s.comp_on, format!("Set {}'s gaps, borders and corners here", comp.name()));
-            hint(ui, &format!("Rivet Shell writes them to {} and keeps it up to date; the borders can follow the accent as the wallpaper changes it.", short(&t.ours)));
+            hint(ui, &format!("Rivet Shell writes them to {} and keeps it up to date. Borders can follow the accent as the wallpaper changes.", short(&t.ours)));
             if s.comp_on {
                 ui.add_space(8.0);
                 if included {
@@ -68,10 +68,10 @@ impl SettingsApp {
                     if ui.button(format!("Add the Include to {}", name(&t.main))).clicked() {
                         let (accent, dark) = comp::shell_look(s);
                         let look = comp::Look::from(s, accent, dark);
-                        msg = Some(comp::add_include(t, Some(&look), &s.displays).map(|_| format!("Added. The original is kept as {}.rivet-backup.", name(&t.main))));
+                        msg = Some(comp::add_include(t, Some(&look), &s.displays).map(|_| format!("Added. The original is saved as {}.rivet-backup.", name(&t.main))));
                         ctx.data_mut(|d| d.remove::<(f64, bool)>(key));
                     }
-                    hint(ui, &format!("One line at its end ({}), so these settings win over the ones above it. A copy of the file is kept first.{}", comp::include_line(t), if t.comp == Compositor::Niri { " Needs niri 25.11 or later." } else { "" }));
+                    hint(ui, &format!("Adds one line at the end ({}) so settings here override earlier ones. Backs up the file first.{}", comp::include_line(t), if t.comp == Compositor::Niri { " Needs niri 25.11 or later." } else { "" }));
                 }
                 match &msg {
                     Some(Ok(m)) => hint(ui, m),

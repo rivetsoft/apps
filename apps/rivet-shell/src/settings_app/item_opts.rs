@@ -102,37 +102,37 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
             "tray" => {
                 section(ui, "Icons");
                 icon_tiles(ui, &mut s.tray_color, TrayColor::ALL.map(TrayColor::label), accent);
-                note(ui, "Recoloured icons keep their shapes in one colour, so the tray matches the panel.");
+                note(ui, "Recolored icons keep their shapes in one color, so the tray matches the panel.");
                 section(ui, "Shows");
-                toggle(ui, "Idle icons too", Some("Apps can mark an icon as having nothing to say"), &mut s.tray_passive, accent);
-                note(ui, "Click an icon for its app, right-click for its menu, middle-click for its second action. Icons from old X11 apps need xembed-sni-proxy.");
+                toggle(ui, "Show passive icons", Some("Icons an app marks as having nothing to report"), &mut s.tray_passive, accent);
+                note(ui, "Click an icon to open its app, right-click for its menu, middle-click for its second action. Icons from older X11 apps need xembed-sni-proxy.");
             }
             "dock" => {
                 section(ui, "Shows");
                 toggle(ui, "Open apps too", Some("After the pinned ones"), &mut s.dock_open_apps, accent);
                 toggle(ui, "A dot under open apps", None, &mut s.dock_running, accent);
-                note(ui, "The same apps as the dock: pinning, unpinning or moving one in either changes both, and these settings are the dock's too. Right-click an app to pin or move it.");
+                note(ui, "Shows the same apps as the dock and shares its settings: pinning or moving an app in one changes both. Right-click an app to pin or move it.");
             }
             "volume" => {
                 section(ui, "Shows");
                 show_tiles(ui, &mut s.vol_show, accent, |p, c, col| glyph::speaker(p, c, false, col), "64%");
-                section(ui, "Behaviour");
+                section(ui, "Behavior");
                 toggle(ui, "Scroll to change the volume", Some("Over the item, in steps of 5%"), &mut s.vol_scroll, accent);
-                note(ui, "Clicking it mutes or unmutes. The quick settings have the slider.");
+                note(ui, "Click to mute or unmute. The volume slider is in quick settings.");
             }
             "brightness" => {
                 section(ui, "Shows");
                 show_tiles(ui, &mut s.bright_show, accent, glyph::sun, "80%");
-                section(ui, "Behaviour");
+                section(ui, "Behavior");
                 toggle(ui, "Scroll to change the brightness", Some("Over the item"), &mut s.bright_scroll, accent);
-                note(ui, "Shows only on screens whose brightness can be set, such as a laptop's.");
+                note(ui, "Shows only on screens with adjustable brightness, such as a laptop's.");
             }
             "battery" => {
                 section(ui, "Shows");
                 show_tiles(ui, &mut s.batt_show, accent, move |p, c, col| glyph::battery(p, c, 72, false, col, accent), "72%");
-                section(ui, "Behaviour");
-                toggle(ui, "Hide while charged", Some("Left out when plugged in and full"), &mut s.batt_hide_full, accent);
-                note(ui, "It turns red at 15% when not charging, whatever it shows.");
+                section(ui, "Behavior");
+                toggle(ui, "Hide while charged", Some("Hidden when plugged in and full"), &mut s.batt_hide_full, accent);
+                note(ui, "Turns red at 15% when not charging.");
             }
             "power" => power(ui, s, accent),
             "quick-settings" => {
@@ -291,7 +291,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
     });
     match s.launcher_icon {
         LauncherIcon::Grid => {}
-        LauncherIcon::System => note(ui, "Your system's logo, from the icon theme. Without one there, the grid shows."),
+        LauncherIcon::System => note(ui, "Your system's logo from the icon theme. Falls back to the grid if the theme has none."),
         LauncherIcon::Custom => {
             // The file picker's answer, asked for on a thread (kept with the card).
             let key = egui::Id::unique("launcher-icon-pick");
@@ -319,7 +319,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
                 }
                 ui.add(egui::TextEdit::singleline(&mut s.launcher_custom).hint_text("Icon name or picture").desired_width(f32::INFINITY));
             });
-            note(ui, "An icon's name from the icon theme (such as start-here), or a picture: PNG, SVG, JPEG or WebP. It shows in its own colours.");
+            note(ui, "An icon name from the icon theme (such as start-here), or a PNG, SVG, JPEG or WebP picture. Shown in its own colors.");
         }
     }
 }
@@ -378,9 +378,9 @@ fn workspaces(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
     if s.ws_style != WsStyle::Dots {
         section(ui, "Each shows its");
         segmented(ui, &mut s.ws_names, &[(true, "Name"), (false, "Number")]);
-        note(ui, "A name when the workspace has one, else its number.");
+        note(ui, "The workspace's name if it has one, otherwise its number.");
     }
-    section(ui, "Behaviour");
+    section(ui, "Behavior");
     toggle(ui, "Hide empty workspaces", Some("The one you're on always shows"), &mut s.ws_hide_empty, accent);
     toggle(ui, "Scroll to switch", Some("One workspace per step"), &mut s.ws_scroll, accent);
 }
@@ -414,11 +414,11 @@ fn power(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
     });
     note(ui, match s.power_style {
         PowerStyle::Menu => "A list under the item.",
-        PowerStyle::Grid => "Large tiles in the middle of the screen, with your name and how long the computer has been up.",
+        PowerStyle::Grid => "Large tiles in the middle of the screen, with your name and the computer's uptime.",
         PowerStyle::Row => "A compact row of symbols under the item.",
     });
-    section(ui, "Behaviour");
-    toggle(ui, "Ask before leaving", Some("Log out, restart and shut down take a second click"), &mut s.power_confirm, accent);
+    section(ui, "Behavior");
+    toggle(ui, "Ask before leaving", Some("Log out, restart and shut down need a second click"), &mut s.power_confirm, accent);
     section(ui, "Shows");
     for (_, name, label, _) in crate::power_ui::ACTIONS {
         let mut on = !s.power_hide.iter().any(|h| h == name);
@@ -494,14 +494,14 @@ fn ai(ui: &mut egui::Ui, s: &mut Settings) {
                 s.ai_pins.clear();
             }
         });
-        note(ui, "With none pinned:");
+        note(ui, "With none pinned, show:");
     } else {
-        note(ui, "Pin limits from the item's popup. With none pinned:");
+        note(ui, "Pin limits from the item's popup. With none pinned, show:");
     }
-    egui::ComboBox::from_id_salt("ai-bar").width(WIDTH - 8.0).selected_text(if s.ai_bar == "auto" { "The most used limit" } else { crate::ai::name(&s.ai_bar) }).show_ui(ui, |ui| {
-        ui.selectable_value(&mut s.ai_bar, "auto".to_string(), "The most used limit");
+    egui::ComboBox::from_id_salt("ai-bar").width(WIDTH - 8.0).selected_text(if s.ai_bar == "auto" { "The Most Used Limit" } else { crate::ai::name(&s.ai_bar) }).show_ui(ui, |ui| {
+        ui.selectable_value(&mut s.ai_bar, "auto".to_string(), "The Most Used Limit");
         for (pid, pname) in crate::ai::PROVIDERS {
-            ui.selectable_value(&mut s.ai_bar, pid.to_string(), format!("{pname}'s most used limit"));
+            ui.selectable_value(&mut s.ai_bar, pid.to_string(), format!("{pname}'s Most Used Limit"));
         }
     });
     note(

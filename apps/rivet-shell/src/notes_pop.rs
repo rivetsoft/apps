@@ -108,7 +108,7 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         p.rect_filled(dr, r_sm(), fill);
         p.rect_stroke(dr, r_sm(), stroke, egui::StrokeKind::Inside);
     }
-    let tip = if dnd { "Turn off Do Not Disturb" } else { "Do Not Disturb: no cards, they only wait here" };
+    let tip = if dnd { "Turn off Do Not Disturb" } else { "Do Not Disturb is on: notifications skip the cards and wait here" };
     if tool_button(ui, dr, "notes-dnd", tip, &|p, c, col| glyph::bell(p, c, if dnd { accent } else { col }, dnd)) {
         acts.push(Act::Dnd(!dnd));
     }

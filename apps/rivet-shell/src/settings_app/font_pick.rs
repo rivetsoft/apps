@@ -44,7 +44,7 @@ pub fn font_pick(ui: &mut egui::Ui, id: &str, value: &mut String, follow: &str) 
             }
         }
         if all.is_empty() {
-            ui.weak("No fonts found (fontconfig's fc-list is needed).");
+            ui.weak("No fonts found. Install fontconfig (fc-list) to list them.");
         } else if !any {
             ui.weak("No font by that name.");
         }

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Settings: Appearance's "Color use" is one choice with a legend of what the accent, secondary
+  and tertiary colors are on at that setting. Choices read in title case (Tonal Spot, From the
+  Wallpaper, Smart Hide), and hints and tips are reworded to be plainer.
 - Commands in the launcher: `@` and a plugin's word show only that plugin's entries, and the
   words after it search them (`@ftp work`, `@notes plan`). `@` alone lists the words.
 - An FTP plugin, for Rivet FTP: your saved connections in a panel item's menu, under their

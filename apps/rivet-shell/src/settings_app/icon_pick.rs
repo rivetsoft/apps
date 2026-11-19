@@ -37,7 +37,7 @@ impl SettingsApp {
             grid(ui, "shell-icons", &mut |ui| {
                 ui.label("Icon theme");
                 ui.horizontal(|ui| {
-                    let like = format!("Like the desktop ({})", desktop());
+                    let like = format!("Like the Desktop ({})", desktop());
                     let shown = if self.s.icon_theme.is_empty() { like.clone() } else { self.s.icon_theme.clone() };
                     egui::ComboBox::from_id_salt("shell-icon-theme").selected_text(shown).width(240.0).height(320.0).show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.s.icon_theme, String::new(), like);
@@ -48,7 +48,7 @@ impl SettingsApp {
                         // One chosen before and since removed stays listed, so it can be seen.
                         if !self.s.icon_theme.is_empty() && !installed().contains(&self.s.icon_theme) {
                             let gone = self.s.icon_theme.clone();
-                            ui.selectable_value(&mut self.s.icon_theme, gone.clone(), format!("{gone} (not installed)"));
+                            ui.selectable_value(&mut self.s.icon_theme, gone.clone(), format!("{gone} (Not Installed)"));
                         }
                     });
                     if !self.s.icon_theme.is_empty() && ui.small_button("Reset").clicked() {
@@ -71,7 +71,7 @@ impl SettingsApp {
                 }
             }
             ui.add_space(8.0);
-            hint(ui, "For apps in the dock, launcher and panels, and the tray. An icon the theme lacks comes from the ones it builds on.");
+            hint(ui, "Used for apps in the dock, launcher, panels and tray. Missing icons come from the theme it inherits from.");
         });
     }
 }

@@ -94,7 +94,7 @@ impl SettingsApp {
         let now = ctx.input(|i| i.time);
         let Some(t) = target.filter(|t| displays::supported(t.format) || shot) else {
             section(ui, "Displays", &mut |ui| {
-                hint(ui, &format!("Screens can be set here for niri and for Hyprland with hyprland.conf. This session is {}, so they're left to its own settings.", comp.name()));
+                hint(ui, &format!("Screens can be set here on niri and Hyprland (through hyprland.conf). This session runs {}, so use its own settings.", comp.name()));
             });
             return;
         };
@@ -123,7 +123,7 @@ impl SettingsApp {
                 // The thread put the old ones back: the settings here follow.
                 self.s.displays = p.old.clone();
                 (st.pending, st.read_at, st.edited) = (None, None, false);
-                st.msg = Some(Ok("Nothing was kept, so the screens are as they were.".into()));
+                st.msg = Some(Ok("Changes not kept. The screens are back as they were.".into()));
             } else {
                 let left = p.until.saturating_duration_since(Instant::now()).as_secs() + 1;
                 let warn = rivet_look::theme::status(&ctx).warning;
@@ -132,7 +132,7 @@ impl SettingsApp {
                     ui.horizontal(|ui| {
                         ui.vertical(|ui| {
                             ui.label(egui::RichText::new("Keep these display settings?").strong());
-                            hint(ui, &format!("Going back to how they were in {left} second{}.", if left == 1 { "" } else { "s" }));
+                            hint(ui, &format!("Reverting in {left} second{}.", if left == 1 { "" } else { "s" }));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if ui.button("Go Back").clicked() {
@@ -153,7 +153,7 @@ impl SettingsApp {
             p.kept.store(true, Ordering::Relaxed);
             if go_back {
                 self.s.displays = p.old;
-                st.msg = Some(write(&self.s).map(|_| "The screens are as they were.".into()));
+                st.msg = Some(write(&self.s).map(|_| "The screens are back as they were.".into()));
                 (st.read_at, st.edited) = (None, false);
                 st.draft.clear();
             } else {
@@ -226,9 +226,9 @@ impl SettingsApp {
         let clash = (0..st.draft.len()).any(|i| (0..i).any(|j| st.draft[i].on && st.draft[j].on && displays::overlap((st.draft[i].pos, sizes[i]), (st.draft[j].pos, sizes[j]))));
         ui.add_space(4.0);
         if clash && st.drag.is_none() {
-            ui.label(egui::RichText::new("Two screens overlap. Drag them apart before applying.").small().color(rivet_look::theme::status(&ctx).warning));
+            ui.label(egui::RichText::new("Two screens overlap. Drag them apart, then apply.").small().color(rivet_look::theme::status(&ctx).warning));
         } else {
-            hint(ui, "Drag a screen to where it sits on your desk; it snaps to the others' edges. Sizes are as the desktop sees them, after scaling.");
+            hint(ui, "Drag each screen to match where it sits on your desk; it snaps to the others' edges. Sizes are shown after scaling.");
         }
         ui.add_space(14.0);
         // ---- the chosen screen
@@ -240,7 +240,7 @@ impl SettingsApp {
         section(ui, &title, &mut |ui| {
             let d = &mut st.draft[sel];
             // The last screen that's on stays on.
-            ui.add_enabled(!(d.on && lit <= 1), egui::Checkbox::new(&mut d.on, "Use this screen")).on_disabled_hover_text("The only screen in use stays on");
+            ui.add_enabled(!(d.on && lit <= 1), egui::Checkbox::new(&mut d.on, "Use this screen")).on_disabled_hover_text("Your only active screen can't be turned off");
             let Some(o) = out.as_ref().filter(|_| d.on) else { return };
             ui.add_space(6.0);
             let mode = d.mode.unwrap_or(o.preferred);
@@ -251,7 +251,7 @@ impl SettingsApp {
                 sizes.dedup();
                 egui::ComboBox::from_id_salt("display-res").selected_text(format!("{} × {}", mode.w, mode.h)).width(170.0).show_ui(ui, |ui| {
                     for (w, h) in sizes {
-                        let own = if (w, h) == (o.preferred.w, o.preferred.h) { "  (its own)" } else { "" };
+                        let own = if (w, h) == (o.preferred.w, o.preferred.h) { "  (Its Own)" } else { "" };
                         if ui.selectable_label((w, h) == (mode.w, mode.h), format!("{w} × {h}{own}")).clicked() && (w, h) != (mode.w, mode.h) {
                             // The fastest rate it has at that size.
                             d.mode = o.modes.iter().copied().filter(|m| (m.w, m.h) == (w, h)).max_by_key(|m| m.mhz);
@@ -289,7 +289,7 @@ impl SettingsApp {
                 ui.end_row();
                 if o.vrr_supported {
                     ui.label("");
-                    ui.checkbox(&mut d.vrr, "Variable refresh rate").on_hover_text("The screen follows the app's frame rate (FreeSync, G-Sync)");
+                    ui.checkbox(&mut d.vrr, "Variable refresh rate").on_hover_text("Matches the screen to the app's frame rate (FreeSync, G-Sync)");
                     ui.end_row();
                 }
             });
@@ -332,10 +332,10 @@ impl SettingsApp {
             if ui.button(format!("Add the Include to {name}")).clicked() {
                 let (a, dark) = comp::shell_look(&self.s);
                 let look = self.s.comp_on.then(|| comp::Look::from(&self.s, a, dark));
-                st.msg = Some(comp::add_include(&t, look.as_ref(), &self.s.displays).map(|_| format!("Added. The original is kept as {name}.rivet-backup.")));
+                st.msg = Some(comp::add_include(&t, look.as_ref(), &self.s.displays).map(|_| format!("Added. The original is saved as {name}.rivet-backup.")));
                 ctx.data_mut(|d| d.remove::<(f64, bool)>(key));
             }
-            hint(ui, &format!("One line at its end ({}), so what's set here wins over the screens set above it. A copy of the file is kept first.", comp::include_line(&t)));
+            hint(ui, &format!("Adds one line at the end ({}) so settings here override earlier ones. Backs up the file first.", comp::include_line(&t)));
             ui.add_space(10.0);
         }
         let mut apply = false;
@@ -346,13 +346,13 @@ impl SettingsApp {
             if ui.add_enabled(ready, egui::Button::new(egui::RichText::new("Apply").color(if ready { v.selection.stroke.color } else { v.weak_text_color() })).fill(if ready { accent } else { v.faint_bg_color })).clicked() {
                 apply = true;
             }
-            if ui.add_enabled(st.edited, egui::Button::new("Reset")).on_hover_text("Back to how the screens are now").clicked() {
+            if ui.add_enabled(st.edited, egui::Button::new("Reset")).on_hover_text("Discard unapplied changes").clicked() {
                 (st.edited, st.read_at) = (false, None);
                 st.draft.clear();
             }
             if !self.s.displays.is_empty() && st.pending.is_none() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(format!("Leave the Screens to {}", comp.name())).on_hover_text(format!("Take the screens out of {ours}, so {name} sets them again")).clicked() {
+                    if ui.button(format!("Leave the Screens to {}", comp.name())).on_hover_text(format!("Removes the screens from {ours} so {name} sets them again")).clicked() {
                         leave = true;
                     }
                 });
@@ -402,7 +402,7 @@ impl SettingsApp {
             Some(Err(e)) => {
                 ui.label(egui::RichText::new(e).color(rivet_look::theme::status(&ctx).danger));
             }
-            None => hint(ui, &format!("Apply writes the screens to {ours}, which {name} includes, and asks whether to keep them: with no answer in {} seconds they go back.", KEEP_FOR.as_secs())),
+            None => hint(ui, &format!("Apply writes to {ours} (included by {name}) and asks you to confirm. With no answer in {} seconds, the screens revert.", KEEP_FOR.as_secs())),
         }
     }
 }
