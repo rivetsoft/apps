@@ -85,6 +85,8 @@ pub enum PopupKind {
     Plugin { id: String },
     /// A tray icon's menu: its item, and the submenus opened (outermost first).
     TrayMenu { key: String, path: Vec<i32> },
+    /// The player: what's playing, with its cover and controls.
+    Media,
     /// The password dialog, when an app needs an administrator's say-so: what's typed, and
     /// the try it was typed for.
     Auth { typed: String, round: u64 },
@@ -171,6 +173,9 @@ pub struct Extra {
     pub plugins: crate::plugins::Items,
     /// A popup joined to a panel: the panel, and where along it (screen points).
     pub join: Option<(usize, f32, f32)>,
+    /// The sound's levels, low notes first, while something shows the visualizer (None:
+    /// this computer can't listen).
+    pub viz: Option<Vec<f32>>,
     /// The password being asked for (while its dialog is open).
     pub auth: Option<crate::polkit::View>,
 }
@@ -226,6 +231,8 @@ pub enum Act {
     Plugin(String, crate::plugins::Event),
     /// What was typed into the password dialog.
     Auth(String),
+    /// Jump to this many seconds into what's playing.
+    MediaSeek(u32),
 }
 
 /// Each surface's look: colours and fonts (following the desktop), and icons.
@@ -852,6 +859,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Plugin { id } => Vec2::new(PLUGIN_W, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::TrayMenu { path, .. } => Vec2::new(260.0, crate::tray_ui::menu_height(m, path).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Auth { .. } => Vec2::new(crate::auth_pop::WIDTH, crate::auth_pop::height(m, ui.ctx())),
+        PopupKind::Media => Vec2::new(crate::media_pop::WIDTH, crate::media_pop::height(m)),
     };
     let mut anchored = false;
     // Joined to a panel, it stays along the straight part of the panel's side (clear of
@@ -936,6 +944,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Control { .. } => crate::quick::PAD,
         PopupKind::Notifications => crate::notes_pop::PAD,
         PopupKind::Auth { .. } => crate::auth_pop::PAD,
+        PopupKind::Media => crate::media_pop::PAD,
         _ => 14.0,
     };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(pad)).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -954,6 +963,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::TrayMenu { key, path } => crate::tray_ui::menu(&mut child, key, path, m),
         PopupKind::Plugin { id } => plugin_menu(&mut child, id, m, kit),
         PopupKind::Auth { typed, round } => crate::auth_pop::popup(&mut child, typed, round, m, kit),
+        PopupKind::Media => crate::media_pop::popup(&mut child, m, kit),
     }
 }
 

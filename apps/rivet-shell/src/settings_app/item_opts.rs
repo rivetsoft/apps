@@ -20,7 +20,7 @@ fn ui_font(size: f32) -> egui::FontId {
 
 /// The items with options.
 pub fn has_options(id: &str) -> bool {
-    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings") || id.starts_with("plugin:")
+    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "media" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings") || id.starts_with("plugin:")
 }
 
 /// The choice between icons in their own colours and in one of the panel's.
@@ -49,6 +49,7 @@ fn tip(id: &str) -> &'static str {
         "ai" => "What the AI item reads and shows",
         "tray" => "How apps' tray icons show",
         "dock" => "What the dock item shows",
+        "media" => "What Now Playing shows and does",
         "volume" => "How the volume shows",
         "brightness" => "How the brightness shows",
         "battery" => "How the battery shows",
@@ -113,6 +114,7 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
                 toggle(ui, "A dot under open apps", None, &mut s.dock_running, accent);
                 note(ui, "Shows the dock's apps. Pinning or moving one here changes the dock too.");
             }
+            "media" => media(ui, s, accent),
             "volume" => {
                 section(ui, "Shows");
                 show_tiles(ui, &mut s.vol_show, accent, |p, c, col| glyph::speaker(p, c, false, col), "64%");
@@ -369,6 +371,38 @@ fn clock(ui: &mut egui::Ui, s: &mut Settings) {
         ui.add_space(6.0);
         ui.label(egui::RichText::new("Not a pattern the clock can show").font(ui_font(11.5)).color(rivet_look::theme::status(ui.ctx()).danger));
     }
+}
+
+fn media(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
+    use crate::config::MediaText;
+    section(ui, "Shows");
+    ui.add_space(4.0);
+    egui::ComboBox::from_id_salt("media-text").width(WIDTH - 8.0).selected_text(s.media_text.label()).show_ui(ui, |ui| {
+        for t in MediaText::ALL {
+            ui.selectable_value(&mut s.media_text, t, t.label());
+        }
+    });
+    if s.media_text != MediaText::None {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Widest").font(ui_font(13.0)));
+            ui.add(egui::Slider::new(&mut s.media_width, 80..=480).step_by(10.0).suffix(" pt"));
+        });
+    }
+    ui.add_space(4.0);
+    toggle(ui, "Cover", Some("In place of the play symbol"), &mut s.media_art, accent);
+    toggle(ui, "Previous and next buttons", None, &mut s.media_controls, accent);
+    if crate::sys::has("pw-record") {
+        toggle(ui, "Visualizer", Some("Bars that move with the sound"), &mut s.media_viz, accent);
+    } else {
+        note(ui, "Install pw-record (part of PipeWire) to show a visualizer.");
+    }
+    toggle(ui, "Hide while paused", None, &mut s.media_hide_paused, accent);
+    section(ui, "A click");
+    segmented(ui, &mut s.media_click_plays, &[(false, "Opens the Player"), (true, "Plays or Pauses")]);
+    note(ui, "A middle click always plays or pauses.");
+    section(ui, "Behavior");
+    toggle(ui, "Scroll to change track", Some("Up for the previous one, down for the next"), &mut s.media_scroll, accent);
 }
 
 fn workspaces(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {

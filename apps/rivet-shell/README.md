@@ -6,7 +6,8 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
 ![Rivet Shell: the panel, widgets and dock over a wallpaper](../../docs/screenshots/shell-wide.jpg)
 
 - **Panel**: a launcher button, workspaces (niri, Hyprland, Sway), the focused window's title,
-  the clock (click for a calendar), what's playing (click to pause), volume and brightness
+  the clock (click for a calendar), what's playing (click for the player: cover, progress,
+  controls and a visualizer), volume and brightness
   (scroll to change), network, battery, notifications, quick settings and a power menu (lock,
   suspend, log out, restart, shut down; the last three ask first). Floating or edge to edge, at
   the top or the bottom.

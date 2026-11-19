@@ -54,6 +54,8 @@ pub enum Msg {
     Wall { path: PathBuf, size: (u32, u32), pixels: Option<Vec<u8>> },
     Matugen(Result<(), String>),
     Note(NoteMsg),
+    /// The visualizer has new bars.
+    Viz,
     /// From the password prompt's threads.
     Polkit(crate::polkit::Event),
     Apps(Vec<rivet_xdg::launch::DesktopApp>),
@@ -151,6 +153,8 @@ pub struct Shell {
     /// Sound devices and apps, read while the Sound popup is open.
     audio: crate::audio::AudioLive,
     audio_gen: u64,
+    /// The sound's levels, listened to while something shows them.
+    viz: crate::viz::VizLive,
     plugins: crate::plugins::Plugins,
     plugins_gen: u64,
     /// The lock screen was up at the last look (for the lock and unlock events).
@@ -254,6 +258,12 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
             let _ = t.send(Msg::Wake);
         }
     });
+    let viz_tx = std::sync::Mutex::new(tx.clone());
+    let viz = crate::viz::VizLive::new(move || {
+        if let Ok(t) = viz_tx.lock() {
+            let _ = t.send(Msg::Viz);
+        }
+    });
     let wake_tx = std::sync::Mutex::new(tx.clone());
     let audio = crate::audio::start(move || {
         if let Ok(t) = wake_tx.lock() {
@@ -290,6 +300,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         radio,
         audio,
         audio_gen: 0,
+        viz,
         plugins,
         plugins_gen: 0,
         was_locked: false,
@@ -658,6 +669,19 @@ impl Shell {
         }
     }
 
+    /// Whether a panel's Now Playing item shows the visualizer.
+    fn panel_viz(&self, idx: usize) -> bool {
+        self.s.media_viz && self.s.panels.get(idx).is_some_and(|p| p.has("media"))
+    }
+
+    /// The visualizer listens only while something plays and something shows its bars: a
+    /// panel's Now Playing item set to, or the player's popup.
+    fn set_viz(&mut self) {
+        let playing = self.prev_status.media.as_ref().is_some_and(|m| m.playing);
+        let shown = (0..self.s.panels.len()).any(|i| self.panel_viz(i)) || self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Media);
+        self.viz.want(playing && shown && !self.locker.running());
+    }
+
     /// Kept awake while something plays (when the settings ask), like Keep Awake.
     fn set_media_awake(&mut self) {
         let want = self.s.idle_on && self.s.idle_media && self.prev_status.media.as_ref().is_some_and(|m| m.playing);
@@ -863,6 +887,17 @@ impl Shell {
                     self.redraw_kinds(&[Kind::Popup, Kind::Dock]);
                 }
             }
+            Msg::Viz => {
+                let pop = self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Media);
+                let panels: Vec<bool> = (0..self.s.panels.len()).map(|i| self.panel_viz(i)).collect();
+                for s in &mut self.surfs {
+                    s.dirty |= match s.kind {
+                        Kind::Panel => panels.get(s.idx).copied().unwrap_or(false),
+                        Kind::Popup => pop,
+                        _ => false,
+                    };
+                }
+            }
             Msg::Polkit(e) => {
                 if self.polkit.as_mut().is_some_and(|a| a.on_event(e)) {
                     self.sync_auth();
@@ -905,6 +940,7 @@ impl Shell {
                     ("volume", n) if n.parse::<u32>().is_ok() => self.act(Act::SetVolume(n.parse().unwrap_or(50))),
                     ("brightness", "up" | "down") => self.act(Act::Brightness(arg == "up")),
                     ("brightness", n) if n.parse::<u32>().is_ok() => self.act(Act::SetBrightness(n.parse().unwrap_or(50))),
+                    ("media" | "player", "") => self.open_popup(Popup::at(PopupKind::Media, f32::NAN, "")),
                     ("media", "play-pause" | "next" | "previous" | "play" | "pause" | "stop") => {
                         let c: &'static str = match arg {
                             "next" => "next",
@@ -1015,6 +1051,7 @@ impl Shell {
             self.event(if locked { "lock" } else { "unlock" }, &[]);
         }
         self.set_media_awake();
+        self.set_viz();
         let now = Instant::now();
         // The colour files' dates only (reading them again is the surfaces' job, when they change).
         if self.palette_watch.iter().any(|(p, t)| mtime(p) != *t) {
@@ -1118,7 +1155,7 @@ impl Shell {
                 Kind::Panel => panel_changed,
                 Kind::Dock => dock_changed,
                 Kind::Background => self.s.widget_system && bg_changed,
-                Kind::Popup => (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed,
+                Kind::Popup => (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed || (self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Media) && (st.media != prev.media || st.media_pos != prev.media_pos)),
                 Kind::Cards | Kind::Osd | Kind::Dim => false,
             };
             s.dirty |= shows;
@@ -1402,6 +1439,7 @@ impl Shell {
             tray: if matches!(kind, Kind::Panel | Kind::Popup) { self.tray.get() } else { Default::default() },
             join: if kind == Kind::Panel { self.popup.as_ref().filter(|p| p.output.is_empty() || p.output == self.surfs[i].output_name).and_then(|p| Some((p.attach?, p.join?.0, p.join?.1))) } else { None },
             auth: if kind == Kind::Popup { self.polkit.as_ref().and_then(|a| a.view()) } else { None },
+            viz: self.viz.able().then(|| if matches!(kind, Kind::Panel | Kind::Popup) { self.viz.get() } else { Vec::new() }),
         };
         let join_was = self.popup.as_ref().and_then(|p| p.join);
         let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, .. } = self;
@@ -1642,6 +1680,10 @@ impl Shell {
             }
             Act::Media(cmd) => {
                 sys::media(cmd);
+                self.live.refresh(false);
+            }
+            Act::MediaSeek(secs) => {
+                sys::media_seek(secs);
                 self.live.refresh(false);
             }
             Act::Wifi(on) => {

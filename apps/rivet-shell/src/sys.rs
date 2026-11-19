@@ -88,6 +88,9 @@ pub struct Media {
     pub title: String,
     pub artist: String,
     pub playing: bool,
+    pub album: String,
+    /// The cover's picture file (empty: none, or not fetched yet).
+    pub art: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -104,6 +107,9 @@ pub struct Status {
     /// Screen brightness 0–100 (laptops' panels).
     pub brightness: Option<u32>,
     pub media: Option<Media>,
+    /// How far into it, and how long it is, in seconds (0 long: the player doesn't say). Kept
+    /// apart from `media`, which changes only with the track.
+    pub media_pos: (u32, u32),
     pub net: Net,
     /// Wi-Fi radio on (when NetworkManager says).
     pub wifi_on: Option<bool>,
@@ -162,7 +168,10 @@ pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
                 next.volume = volume("@DEFAULT_AUDIO_SINK@");
                 next.mic = volume("@DEFAULT_AUDIO_SOURCE@");
                 next.brightness = brightness();
-                next.media = read_media();
+                (next.media, next.media_pos) = match read_media() {
+                    Some((m, pos)) => (Some(m), pos),
+                    None => (None, (0, 0)),
+                };
                 next.cpu = cpu.read();
                 next.mem = memory();
                 let publish = |next: Status, s: &mut Status| {
@@ -319,14 +328,83 @@ fn brightness() -> Option<u32> {
     (max > 0.0).then(|| (now / max * 100.0).round() as u32)
 }
 
-fn read_media() -> Option<Media> {
-    let t = output("playerctl", &["metadata", "--format", "{{status}}\t{{playerName}}\t{{artist}}\t{{title}}"])?;
-    let line = t.lines().next()?;
-    let f: Vec<&str> = line.splitn(4, '\t').collect();
+/// What's playing, and (seconds in, seconds long).
+fn read_media() -> Option<(Media, (u32, u32))> {
+    let t = output("playerctl", &["metadata", "--format", "{{status}}\t{{playerName}}\t{{artist}}\t{{title}}\t{{album}}\t{{mpris:artUrl}}\t{{mpris:length}}\t{{position}}"])?;
+    parse_media(t.lines().next()?)
+}
+
+fn parse_media(line: &str) -> Option<(Media, (u32, u32))> {
+    let f: Vec<&str> = line.split('\t').collect();
     if f.len() < 4 || f[0] == "Stopped" || (f[3].trim().is_empty() && f[2].trim().is_empty()) {
         return None;
     }
-    Some(Media { playing: f[0] == "Playing", player: f[1].to_string(), artist: f[2].trim().to_string(), title: f[3].trim().to_string() })
+    let field = |i: usize| f.get(i).map(|v| v.trim()).unwrap_or("");
+    // Both in millionths of a second.
+    let secs = |i: usize| (field(i).parse::<u64>().unwrap_or(0) / 1_000_000) as u32;
+    let (len, pos) = (secs(6), secs(7));
+    let md = Media { playing: f[0] == "Playing", player: f[1].to_string(), artist: f[2].trim().to_string(), title: f[3].trim().to_string(), album: field(4).to_string(), art: art_file(field(5)) };
+    Some((md, (if len > 0 { pos.min(len) } else { pos }, len)))
+}
+
+/// The cover as a file on this computer: a player's own file as it is; one on the web
+/// fetched (with curl, where it's installed) into the cache, there from the next reading on.
+fn art_file(url: &str) -> String {
+    if let Some(path) = url.strip_prefix("file://") {
+        return percent_decode(path);
+    }
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return String::new();
+    }
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    url.hash(&mut h);
+    let dir = rivet_xdg::places::cache_home().join("rivet-shell/covers");
+    let file = dir.join(format!("{:016x}", h.finish()));
+    if file.is_file() {
+        return file.to_string_lossy().into_owned();
+    }
+    // Asked for once (the part file marks one on its way), and moved into place when whole.
+    let part = file.with_extension("part");
+    if !part.exists() && has("curl") && std::fs::create_dir_all(&dir).is_ok() && std::fs::write(&part, b"").is_ok() {
+        let (url, part, file) = (url.to_string(), part.clone(), file.clone());
+        std::thread::spawn(move || {
+            let ok = std::process::Command::new("curl").args(["-sfL", "-m", "10", "--max-filesize", "8000000", "-o"]).arg(&part).arg("--").arg(&url).stdin(std::process::Stdio::null()).status().is_ok_and(|s| s.success());
+            if ok {
+                let _ = std::fs::rename(&part, &file);
+            } else {
+                let _ = std::fs::remove_file(&part);
+            }
+            trim_covers(&dir);
+        });
+    }
+    String::new()
+}
+
+/// Keep the newest covers only.
+fn trim_covers(dir: &std::path::Path) {
+    let Ok(rd) = std::fs::read_dir(dir) else { return };
+    let mut files: Vec<_> = rd.flatten().filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path()))).collect();
+    files.sort_by_key(|f| std::cmp::Reverse(f.0));
+    for (_, p) in files.into_iter().skip(60) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && let Some(v) = s.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok()) {
+            out.push(v);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn wifi_radio() -> Option<bool> {
@@ -471,6 +549,11 @@ pub fn change_brightness(up: bool) {
 /// playerctl: play-pause, next, previous.
 pub fn media(cmd: &str) {
     spawn("playerctl", &[cmd]);
+}
+
+/// Jump to `secs` into what's playing.
+pub fn media_seek(secs: u32) {
+    spawn("playerctl", &["position", &secs.to_string()]);
 }
 
 pub fn set_wifi(on: bool) {
@@ -634,6 +717,16 @@ pub fn power(c: Compositor, p: Power) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_whats_playing() {
+        let (m, pos) = parse_media("Playing\tspotify\tThe Harbor Lights\tLow Tide\tShorelines\tfile:///tmp/a%20b.png\t241000000\t61500000").unwrap();
+        assert_eq!((m.title.as_str(), m.artist.as_str(), m.album.as_str(), m.art.as_str(), m.playing), ("Low Tide", "The Harbor Lights", "Shorelines", "/tmp/a b.png", true));
+        assert_eq!(pos, (61, 241));
+        // An older playerctl line, and a stopped player.
+        assert_eq!(parse_media("Paused\tmpv\t\tA film").unwrap().1, (0, 0));
+        assert!(parse_media("Stopped\tmpv\tx\ty").is_none());
+    }
 
     #[test]
     fn reads_the_computer() {

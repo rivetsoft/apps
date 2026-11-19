@@ -384,6 +384,51 @@ impl TrayColor {
     }
 }
 
+/// What the Now Playing item says beside its picture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum MediaText {
+    #[default]
+    TitleArtist,
+    ArtistTitle,
+    Title,
+    /// The picture or symbol alone.
+    None,
+}
+
+impl MediaText {
+    pub const ALL: [MediaText; 4] = [MediaText::TitleArtist, MediaText::ArtistTitle, MediaText::Title, MediaText::None];
+    pub fn name(self) -> &'static str {
+        match self {
+            MediaText::TitleArtist => "title-artist",
+            MediaText::ArtistTitle => "artist-title",
+            MediaText::Title => "title",
+            MediaText::None => "none",
+        }
+    }
+    pub fn label(self) -> &'static str {
+        match self {
+            MediaText::TitleArtist => "Title · Artist",
+            MediaText::ArtistTitle => "Artist · Title",
+            MediaText::Title => "Title",
+            MediaText::None => "No Text",
+        }
+    }
+    pub fn from(v: &str) -> MediaText {
+        MediaText::ALL.into_iter().find(|w| w.name() == v).unwrap_or_default()
+    }
+    /// The line for a track.
+    pub fn of(self, title: &str, artist: &str) -> String {
+        match self {
+            MediaText::None => String::new(),
+            MediaText::Title => title.to_string(),
+            _ if artist.is_empty() => title.to_string(),
+            _ if title.is_empty() => artist.to_string(),
+            MediaText::TitleArtist => format!("{title} · {artist}"),
+            MediaText::ArtistTitle => format!("{artist} · {title}"),
+        }
+    }
+}
+
 /// What a level item (volume, brightness, battery) shows in the panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Show {
@@ -503,6 +548,21 @@ pub struct Settings {
     pub ai_pins: Vec<String>,
     /// The volume, brightness and battery items: what each shows, and whether scrolling over
     /// volume or brightness changes it; the battery can be left out while it's charged.
+    // ---- the Now Playing item
+    pub media_text: MediaText,
+    /// The most room its text takes, in points.
+    pub media_width: u32,
+    /// The cover in place of the play symbol.
+    pub media_art: bool,
+    /// Previous and next beside it.
+    pub media_controls: bool,
+    /// Bars moving with the sound.
+    pub media_viz: bool,
+    /// A click plays or pauses (else it opens the player's popup).
+    pub media_click_plays: bool,
+    /// Scrolling over it changes track.
+    pub media_scroll: bool,
+    pub media_hide_paused: bool,
     pub vol_show: Show,
     pub vol_scroll: bool,
     pub bright_show: Show,
@@ -635,6 +695,14 @@ impl Default for Settings {
             ai_bar: "auto".into(),
             ai_left: false,
             ai_pins: Vec::new(),
+            media_text: MediaText::TitleArtist,
+            media_width: 230,
+            media_art: true,
+            media_controls: false,
+            media_viz: false,
+            media_click_plays: false,
+            media_scroll: true,
+            media_hide_paused: false,
             vol_show: Show::Both,
             vol_scroll: true,
             bright_show: Show::Both,
@@ -862,6 +930,14 @@ impl Settings {
                 "ai_bar" => self.ai_bar = if v.is_empty() { "auto".into() } else { v.to_string() },
                 "ai_left" => self.ai_left = b,
                 "ai_pins" => self.ai_pins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
+                "media_text" => self.media_text = MediaText::from(v),
+                "media_width" => self.media_width = v.parse().unwrap_or(230).clamp(80, 480),
+                "media_art" => self.media_art = b,
+                "media_controls" => self.media_controls = b,
+                "media_viz" => self.media_viz = b,
+                "media_click_plays" => self.media_click_plays = b,
+                "media_scroll" => self.media_scroll = b,
+                "media_hide_paused" => self.media_hide_paused = b,
                 "vol_show" => self.vol_show = Show::from(v),
                 "vol_scroll" => self.vol_scroll = b,
                 "bright_show" => self.bright_show = Show::from(v),
@@ -1010,6 +1086,10 @@ impl Settings {
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
         ));
         t.push_str(&format!("osd_keys={}\nask_passwords={}\n", self.osd_keys, self.ask_passwords));
+        t.push_str(&format!(
+            "media_text={}\nmedia_width={}\nmedia_art={}\nmedia_controls={}\nmedia_viz={}\nmedia_click_plays={}\nmedia_scroll={}\nmedia_hide_paused={}\n",
+            self.media_text.name(), self.media_width, self.media_art, self.media_controls, self.media_viz, self.media_click_plays, self.media_scroll, self.media_hide_paused
+        ));
         t.push_str(&format!("launch_view={}\nlaunch_place={}\nlaunch_size={}\nlaunch_icon={}\nlaunch_calc={}\nlaunch_dim={}\n", self.launch_view.name(), self.launch_place.name(), self.launch_size.name(), self.launch_icon, self.launch_calc, self.launch_dim));
         t.push_str(&format!("plugins={}\n", self.plugins.join(",")));
         for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
@@ -1217,7 +1297,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, ask_passwords: false, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

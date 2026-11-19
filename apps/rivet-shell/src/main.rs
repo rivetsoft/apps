@@ -20,6 +20,7 @@ mod ipc;
 mod launcher;
 mod lock;
 mod lock_ui;
+mod media_pop;
 mod notes;
 mod notes_pop;
 mod panels;
@@ -37,6 +38,7 @@ mod sys;
 mod tray;
 mod tray_ui;
 mod ui;
+mod viz;
 mod wall;
 mod wall_pick;
 mod wl;
@@ -56,7 +58,7 @@ Usage:
   rivet-shell lock                  Lock the screen (the shell does this itself when idle
                                     and before sleep); --preview shows it without locking
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
-                                    power, network, bluetooth, ai, sound (each opens or closes it); volume up|down|mute|N,
+                                    power, network, bluetooth, ai, sound, media (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
                                     lock, unlock, settings, wallpaper PATH|random|next|previous,

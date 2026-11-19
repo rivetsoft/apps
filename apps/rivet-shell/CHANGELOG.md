@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Now Playing does more. A click opens a player with the cover, the album, how far in the
+  track is (click the line to jump), and previous, play and next. The item itself shows the
+  cover, and its options choose the text and how wide it gets, previous and next buttons,
+  hiding while paused, what a click does, and scrolling to change track.
+- A visualizer: bars that move with the sound, in the player and, when turned on in Now
+  Playing's options, on the panel. It listens only while something plays and needs
+  `pw-record`, which comes with PipeWire.
+- `rivet-shell msg media` opens the player.
 - The shell asks for your password when an app needs administrator rights (installing
   software, changing system settings, `pkexec`), in its own dialog, so no separate polkit
   agent has to be started. Where one is already running, the shell leaves the asking to it.

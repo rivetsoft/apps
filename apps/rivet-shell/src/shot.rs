@@ -74,7 +74,8 @@ pub fn demo_status() -> Status {
         volume: Some((45, false)),
         mic: Some((80, false)),
         brightness: Some(70),
-        media: Some(Media { player: "Music".into(), title: "Low Tide".into(), artist: "The Harbor Lights".into(), playing: true }),
+        media: Some(Media { player: "Music".into(), title: "Low Tide".into(), artist: "The Harbor Lights".into(), playing: true, album: "Shorelines".into(), art: std::env::var("RIVET_SHELL_COVER").unwrap_or_default() }),
+        media_pos: (87, 241),
         net: Net::Wifi("Home".into()),
         wifi_on: Some(true),
         bluetooth: Some(false),
@@ -178,6 +179,18 @@ impl ShotApp {
             s.launch_icon = it.next().and_then(|n| n.parse().ok()).unwrap_or(42);
             s.launch_place = crate::config::LaunchPlace::from(it.next().unwrap_or(""));
         }
+        // RIVET_SHELL_MEDIA=viz,controls,artist-title,nocover: the Now Playing item's options
+        // (on the first panel, added when it isn't there). RIVET_SHELL_COVER=file is its cover.
+        if let Ok(m) = std::env::var("RIVET_SHELL_MEDIA") {
+            let has = |w: &str| m.split(',').any(|x| x == w);
+            (s.media_viz, s.media_controls, s.media_art) = (has("viz"), has("controls"), !has("nocover"));
+            if let Some(t) = crate::config::MediaText::ALL.into_iter().find(|t| has(t.name())) {
+                s.media_text = t;
+            }
+            if !s.panels[0].has("media") {
+                s.panels[0].zones[1].insert(0, "media".into());
+            }
+        }
         // RIVET_SHELL_PLUGIN_ICON=text|highlight: the plugin item's icon in one colour.
         if let Ok(c) = std::env::var("RIVET_SHELL_PLUGIN_ICON") {
             s.set_plugin("disk", crate::plugins::ICON_COLOR, &c);
@@ -253,6 +266,7 @@ impl ShotApp {
             Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("media") => Some(Popup { kind: PopupKind::Media, anchor_x: 760.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("auth") => Some(Popup { kind: PopupKind::Auth { typed: "secret".into(), round: 1 }, anchor_x: 0.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("plugin") => Some(Popup { kind: PopupKind::Plugin { id: "disk".into() }, anchor_x: 640.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("tray") => Some(Popup { kind: PopupKind::TrayMenu { key: ":1.chat/StatusNotifierItem".into(), path: Vec::new() }, anchor_x: 760.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
@@ -289,6 +303,7 @@ impl ShotApp {
             audio: crate::audio::demo(),
             join: None,
             auth: Some(crate::polkit::demo()),
+            viz: Some(crate::viz::demo()),
             // RIVET_SHELL_PLUGIN=1: a plugin's item on the first panel (RIVET_SHELL_POPUP=plugin: its menu).
             // RIVET_SHELL_PLUGIN_SAYS=file: the "disk" item is what that file's lines say (a real
             // plugin's output, to see how the shell shows it).

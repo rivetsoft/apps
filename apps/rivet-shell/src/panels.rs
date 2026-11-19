@@ -33,7 +33,7 @@ pub const ITEMS: &[(&str, &str, &str)] = &[
     ("workspaces", "Workspaces", "niri, Hyprland or Sway's workspaces"),
     ("window-title", "Window Title", "The focused window's title"),
     ("clock", "Clock", "Click for a calendar"),
-    ("media", "Now Playing", "What's playing. Click to pause."),
+    ("media", "Now Playing", "What's playing, with its cover. Click for the player."),
     ("system", "Processor and Memory", "How busy the computer is"),
     ("volume", "Volume", "Click to mute, scroll to change the volume"),
     ("brightness", "Brightness", "Scroll to change the brightness (laptops)"),

@@ -6,7 +6,7 @@ use chrono::Local;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
 
-use crate::config::{Edge, Show, WsStyle};
+use crate::config::{Edge, MediaText, Show, WsStyle};
 use crate::glyph;
 use crate::panels::PanelCfg;
 use crate::sys::Net;
@@ -55,6 +55,8 @@ struct Bar<'a, 'b> {
     tray: Vec<(String, Option<egui::TextureHandle>)>,
     /// The launcher's icon, when it isn't the grid (likewise).
     launcher: Option<egui::TextureHandle>,
+    /// The cover of what's playing (likewise).
+    cover: Option<egui::TextureHandle>,
     /// The dock item's apps and icons (likewise).
     dock: crate::dock_ui::Icons,
     /// Plugins' icons, by plugin (likewise).
@@ -146,8 +148,10 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
         }
         "clock" => (b.p.layout_no_wrap(Local::now().format(&s.clock_format).to_string(), ui_font(13.5), b.fg()).size().x + 22.0, false),
         "media" => {
-            let md = st.media.as_ref()?;
-            (b.text_w(media_text(md)).min(230.0) + PAD * 2.0 + MEDIA_ICON + ICON_GAP, true)
+            let md = shown_media(b)?;
+            let text = media_text(b, md);
+            let tw = if text.is_empty() { 0.0 } else { b.text_w(text).min(s.media_width as f32) + ICON_GAP };
+            (PAD * 2.0 + media_lead(b) + tw + if media_viz(b) { VIZ_W + ICON_GAP } else { 0.0 } + if s.media_controls { MEDIA_SKIP * 2.0 + ICON_GAP } else { 0.0 }, tw > 0.0)
         }
         "system" => (b.text_w(system_text(b)) + PAD * 2.0 + ICON + ICON_GAP, false),
         "volume" => (level_w(b, s.vol_show, ICON, &volume_text(st.volume?, s.vol_show, false)), false),
@@ -195,7 +199,7 @@ fn want_down(b: &Bar, id: &str) -> Option<(f32, bool)> {
             (b.text_w(st.window.clone()).min(300.0) + PAD * 2.0, true)
         }
         "clock" => (clock_lines(&Local::now().format(&s.clock_format).to_string()).len() as f32 * CLOCK_LINE + 10.0, false),
-        "media" => (if st.media.is_some() { SLOT } else { return None }, false),
+        "media" => (if shown_media(b).is_some() { SLOT } else { return None }, false),
         "system" => (STACK, false),
         "volume" => (level_w(b, s.vol_show, ICON, &volume_text(st.volume?, s.vol_show, true)), false),
         "brightness" => (level_w(b, s.bright_show, ICON, &format!("{}%", st.brightness?)), false),
@@ -313,8 +317,126 @@ fn ai_part_w(b: &Bar, part: &AiPart) -> f32 {
     AI_LOGO + ICON_GAP + if part.tag.is_empty() { 0.0 } else { tw(&part.tag, 11.5) + 4.0 } + tw(&part.val, 12.5)
 }
 
-fn media_text(md: &crate::sys::Media) -> String {
-    if md.artist.is_empty() { md.title.clone() } else { format!("{} · {}", md.title, md.artist) }
+/// The cover, as the panel shows it.
+const COVER: f32 = 20.0;
+/// The visualizer beside the text: this many bars.
+const VIZ_BARS: usize = 8;
+const VIZ_W: f32 = VIZ_BARS as f32 * 5.0 - 2.0;
+/// Previous and next, each.
+const MEDIA_SKIP: f32 = 22.0;
+
+/// What's playing, when the item shows it (not while paused, where it's set to hide then).
+fn shown_media<'a>(b: &'a Bar) -> Option<&'a crate::sys::Media> {
+    b.m.status.media.as_ref().filter(|md| md.playing || !b.m.s.media_hide_paused)
+}
+
+fn media_text(b: &Bar, md: &crate::sys::Media) -> String {
+    b.m.s.media_text.of(&md.title, &md.artist)
+}
+
+/// How wide the item's picture or symbol is.
+fn media_lead(b: &Bar) -> f32 {
+    if b.cover.is_some() { COVER } else { MEDIA_ICON }
+}
+
+/// Whether the bars show: turned on, and this computer can listen.
+fn media_viz(b: &Bar) -> bool {
+    b.m.s.media_viz && b.m.extra.viz.is_some()
+}
+
+/// A picture with rounded corners, filling `r`.
+pub fn rounded_image(p: &egui::Painter, t: &egui::TextureHandle, r: Rect, radius: f32, tint: Color32) {
+    // The middle of a picture that isn't `r`'s shape, not the whole of it squeezed.
+    let (tw, th) = (t.size()[0].max(1) as f32, t.size()[1].max(1) as f32);
+    let k = (tw / th) / (r.width() / r.height().max(1.0));
+    let (u, v) = if k > 1.0 { (0.5 / k, 0.5) } else { (0.5, 0.5 * k) };
+    p.add(egui::epaint::RectShape::filled(r, radius, tint).with_texture(t.id(), Rect::from_min_max(Pos2::new(0.5 - u, 0.5 - v), Pos2::new(0.5 + u, 0.5 + v))));
+}
+
+/// Bars for the sound's levels, standing on `r`'s bottom edge and filling its width.
+pub fn viz_bars(p: &egui::Painter, r: Rect, levels: &[f32], col: Color32) {
+    let n = levels.len().max(1) as f32;
+    let step = r.width() / n;
+    let w = (step * 0.62).max(1.5);
+    for (i, l) in levels.iter().enumerate() {
+        let h = (l.clamp(0.0, 1.0) * r.height()).max(2.0);
+        let x = r.left() + i as f32 * step + (step - w) / 2.0;
+        p.rect_filled(Rect::from_min_max(Pos2::new(x, r.bottom() - h), Pos2::new(x + w, r.bottom())), (w / 2.0).min(2.0), col);
+    }
+}
+
+/// The Now Playing item along a panel: the cover or play symbol, the track, bars moving with
+/// the sound, and previous and next, each as the item's options say.
+fn media_item(ui: &mut egui::Ui, b: &mut Bar, r: Rect, id: &str) {
+    let Some(md) = shown_media(b).cloned() else { return };
+    let (fg, accent, cy, s) = (b.fg(), b.accent, b.cy, b.m.s);
+    let p = b.p.clone();
+    let resp = b.button(ui, r, id);
+    let mut x = r.left() + PAD;
+    // Its end first, so the text takes what's left.
+    let mut right = r.right() - PAD;
+    if s.media_controls {
+        for (k, (cmd, tip)) in [("next", "Next"), ("previous", "Previous")].into_iter().enumerate() {
+            let br = Rect::from_center_size(Pos2::new(right - MEDIA_SKIP / 2.0, cy), Vec2::new(MEDIA_SKIP, b.cell.min(24.0)));
+            right -= MEDIA_SKIP;
+            let sr = ui.interact(br, egui::Id::unique(("panel-media", b.idx, cmd)), Sense::click());
+            if sr.hovered() {
+                p.rect_filled(br, b.hover_r, mix(b.v.panel_fill, fg, 0.16));
+            }
+            glyph::skip(&p, br.center(), k == 0, if sr.hovered() { b.v.strong_text_color() } else { fg });
+            if sr.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip).clicked() {
+                b.acts.push(Act::Media(cmd));
+            }
+        }
+        right -= ICON_GAP;
+    }
+    if media_viz(b) {
+        let vr = Rect::from_min_max(Pos2::new(right - VIZ_W, cy - (b.cell.min(24.0) - 6.0) / 2.0), Pos2::new(right, cy + (b.cell.min(24.0) - 6.0) / 2.0));
+        let levels = crate::viz::bars(b.m.extra.viz.as_deref().unwrap_or(&[]), VIZ_BARS);
+        viz_bars(&p, vr, &levels, if md.playing { accent } else { b.weak() });
+        right -= VIZ_W + ICON_GAP;
+    }
+    match &b.cover {
+        Some(t) => {
+            let cr = Rect::from_center_size(Pos2::new(x + COVER / 2.0, cy), Vec2::splat(COVER.min(b.cell)));
+            rounded_image(&p, t, cr, 4.0, if md.playing { Color32::WHITE } else { Color32::from_gray(120) });
+            if !md.playing {
+                glyph::play(&p, cr.center(), false, Color32::WHITE);
+            }
+            x += COVER;
+        }
+        None => {
+            glyph::play(&p, Pos2::new(x + MEDIA_ICON / 2.0, cy), !md.playing, accent);
+            x += MEDIA_ICON;
+        }
+    }
+    let text = media_text(b, &md);
+    if !text.is_empty() && right - x - ICON_GAP > 12.0 {
+        let g = one_line(&p, &text, ui_font(12.5), fg, right - x - ICON_GAP);
+        p.galley(Pos2::new(x + ICON_GAP, cy - g.size().y / 2.0), g, fg);
+    }
+    media_clicks(ui, b, r, &resp, &md);
+}
+
+/// What a click, a middle click and a scroll do on the Now Playing item.
+fn media_clicks(ui: &egui::Ui, b: &mut Bar, r: Rect, resp: &egui::Response, md: &crate::sys::Media) {
+    let s = b.m.s;
+    if s.media_scroll && resp.hovered() {
+        let dy = wheel(ui);
+        if dy.abs() > 0.5 {
+            b.acts.push(Act::Media(if dy > 0.0 { "previous" } else { "next" }));
+        }
+    }
+    let toggle = if md.playing { "pause" } else { "play" };
+    let line = MediaText::TitleArtist.of(&md.title, &md.artist);
+    let tip = if s.media_click_plays { format!("{line} · {} · click to {toggle}", md.player) } else { format!("{line} · {} · middle-click to {toggle}", md.player) };
+    if resp.middle_clicked() || (s.media_click_plays && resp.clicked()) {
+        b.acts.push(Act::Media("play-pause"));
+    } else if resp.clicked() {
+        let a = b.popup(PopupKind::Media, b.at(r));
+        b.acts.push(a);
+    }
+    resp.clone().on_hover_text(tip);
 }
 
 fn system_text(b: &Bar) -> String {
@@ -429,10 +551,11 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
         let tray = if cfg.has("tray") { crate::tray_ui::shown(m).into_iter().map(|it| (it.key.clone(), crate::tray_ui::texture(kit, ui.ctx(), it, mask))).collect() } else { Vec::new() };
         let launcher = if cfg.has("launcher") { kit.launcher_icon(ui.ctx(), m.s, LAUNCHER_ICON) } else { None };
         let dock = if cfg.has("dock") { crate::dock_ui::icons(kit, ui.ctx(), m) } else { Vec::new() };
+        let cover = m.status.media.as_ref().filter(|md| m.s.media_art && cfg.has("media") && !md.art.is_empty()).and_then(|md| kit.named_icon(ui.ctx(), &md.art, COVER));
         let plug_icons = m.extra.plugins.iter().filter(|(id, it)| !it.icon.is_empty() && cfg.has(&format!("plugin:{id}"))).map(|(id, it)| (id.clone(), if m.s.plugin_icon(id) == crate::config::TrayColor::Own { kit.named_icon(ui.ctx(), &it.icon, ICON) } else { kit.named_mask(ui.ctx(), &it.icon, ICON) })).collect();
         let roles = style::Roles::new(&kit.look, m.s);
         let group_r = if rivet_look::theme::square() { 0.0 } else if cfg.floating { (look.radius - 4.0).clamp(0.0, 14.0) } else { 8.0 };
-        let mut b = Bar { p: ui.painter().clone(), v, accent, hover_r, cy: bar.center().y, vert: cfg.vertical(), cx: bar.center().x, idx, from: (cfg.edge, if look.attach { reach - cfg.gap() } else { reach + 4.0 }), attach: look.attach, m: &*m, acts: Vec::new(), tray, dock, launcher, plug_icons, roles, surface, group_r, gap: cfg.spacing(), cell: (cfg.bar() - 8.0).max(12.0) };
+        let mut b = Bar { p: ui.painter().clone(), v, accent, hover_r, cy: bar.center().y, vert: cfg.vertical(), cx: bar.center().x, idx, from: (cfg.edge, if look.attach { reach - cfg.gap() } else { reach + 4.0 }), attach: look.attach, m: &*m, acts: Vec::new(), tray, dock, launcher, cover, plug_icons, roles, surface, group_r, gap: cfg.spacing(), cell: (cfg.bar() - 8.0).max(12.0) };
         layout(ui, &mut b, &cfg, bar);
         acts.append(&mut b.acts);
     }
@@ -913,16 +1036,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                 b.acts.push(a);
             }
         }
-        "media" => {
-            let Some(md) = &st.media else { return };
-            let resp = b.button(ui, r, id);
-            glyph::play(&p, Pos2::new(r.left() + PAD + MEDIA_ICON / 2.0, cy), !md.playing, accent);
-            let g = one_line(&p, &media_text(md), ui_font(12.5), fg, r.width() - PAD * 2.0 - MEDIA_ICON - ICON_GAP);
-            p.galley(Pos2::new(r.left() + PAD + MEDIA_ICON + ICON_GAP, cy - g.size().y / 2.0), g, fg);
-            if resp.on_hover_text(format!("{} · click to {}", md.player, if md.playing { "pause" } else { "play" })).clicked() {
-                b.acts.push(Act::Media("play-pause"));
-            }
-        }
+        "media" => media_item(ui, b, r, id),
         "system" => {
             let resp = ui.interact(r, egui::Id::unique(("panel", b.idx, id)), Sense::hover());
             glyph::chip(&p, Pos2::new(r.left() + PAD + ICON / 2.0, cy), fg);
@@ -1162,12 +1276,13 @@ fn draw_down(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) -> bool {
             }
         }
         "media" => {
-            let Some(md) = &st.media else { return true };
+            let Some(md) = shown_media(b).cloned() else { return true };
             let resp = b.button(ui, r, id);
-            glyph::play(&p, c, !md.playing, accent);
-            if resp.on_hover_text(format!("{} · {}", media_text(md), md.player)).clicked() {
-                b.acts.push(Act::Media("play-pause"));
+            match &b.cover {
+                Some(t) => rounded_image(&p, t, Rect::from_center_size(c, Vec2::splat(COVER)), 4.0, if md.playing { Color32::WHITE } else { Color32::from_gray(120) }),
+                None => glyph::play(&p, c, !md.playing, accent),
             }
+            media_clicks(ui, b, r, &resp, &md);
         }
         "system" => {
             glyph::chip(&p, Pos2::new(c.x, r.top() + 13.0), fg);
