@@ -68,7 +68,7 @@ def mouth(kind):
     return f'<path d="M398 352 Q426 378 450 344" fill="none" stroke="{INK}" stroke-width="7" stroke-linecap="round"/>'
 
 
-def rivet(x, y, s=1.0, tilt=7, look=(12, 7), brows="knowing", mood="grin", glasses=False, blush=True):
+def rivet(x, y, s=1.0, tilt=7, look=(12, 7), brows="knowing", mood="grin", glasses=False, blush=True, shut=False, shades=False, shadow=True):
     """Rivet with the middle of his body at (x, y)."""
     lx, ly = look
     bl, br = BROWS[brows]
@@ -77,7 +77,7 @@ def rivet(x, y, s=1.0, tilt=7, look=(12, 7), brows="knowing", mood="grin", glass
                   f'<ellipse cx="420" cy="240" rx="126" ry="20" fill="{MAUVE}" stroke="{INK}" stroke-width="{W}"/>'
                   f'<path d="M296 236 C296 130 544 130 544 236 C544 252 296 252 296 236 Z" fill="{PAPER}" stroke="{INK}" stroke-width="{W}"/>'
                   + "".join(f'<ellipse cx="{cx}" cy="{cy}" rx="36" ry="40" fill="{WHITE}" stroke="{INK}" stroke-width="4"/>' for cx, cy in eyes_at))
-    shadow = re.sub(r'fill="(?!none)[^"]*"', f'fill="{INK}"', silhouette)
+    silhouette_shadow = re.sub(r'fill="(?!none)[^"]*"', f'fill="{INK}"', silhouette)
     body = (f'<rect x="366" y="236" width="108" height="196" rx="16" fill="{PAPER}"/>'
             f'<g clip-path="url(#bodyClip)"><rect x="446" y="236" width="30" height="196" fill="{MAUVE}"/>'
             f'<rect x="446" y="236" width="30" height="196" fill="url(#dotsFine)"/>'
@@ -89,23 +89,37 @@ def rivet(x, y, s=1.0, tilt=7, look=(12, 7), brows="knowing", mood="grin", glass
             f'<g clip-path="url(#domeClip)"><path d="M470 120 Q560 170 548 250 H470 Z" fill="url(#dots)"/></g>'
             f'<path d="M296 236 C296 130 544 130 544 236 C544 252 296 252 296 236 Z" fill="none" stroke="{INK}" stroke-width="{W}"/>'
             f'<path d="M330 200 C342 166 388 154 426 158" fill="none" stroke="{WHITE}" stroke-width="10" stroke-linecap="round"/>')
-    face = (f'<path d="{bl}" fill="none" stroke="{INK}" stroke-width="12" stroke-linecap="round"/>'
-            f'<path d="{br}" fill="none" stroke="{INK}" stroke-width="12" stroke-linecap="round"/>')
+    # No eyebrows over sunglasses: they crowd the lenses.
+    face = "" if shades else (f'<path d="{bl}" fill="none" stroke="{INK}" stroke-width="12" stroke-linecap="round"/>'
+                              f'<path d="{br}" fill="none" stroke="{INK}" stroke-width="12" stroke-linecap="round"/>')
     for cx, cy in eyes_at:
         face += f'<ellipse cx="{cx}" cy="{cy}" rx="36" ry="40" fill="{WHITE}" stroke="{INK}" stroke-width="4"/>'
         face += f'<ellipse cx="{cx + lx}" cy="{cy + ly}" rx="16" ry="19" fill="{INK}"/>'
         face += f'<circle cx="{cx + lx + 6}" cy="{cy + ly - 8}" r="5" fill="{WHITE}"/>'
+    # Closed eyelids, invisible in the picture unless `shut`: the site shows them for a moment
+    # to make him blink.
+    face += f'<g class="mascot-lids" opacity="{1 if shut else 0}">' + "".join(
+        f'<ellipse cx="{cx}" cy="{cy}" rx="36" ry="40" fill="{PAPER}" stroke="{INK}" stroke-width="4"/>'
+        f'<path d="M{cx - 28} {cy + 6} Q{cx} {cy + 22} {cx + 28} {cy + 6}" fill="none" stroke="{INK}" stroke-width="6" stroke-linecap="round"/>'
+        for cx, cy in eyes_at) + '</g>'
     if glasses:
         face += (f'<g fill="none" stroke="{INK}" stroke-width="6"><circle cx="382" cy="292" r="44"/><circle cx="460" cy="290" r="44"/>'
                  f'<path d="M424 286 Q421 278 418 286"/></g>')
+    if shades:
+        # Sunglasses over the lot: two dark lenses, a bridge, and a glint on each.
+        face += (f'<path d="M418 284 H426" stroke="{INK}" stroke-width="9"/>'
+                 f'<path d="M346 276 L330 266 M498 272 L512 262" stroke="{INK}" stroke-width="7" stroke-linecap="round"/>'
+                 + "".join(f'<rect x="{x0}" y="258" width="78" height="58" rx="18" fill="{INK}" stroke="{INK}" stroke-width="4"/>'
+                           f'<path d="M{x0 + 14} 292 L{x0 + 34} 270 M{x0 + 30} 298 L{x0 + 44} 282" stroke="{WHITE}" stroke-width="5" stroke-linecap="round"/>'
+                           for x0 in (342, 424)))
     face += mouth(mood)
     if blush:
         face += (f'<ellipse cx="388" cy="342" rx="9" ry="5" fill="{PINK_SOFT}"/>'
                  f'<ellipse cx="460" cy="336" rx="9" ry="5" fill="{PINK_SOFT}"/>')
     d = 12 / s
     return (f'<g transform="translate({x} {y}) scale({s}) rotate({tilt}) translate(-420 -330)">'
-            f'<g transform="rotate({-tilt} 420 330) translate({d} {d * 1.15}) rotate({tilt} 420 330)">{shadow}</g>'
-            f'{body}{face}</g>')
+            + (f'<g transform="rotate({-tilt} 420 330) translate({d} {d * 1.15}) rotate({tilt} 420 330)">{silhouette_shadow}</g>' if shadow else "")
+            + f'{body}{face}</g>')
 
 
 # ---------------------------------------------------------------- props
@@ -339,6 +353,90 @@ def scene_blog():
             + rivet(200, 300, 0.68, 6, look=(14, -6), brows="raised", mood="open"))
 
 
+def scene_named():
+    """Beside the home page's Apps heading: he comes up out of his folder to say so."""
+    sans = 'font-family="Space Grotesk, DejaVu Sans, sans-serif" font-weight="700"'
+    # His folder, as Clippy had his sheet of paper: the back, then him, then the front over
+    # his lower half, so he is standing in it.
+    x, y, w, h = 572, 118, 176, 104
+    back = hard(f'<path d="M{x} {y} h66 l12 14 H{x + w} V{y + h} H{x} Z" fill="#992f64" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>', 8, 9)
+    front = (f'<path d="M{x - 8} {y + 46} H{x + w + 8} L{x + w} {y + h} H{x} Z" fill="{PINK}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>'
+             f'<path d="M{x - 8} {y + 46} H{x + w + 8} L{x + w} {y + h} H{x} Z" fill="url(#dots)"/>'
+             f'<path d="M{x - 8} {y + 46} H{x + w + 8} L{x + w} {y + h} H{x} Z" fill="none" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>')
+    bubble = hard(f'<path d="M18 34 H508 V92 L548 108 L508 124 V162 H18 Z" fill="{WHITE}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>', 8, 9)
+    words = (f'<text x="263" y="90" text-anchor="middle" {sans} font-size="25" fill="{INK}">They named all of these after me.</text>'
+             f'<text x="263" y="130" text-anchor="middle" {sans} font-size="19" fill="{INK}">I don&#8217;t know what any of them do.</text>')
+    # He, his folder and his bubble are separate layers, in case the site wants to move them.
+    return (card(BLUE, "gridBlue")
+            + f'<g class="mascot-folder-back">{back}</g>'
+            + '<g class="mascot-rivet">' + rivet(660, 128, 0.52, 5, look=(-8, 12), brows="raised", mood="flat") + '</g>'
+            + f'<g class="mascot-folder-front">{front}</g>'
+            + f'<g class="mascot-bubble">{bubble}{words}</g>')
+
+
+def scene_island():
+    """Rivet Welcome: it installs everything, so he is on a small island with a coconut."""
+    dark = "#6a3050"
+    cx, cy = 450, 322
+    # A wide sea with rings of ripples spreading from the island, and a few wave marks.
+    sea = f'<ellipse cx="{cx}" cy="{cy}" rx="436" ry="92" fill="{BLUE}" stroke="{INK}" stroke-width="{W}"/>'
+    rings = "".join(f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}" fill="none" stroke="{BLUE_LINE}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="{dash}" stroke-dashoffset="{off}"/>'
+                    for rx, ry, dash, off in [(262, 38, "54 30", 0), (322, 54, "70 44", 30), (376, 70, "48 60", 12), (414, 82, "30 80", 50)])
+    waves = "".join(f'<path d="M{x} {y}q9 -9 18 0t18 0" fill="none" stroke="{WHITE}" stroke-opacity="0.55" stroke-width="3.5" stroke-linecap="round"/>'
+                    for x, y in [(96, 318), (190, 372), (420, 388), (640, 376), (764, 320), (300, 262), (590, 258)])
+    # Shark fins. Each is placed where it stands in the picture; the site sends them round the
+    # island on a loop. They are drawn under the sand, so the island hides one that is behind it.
+    fin = (f'<path d="M-15 0 Q-6 -30 12 -36 Q9 -15 17 0 Z" fill="{MAUVE}" stroke="{INK}" stroke-width="4" stroke-linejoin="round"/>'
+           f'<path d="M-24 2 q9 -7 18 0 M10 2 q9 -7 18 0" fill="none" stroke="{WHITE}" stroke-width="3" stroke-linecap="round"/>')
+    sharks = "".join(f'<g class="mascot-shark" transform="translate({x} {y})">{fin}</g>' for x, y in [(150, 340), (700, 372), (770, 300)])
+    sand_d = "M226 322 Q450 196 674 322 Q450 352 226 322 Z"
+    sand = (f'<path d="{sand_d}" fill="{YELLOW}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>'
+            f'<path d="{sand_d}" fill="url(#dotsFine)"/>')
+    # The palm: a leaning trunk with rings, five fronds and two coconuts.
+    trunk_d = "M582 292 Q566 192 608 118"
+    trunk = (f'<path d="{trunk_d}" fill="none" stroke="{INK}" stroke-width="29" stroke-linecap="round"/>'
+             f'<path d="{trunk_d}" fill="none" stroke="{MAUVE}" stroke-width="19" stroke-linecap="round"/>'
+             + "".join(f'<path d="M{x - 10} {y} q10 6 20 0" fill="none" stroke="{INK}" stroke-width="3.5"/>' for x, y in [(580, 262), (577, 228), (579, 194), (586, 162), (596, 136)]))
+    frond = "M0 0 Q46 -44 104 -10 Q52 -14 0 0 Z"
+    fronds = "".join(f'<path d="{frond}" fill="{GREEN}" stroke="{INK}" stroke-width="4.5" stroke-linejoin="round" transform="translate(608 116) rotate({r}) scale({k})"/>'
+                     for r, k in [(20, 1.0), (-28, 1.05), (-150, 1.0), (158, 0.95), (-92, 0.9)])
+    nuts = "".join(f'<circle cx="{x}" cy="{y}" r="11" fill="{dark}" stroke="{INK}" stroke-width="4"/>' for x, y in [(598, 130), (618, 134)])
+    # The lounge chair, side on: a striped backrest that runs up behind his back and past his
+    # head, a seat, and a leg at each end. He leans into the corner of it.
+    back_d = "M156 131 L241 252 L228 262 L143 141 Z"
+    seat_d = "M234 252 H352 V268 H226 Z"
+    legs = f'<path d="M238 268 L232 288 M342 268 L348 288" fill="none" stroke="{INK}" stroke-width="9" stroke-linecap="round"/>'
+    cushions = (f'<path d="{back_d}" fill="{PINK}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>'
+                f'<path d="{seat_d}" fill="{PINK}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>')
+    stripes = ("".join(f'<path d="M{156 + 85 * t:.1f} {131 + 121 * t:.1f} l-13 10" stroke="{WHITE}" stroke-width="7"/>' for t in (0.14, 0.34, 0.54, 0.74))
+               + "".join(f'<path d="M{x} 254 v12" stroke="{WHITE}" stroke-width="7"/>' for x in (262, 290, 318)))
+    # A coconut on the seat in front of him, with a short bent straw to his mouth.
+    coconut = (f'<circle cx="304" cy="232" r="19" fill="{dark}" stroke="{INK}" stroke-width="{W}"/>'
+               f'<ellipse cx="304" cy="216" rx="13" ry="5" fill="{WHITE}" stroke="{INK}" stroke-width="3.5"/>')
+    straw_d = "M304 217 L295 196 L251 207"
+    straw = (f'<path d="{straw_d}" fill="none" stroke="{INK}" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>'
+             f'<path d="{straw_d}" fill="none" stroke="{WHITE}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>'
+             f'<path d="{straw_d}" fill="none" stroke="{PINK}" stroke-width="5" stroke-dasharray="6 7"/>')
+    # Small things carry no hard shadows here: at this size they only muddy it.
+    lounger = (legs + cushions + stripes + rivet(232, 200, 0.42, -35, mood="o", shades=True, shadow=False) + coconut + straw)
+    sun = f'<circle cx="150" cy="84" r="34" fill="{YELLOW}" stroke="{INK}" stroke-width="{W}"/>'
+    return (card(BLUE, "gridBlue") + sun + sea + rings + waves + sharks + sand + trunk + fronds + nuts
+            + f'<g transform="translate(150 -12)">{lounger}</g>')
+
+
+def scene_solo():
+    """Rivet on his own, startled: the drawing pixel.py turns into pixel art."""
+    return rivet(142, 172, 1.0, 4, look=(4, 2), brows="raised", mood="o")
+
+
+def scene_solo_shut():
+    """The same, mid-blink: pixel.py's second frame."""
+    return rivet(142, 172, 1.0, 4, look=(4, 2), brows="raised", mood="o", shut=True)
+
+
+# Scenes that are not the usual 640x480.
+SIZES = {"named": (770, 236), "solo": (300, 340), "solo-shut": (300, 340), "island": (900, 424)}
+
 SCENES = {
     "hello": scene_hello,
     "files": scene_files,
@@ -352,6 +450,10 @@ SCENES = {
     "not-found": scene_lost,
     "docs": scene_docs,
     "blog": scene_blog,
+    "named": scene_named,
+    "island": scene_island,
+    "solo": scene_solo,
+    "solo-shut": scene_solo_shut,
 }
 
 
@@ -364,7 +466,8 @@ def main():
         out.mkdir(parents=True, exist_ok=True)
         for name, draw in SCENES.items():
             title = f"Rivet the mascot: {draw.__doc__.strip()}"
-            svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 480" width="640" height="480">\n'
+            w, h = SIZES.get(name, (640, 480))
+            svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {w} {h}" width="{w}" height="{h}">\n'
                    f'<title>{title}</title>\n<defs>{DEFS}</defs>\n{draw()}\n</svg>\n')
             path = out / f"{name}.svg"
             path.write_text(svg)
