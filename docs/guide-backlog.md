@@ -71,6 +71,20 @@ settings take effect; Settings adds it on request and first saves the original a
 `NAME.rivet-backup`. Niri needs version 25.11 or later. "Leave the Screens to …" removes the
 screens from Rivet Shell's file so the compositor's own config sets them again.
 
+### Login screen (greetd)
+
+From `greeter.rs` and `rivet-shell greeter --setup`.
+
+The login screen is the lock screen, run by greetd. greetd runs it as its own user, which can't
+read anyone's home folder, so each person's Rivet Shell leaves a copy of their wallpaper, their
+colors and clock, their name, their picture (`~/.face`) and their session in
+`/var/lib/rivet-greeter/LOGIN`, whenever the wallpaper or its colors change. The login screen
+shows whoever changed theirs last; Tab (or the arrow keys) goes to the next account. The folder
+works like `/tmp`: anyone can add their own folder, nobody can change another's, and the login
+screen ignores a folder its owner didn't make. The session started is the one the person was
+using (by its desktop name), else the first Wayland session installed. An account that asks for
+more than a password (a one-time code) can't sign in from this screen yet.
+
 ### Lock screen
 
 From `settings_app/idle_lock.rs`.

@@ -694,6 +694,39 @@ pub fn focus_workspace(c: Compositor, key: &str) {
     }
 }
 
+/// Whether the shell can close an app's windows on this compositor.
+pub fn can_close(c: Compositor) -> bool {
+    matches!(c, Compositor::Niri | Compositor::Hyprland)
+}
+
+/// Closes every window whose app id (lowercase) is one of `ids`, on a thread.
+pub fn close_windows(c: Compositor, ids: Vec<String>) {
+    std::thread::spawn(move || {
+        let has = |w: &Value, key: &str| w.get(key).and_then(Value::as_str).is_some_and(|a| ids.contains(&a.to_lowercase()));
+        match c {
+            Compositor::Niri => {
+                for w in json("niri", &["msg", "-j", "windows"]).and_then(|v| v.as_array().cloned()).unwrap_or_default() {
+                    if has(&w, "app_id")
+                        && let Some(id) = w.get("id").and_then(Value::as_u64)
+                    {
+                        output("niri", &["msg", "action", "close-window", "--id", &id.to_string()]);
+                    }
+                }
+            }
+            Compositor::Hyprland => {
+                for w in json("hyprctl", &["-j", "clients"]).and_then(|v| v.as_array().cloned()).unwrap_or_default() {
+                    if has(&w, "class")
+                        && let Some(at) = w.get("address").and_then(Value::as_str)
+                    {
+                        output("hyprctl", &["dispatch", "closewindow", &format!("address:{at}")]);
+                    }
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
 pub fn change_volume(up: bool) {
     spawn("wpctl", &["set-volume", "-l", "1.5", "@DEFAULT_AUDIO_SINK@", if up { "5%+" } else { "5%-" }]);
 }

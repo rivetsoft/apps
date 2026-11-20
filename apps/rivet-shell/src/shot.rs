@@ -98,6 +98,7 @@ pub fn demo_notes() -> Vec<Note> {
         actions: actions.iter().map(|(k, l)| (k.to_string(), l.to_string())).collect(),
         urgency: 1,
         show_for: Some(Duration::from_secs(6)),
+        own_time: false,
         at: now - chrono::Duration::minutes(mins),
     };
     vec![
@@ -121,6 +122,23 @@ impl ShotApp {
         if let Some(n) = std::env::var("RIVET_SHELL_ACCENT").ok().and_then(|h| u32::from_str_radix(h.trim_start_matches('#'), 16).ok()) {
             s.accent = [(n >> 16) as u8, (n >> 8) as u8, n as u8];
             s.follow_desktop_colors = false;
+        }
+        // Checks: the on-screen display's place, size and bar colour (RIVET_SHELL_OSD_STYLE=top,large,tertiary).
+        if let Ok(o) = std::env::var("RIVET_SHELL_OSD_STYLE") {
+            let mut parts = o.split(',');
+            s.osd_place = crate::config::OsdPlace::from(parts.next().unwrap_or_default());
+            s.osd_size = crate::config::LaunchSize::from(parts.next().unwrap_or_default());
+            s.osd_color = parts.next().and_then(crate::style::Role::from);
+        }
+        // Checks: the notification cards' corner and width (RIVET_SHELL_NOTE_STYLE=bottom-left,large)
+        // and their own look (RIVET_SHELL_NOTE_LOOK=radius=4;opacity=0.8, as in the settings file).
+        if let Ok(o) = std::env::var("RIVET_SHELL_NOTE_STYLE") {
+            let mut parts = o.split(',');
+            s.note_place = crate::config::NotePlace::from(parts.next().unwrap_or_default());
+            s.note_width = crate::config::LaunchSize::from(parts.next().unwrap_or_default());
+        }
+        if let Ok(l) = std::env::var("RIVET_SHELL_NOTE_LOOK") {
+            s.note_look = crate::style::Style::parse(&l, '=', ';');
         }
         // Checks: a look for the panels and dock (as in the settings file).
         if let Ok(c) = std::env::var("RIVET_SHELL_TRAY") {
@@ -409,13 +427,30 @@ impl eframe::App for ShotApp {
             at(dock, &mut |ui, m, k| ui::dock(ui, m, k));
         }
         if self.extra.osd.is_some() {
-            let r = Rect::from_center_size(Pos2::new(full.center().x, dock.top() - 12.0 - crate::cc::OSD_H / 2.0), Vec2::new(crate::cc::OSD_W, crate::cc::OSD_H));
+            let (w, h) = crate::cc::osd_size(&s);
+            // About where the compositor puts it: clear of a top panel, the middle, or above the dock.
+            let y = match s.osd_place {
+                crate::config::OsdPlace::Top => full.top() + 60.0 + h / 2.0,
+                crate::config::OsdPlace::Middle => full.center().y,
+                crate::config::OsdPlace::Bottom => dock.top() - 12.0 - h / 2.0,
+            };
+            let r = Rect::from_center_size(Pos2::new(full.center().x, y), Vec2::new(w, h));
             at(r, &mut |ui, m, k| crate::cc::osd(ui, m, k));
         }
         if !self.extra.cards.is_empty() {
             let h = crate::cc::cards_height(&self.extra.cards);
-            let top = if s.panels.first().is_none_or(|p| p.edge == Edge::Top) { full.top() + top_room + 2.0 } else { bottom - 2.0 - h };
-            let r = Rect::from_min_size(Pos2::new(full.right() - 4.0 - crate::cc::CARDS_W, top), Vec2::new(crate::cc::CARDS_W, h));
+            use crate::config::NotePlace;
+            let w = crate::cc::cards_width(&s);
+            let (at_top, at_left) = match s.note_place {
+                NotePlace::ByPanel => (s.panels.first().is_none_or(|p| p.edge == Edge::Top), false),
+                NotePlace::TopLeft => (true, true),
+                NotePlace::TopRight => (true, false),
+                NotePlace::BottomLeft => (false, true),
+                NotePlace::BottomRight => (false, false),
+            };
+            let top = if at_top { full.top() + top_room + 2.0 } else { bottom - 2.0 - h };
+            let left = if at_left { full.left() + 4.0 } else { full.right() - 4.0 - w };
+            let r = Rect::from_min_size(Pos2::new(left, top), Vec2::new(w, h));
             at(r, &mut |ui, m, k| crate::cc::cards(ui, m, k));
         }
         if let Some(pop) = self.popup.as_mut() {

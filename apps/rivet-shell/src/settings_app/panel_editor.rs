@@ -49,6 +49,23 @@ fn place(p: &PanelCfg) -> String {
     format!("{edge} · {screen}")
 }
 
+/// A soft gradient in the accent, like a wallpaper, for a preview of part of the desktop.
+pub(super) fn backdrop(ui: &egui::Ui, r: Rect) {
+    let accent = ui.visuals().selection.bg_fill;
+    let base = mix(accent, Color32::from_rgb(20, 22, 30), 0.72);
+    let (c1, c2) = (base, mix(base, accent, 0.3));
+    let mut mesh = egui::Mesh::default();
+    let inner = r.shrink(2.0);
+    for (pt, c) in [(inner.left_top(), c1), (inner.right_top(), c2), (inner.right_bottom(), mix(c2, c1, 0.4)), (inner.left_bottom(), mix(c1, Color32::BLACK, 0.15))] {
+        mesh.colored_vertex(pt, c);
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().rect_filled(r, r_sm(), c1);
+    ui.painter().add(egui::Shape::mesh(mesh));
+    ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.0, mix(base, Color32::WHITE, 0.08)), egui::StrokeKind::Inside);
+}
+
 /// A row of segmented choices (like the Edge and Style switches).
 pub(super) fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[(T, &str)]) {
     let v = ui.visuals().clone();
@@ -172,20 +189,7 @@ impl SettingsApp {
         let (virt_w, scale) = if down { (1024.0f32.min(w / 0.5), 0.5) } else { (w.max(1200.0), w / w.max(1200.0)) };
         let back_h = if down { 640.0 * scale + 10.0 } else { (ph + 34.0) * scale + 10.0 };
         let (r, _) = ui.allocate_exact_size(Vec2::new(virt_w * scale, back_h), Sense::hover());
-        let accent = ui.visuals().selection.bg_fill;
-        let base = mix(accent, Color32::from_rgb(20, 22, 30), 0.72);
-        // A soft gradient, like a wallpaper, under the bar.
-        let (c1, c2) = (base, mix(base, accent, 0.3));
-        let mut mesh = egui::Mesh::default();
-        let inner = r.shrink(2.0);
-        for (pt, c) in [(inner.left_top(), c1), (inner.right_top(), c2), (inner.right_bottom(), mix(c2, c1, 0.4)), (inner.left_bottom(), mix(c1, Color32::BLACK, 0.15))] {
-            mesh.colored_vertex(pt, c);
-        }
-        mesh.add_triangle(0, 1, 2);
-        mesh.add_triangle(0, 2, 3);
-        ui.painter().rect_filled(r, r_sm(), c1);
-        ui.painter().add(egui::Shape::mesh(mesh));
-        ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.0, mix(base, Color32::WHITE, 0.08)), egui::StrokeKind::Inside);
+        backdrop(ui, r);
         let kit = self.preview_kit.get_or_insert_with(|| crate::ui::Kit::new(self.shot.is_none()));
         kit.begin(&ctx, &self.s);
         let status = crate::shot::demo_status();

@@ -29,6 +29,8 @@ pub struct Note {
     pub urgency: u8,
     /// How long the card shows (None: until closed).
     pub show_for: Option<Duration>,
+    /// The app asked for that time itself (else the setting's time applies).
+    pub own_time: bool,
     pub at: DateTime<Local>,
 }
 
@@ -86,6 +88,7 @@ impl Service {
             actions: actions.chunks(2).filter(|c| c.len() == 2).map(|c| (c[0].clone(), c[1].clone())).collect(),
             urgency,
             show_for: show_for(expire_timeout, urgency),
+            own_time: expire_timeout > 0,
             at: Local::now(),
         };
         if let Ok(f) = self.send.lock() {
@@ -167,10 +170,9 @@ pub struct Notes {
 
 impl Notes {
     const KEEP: usize = 60;
-    const CARDS: usize = 4;
 
-    /// A new (or replaced) notification; `card`: show it on screen too.
-    pub fn add(&mut self, n: Note, card: bool) {
+    /// A new (or replaced) notification; `card`: show it on screen too, keeping at most `max`.
+    pub fn add(&mut self, n: Note, card: bool, max: usize) {
         let until = n.show_for.map(|d| Instant::now() + d);
         let id = n.id;
         self.list.retain(|x| x.id != id);
@@ -179,7 +181,7 @@ impl Notes {
         self.cards.retain(|(c, _)| *c != id);
         if card {
             self.cards.insert(0, (id, until));
-            self.cards.truncate(Self::CARDS);
+            self.cards.truncate(max.max(1));
         }
     }
 
@@ -214,7 +216,7 @@ mod tests {
     use super::*;
 
     fn note(id: u32) -> Note {
-        Note { id, app: "a".into(), icon: String::new(), desktop: String::new(), summary: format!("n{id}"), body: String::new(), actions: Vec::new(), urgency: 1, show_for: Some(Duration::from_millis(10)), at: Local::now() }
+        Note { id, app: "a".into(), icon: String::new(), desktop: String::new(), summary: format!("n{id}"), body: String::new(), actions: Vec::new(), urgency: 1, show_for: Some(Duration::from_millis(10)), own_time: true, at: Local::now() }
     }
 
     #[test]
@@ -230,12 +232,12 @@ mod tests {
     fn cards_come_and_go() {
         let mut n = Notes::default();
         for i in 1..=6 {
-            n.add(note(i), true);
+            n.add(note(i), true, 4);
         }
         assert_eq!(n.cards.len(), 4);
         assert_eq!(n.on_screen()[0].id, 6);
         // Replacing keeps one entry.
-        n.add(note(6), true);
+        n.add(note(6), true, 4);
         assert_eq!(n.list.iter().filter(|x| x.id == 6).count(), 1);
         let gone = n.expire(Instant::now() + Duration::from_secs(1));
         assert_eq!(gone.len(), 4);

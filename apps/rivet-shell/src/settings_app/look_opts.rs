@@ -177,6 +177,16 @@ impl SettingsApp {
         });
     }
 
+    pub(super) fn note_look_section(&mut self, ui: &mut egui::Ui) {
+        let colors = Roles::new(&self.look, &self.s);
+        let parent = self.s.base_look();
+        section(ui, "Notification look", &mut |ui| {
+            hint(ui, "Starts from Appearance. What you change here applies to notifications only.");
+            ui.add_space(8.0);
+            editor(ui, "shell-look-notes", &mut self.s.note_look, parent, "Appearance", &colors, false);
+        });
+    }
+
     pub(super) fn panel_look_section(&mut self, ui: &mut egui::Ui, sel: usize) {
         let colors = Roles::new(&self.look, &self.s);
         let parent = self.s.base_look();

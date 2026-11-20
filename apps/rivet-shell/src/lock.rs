@@ -7,6 +7,7 @@
 //! (it sees $XDG_RUNTIME_DIR/rivet-shell.locked still there). SIGUSR1 unlocks (what
 //! `loginctl unlock-session` asks of the shell). `rivet-shell lock --preview` shows it over the
 //! desktop without locking (Escape leaves), to try the look and the password safely.
+//! `rivet-shell greeter` is the same screen as greetd's login screen (greeter.rs).
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,10 +27,12 @@ use smithay_client_toolkit::seat::pointer::{CursorIcon, PointerEvent, PointerEve
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::session_lock::{SessionLock, SessionLockHandler, SessionLockState, SessionLockSurface, SessionLockSurfaceConfigure};
 use smithay_client_toolkit::shell::WaylandSurface;
+use smithay_client_toolkit::shell::xdg::XdgShell;
+use smithay_client_toolkit::shell::xdg::window::{Window, WindowConfigure, WindowDecorations, WindowHandler};
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
-use smithay_client_toolkit::{delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_session_lock, delegate_shm, registry_handlers};
+use smithay_client_toolkit::{delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_session_lock, delegate_shm, delegate_xdg_shell, delegate_xdg_window, registry_handlers};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, QueueHandle};
@@ -57,9 +60,22 @@ enum LMsg {
     Bg { size: (u32, u32), pixels: Option<Vec<u8>> },
 }
 
+/// What the program is for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Mode {
+    /// Lock the session.
+    Lock,
+    /// Show the lock screen over the desktop, to try it.
+    Preview,
+    /// greetd's login screen.
+    Greet,
+}
+
 enum Role {
     Lock(SessionLockSurface),
     Layer(LayerSurface),
+    /// A full-screen window: the greeter in a compositor with no layer shell (cage).
+    Window(Window),
 }
 
 impl Role {
@@ -67,6 +83,7 @@ impl Role {
         match self {
             Role::Lock(s) => s.wl_surface(),
             Role::Layer(l) => l.wl_surface(),
+            Role::Window(w) => w.wl_surface(),
         }
     }
 }
@@ -101,9 +118,13 @@ struct Lock {
     shm: Shm,
     lock_state: Option<SessionLockState>,
     layer_shell: Option<LayerShell>,
+    xdg: Option<XdgShell>,
     session: Option<SessionLock>,
     locked: bool,
-    preview: bool,
+    mode: Mode,
+    /// The greeter: who can sign in, and which of them is shown.
+    people: Vec<crate::greeter::Person>,
+    who: usize,
     surfs: Vec<LSurf>,
     pointer: Option<ThemedPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
@@ -134,7 +155,11 @@ fn wipe(s: &mut String) {
 /// The person's picture: ~/.face, else AccountsService's.
 fn avatar(login: &str) -> Option<egui::ColorImage> {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    let paths = [home.join(".face"), home.join(".face.icon"), PathBuf::from(format!("/var/lib/AccountsService/icons/{login}"))];
+    avatar_from(&[home.join(".face"), home.join(".face.icon"), PathBuf::from(format!("/var/lib/AccountsService/icons/{login}"))])
+}
+
+/// The first of these pictures that opens, cut square.
+fn avatar_from(paths: &[PathBuf]) -> Option<egui::ColorImage> {
     let img = paths.iter().filter(|p| p.is_file()).find_map(|p| image::ImageReader::open(p).ok()?.with_guessed_format().ok()?.decode().ok())?;
     let side = img.width().min(img.height());
     let sq = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side).resize_exact(192, 192, image::imageops::FilterType::Triangle).to_rgba8();
@@ -161,17 +186,26 @@ fn background(path: &str, w: u32, h: u32, blur: bool) -> Option<Vec<u8>> {
 
 /// Lock the session (or, with `preview`, only show the lock screen) until the password is given.
 pub fn run(preview: bool) -> std::process::ExitCode {
+    run_as(if preview { Mode::Preview } else { Mode::Lock })
+}
+
+/// greetd's login screen: sign in, and greetd starts the session when this leaves.
+pub fn greet() -> std::process::ExitCode {
+    run_as(Mode::Greet)
+}
+
+fn run_as(mode: Mode) -> std::process::ExitCode {
     crate::guard::log_panics();
-    match run_inner(preview) {
+    match run_inner(mode) {
         Ok(code) => std::process::ExitCode::from(code),
         Err(e) => {
-            eprintln!("rivet-shell lock: {e}");
+            eprintln!("rivet-shell {}: {e}", if mode == Mode::Greet { "greeter" } else { "lock" });
             std::process::ExitCode::FAILURE
         }
     }
 }
 
-fn run_inner(preview: bool) -> Result<u8, String> {
+fn run_inner(mode: Mode) -> Result<u8, String> {
     unsafe {
         libc::signal(libc::SIGUSR1, on_usr1 as *const () as libc::sighandler_t);
     }
@@ -180,10 +214,14 @@ fn run_inner(preview: bool) -> Result<u8, String> {
     let qh = queue.handle();
     let compositor = CompositorState::bind(&globals, &qh).map_err(|_| "the compositor has no wl_compositor")?;
     let shm = Shm::bind(&globals, &qh).map_err(|_| "the compositor has no shared memory (wl_shm)")?;
-    let (lock_state, layer_shell) = if preview {
-        (None, Some(LayerShell::bind(&globals, &qh).map_err(|_| "no layer-shell protocol to show the preview with")?))
-    } else {
-        (Some(SessionLockState::new(&globals, &qh)), None)
+    let (lock_state, layer_shell, xdg) = match mode {
+        Mode::Preview => (None, Some(LayerShell::bind(&globals, &qh).map_err(|_| "no layer-shell protocol to show the preview with")?), None),
+        Mode::Lock => (Some(SessionLockState::new(&globals, &qh)), None, None),
+        // A layer over every screen where there's layer shell; else one full-screen window.
+        Mode::Greet => match LayerShell::bind(&globals, &qh) {
+            Ok(l) => (None, Some(l), None),
+            Err(_) => (None, None, Some(XdgShell::bind(&globals, &qh).map_err(|_| "the compositor offers neither layer shell nor windows to show the greeter in")?)),
+        },
     };
     let mut event_loop: EventLoop<'static, Lock> = EventLoop::try_new().map_err(|e| e.to_string())?;
     let handle = event_loop.handle();
@@ -198,6 +236,10 @@ fn run_inner(preview: bool) -> Result<u8, String> {
         l.tick();
         TimeoutAction::ToDuration(Duration::from_millis(500))
     }).map_err(|e| e.to_string())?;
+    let people = if mode == Mode::Greet { crate::greeter::people() } else { Vec::new() };
+    if mode == Mode::Greet && people.is_empty() {
+        return Err("no accounts to sign in to (none with a home and a login shell in /etc/passwd)".into());
+    }
     let login = crate::auth::login_name();
     let s = Settings::load();
     let mut l = Lock {
@@ -212,9 +254,12 @@ fn run_inner(preview: bool) -> Result<u8, String> {
         shm,
         lock_state,
         layer_shell,
+        xdg,
         session: None,
         locked: false,
-        preview,
+        mode,
+        people,
+        who: 0,
         surfs: Vec::new(),
         pointer: None,
         keyboard: None,
@@ -234,6 +279,9 @@ fn run_inner(preview: bool) -> Result<u8, String> {
         minute: 99,
         exit: None,
     };
+    if mode == Mode::Greet {
+        l.show_person(0);
+    }
     if let Some(ls) = &l.lock_state {
         l.session = Some(ls.lock(&qh).map_err(|_| "this compositor doesn't offer the session-lock protocol (ext-session-lock-v1)")?);
     }
@@ -257,8 +305,20 @@ impl Lock {
             return;
         }
         let surface = self.compositor.create_surface(&self.qh);
-        let role = if let Some(ls) = &self.layer_shell {
-            let layer = ls.create_layer_surface(&self.qh, surface, Layer::Overlay, Some("rivet-shell-lock"), Some(output));
+        let role = if let Some(xdg) = &self.xdg {
+            // One window, full screen on the first screen.
+            if !self.surfs.is_empty() {
+                return;
+            }
+            let w = xdg.create_window(surface, WindowDecorations::None, &self.qh);
+            w.set_title("Rivet Shell");
+            w.set_app_id("rivet-shell-greeter");
+            w.set_fullscreen(Some(output));
+            w.commit();
+            Role::Window(w)
+        } else if let Some(ls) = &self.layer_shell {
+            let ns = if self.mode == Mode::Greet { "rivet-shell-greeter" } else { "rivet-shell-lock" };
+            let layer = ls.create_layer_surface(&self.qh, surface, Layer::Overlay, Some(ns), Some(output));
             layer.set_anchor(Anchor::all());
             layer.set_exclusive_zone(-1);
             layer.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
@@ -290,6 +350,26 @@ impl Lock {
             start: Instant::now(),
             avatar: None,
         });
+    }
+
+    /// The greeter: show this person, with their name, picture, wallpaper and look.
+    fn show_person(&mut self, i: usize) {
+        let Some(p) = self.people.get(i) else { return };
+        self.who = i;
+        self.login = p.login.clone();
+        self.name = p.name.clone();
+        self.avatar = p.face.as_ref().and_then(|f| avatar_from(std::slice::from_ref(f))).or_else(|| avatar_from(&[PathBuf::from(format!("/var/lib/AccountsService/icons/{}", p.login))]));
+        self.s = p.settings.clone();
+        self.s.wallpaper = p.wallpaper.as_ref().map(|w| w.to_string_lossy().into_owned()).unwrap_or_default();
+        self.bgs.clear();
+        self.loading.clear();
+        wipe(&mut self.typed);
+        self.message = None;
+        self.fails = 0;
+        for s in &mut self.surfs {
+            s.avatar = None;
+            s.dirty = true;
+        }
     }
 
     fn configured(&mut self, surface: &wl_surface::WlSurface, size: (u32, u32)) {
@@ -355,8 +435,12 @@ impl Lock {
         self.busy = true;
         self.message = None;
         let (user, mut pw, tx) = (self.login.clone(), std::mem::take(&mut self.typed), self.tx.clone());
+        let session = (self.mode == Mode::Greet).then(|| self.people.get(self.who).map(|p| p.session.clone()).unwrap_or_default());
         std::thread::spawn(move || {
-            let r = crate::auth::check(&user, &pw);
+            let r = match session {
+                Some(cmd) => crate::greeter::sign_in(&user, &pw, &cmd),
+                None => crate::auth::check(&user, &pw),
+            };
             wipe(&mut pw);
             let _ = tx.send(LMsg::Auth(r));
         });
@@ -397,10 +481,16 @@ impl Lock {
         match e.keysym {
             Keysym::Return | Keysym::KP_Enter => self.submit(),
             Keysym::Escape => {
-                if self.preview && self.typed.is_empty() {
+                if self.mode == Mode::Preview && self.typed.is_empty() {
                     self.exit = Some(0);
                 }
                 wipe(&mut self.typed);
+            }
+            // The greeter: another account.
+            Keysym::Tab | Keysym::ISO_Left_Tab | Keysym::Down | Keysym::Up if self.mode == Mode::Greet && !self.busy && self.people.len() > 1 => {
+                let n = self.people.len();
+                let back = matches!(e.keysym, Keysym::ISO_Left_Tab | Keysym::Up) || self.mods.shift;
+                self.show_person(if back { (self.who + n - 1) % n } else { (self.who + 1) % n });
             }
             Keysym::BackSpace if ctrl => wipe(&mut self.typed),
             Keysym::BackSpace => {
@@ -457,6 +547,7 @@ impl Lock {
         let (pw, ph) = (w * scale as u32, h * scale as u32);
         let bg = self.bg_for((pw, ph));
         let mut acts = Vec::new();
+        let several = self.mode == Mode::Greet && self.people.len() > 1 && self.typed.is_empty();
         let Lock { surfs, s, name, avatar, typed, busy, message, error_at, confirm, mods, bgs, .. } = self;
         let surf = &mut surfs[i];
         surf.dirty = false;
@@ -486,7 +577,7 @@ impl Lock {
                 typed: typed.chars().count(),
                 caps_lock: mods.caps_lock,
                 busy: *busy,
-                message: message.as_ref().map(|(m, bad)| (m.as_str(), *bad)),
+                message: message.as_ref().map(|(m, bad)| (m.as_str(), *bad)).or(several.then_some(("Press Tab to sign in as someone else", false))),
                 since_error: error_at.map(|t| t.elapsed()),
                 power: s.lock_power,
                 confirm: confirm.map(|(a, _)| a),
@@ -575,6 +666,19 @@ impl LayerShellHandler for Lock {
     }
     fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, layer: &LayerSurface, cfg: LayerSurfaceConfigure, _: u32) {
         self.configured(layer.wl_surface(), cfg.new_size);
+    }
+}
+
+impl WindowHandler for Lock {
+    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {}
+    fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window, cfg: WindowConfigure, _: u32) {
+        // The compositor's size; with none, the screen's.
+        let screen = self.surfs.iter().find(|s| s.role.wl_surface() == window.wl_surface()).and_then(|s| self.output_state.info(&s.output)).and_then(|i| i.logical_size).map(|(w, h)| (w.max(1) as u32, h.max(1) as u32));
+        let size = match cfg.new_size {
+            (Some(w), Some(h)) => (w.get(), h.get()),
+            _ => screen.unwrap_or((1280, 800)),
+        };
+        self.configured(window.wl_surface(), size);
     }
 }
 
@@ -701,6 +805,8 @@ delegate_keyboard!(Lock);
 delegate_pointer!(Lock);
 delegate_layer!(Lock);
 delegate_session_lock!(Lock);
+delegate_xdg_shell!(Lock);
+delegate_xdg_window!(Lock);
 delegate_registry!(Lock);
 
 // ------------------------------------------------------------------ the screenshot
@@ -718,6 +824,8 @@ struct Shot {
     kit: crate::ui::Kit,
     wall: Option<egui::TextureHandle>,
     shot: rivet_kit::Shot,
+    /// `rivet-shell greeter --screenshot`: the login screen, with its hint for other accounts.
+    greeter: bool,
 }
 
 impl Shot {
@@ -741,7 +849,8 @@ impl Shot {
         });
         let _ = std::fs::remove_dir_all(&dir);
         let wall = wall.map(|img| cc.egui_ctx.load_texture("lock-wall", img, egui::TextureOptions::LINEAR));
-        Shot { s, kit: crate::ui::Kit::new(false), wall, shot: rivet_kit::Shot::new(path) }
+        let greeter = std::env::args().nth(1).as_deref() == Some("greeter");
+        Shot { s, kit: crate::ui::Kit::new(false), wall, shot: rivet_kit::Shot::new(path), greeter }
     }
 }
 
@@ -761,7 +870,7 @@ impl eframe::App for Shot {
             typed: env("RIVET_LOCK_TYPED").and_then(|v| v.parse().ok()).unwrap_or(0),
             caps_lock: error,
             busy: false,
-            message: error.then_some(("Wrong password", true)),
+            message: error.then_some(("Wrong password", true)).or(self.greeter.then_some(("Press Tab to sign in as someone else", false))),
             since_error: error.then_some(Duration::from_secs(1)),
             power: true,
             confirm: (env("RIVET_LOCK_CONFIRM").as_deref() == Some("1")).then_some(LockAct::ShutDown),

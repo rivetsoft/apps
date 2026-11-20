@@ -118,7 +118,66 @@ impl LaunchPlace {
     }
 }
 
-/// How big the launcher is.
+/// Where the on-screen display shows, in the middle of the screen's width.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum OsdPlace {
+    Top,
+    Middle,
+    #[default]
+    Bottom,
+}
+
+impl OsdPlace {
+    pub fn from(v: &str) -> OsdPlace {
+        match v {
+            "top" => OsdPlace::Top,
+            "middle" => OsdPlace::Middle,
+            _ => OsdPlace::Bottom,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            OsdPlace::Top => "top",
+            OsdPlace::Middle => "middle",
+            OsdPlace::Bottom => "bottom",
+        }
+    }
+}
+
+/// Which corner notification cards show in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum NotePlace {
+    /// The right, on the first panel's edge (the top when there are none).
+    #[default]
+    ByPanel,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl NotePlace {
+    pub fn from(v: &str) -> NotePlace {
+        match v {
+            "top-left" => NotePlace::TopLeft,
+            "top-right" => NotePlace::TopRight,
+            "bottom-left" => NotePlace::BottomLeft,
+            "bottom-right" => NotePlace::BottomRight,
+            _ => NotePlace::ByPanel,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            NotePlace::ByPanel => "panel",
+            NotePlace::TopLeft => "top-left",
+            NotePlace::TopRight => "top-right",
+            NotePlace::BottomLeft => "bottom-left",
+            NotePlace::BottomRight => "bottom-right",
+        }
+    }
+}
+
+/// How big the launcher, the on-screen display or the notification cards are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum LaunchSize {
     Small,
@@ -590,10 +649,23 @@ pub struct Settings {
     // ---- notifications, on-screen display, night light
     /// Be the notification service (cards in the corner, a history in the control center).
     pub notifications: bool,
-    /// Show volume and brightness changes in the middle of the screen's bottom.
+    /// The cards: their corner, width, seconds on screen (when the app doesn't say), how many
+    /// show at once, and their own look over Appearance's.
+    pub note_place: NotePlace,
+    pub note_width: LaunchSize,
+    pub note_secs: u32,
+    pub note_max: usize,
+    pub note_look: crate::style::Style,
+    /// Show volume and brightness changes in a small pop-up.
     pub osd: bool,
     /// Show Caps Lock and Num Lock turning on and off there too.
     pub osd_keys: bool,
+    /// Where it shows, how big it is, and for how long.
+    pub osd_place: OsdPlace,
+    pub osd_size: LaunchSize,
+    pub osd_secs: f32,
+    /// The bar's colour; None follows how much the shell uses the secondary and tertiary.
+    pub osd_color: Option<crate::style::Role>,
     /// Ask for the password when an app needs an administrator's say-so (be the session's
     /// polkit agent).
     pub ask_passwords: bool,
@@ -729,8 +801,17 @@ impl Default for Settings {
             launcher_custom: String::new(),
             tray_passive: true,
             notifications: true,
+            note_place: NotePlace::ByPanel,
+            note_width: LaunchSize::Medium,
+            note_secs: 6,
+            note_max: 4,
+            note_look: crate::style::Style::default(),
             osd: true,
             osd_keys: true,
+            osd_place: OsdPlace::Bottom,
+            osd_size: LaunchSize::Medium,
+            osd_secs: 1.5,
+            osd_color: None,
             ask_passwords: true,
             plugins: Vec::new(),
             hooks: Vec::new(),
@@ -840,6 +921,13 @@ impl Settings {
         let mut s = Settings::default();
         let Ok(text) = std::fs::read_to_string(path()) else { return s };
         s.parse(&text);
+        s
+    }
+
+    /// Settings from a settings file's text, over the defaults.
+    pub fn from_text(text: &str) -> Settings {
+        let mut s = Settings::default();
+        s.parse(text);
         s
     }
 
@@ -968,6 +1056,11 @@ impl Settings {
                 "launcher_custom" => self.launcher_custom = v.to_string(),
                 "tray_passive" => self.tray_passive = b,
                 "notifications" => self.notifications = b,
+                "note_place" => self.note_place = NotePlace::from(v),
+                "note_width" => self.note_width = LaunchSize::from(v),
+                "note_secs" => self.note_secs = v.parse::<u32>().unwrap_or(6).clamp(2, 60),
+                "note_max" => self.note_max = v.parse::<usize>().unwrap_or(4).clamp(1, 8),
+                "note_look" => self.note_look = crate::style::Style::parse(v, '=', ';'),
                 "osd" => self.osd = b,
                 "comp_on" => self.comp_on = b,
                 "comp_gaps_in" => self.comp_gaps_in = v.parse::<u32>().unwrap_or(6).min(64),
@@ -988,6 +1081,10 @@ impl Settings {
                 "lock_blur" => self.lock_blur = b,
                 "lock_power" => self.lock_power = b,
                 "osd_keys" => self.osd_keys = b,
+                "osd_place" => self.osd_place = OsdPlace::from(v),
+                "osd_size" => self.osd_size = LaunchSize::from(v),
+                "osd_secs" => self.osd_secs = v.parse::<f32>().unwrap_or(1.5).clamp(0.5, 5.0),
+                "osd_color" => self.osd_color = crate::style::Role::from(v).filter(|r| *r != crate::style::Role::Surface),
                 "ask_passwords" => self.ask_passwords = b,
                 "plugins" => self.plugins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "launch_view" => self.launch_view = LaunchView::from(v),
@@ -1105,6 +1202,18 @@ impl Settings {
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
         ));
         t.push_str(&format!("osd_keys={}\nask_passwords={}\n", self.osd_keys, self.ask_passwords));
+        t.push_str(&format!(
+            "osd_place={}\nosd_size={}\nosd_secs={}\nosd_color={}\nnote_place={}\nnote_width={}\nnote_secs={}\nnote_max={}\nnote_look={}\n",
+            self.osd_place.name(),
+            self.osd_size.name(),
+            self.osd_secs,
+            self.osd_color.map_or("auto", |r| r.name()),
+            self.note_place.name(),
+            self.note_width.name(),
+            self.note_secs,
+            self.note_max,
+            self.note_look.text('=', ';')
+        ));
         t.push_str(&format!(
             "media_text={}\nmedia_width={}\nmedia_art={}\nmedia_controls={}\nmedia_viz={}\nmedia_click_plays={}\nmedia_scroll={}\nmedia_hide_paused={}\n",
             self.media_text.name(), self.media_width, self.media_art, self.media_controls, self.media_viz, self.media_click_plays, self.media_scroll, self.media_hide_paused
@@ -1335,7 +1444,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

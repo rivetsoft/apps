@@ -3,14 +3,20 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
-use rivet_look::theme::{r_lg, r_md};
+use rivet_look::theme::r_md;
 
 use crate::glyph;
 use crate::notes::Note;
 use crate::ui::{Act, Kit, Model, OsdKind, ago, card, one_line, ui_font, wrapped};
 
-/// The cards' surface: its width, and the room around the cards for shadows.
-pub const CARDS_W: f32 = 380.0;
+/// The cards' surface width (with room around the cards for shadows), by the width setting.
+pub fn cards_width(s: &crate::config::Settings) -> f32 {
+    match s.note_width {
+        crate::config::LaunchSize::Small => 320.0,
+        crate::config::LaunchSize::Medium => 380.0,
+        crate::config::LaunchSize::Large => 460.0,
+    }
+}
 const CARD_PAD: f32 = 10.0;
 const CARD_GAP: f32 = 8.0;
 /// The on-screen display's surface.
@@ -34,8 +40,12 @@ pub fn cards_height(notes: &[Note]) -> f32 {
 
 /// Notifications in the corner, newest on top.
 pub fn cards(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
-    let v = ui.visuals().clone();
-    let accent = kit.tone(m.s, crate::style::Slot::Notify);
+    // The cards' own look over Appearance's: corners, how solid, colour, outline.
+    let look = m.s.note_look();
+    let (v, highlight) = crate::style::visuals(ui.visuals(), &look, &crate::style::Roles::new(&kit.look, m.s));
+    *ui.visuals_mut() = v.clone();
+    let accent = if m.s.note_look.highlight.is_none() && m.s.look.highlight.is_none() { kit.tone(m.s, crate::style::Slot::Notify) } else { highlight };
+    let radius = crate::style::radius(&look);
     let full = ui.max_rect();
     let p = ui.painter().clone();
     let mut y = full.top() + CARD_PAD;
@@ -44,12 +54,12 @@ pub fn cards(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         let r = Rect::from_min_size(Pos2::new(full.left() + CARD_PAD, y), Vec2::new(full.width() - CARD_PAD * 2.0, card_height(n)));
         y = r.bottom() + CARD_GAP;
         let resp = ui.interact(r, egui::Id::unique(("card", n.id)), Sense::click());
-        card(&p, r, &v, 0.97, r_lg());
+        crate::ui::surface(&p, r, &v, look.opacity, radius, look.border);
         if n.urgency >= 2 {
             p.rect_filled(Rect::from_min_size(r.min + Vec2::new(0.0, 14.0), Vec2::new(3.0, r.height() - 28.0)), 2.0, danger);
         }
         if resp.hovered() {
-            p.rect_filled(r.shrink(1.0), r_lg(), mix(v.panel_fill, v.text_color(), 0.04));
+            p.rect_filled(r.shrink(1.0), radius, mix(v.panel_fill, v.text_color(), 0.04));
         }
         note_body(ui, &p, n, r.shrink2(Vec2::new(14.0, 12.0)), m, kit, accent, false);
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -121,47 +131,73 @@ fn note_body(ui: &mut egui::Ui, p: &egui::Painter, n: &Note, r: Rect, m: &mut Mo
 
 // ------------------------------------------------------------------ on-screen display
 
+/// How much the on-screen display is scaled by its size setting.
+fn osd_scale(s: &crate::config::Settings) -> f32 {
+    match s.osd_size {
+        crate::config::LaunchSize::Small => 0.85,
+        crate::config::LaunchSize::Medium => 1.0,
+        crate::config::LaunchSize::Large => 1.25,
+    }
+}
+
+/// The on-screen display's surface size, in points.
+pub fn osd_size(s: &crate::config::Settings) -> (f32, f32) {
+    let k = osd_scale(s);
+    ((OSD_W * k).round(), (OSD_H * k).round())
+}
+
 /// Volume or brightness as it changes: a small pill with a bar.
 pub fn osd(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let Some((kind, value, muted)) = m.extra.osd else { return };
     let v = ui.visuals().clone();
-    let accent = kit.tone(m.s, crate::style::Slot::Slider);
-    let r = ui.max_rect().shrink(8.0);
+    let accent = match m.s.osd_color {
+        Some(role) => crate::style::Roles::new(&kit.look, m.s).get(role, v.panel_fill),
+        None => kit.tone(m.s, crate::style::Slot::Slider),
+    };
+    let k = osd_scale(m.s);
+    let font = |size: f32| ui_font(size * k);
+    let r = ui.max_rect().shrink(8.0 * k);
     let p = ui.painter().clone();
     card(&p, r, &v, 0.97, (r.height() / 2.0) as u8);
     let fg = v.text_color();
+    // The symbols are drawn at their usual size on a layer scaled by `k`, so they stay sharp.
+    let glyphs = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("rivet-osd-glyphs"));
+    ui.ctx().set_transform_layer(glyphs, egui::emath::TSTransform::from_scaling(k));
+    let gp = ui.ctx().layer_painter(glyphs);
+    let at = |c: Pos2| Pos2::new(c.x / k, c.y / k);
     if matches!(kind, OsdKind::CapsLock | OsdKind::NumLock) {
         // The key's symbol (lit in the accent when on), its name, and on or off.
         let on = value != 0;
-        let c = Pos2::new(r.left() + 30.0, r.center().y);
+        let c = Pos2::new(r.left() + 30.0 * k, r.center().y);
         let col = if on { accent } else { v.weak_text_color() };
-        let key = Rect::from_center_size(c, Vec2::splat(24.0));
-        p.rect_stroke(key, 5.0, egui::Stroke::new(1.6, col), egui::StrokeKind::Inside);
+        let key = Rect::from_center_size(at(c), Vec2::splat(24.0));
+        gp.rect_stroke(key, 5.0, egui::Stroke::new(1.6, col), egui::StrokeKind::Inside);
         if kind == OsdKind::CapsLock {
             // An arrow up over a bar: ⇪.
             let s = egui::Stroke::new(1.6, col);
-            p.add(egui::Shape::closed_line(vec![c + Vec2::new(0.0, -7.0), c + Vec2::new(5.5, -1.0), c + Vec2::new(2.5, -1.0), c + Vec2::new(2.5, 3.0), c + Vec2::new(-2.5, 3.0), c + Vec2::new(-2.5, -1.0), c + Vec2::new(-5.5, -1.0)], s));
-            p.line_segment([c + Vec2::new(-2.5, 6.0), c + Vec2::new(2.5, 6.0)], s);
+            let c = at(c);
+            gp.add(egui::Shape::closed_line(vec![c + Vec2::new(0.0, -7.0), c + Vec2::new(5.5, -1.0), c + Vec2::new(2.5, -1.0), c + Vec2::new(2.5, 3.0), c + Vec2::new(-2.5, 3.0), c + Vec2::new(-2.5, -1.0), c + Vec2::new(-5.5, -1.0)], s));
+            gp.line_segment([c + Vec2::new(-2.5, 6.0), c + Vec2::new(2.5, 6.0)], s);
         } else {
-            p.text(c, egui::Align2::CENTER_CENTER, "1", ui_font(13.0), col);
+            p.text(c, egui::Align2::CENTER_CENTER, "1", font(13.0), col);
         }
         let name = if kind == OsdKind::CapsLock { "Caps Lock" } else { "Num Lock" };
-        p.text(Pos2::new(r.left() + 56.0, r.center().y), egui::Align2::LEFT_CENTER, name, ui_font(14.0), fg);
-        p.text(Pos2::new(r.right() - 20.0, r.center().y), egui::Align2::RIGHT_CENTER, if on { "On" } else { "Off" }, ui_font(13.0), if on { accent } else { v.weak_text_color() });
+        p.text(Pos2::new(r.left() + 56.0 * k, r.center().y), egui::Align2::LEFT_CENTER, name, font(14.0), fg);
+        p.text(Pos2::new(r.right() - 20.0 * k, r.center().y), egui::Align2::RIGHT_CENTER, if on { "On" } else { "Off" }, font(13.0), if on { accent } else { v.weak_text_color() });
         return;
     }
-    let c = Pos2::new(r.left() + 26.0, r.center().y);
+    let c = at(Pos2::new(r.left() + 26.0 * k, r.center().y));
     match kind {
-        OsdKind::Volume => glyph::speaker(&p, c + Vec2::new(2.0, 0.0), muted, fg),
-        OsdKind::Mic => glyph::mic(&p, c, fg, muted),
-        OsdKind::Brightness => glyph::sun(&p, c, fg),
+        OsdKind::Volume => glyph::speaker(&gp, c + Vec2::new(2.0, 0.0), muted, fg),
+        OsdKind::Mic => glyph::mic(&gp, c, fg, muted),
+        OsdKind::Brightness => glyph::sun(&gp, c, fg),
         OsdKind::CapsLock | OsdKind::NumLock => {}
     }
     let text = if muted { "Muted".to_string() } else { format!("{value}%") };
-    let g = p.layout_no_wrap(text, ui_font(13.0), fg);
-    p.galley(Pos2::new(r.right() - 18.0 - g.size().x, r.center().y - g.size().y / 2.0), g, fg);
-    let track = Rect::from_min_max(Pos2::new(r.left() + 48.0, r.center().y - 3.0), Pos2::new(r.right() - 64.0, r.center().y + 3.0));
-    p.rect_filled(track, 3.0, mix(v.panel_fill, fg, 0.14));
+    let g = p.layout_no_wrap(text, font(13.0), fg);
+    p.galley(Pos2::new(r.right() - 18.0 * k - g.size().x, r.center().y - g.size().y / 2.0), g, fg);
+    let track = Rect::from_min_max(Pos2::new(r.left() + 48.0 * k, r.center().y - 3.0 * k), Pos2::new(r.right() - 64.0 * k, r.center().y + 3.0 * k));
+    p.rect_filled(track, 3.0 * k, mix(v.panel_fill, fg, 0.14));
     let frac = if muted { 0.0 } else { (value as f32 / 100.0).clamp(0.0, 1.0) };
-    p.rect_filled(Rect::from_min_size(track.min, Vec2::new(track.width() * frac, track.height())), 3.0, accent);
+    p.rect_filled(Rect::from_min_size(track.min, Vec2::new(track.width() * frac, track.height())), 3.0 * k, accent);
 }

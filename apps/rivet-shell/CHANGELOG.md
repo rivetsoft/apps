@@ -2,10 +2,21 @@
 
 ## Unreleased
 
+- Right-click an open app in the dock and choose Close to close its windows, on niri and Hyprland.
 - Plugins from other people: Get Plugins, on Settings' Plugins page, lists the ones that have
   been shared beside the shell's own, and installs and updates them. One you install stays off
   until you turn it on, and has Remove on the page. `rivet-shell plugin` does the same from a
   terminal.
+- The lock screen can be your login screen too: a greeter for greetd that shows the wallpaper,
+  colors and clock of whoever changed their wallpaper last, with Tab to pick another account.
+  Run `sudo rivet-shell greeter --setup` once to set it up.
+- Notifications can show in any corner, narrow, medium or wide, for as long as you choose and
+  up to eight at once. They also have a look of their own (corners, opacity, background,
+  highlight and outline), starting from Appearance's, under Settings → Notifications, with a
+  preview that shows them as they'll appear.
+- The volume and brightness pop-up can show at the top, middle or bottom of the screen, in three
+  sizes, with its bar in the primary, secondary or tertiary color, for as long as you like.
+  Changing one shows the pop-up so you can see it.
 - Settings: text fields, slider tracks, buttons and switches now stand out from their card in
   every color scheme, and Remove Panel is an outlined button instead of bright red text.
 - Lighter on the computer. The shell used to start six small programs every second to ask

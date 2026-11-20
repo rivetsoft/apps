@@ -107,8 +107,9 @@ pub const INDEX: &[Entry] = &[
     e(Page::Widgets, "On the desktop", "System widget", "processor cpu memory ram battery"),
     e(Page::Widgets, "On the desktop", "Widgets side", "left right"),
     // Notifications
-    e(Page::Notifications, "Notifications", "Notifications", "popups toasts cards history mako dunst"),
-    e(Page::Notifications, "On-screen display", "On-screen display", "osd volume brightness popup indicator"),
+    e(Page::Notifications, "Notifications", "Notifications", "popups toasts cards history mako dunst corner position place width timeout duration seconds how many"),
+    e(Page::Notifications, "Notification look", "Notification look", "cards corners radius opacity color background outline border style"),
+    e(Page::Notifications, "Volume and brightness pop-up", "Volume and brightness pop-up", "osd on-screen display indicator popup position place top middle bottom size color primary secondary tertiary duration caps num lock"),
     e(Page::Notifications, "Night Light", "Night light", "warmth kelvin temperature blue light gammastep hyprsunset wlsunset"),
     e(Page::Notifications, "Keys", "Keyboard shortcuts", "keys bind hotkeys commands msg launcher"),
     // About

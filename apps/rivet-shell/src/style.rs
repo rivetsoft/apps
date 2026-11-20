@@ -210,6 +210,10 @@ impl Settings {
     pub fn dock_look(&self) -> Resolved {
         self.look.over(self.dock_look).on(BASE)
     }
+    /// The notification cards' look.
+    pub fn note_look(&self) -> Resolved {
+        self.look.over(self.note_look).on(BASE)
+    }
 }
 
 /// The theme's primary, secondary and tertiary colours: the desktop's (matugen) when followed,

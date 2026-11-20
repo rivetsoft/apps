@@ -32,10 +32,20 @@ pub fn open_app<'a>(apps: &'a [DesktopApp], running: &str) -> Option<&'a Desktop
 
 /// Whether an app has windows open.
 pub fn is_running(a: &DesktopApp, running: &[String]) -> bool {
+    running.iter().any(|w| owns(a, w))
+}
+
+/// Whether a window's app id (lowercase) is this app's.
+fn owns(a: &DesktopApp, w: &str) -> bool {
     let id = a.id.trim_end_matches(".desktop").to_lowercase();
-    let short = id.rsplit('.').next().unwrap_or(&id).to_string();
-    let name = a.name.to_lowercase();
-    running.iter().any(|w| *w == id || *w == short || *w == name || id.ends_with(w.as_str()))
+    let short = id.rsplit('.').next().unwrap_or(&id);
+    w == id || w == short || w == a.name.to_lowercase() || id.ends_with(w)
+}
+
+/// The app ids of an app's open windows, when the compositor can close them for the dock.
+fn closable(m: &Model, app: &str) -> Vec<String> {
+    let Some(a) = find_app(m.apps, app).filter(|_| crate::sys::can_close(m.compositor)) else { return Vec::new() };
+    m.status.running.iter().filter(|w| owns(a, w)).cloned().collect()
 }
 
 /// What the dock shows: the pinned apps, then (when asked) open apps that aren't pinned.
@@ -217,6 +227,8 @@ pub enum Act {
     Pin(String),
     Unpin(String),
     MovePin(String, i32),
+    /// Close every window with one of these app ids.
+    CloseWindows(Vec<String>),
     /// A notification's card clicked (its default action).
     NoteClick(u32),
     NoteAction(u32, String),
@@ -907,7 +919,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
         PopupKind::Power { .. } => crate::power_ui::size(m.s),
         PopupKind::Control { .. } => Vec2::new(408.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
-        PopupKind::DockMenu { pinned, .. } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 }),
+        PopupKind::DockMenu { app, pinned } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 } + if closable(m, app).is_empty() { 0.0 } else { 34.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Notifications => Vec2::new(crate::notes_pop::WIDTH, crate::notes_pop::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
@@ -1168,7 +1180,7 @@ fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
     }
 }
 
-/// Right-click on a dock icon: open it, move it, pin or unpin it.
+/// Right-click on a dock icon: open it, move it, pin or unpin it, close its windows.
 fn dock_menu(ui: &mut egui::Ui, app: &str, pinned: bool, m: &mut Model) {
     let v = ui.visuals().clone();
     let name = find_app(m.apps, app).map(|a| a.name.clone()).unwrap_or_else(|| app.to_string());
@@ -1184,6 +1196,10 @@ fn dock_menu(ui: &mut egui::Ui, app: &str, pinned: bool, m: &mut Model) {
         items.push(("Unpin from Dock", Act::Unpin(app.to_string()), true));
     } else {
         items.push(("Pin to Dock", Act::Pin(app.to_string()), true));
+    }
+    let open = closable(m, app);
+    if !open.is_empty() {
+        items.push(("Close", Act::CloseWindows(open), true));
     }
     for (label, act, enabled) in items {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), if enabled { Sense::click() } else { Sense::hover() });

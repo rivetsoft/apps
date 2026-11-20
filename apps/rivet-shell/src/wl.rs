@@ -433,11 +433,17 @@ impl Shell {
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Osd => {
-                layer.set_anchor(Anchor::BOTTOM);
-                layer.set_size(crate::cc::OSD_W as u32, crate::cc::OSD_H as u32);
+                // Centred across the screen; with no top or bottom anchor, centred down it too.
+                match s.osd_place {
+                    crate::config::OsdPlace::Top => layer.set_anchor(Anchor::TOP),
+                    crate::config::OsdPlace::Middle => layer.set_anchor(Anchor::empty()),
+                    crate::config::OsdPlace::Bottom => layer.set_anchor(Anchor::BOTTOM),
+                }
+                let (w, h) = crate::cc::osd_size(s);
+                layer.set_size(w as u32, h as u32);
                 // Clear of the panel and the dock (a zone of 0 keeps out of others' room).
                 layer.set_exclusive_zone(0);
-                layer.set_margin(0, 0, 24, 0);
+                layer.set_margin(24, 0, 24, 0);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
                 // Clicks go through it.
                 if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
@@ -585,7 +591,7 @@ impl Shell {
             return;
         }
         self.osd = Some((kind, value, muted));
-        self.osd_until = Some(Instant::now() + Duration::from_millis(1600));
+        self.osd_until = Some(Instant::now() + Duration::from_secs_f32(self.s.osd_secs));
         if self.surfs.iter().any(|s| s.kind == Kind::Osd) {
             self.redraw_kinds(&[Kind::Osd]);
         } else {
@@ -913,7 +919,11 @@ impl Shell {
                 self.event("notification", &[("app", &n.app), ("summary", &n.summary), ("body", &n.body), ("urgency", ["low", "normal", "critical"][n.urgency.min(2) as usize])]);
                 // Do Not Disturb keeps them off the screen (all but the urgent), not out of the history.
                 let card = !self.dnd || n.urgency >= 2;
-                self.notes.add(n, card);
+                let mut n = n;
+                if !n.own_time && n.show_for.is_some() {
+                    n.show_for = Some(Duration::from_secs(self.s.note_secs as u64));
+                }
+                self.notes.add(n, card, self.s.note_max);
                 self.sync_cards();
                 self.redraw_kinds(&[Kind::Panel, Kind::Popup]);
             }
@@ -1005,7 +1015,10 @@ impl Shell {
             Msg::Matugen(r) => {
                 match r {
                     Err(e) => eprintln!("rivet-shell: matugen: {e}"),
-                    Ok(()) => self.event("colors", &[]),
+                    Ok(()) => {
+                        self.event("colors", &[]);
+                        self.publish_greeter();
+                    }
                 }
             }
         }
@@ -1286,6 +1299,19 @@ impl Shell {
         if pictures || colours {
             self.wallpaper_changed(colours);
         }
+        // The notification cards on screen move, resize or take their new look.
+        if (old.note_place, old.note_width, old.note_look) != (s.note_place, s.note_width, s.note_look) {
+            self.surfs.retain(|x| x.kind != Kind::Cards);
+            self.sync_cards();
+        } else if look || old.look != s.look {
+            self.redraw_kinds(&[Kind::Cards]);
+        }
+        // The on-screen display moved, resized or recoloured: show it at the volume, to see.
+        if (old.osd_place, old.osd_size, old.osd_secs, old.osd_color) != (s.osd_place, s.osd_size, s.osd_secs, s.osd_color) || (s.osd && !old.osd) {
+            self.surfs.retain(|x| x.kind != Kind::Osd);
+            let (value, muted) = self.prev_status.volume.unwrap_or((50, false));
+            self.show_osd(OsdKind::Volume, value, muted);
+        }
     }
 
     /// The wallpaper setting changed (or the shell started): load it, and give matugen the new
@@ -1302,12 +1328,24 @@ impl Shell {
         if path.as_os_str().is_empty() || !path.is_file() {
             return;
         }
+        self.publish_greeter();
         if run_matugen && self.s.makes_colors() {
             let tx = self.tx.clone();
             crate::wall::run_matugen(&path, self.s.color_mode, &self.s.scheme_type, self.s.matugen_contrast, move |r| {
                 let _ = tx.send(Msg::Matugen(r));
             });
         }
+    }
+
+    /// Leave the wallpaper and the colours shown now for the greeter (when it's set up).
+    fn publish_greeter(&self) {
+        if !crate::greeter::dir().is_dir() {
+            return;
+        }
+        let Some(sf) = self.surfs.first() else { return };
+        let r = crate::style::Roles::new(&sf.kit.look, &self.s);
+        let rgb = |c: egui::Color32| [c.r(), c.g(), c.b()];
+        crate::greeter::publish(&self.s, [rgb(r.primary), rgb(r.secondary), rgb(r.tertiary)]);
     }
 
     /// The docks and the panels show or slide away as their hide settings say: shown while the
@@ -1669,6 +1707,7 @@ impl Shell {
             Act::Workspace(k) => sys::focus_workspace(self.comp, &k),
             Act::Open(p) => self.open_popup(p),
             Act::Close => self.close_popup(),
+            Act::CloseWindows(ids) => sys::close_windows(self.comp, ids),
             Act::Auth(mut text) => {
                 if let Some(a) = self.polkit.as_mut() {
                     a.answer(&text);
@@ -2113,12 +2152,19 @@ fn shape_dock(layer: &LayerSurface, s: &Settings, apps: &[rivet_xdg::launch::Des
 
 /// The notification cards: in the corner on the panel's side, clear of the panel.
 fn shape_cards(layer: &LayerSurface, s: &Settings, cards: &[crate::notes::Note]) {
-    // On the side of the first panel (the top when there are none).
-    let edge = if s.panels.first().is_some_and(|p| p.edge == Edge::Bottom) { Anchor::BOTTOM } else { Anchor::TOP };
-    layer.set_anchor(edge | Anchor::RIGHT);
-    layer.set_size(crate::cc::CARDS_W as u32, crate::cc::cards_height(cards).ceil() as u32);
+    use crate::config::NotePlace;
+    let anchor = match s.note_place {
+        // On the right, on the side of the first panel (the top when there are none).
+        NotePlace::ByPanel => (if s.panels.first().is_some_and(|p| p.edge == Edge::Bottom) { Anchor::BOTTOM } else { Anchor::TOP }) | Anchor::RIGHT,
+        NotePlace::TopLeft => Anchor::TOP | Anchor::LEFT,
+        NotePlace::TopRight => Anchor::TOP | Anchor::RIGHT,
+        NotePlace::BottomLeft => Anchor::BOTTOM | Anchor::LEFT,
+        NotePlace::BottomRight => Anchor::BOTTOM | Anchor::RIGHT,
+    };
+    layer.set_anchor(anchor);
+    layer.set_size(crate::cc::cards_width(s) as u32, crate::cc::cards_height(cards).ceil() as u32);
     layer.set_exclusive_zone(0);
-    layer.set_margin(2, 4, 2, 0);
+    layer.set_margin(2, 4, 2, 4);
 }
 
 // The idle-inhibit protocol has no events the shell needs.

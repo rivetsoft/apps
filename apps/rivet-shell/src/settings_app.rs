@@ -26,6 +26,7 @@ mod idle_lock;
 mod colors;
 mod icon_pick;
 mod palette_pick;
+mod notes_preview;
 mod panel_editor;
 mod plugins;
 mod search;
@@ -225,6 +226,15 @@ impl SettingsApp {
             // Checks: a look for the panels and dock (as in the settings file).
             if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
                 s.look = crate::style::Style::parse(&l, '=', ';');
+            }
+            // Checks: the notification cards' corner and width, and their look, as in the shell's pictures.
+            if let Ok(o) = std::env::var("RIVET_SHELL_NOTE_STYLE") {
+                let mut parts = o.split(',');
+                s.note_place = crate::config::NotePlace::from(parts.next().unwrap_or_default());
+                s.note_width = crate::config::LaunchSize::from(parts.next().unwrap_or_default());
+            }
+            if let Ok(l) = std::env::var("RIVET_SHELL_NOTE_LOOK") {
+                s.note_look = crate::style::Style::parse(&l, '=', ';');
             }
             // Checks: the dock's own look, so its Reset buttons show (RIVET_SHELL_DOCK_LOOK=radius=4).
             if let Ok(l) = std::env::var("RIVET_SHELL_DOCK_LOOK") {
@@ -641,10 +651,63 @@ impl SettingsApp {
         section(ui, "Notifications", &mut |ui| {
             ui.checkbox(&mut self.s.notifications, "Show apps' notifications");
             hint(ui, "Past notifications stay in quick settings. If mako, dunst or another shell is running, it shows them instead.");
+            ui.add_space(10.0);
+            if self.s.notifications {
+                self.notes_preview(ui);
+                ui.add_space(10.0);
+            }
+            let on = self.s.notifications;
+            let s = &mut self.s;
+            ui.add_enabled_ui(on, |ui| {
+                grid(ui, "shell-notes", &mut |ui| {
+                    use crate::config::{LaunchSize, NotePlace};
+                    ui.label("Where");
+                    let places = [(NotePlace::ByPanel, "By the Panel"), (NotePlace::TopLeft, "Top Left"), (NotePlace::TopRight, "Top Right"), (NotePlace::BottomLeft, "Bottom Left"), (NotePlace::BottomRight, "Bottom Right")];
+                    let shown = places.iter().find(|(p, _)| *p == s.note_place).map_or("", |(_, l)| l);
+                    egui::ComboBox::from_id_salt("shell-note-place").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+                        for (p, l) in places {
+                            ui.selectable_value(&mut s.note_place, p, l);
+                        }
+                    });
+                    ui.end_row();
+                    ui.label("Width");
+                    panel_editor::segmented(ui, &mut s.note_width, &[(LaunchSize::Small, "Narrow"), (LaunchSize::Medium, "Medium"), (LaunchSize::Large, "Wide")]);
+                    ui.end_row();
+                    ui.label("Stays for");
+                    ui.add(egui::Slider::new(&mut s.note_secs, 2..=60).suffix(" s"));
+                    ui.end_row();
+                    ui.label("At most");
+                    ui.add(egui::Slider::new(&mut s.note_max, 1..=8).suffix(" on screen"));
+                    ui.end_row();
+                });
+                hint(ui, "Apps that ask for their own time keep it, and urgent ones stay until you close them.");
+            });
         });
-        section(ui, "On-screen display", &mut |ui| {
+        self.note_look_section(ui);
+        section(ui, "Volume and brightness pop-up", &mut |ui| {
             ui.checkbox(&mut self.s.osd, "Show volume and brightness as they change");
             ui.add_enabled(self.s.osd, egui::Checkbox::new(&mut self.s.osd_keys, "Show Caps Lock and Num Lock turning on and off"));
+            ui.add_space(6.0);
+            let on = self.s.osd;
+            let s = &mut self.s;
+            ui.add_enabled_ui(on, |ui| {
+                grid(ui, "shell-osd", &mut |ui| {
+                    use crate::config::{LaunchSize, OsdPlace};
+                    use crate::style::Role;
+                    ui.label("Where");
+                    panel_editor::segmented(ui, &mut s.osd_place, &[(OsdPlace::Top, "Top"), (OsdPlace::Middle, "Middle"), (OsdPlace::Bottom, "Bottom")]);
+                    ui.end_row();
+                    ui.label("Size");
+                    panel_editor::segmented(ui, &mut s.osd_size, &[(LaunchSize::Small, "Small"), (LaunchSize::Medium, "Medium"), (LaunchSize::Large, "Large")]);
+                    ui.end_row();
+                    ui.label("Bar color");
+                    panel_editor::segmented(ui, &mut s.osd_color, &[(None, "Like Sliders"), (Some(Role::Primary), "Primary"), (Some(Role::Secondary), "Secondary"), (Some(Role::Tertiary), "Tertiary")]);
+                    ui.end_row();
+                    ui.label("Stays for");
+                    ui.add(egui::Slider::new(&mut s.osd_secs, 0.5..=5.0).step_by(0.5).fixed_decimals(1).suffix(" s"));
+                    ui.end_row();
+                });
+            });
         });
         section(ui, "Night Light", &mut |ui| {
             grid(ui, "shell-night", &mut |ui| {
