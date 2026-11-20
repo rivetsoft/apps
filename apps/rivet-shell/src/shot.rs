@@ -269,6 +269,27 @@ impl ShotApp {
             s.panels.push(crate::panels::PanelCfg { edge: Edge::Bottom, floating: false, zones: [list(&["workspaces", "window-title"]), list(&["media"]), list(&["system", "clock"])], ..crate::panels::PanelCfg::bare() });
             s.dock = false;
         }
+        // RIVET_SHELL_SUB=open|stay|rolled: a sub panel under the first panel, with its button on
+        // it: rolled out for a moment, left open (keeping its room), or rolled up.
+        if let Ok(how) = std::env::var("RIVET_SHELL_SUB")
+            && let Some(i) = crate::panels::add_sub(&mut s.panels, 0)
+        {
+            let list = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+            s.panels[i].zones = [list(&["dock"]), Vec::new(), list(&["system", "ai"])];
+            if let Some(sub) = s.panels[i].sub.as_mut() {
+                (sub.stay, sub.open) = (how == "stay", how == "stay");
+            }
+            crate::panels::rename_sub(&mut s.panels, i, "Shortcuts");
+            // RIVET_SHELL_SUB_PLAIN: not a drawer, and its own length.
+            if let Some(sub) = s.panels[i].sub.as_mut().filter(|_| std::env::var_os("RIVET_SHELL_SUB_PLAIN").is_some()) {
+                (sub.fit, sub.drawer) = (false, false);
+            }
+            // RIVET_SHELL_SUB_HANDLE=true,120,4,start,tertiary: its handle (as in the settings file).
+            if let (Ok(h), Some(sub)) = (std::env::var("RIVET_SHELL_SUB_HANDLE"), s.panels[i].sub.as_mut()) {
+                *sub = crate::panels::PanelCfg::parse(&format!("sub=x;handle={h}")).sub.map(|x| crate::panels::Sub { handle: x.handle, ..sub.clone() }).unwrap_or(sub.clone());
+            }
+            s.tidy_panels();
+        }
         if std::env::var_os("RIVET_SHELL_TRAY_PIXMAPS").is_some() && !s.panels[0].zones.iter().flatten().any(|i| i == "tray") {
             // Real apps' tray icons: the tray at the start of the right zone, to see them.
             s.panels[0].zones[2].insert(0, "tray".into());
@@ -405,9 +426,16 @@ impl eframe::App for ShotApp {
         };
         at(full, &mut |ui, m, k| ui::widgets(ui, m, k));
         // Each panel against its edge, after the ones before it on that edge.
+        let rolled_out = std::env::var("RIVET_SHELL_SUB").as_deref() == Ok("open");
+        // RIVET_SHELL_SUB_SLIDE=0.4: a sub panel that's rolled out, caught part of the way (0 out,
+        // 1 rolled up), as it's drawn while it slides.
+        let sub_slide = std::env::var("RIVET_SHELL_SUB_SLIDE").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0).clamp(0.0, 1.0);
         for (idx, p) in s.panels.iter().enumerate() {
-            let reach = crate::panels::reach(&s.panels, idx, "");
+            // A sub panel shows when it's left open, or asked for; rolled up, only its handle.
+            let rolled = p.sub.is_some() && !p.kept() && !rolled_out;
             let h = p.height();
+            // (A sub panel's surface begins where its host's bar ends, for a drawer.)
+            let reach = if p.sub.is_some() { crate::panels::sub_start(&s.panels, idx, "") + h } else { crate::panels::reach(&s.panels, idx, "") };
             // Side panels run between the top and bottom ones.
             let (t, bt) = (full.top() + crate::panels::room(&s.panels, "", Edge::Top), full.bottom() - crate::panels::room(&s.panels, "", Edge::Bottom));
             let r = match p.edge {
@@ -416,7 +444,25 @@ impl eframe::App for ShotApp {
                 Edge::Left => Rect::from_min_max(Pos2::new(full.left() + reach - h, t), Pos2::new(full.left() + reach, bt)),
                 Edge::Right => Rect::from_min_max(Pos2::new(full.right() - reach, t), Pos2::new(full.right() - reach + h, bt)),
             };
-            at(r, &mut |ui, m, k| crate::bar::panel(ui, m, k, idx));
+            if rolled || (p.sub.is_some() && sub_slide >= 1.0) {
+                at(r, &mut |ui, m, k| ui::sub_handle(ui, m.s, k, idx, ""));
+            } else if p.sub.is_some() && sub_slide > 0.0 {
+                // Slid toward its host, and cut off where its host's bar ends (as the shell does).
+                let mut clip = r;
+                match p.edge {
+                    Edge::Top => clip.min.y += p.lead,
+                    Edge::Bottom => clip.max.y -= p.lead,
+                    Edge::Left => clip.min.x += p.lead,
+                    Edge::Right => clip.max.x -= p.lead,
+                }
+                at(r, &mut |ui, m, k| {
+                    let mut c = ui.new_child(egui::UiBuilder::new().max_rect(r.translate(p.slide(sub_slide))));
+                    c.set_clip_rect(clip);
+                    crate::bar::panel(&mut c, m, k, idx);
+                });
+            } else {
+                at(r, &mut |ui, m, k| crate::bar::panel(ui, m, k, idx));
+            }
         }
         let top_room = crate::panels::room(&s.panels, "", Edge::Top);
         let bottom = full.bottom() - crate::panels::room(&s.panels, "", Edge::Bottom);

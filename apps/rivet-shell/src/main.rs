@@ -69,8 +69,9 @@ Usage:
                                     power, network, bluetooth, ai, sound, media (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
-                                    lock, unlock, settings, wallpaper PATH|random|next|previous,
-                                    reload, quit
+                                    subpanel NAME (opens or closes that sub panel; add open,
+                                    close or stay); lock, unlock, settings,
+                                    wallpaper PATH|random|next|previous, reload, quit
   rivet-shell --install-desktop-entry
                                     Add Rivet Shell Settings to the app launcher (for this user)
   rivet-shell --install-service     Start the shell with your session as a systemd service
@@ -139,7 +140,9 @@ fn remove_service() -> Result<PathBuf, String> {
 
 fn settings_window(screenshot: Option<PathBuf>) -> ExitCode {
     if screenshot.is_some() {
-        rivet_kit::headless::run([960.0, 680.0], move |cc| Box::new(settings_app::SettingsApp::new(cc, screenshot)));
+        // Checks: RIVET_SHELL_WIN=960x2400 sizes the window, to see a long page in one picture.
+        let size = std::env::var("RIVET_SHELL_WIN").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?]))).unwrap_or([960.0, 680.0]);
+        rivet_kit::headless::run(size, move |cc| Box::new(settings_app::SettingsApp::new(cc, screenshot)));
         return ExitCode::SUCCESS;
     }
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet Shell Settings").with_app_id("rivet-shell-settings").with_inner_size([960.0, 680.0]).with_min_inner_size([640.0, 420.0]);

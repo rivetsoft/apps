@@ -135,10 +135,10 @@ impl SettingsApp {
                             hint(ui, &format!("Reverting in {left} second{}.", if left == 1 { "" } else { "s" }));
                         });
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("Go Back").clicked() {
+                            if super::controls::button(ui, super::controls::Icon::Back, "Go Back").clicked() {
                                 go_back = true;
                             }
-                            if ui.add(egui::Button::new(egui::RichText::new("Keep").color(v.selection.stroke.color)).fill(accent)).clicked() {
+                            if super::controls::primary(ui, super::controls::Icon::Check, "Keep").clicked() {
                                 p.kept.store(true, Ordering::Relaxed);
                             }
                         });
@@ -240,9 +240,9 @@ impl SettingsApp {
         section(ui, &title, &mut |ui| {
             let d = &mut st.draft[sel];
             // The last screen that's on stays on.
-            ui.add_enabled(!(d.on && lit <= 1), egui::Checkbox::new(&mut d.on, "Use this screen")).on_disabled_hover_text("Your only active screen can't be turned off");
+            ui.add_enabled_ui(!(d.on && lit <= 1), |ui| super::controls::master(ui, &mut d.on, "Use this screen")).inner.on_disabled_hover_text("Your only active screen can't be turned off");
             let Some(o) = out.as_ref().filter(|_| d.on) else { return };
-            ui.add_space(6.0);
+            super::controls::rule(ui);
             let mode = d.mode.unwrap_or(o.preferred);
             grid(ui, "display-opts", &mut |ui| {
                 ui.label("Resolution");
@@ -289,7 +289,7 @@ impl SettingsApp {
                 ui.end_row();
                 if o.vrr_supported {
                     ui.label("");
-                    ui.checkbox(&mut d.vrr, "Variable refresh rate").on_hover_text("Matches the screen to the app's frame rate (FreeSync, G-Sync)");
+                    super::controls::switch(ui, &mut d.vrr, "Variable refresh rate").on_hover_text("Matches the screen to the app's frame rate (FreeSync, G-Sync)");
                     ui.end_row();
                 }
             });
@@ -329,7 +329,7 @@ impl SettingsApp {
             let warn = rivet_look::theme::status(&ctx).warning;
             ui.label(egui::RichText::new(format!("{name} doesn't include {ours} yet, so nothing set here would show.")).color(warn));
             ui.add_space(4.0);
-            if ui.button(format!("Add the Include to {name}")).clicked() {
+            if super::controls::button(ui, super::controls::Icon::Plus, &format!("Add the Include to {name}")).clicked() {
                 let (a, dark) = comp::shell_look(&self.s);
                 let look = self.s.comp_on.then(|| comp::Look::from(&self.s, a, dark));
                 st.msg = Some(comp::add_include(&t, look.as_ref(), &self.s.displays).map(|_| format!("Added. The original is saved as {name}.rivet-backup.")));
@@ -343,16 +343,16 @@ impl SettingsApp {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             let ready = st.edited && included && !clash && st.pending.is_none();
-            if ui.add_enabled(ready, egui::Button::new(egui::RichText::new("Apply").color(if ready { v.selection.stroke.color } else { v.weak_text_color() })).fill(if ready { accent } else { v.faint_bg_color })).clicked() {
+            if super::controls::primary_if(ui, ready, super::controls::Icon::Check, "Apply").clicked() {
                 apply = true;
             }
-            if ui.add_enabled(st.edited, egui::Button::new("Reset")).on_hover_text("Discard unapplied changes").clicked() {
+            if super::controls::button_if(ui, st.edited, super::controls::Icon::Reset, "Reset").on_hover_text("Discard unapplied changes").clicked() {
                 (st.edited, st.read_at) = (false, None);
                 st.draft.clear();
             }
             if !self.s.displays.is_empty() && st.pending.is_none() {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(format!("Leave the Screens to {}", comp.name())).on_hover_text(format!("Stop setting screens here and let {} manage them again", comp.name())).clicked() {
+                    if super::controls::button(ui, super::controls::Icon::Back, &format!("Leave the Screens to {}", comp.name())).on_hover_text(format!("Stop setting screens here and let {} manage them again", comp.name())).clicked() {
                         leave = true;
                     }
                 });

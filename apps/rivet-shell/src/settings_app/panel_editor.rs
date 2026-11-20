@@ -17,6 +17,10 @@ use crate::style::Roles;
 enum Op {
     Select(usize),
     AddPanel,
+    /// A sub panel for this panel.
+    AddSub(usize),
+    /// Sub panel, its new name.
+    RenameSub(usize, String),
     Duplicate(usize),
     RemovePanel(usize),
     MovePanel(usize, i32),
@@ -43,7 +47,20 @@ fn ui_font(size: f32) -> egui::FontId {
     rivet_look::fonts::ui_font(size)
 }
 
+/// A panel's name on its tab and in lists: "Panel 2", or a sub panel's own.
+fn title(panels: &[PanelCfg], i: usize) -> String {
+    match panels.get(i).and_then(|p| p.sub.as_ref()) {
+        Some(s) => s.name.clone(),
+        None => format!("Panel {}", i + 1),
+    }
+}
+
 fn place(p: &PanelCfg) -> String {
+    match &p.sub {
+        Some(s) if s.host.is_none() => return "Not attached".into(),
+        Some(s) => return format!("Under Panel {}", s.host.unwrap_or(0) + 1),
+        None => {}
+    }
     let edge = p.edge.label();
     let screen = if p.screen.is_empty() { "every screen".to_string() } else { p.screen.clone() };
     format!("{edge} · {screen}")
@@ -128,7 +145,7 @@ impl SettingsApp {
                     Edge::Right => Rect::from_min_size(Pos2::new(inside.right() - 3.0, inside.top()), Vec2::new(3.0, inside.height())),
                 };
                 ui.painter().rect_filled(mini.bar_rect(strip), 1.0, accent);
-                ui.painter().text(Pos2::new(r.left() + 46.0, r.top() + 15.0), Align2::LEFT_CENTER, format!("Panel {}", i + 1), ui_font(13.5), v.strong_text_color());
+                ui.painter().text(Pos2::new(r.left() + 46.0, r.top() + 15.0), Align2::LEFT_CENTER, title(&self.s.panels, i), ui_font(13.5), v.strong_text_color());
                 ui.painter().text(Pos2::new(r.left() + 46.0, r.top() + 33.0), Align2::LEFT_CENTER, place(p), ui_font(11.5), v.weak_text_color());
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     ops.push(Op::Select(i));
@@ -164,23 +181,83 @@ impl SettingsApp {
             self.groups_card(ui, sel);
             ui.add_space(20.0);
             self.panel_look_section(ui, sel);
+            self.handle_section(ui, sel);
         }
         for op in ops {
             match op {
                 Op::Select(i) => self.panel_sel = i,
-                Op::AddPanel => self.panel_sel = self.s.panels.len(),
+                Op::AddPanel | Op::AddSub(_) => self.panel_sel = self.s.panels.len(),
                 Op::Duplicate(_) => self.panel_sel = self.s.panels.len(),
                 Op::MovePanel(i, by) => self.panel_sel = (i as i32 + by).clamp(0, n as i32 - 1) as usize,
                 _ => {}
             }
             apply(&mut self.s.panels, op);
         }
+        // Sub panels follow their hosts (edge, screen), whatever was changed above.
+        self.s.tidy_panels();
+    }
+
+    /// A sub panel's handle: the tab shown past its panel while it's rolled up, where pausing
+    /// the pointer opens it. (Only for one that opens that way.)
+    fn handle_section(&mut self, ui: &mut egui::Ui, sel: usize) {
+        let edge = self.s.panels[sel].edge;
+        let colors = Roles::new(&self.look, &self.s);
+        let surface = ui.visuals().panel_fill;
+        let Some(sub) = self.s.panels[sel].sub.as_mut().filter(|s| s.reveal && !s.stay) else { return };
+        ui.add_space(20.0);
+        let h = &mut sub.handle;
+        super::section(ui, "Handle", &mut |ui| {
+            super::controls::master(ui, &mut h.show, "Show the handle");
+            hint(ui, "Shows past the panel while the sub panel is rolled up, to mark where pausing the pointer opens it.");
+            super::controls::rule(ui);
+            ui.add_enabled_ui(h.show, |ui| {
+                super::grid(ui, &format!("shell-sub-handle-{sel}"), &mut |ui| {
+                    ui.label("Shape");
+                    segmented(ui, &mut h.shape, &crate::panels::HandleShape::ALL);
+                    ui.end_row();
+                    ui.label("Length");
+                    ui.add(egui::Slider::new(&mut h.length, crate::panels::HANDLE_LENGTH).suffix(" pt"));
+                    ui.end_row();
+                    ui.label("Thickness");
+                    ui.add(egui::Slider::new(&mut h.thick, crate::panels::HANDLE_THICK).suffix(" pt"));
+                    ui.end_row();
+                    ui.label("Placed");
+                    let names = if edge.vertical() { ["Top", "Middle", "Bottom"] } else { ["Left", "Center", "Right"] };
+                    segmented(ui, &mut h.along, &[(Along::Start, names[0]), (Along::Center, names[1]), (Along::End, names[2])]);
+                    ui.end_row();
+                    ui.label("From the panel");
+                    ui.add(egui::Slider::new(&mut h.offset, crate::panels::HANDLE_OFFSET).suffix(" pt")).on_hover_text("How far from the panel's bar it sits. Below zero, it sits over the bar's edge.");
+                    ui.end_row();
+                    ui.label("Opacity");
+                    let mut pct = (h.opacity * 100.0).round();
+                    if ui.add(egui::Slider::new(&mut pct, 15.0..=100.0).fixed_decimals(0).suffix("%")).changed() {
+                        h.opacity = pct / 100.0;
+                    }
+                    ui.end_row();
+                    ui.label("Color");
+                    // Surface: the panel's own colour (outlined, to show over anything).
+                    use crate::style::Role;
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if let Some(r) = super::look_opts::roles(ui, h.color.unwrap_or(Role::Surface), &Role::ALL, &colors, surface, h.show) {
+                            h.color = Some(r).filter(|r| *r != Role::Surface);
+                        }
+                    });
+                    ui.end_row();
+                });
+            });
+        });
     }
 
     /// The chosen panel as it looks, over a strip of the desktop.
     fn preview(&mut self, ui: &mut egui::Ui, sel: usize) {
         let ctx = ui.ctx().clone();
-        let p = self.s.panels[sel].clone();
+        // A drawer is shown on its own here: as a bar, not as the part that joins its host.
+        let mut p = self.s.panels[sel].clone();
+        if let Some(sub) = p.sub.as_mut() {
+            sub.drawer = false;
+        }
+        p.lead = 0.0;
         let w = ui.available_width();
         let ph = p.height();
         let down = p.vertical();
@@ -203,15 +280,15 @@ impl SettingsApp {
             Edge::Right => Rect::from_min_size(Pos2::new(virt_w - 5.0 / scale - ph, 5.0 / scale), Vec2::new(ph, 640.0)),
             _ => Rect::from_min_size(Pos2::new(0.0, y + 5.0 / scale), Vec2::new(virt_w, ph)),
         };
+        // The whole list, as its sub panels' buttons need the sub panels to be there.
         let mut s = self.s.clone();
-        // Shown on the screen it's for.
-        s.panels = vec![p];
+        s.panels[sel] = p.clone();
         let mut m = crate::ui::Model { s: &s, status: &status, extra: &extra, apps: &self.apps, compositor: crate::sys::Compositor::Niri, output: "", acts: &mut acts };
         let mut child = ui.new_child(egui::UiBuilder::new().layer_id(layer).max_rect(virt));
         // Clipped to the preview and to what the page shows of it (in the layer's own, unscaled points).
         let shown = r.intersect(ui.clip_rect());
         child.set_clip_rect(Rect::from_min_max(((shown.min - r.min) / scale).to_pos2(), ((shown.max - r.min) / scale).to_pos2()));
-        crate::bar::panel(&mut child, &mut m, kit, 0);
+        crate::bar::panel(&mut child, &mut m, kit, sel);
         ctx.set_transform_layer(layer, egui::emath::TSTransform::new(r.min.to_vec2(), scale));
         ctx.set_sublayer(ui.layer_id(), layer);
     }
@@ -221,75 +298,160 @@ impl SettingsApp {
         let fill = ui.visuals().faint_bg_color;
         let n = self.s.panels.len();
         let screens = self.screens.clone();
-        egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 14)).show(ui, |ui| {
+        // The panels a sub panel can be attached to.
+        let hosts: Vec<(usize, String)> = self.s.panels.iter().enumerate().filter(|(_, p)| p.sub.is_none()).map(|(i, p)| (i, format!("Panel {} ({})", i + 1, p.edge.label()))).collect();
+        let is_sub = self.s.panels[sel].sub.is_some();
+        egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(20, 18)).show(ui, |ui| {
             ui.set_width(ui.available_width());
             super::on_card(ui.visuals_mut(), fill);
             let p = &mut self.s.panels[sel];
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
-                ui.label("Position");
-                segmented(ui, &mut p.edge, &[(Edge::Top, "Top"), (Edge::Bottom, "Bottom"), (Edge::Left, "Left"), (Edge::Right, "Right")]);
-                ui.add_space(12.0);
+            let mut no_host = false;
+            super::grid(ui, &format!("shell-panel-where-{sel}"), &mut |ui| {
+                if let Some(sub) = p.sub.as_mut() {
+                    ui.label("Name");
+                    // Typed into a copy, and taken when it's done (its button follows the name).
+                    let id = Id::unique(("shell-sub-name", sel));
+                    let mut name = ui.ctx().data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| sub.name.clone());
+                    let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(200.0));
+                    if resp.lost_focus() {
+                        ui.ctx().data_mut(|d| d.remove::<String>(id));
+                        if name != sub.name {
+                            ops.push(Op::RenameSub(sel, name));
+                        }
+                    } else if resp.has_focus() {
+                        ui.ctx().data_mut(|d| d.insert_temp(id, name));
+                    }
+                    ui.end_row();
+                    ui.label("Attached to");
+                    let shown = sub.host.and_then(|h| hosts.iter().find(|x| x.0 == h)).map(|x| x.1.clone()).unwrap_or_else(|| "No Panel".into());
+                    egui::ComboBox::from_id_salt(("shell-sub-host", sel)).selected_text(shown).width(200.0).show_ui(ui, |ui| {
+                        for (i, name) in &hosts {
+                            ui.selectable_value(&mut sub.host, Some(*i), name);
+                        }
+                    });
+                    ui.end_row();
+                    no_host = sub.host.is_none();
+                } else {
+                    ui.label("Position");
+                    segmented(ui, &mut p.edge, &[(Edge::Top, "Top"), (Edge::Bottom, "Bottom"), (Edge::Left, "Left"), (Edge::Right, "Right")]);
+                    ui.end_row();
+                }
                 ui.label("Style");
                 segmented(ui, &mut p.floating, &[(true, "Floating"), (false, "Edge to Edge")]);
-                ui.add_space(12.0);
-                ui.label("Screen");
-                egui::ComboBox::from_id_salt(("shell-panel-screen", sel)).selected_text(if p.screen.is_empty() { "Every Screen".to_string() } else { p.screen.clone() }).width(170.0).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut p.screen, String::new(), "Every Screen");
-                    let mut names = screens.clone();
-                    if !p.screen.is_empty() && !names.contains(&p.screen) {
-                        names.push(p.screen.clone());
-                    }
-                    for s in names {
-                        ui.selectable_value(&mut p.screen, s.clone(), s);
-                    }
-                });
-            });
-            ui.add_space(10.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
+                ui.end_row();
+                if !is_sub {
+                    ui.label("Screen");
+                    egui::ComboBox::from_id_salt(("shell-panel-screen", sel)).selected_text(if p.screen.is_empty() { "Every Screen".to_string() } else { p.screen.clone() }).width(200.0).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut p.screen, String::new(), "Every Screen");
+                        let mut names = screens.clone();
+                        if !p.screen.is_empty() && !names.contains(&p.screen) {
+                            names.push(p.screen.clone());
+                        }
+                        for s in names {
+                            ui.selectable_value(&mut p.screen, s.clone(), s);
+                        }
+                    });
+                    ui.end_row();
+                }
                 ui.label("Length");
                 let mut len = p.length.clamp(MIN_LENGTH, 100);
                 let of = if p.vertical() { "the screen's height" } else { "the screen's width" };
                 if ui.add(egui::Slider::new(&mut len, MIN_LENGTH..=100).suffix("%")).on_hover_text(format!("How much of {of} the panel takes")).changed() {
                     p.length = len;
                 }
+                ui.end_row();
                 if p.length < 100 {
-                    ui.add_space(12.0);
                     ui.label("Placed");
                     let names = if p.vertical() { ["Top", "Middle", "Bottom"] } else { ["Left", "Center", "Right"] };
                     segmented(ui, &mut p.along, &[(Along::Start, names[0]), (Along::Center, names[1]), (Along::End, names[2])]);
+                    ui.end_row();
+                }
+                if !is_sub {
+                    ui.label("Hide");
+                    segmented(ui, &mut p.hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-Hide"), (DockHide::Smart, "Smart Hide")]);
+                    ui.end_row();
                 }
             });
-            ui.add_space(10.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(10.0, 10.0);
-                ui.label("Hide");
-                segmented(ui, &mut p.hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-Hide"), (DockHide::Smart, "Smart Hide")]);
-            });
-            let edge = p.edge.label().to_lowercase();
-            match p.hide {
-                DockHide::Never => {}
-                DockHide::Auto => hint(ui, &format!("The panel slides away until you move the pointer to the screen's {edge} edge.")),
-                DockHide::Smart if super::knows_windows() => hint(ui, &format!("The panel shows on an empty workspace and slides away when a window opens. The {edge} edge brings it back.")),
-                DockHide::Smart => hint(ui, "Smart Hide needs niri, Hyprland or mango; here it works like Auto-Hide."),
+            if no_host {
+                ui.add_space(4.0);
+                hint(ui, "This sub panel isn't attached to a panel, so it doesn't show. Choose one to bring it back.");
             }
-            ui.add_space(10.0);
+            let edge = p.edge;
+            if let Some(sub) = p.sub.as_mut() {
+                super::controls::rule(ui);
+                super::controls::subhead(ui, "Opening");
+                super::grid(ui, &format!("shell-sub-open-{sel}"), &mut |ui| {
+                    ui.label("When opened");
+                    let was = sub.stay;
+                    segmented(ui, &mut sub.stay, &[(false, "Rolls Back Up"), (true, "Stays Open")]);
+                    if sub.stay != was {
+                        // Left open from now, or back to rolling up.
+                        sub.open = sub.stay;
+                    }
+                    ui.end_row();
+                    if !sub.stay {
+                        ui.label("Rolls up after");
+                        ui.add(egui::Slider::new(&mut sub.secs, crate::panels::SUB_SECS).step_by(0.5).suffix(" s")).on_hover_text("How long it stays once the pointer leaves it");
+                        ui.end_row();
+                    }
+                });
+                ui.add_space(6.0);
+                if sub.stay {
+                    hint(ui, "It stays open, keeping its room from windows, until its button or its key closes it.");
+                } else {
+                    let side = match edge {
+                        Edge::Top => "just below",
+                        Edge::Bottom => "just above",
+                        Edge::Left => "just right of",
+                        Edge::Right => "just left of",
+                    };
+                    super::controls::switch(ui, &mut sub.reveal, format!("Open when the pointer pauses {side} the panel")).on_hover_text("Pause on the panel's edge on that side, or on the small handle past it. Moving straight through doesn't open it.");
+                }
+                super::controls::switch(ui, &mut sub.drawer, "Join it to the panel, like a drawer pulled out of it");
+                ui.add_enabled_ui(!sub.drawer, |ui| {
+                    let mut fit = sub.fit || sub.drawer;
+                    if super::controls::switch(ui, &mut fit, "Match the panel's length and place").changed() {
+                        sub.fit = fit;
+                    }
+                });
+                super::controls::rule(ui);
+                super::controls::subhead(ui, "Key");
+                hint(ui, "Bind this in your compositor's settings.");
+                ui.add_space(4.0);
+                super::controls::command(ui, "Open or close it", &format!("rivet-shell msg subpanel {}", sub.name));
+            } else {
+                let edge = p.edge.label().to_lowercase();
+                let about = match p.hide {
+                    DockHide::Never => String::new(),
+                    DockHide::Auto => format!("The panel slides away until you move the pointer to the screen's {edge} edge."),
+                    DockHide::Smart if super::knows_windows() => format!("The panel shows on an empty workspace and slides away when a window opens. The {edge} edge brings it back."),
+                    DockHide::Smart => "Smart Hide needs niri, Hyprland or mango; here it works like Auto-Hide.".to_string(),
+                };
+                if !about.is_empty() {
+                    ui.add_space(4.0);
+                    hint(ui, &about);
+                }
+            }
+            super::controls::rule(ui);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                if ui.button("Duplicate").clicked() {
+                use super::controls::{Icon, button};
+                if !is_sub && button(ui, Icon::Layers, "Add Sub Panel").on_hover_text("A panel that rolls out from under this one when you ask for it").clicked() {
+                    ops.push(Op::AddSub(sel));
+                }
+                if button(ui, Icon::Copy, "Duplicate").clicked() {
                     ops.push(Op::Duplicate(sel));
                 }
                 if n > 1 {
-                    if ui.add_enabled(sel > 0, egui::Button::new("Move Earlier")).on_hover_text("Panels on the same edge stack; earlier ones sit closer to the edge").clicked() {
+                    if ui.add_enabled_ui(sel > 0, |ui| button(ui, Icon::Back, "Move Earlier")).inner.on_hover_text("Panels on the same edge stack; earlier ones sit closer to the edge").clicked() {
                         ops.push(Op::MovePanel(sel, -1));
                     }
-                    if ui.add_enabled(sel + 1 < n, egui::Button::new("Move Later")).clicked() {
+                    if ui.add_enabled_ui(sel + 1 < n, |ui| button(ui, Icon::Forward, "Move Later")).inner.clicked() {
                         ops.push(Op::MovePanel(sel, 1));
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if rivet_look::widgets::danger_button(ui, "Remove Panel").clicked() {
+                    if super::controls::danger(ui, if is_sub { "Remove Sub Panel" } else { "Remove Panel" }).clicked() {
                         ops.push(Op::RemovePanel(sel));
                     }
                 });
@@ -311,6 +473,7 @@ impl SettingsApp {
         let pointer = ctx.pointer_latest_pos();
         let released = ctx.input(|i| i.pointer.any_released());
         let panel = self.s.panels[sel].clone();
+        let all_panels = self.s.panels.clone();
         let gap = 10.0;
         let col_w = (ui.available_width() - gap * 2.0) / 3.0;
         let colors = Roles::new(&self.look, &self.s);
@@ -364,7 +527,7 @@ impl SettingsApp {
                             }
                             draw(ui.painter(), r, false);
                             let size = crate::panels::spacer(id);
-                            let tip = ITEMS.iter().find(|x| x.0 == id || (size.is_some() && x.0 == "spacer")).map(|x| x.2).unwrap_or("Not part of the shell yet");
+                            let tip = ITEMS.iter().find(|x| x.0 == id || (size.is_some() && x.0 == "spacer")).map(|x| x.2).unwrap_or(if id.starts_with("sub:") { "Opens this sub panel" } else { "Not part of the shell yet" });
                             // Remove, and the item's options (a gear) when it has some, on the right.
                             let xr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.center().y), Vec2::splat(24.0));
                             let x_resp = ui.interact(xr, ui.scope_id().with(("item-x", z, k)), Sense::click());
@@ -429,11 +592,11 @@ impl SettingsApp {
                                         ui.close();
                                     }
                                 }
-                                if ui.button("New Group").clicked() {
+                                if super::controls::button(ui, super::controls::Icon::Plus, "New Group").clicked() {
                                     ops.push(Op::NewGroup(sel, id.clone()));
                                     ui.close();
                                 }
-                                if mine.is_some() && ui.button("Remove from Group").clicked() {
+                                if mine.is_some() && super::controls::button(ui, super::controls::Icon::Off, "Remove from Group").clicked() {
                                     ops.push(Op::Group(sel, id.clone(), None));
                                     ui.close();
                                 }
@@ -513,6 +676,18 @@ impl SettingsApp {
                                         head(ui);
                                         if choice(ui, id, name, what, on) {
                                             ops.push(Op::AddItem(sel, z, if *id == "spacer" { "spacer:16".to_string() } else { id.to_string() }));
+                                            ui.close();
+                                        }
+                                    }
+                                    // Sub panels' buttons (not on the sub panel itself).
+                                    for (i, sub) in all_panels.iter().enumerate().filter_map(|(i, p)| Some((i, p.sub.as_ref()?))) {
+                                        let id = sub.item();
+                                        if i == sel || panel.has(&id) != added {
+                                            continue;
+                                        }
+                                        head(ui);
+                                        if choice(ui, &id, &sub.name, "Opens this sub panel. Right-click it to keep the sub panel open.", added) {
+                                            ops.push(Op::AddItem(sel, z, id));
                                             ui.close();
                                         }
                                     }
@@ -636,7 +811,7 @@ impl SettingsApp {
             }
             hint(ui, "Choose a group to change it. To move an item between groups, click its numbered chip in the list above.");
             ui.add_space(6.0);
-            ui.checkbox(&mut p.fuse, "Groups that touch fuse into one shape");
+            super::controls::switch(ui, &mut p.fuse, "Groups that touch fuse into one shape");
             ui.add_space(12.0);
             // The groups as tabs, each in its own colours; one's settings show at a time.
             let sel_id = egui::Id::unique(("shell-group-sel", sel));
@@ -681,7 +856,7 @@ impl SettingsApp {
                         paints(ui, (sel, g, "bg"), &mut group.bg, true, "Soft", &colors);
                         if group.bg.is_some() {
                             ui.add_space(8.0);
-                            ui.checkbox(&mut group.gradient, "Fade").on_hover_text("Fades the background to a darker shade along the panel");
+                            super::controls::switch(ui, &mut group.gradient, "Fade").on_hover_text("Fades the background to a darker shade along the panel");
                         }
                     });
                     ui.end_row();
@@ -725,7 +900,7 @@ impl SettingsApp {
                     ui.end_row();
                 });
                 ui.add_space(10.0);
-                if ui.button(format!("Ungroup {}", g + 1)).on_hover_text("Its items stay on the panel").clicked() {
+                if super::controls::button(ui, super::controls::Icon::Off, &format!("Ungroup {}", g + 1)).on_hover_text("Its items stay on the panel").clicked() {
                     remove = Some(g);
                 }
             }
@@ -743,16 +918,20 @@ fn apply(panels: &mut Vec<PanelCfg>, op: Op) {
             // The first one on top; then along the bottom.
             panels.push(if panels.is_empty() { PanelCfg::default() } else { PanelCfg::new_bottom() });
         }
+        Op::AddSub(host) => {
+            crate::panels::add_sub(panels, host);
+        }
+        Op::RenameSub(i, name) => crate::panels::rename_sub(panels, i, &name),
         Op::Duplicate(i) => {
+            // (A sub panel's copy gets a name of its own.)
             let copy = panels[i].clone();
             panels.push(copy);
+            crate::panels::tidy(panels);
         }
-        Op::RemovePanel(i) => {
-            panels.remove(i);
-        }
+        Op::RemovePanel(i) => crate::panels::remove(panels, i),
         Op::MovePanel(i, by) => {
             let j = (i as i32 + by).clamp(0, panels.len() as i32 - 1) as usize;
-            panels.swap(i, j);
+            crate::panels::swap(panels, i, j);
         }
         Op::MoveItem(p, (fz, fk), (tz, mut tk)) => {
             if fk >= panels[p].zones[fz].len() {

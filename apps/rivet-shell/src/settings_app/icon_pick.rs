@@ -51,7 +51,7 @@ impl SettingsApp {
                             ui.selectable_value(&mut self.s.icon_theme, gone.clone(), format!("{gone} (Not Installed)"));
                         }
                     });
-                    if !self.s.icon_theme.is_empty() && ui.small_button("Reset").clicked() {
+                    if !self.s.icon_theme.is_empty() && super::controls::reset(ui).clicked() {
                         self.s.icon_theme.clear();
                     }
                 });

@@ -15,6 +15,11 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   floating or edge to edge. Each has three zones (left, center, right) and you choose which
   items go in each and in what order (Settings, Panels). Items are named by id, ready for
   plugins (`plugin:NAME`) later.
+- **Sub panels**: a panel kept rolled up under another until you ask for it, for the things
+  you want close by but not always in view. Open one with its button on a panel, a key
+  (`rivet-shell msg subpanel NAME`) or by pausing the pointer just past the panel. It
+  rolls back up a few seconds after you leave it, or stays open until you close it, like a
+  browser's bookmarks bar. A sub panel can be moved to another panel at any time.
 - **Quick settings**: volume and brightness sliders; Wi-Fi, Bluetooth, Night Light, Do Not
   Disturb, Keep Awake, power mode, microphone and dark style; what's playing with its buttons;
   and the notification history.
@@ -46,6 +51,7 @@ cargo build --release -p rivet-shell
 ./target/release/rivet-shell msg control-center    # quick settings
 ./target/release/rivet-shell msg volume up         # also down, mute; brightness up|down; media next…
 ./target/release/rivet-shell msg wallpaper random  # also next, previous, or a picture's path
+./target/release/rivet-shell msg subpanel Shortcuts # open (or close) the sub panel with that name
 ./target/release/rivet-shell msg quit              # stop it
 ./target/release/rivet-shell --install-desktop-entry   # Rivet Shell Settings in your launcher
 ```

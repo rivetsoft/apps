@@ -204,6 +204,8 @@ pub enum Act {
     Workspace(String),
     Open(Popup),
     Close,
+    /// A sub panel, by name: open, close or keep it, on this screen (empty: every screen).
+    SubPanel(String, SubDo, String),
     Volume(bool),
     SetVolume(u32),
     Mute,
@@ -248,6 +250,28 @@ pub enum Act {
     Auth(String),
     /// Jump to this many seconds into what's playing.
     MediaSeek(u32),
+}
+
+/// What's asked of a sub panel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SubDo {
+    Toggle,
+    Open,
+    Close,
+    /// Left open, or back to rolling up by itself.
+    Stay,
+}
+
+impl SubDo {
+    pub fn from(v: &str) -> Option<SubDo> {
+        Some(match v.trim() {
+            "toggle" => SubDo::Toggle,
+            "open" | "show" => SubDo::Open,
+            "close" | "hide" => SubDo::Close,
+            "stay" | "keep" | "pin" => SubDo::Stay,
+            _ => return None,
+        })
+    }
 }
 
 /// Each surface's look: colours and fonts (following the desktop), and icons.
@@ -411,6 +435,62 @@ pub fn on(fill: Color32) -> Color32 {
 /// A see-through card in the panel's colour, with a soft shadow.
 pub fn card(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>) {
     surface(p, r, v, alpha, radius, true);
+}
+
+/// A rolled-up sub panel's handle, in its surface: a small tab past its host, to pause the
+/// pointer on (nothing for one that only opens when asked).
+pub fn sub_handle(ui: &egui::Ui, s: &Settings, kit: &Kit, idx: usize, output: &str) {
+    use crate::panels::HandleShape;
+    let Some(r) = crate::panels::handle_rect(&s.panels, idx, ui.max_rect(), output) else { return };
+    let Some(h) = s.panels[idx].sub.as_ref().map(|x| x.handle) else { return };
+    let v = ui.visuals();
+    let p = ui.painter();
+    // One of the theme's colours, plain; or the panel's own, outlined so it shows over anything.
+    let (fill, edge) = match h.color {
+        Some(role) => (crate::style::Roles::new(&kit.look, s).get(role, v.panel_fill), None),
+        None => (v.panel_fill, Some(mix(v.panel_fill, v.text_color(), 0.35))),
+    };
+    let (fill, edge) = (fill.gamma_multiply(h.opacity), edge.map(|c| c.gamma_multiply(h.opacity)));
+    let down = s.panels[idx].vertical();
+    let thick = h.thick as f32;
+    match h.shape {
+        HandleShape::Bar | HandleShape::Line => {
+            let round = if h.shape == HandleShape::Bar { thick / 2.0 } else { 0.0 };
+            p.rect_filled(r, round, fill);
+            if let Some(c) = edge {
+                p.rect_stroke(r, round, Stroke::new(1.0, c), egui::StrokeKind::Inside);
+            }
+        }
+        HandleShape::Dots => {
+            // As many as fit its length, three at least.
+            let len = if down { r.height() } else { r.width() };
+            let n = ((len / (thick * 2.5)).floor() as usize).max(3);
+            let step = if n > 1 { (len - thick) / (n - 1) as f32 } else { 0.0 };
+            for k in 0..n {
+                let along = thick / 2.0 + step * k as f32;
+                let c = if down { Pos2::new(r.center().x, r.top() + along) } else { Pos2::new(r.left() + along, r.center().y) };
+                p.circle_filled(c, thick / 2.0, fill);
+                if let Some(col) = edge {
+                    p.circle_stroke(c, thick / 2.0, Stroke::new(1.0, col));
+                }
+            }
+        }
+        HandleShape::Arrow => {
+            // Pointing away from the host: the way the sub panel rolls out.
+            let w = (thick * 0.5).max(1.5);
+            let q = r.shrink(w / 2.0);
+            let pts = match s.panels[idx].edge {
+                Edge::Top => vec![q.left_top(), q.center_bottom(), q.right_top()],
+                Edge::Bottom => vec![q.left_bottom(), q.center_top(), q.right_bottom()],
+                Edge::Left => vec![q.left_top(), q.right_center(), q.left_bottom()],
+                Edge::Right => vec![q.right_top(), q.left_center(), q.right_bottom()],
+            };
+            if let Some(c) = edge {
+                p.add(egui::Shape::line(pts.clone(), Stroke::new(w + 2.0, c)));
+            }
+            p.add(egui::Shape::line(pts, Stroke::new(w, fill)));
+        }
+    }
 }
 
 /// A card with or without its outline (the panels and the dock, as their look asks).
@@ -935,7 +1015,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let straight = pop.attach.and_then(|i| {
         let c = m.s.panels.get(i)?;
         let area = if c.vertical() { Rect::from_min_max(Pos2::new(full.left(), full.top() + top_room), Pos2::new(full.right(), full.bottom() - bottom_room)) } else { full };
-        let bar = c.bar_rect(area);
+        let bar = crate::panels::bar_rect(&m.s.panels, i, area);
         // Its own flare into the panel takes the look's radius again.
         let r = crate::style::radius(&m.s.panel_look(i)).nw as f32;
         let rad = if c.floating { r * 2.0 } else { r };

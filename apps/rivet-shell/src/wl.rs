@@ -43,6 +43,9 @@ const DOCK_STRIP: u32 = 4;
 /// How long the dock stays after the pointer leaves, and how long it takes to slide.
 const DOCK_LINGER: Duration = Duration::from_millis(700);
 const DOCK_SLIDE: f32 = 0.18;
+/// How long the pointer rests along a rolled-up sub panel's edge before it opens: passing over
+/// on the way to the panel doesn't open it.
+const SUB_DWELL: Duration = Duration::from_millis(220);
 use crate::sys::{self, Compositor};
 use crate::notes::{self, NoteMsg, Notes, Reason};
 use crate::ui::{self, Act, Extra, Kit, Model, OsdKind, Popup, PopupKind};
@@ -107,6 +110,15 @@ struct Surf {
     /// The pointer is on it, or when it left.
     hovered: bool,
     left_at: Option<Instant>,
+    // ---- a sub panel's
+    /// When the pointer came onto it.
+    entered: Option<Instant>,
+    /// On a panel with sub panels: since when the pointer has been on the side they roll out from.
+    reveal_at: Option<Instant>,
+    /// Asked for (by its item or a key): open until then, unless the pointer is on it.
+    summon: Option<Instant>,
+    /// Closed by its item or a key while the pointer was on it: stays shut until the pointer leaves.
+    shut: bool,
     /// A panel's part that takes the pointer, as last set (None: all of it).
     region: Option<[i32; 4]>,
     /// The last frame sent (to send only what changed).
@@ -419,9 +431,7 @@ impl Shell {
                 layer.set_size(0, 0);
             }
             Kind::Panel => {
-                if let Some(cfg) = s.panels.get(idx) {
-                    shape_panel(&layer, cfg);
-                }
+                shape_panel(&layer, &s.panels, idx, &name);
                 layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Dock => {
@@ -470,6 +480,7 @@ impl Shell {
         }
         layer.wl_surface().set_buffer_scale(scale);
         layer.commit();
+        let rolled = kind == Kind::Panel && self.s.panels.get(idx).is_some_and(|p| p.sub.is_some() && !p.kept());
         let pool = SlotPool::new(256 * 256 * 4, &self.shm).expect("shared memory for a surface");
         // A popup takes the last one's fonts and icons (making the launcher's icons again is
         // what made it slow to open).
@@ -500,11 +511,16 @@ impl Shell {
             events: Vec::new(),
             modifiers: egui::Modifiers::NONE,
             start,
-            slide: 0.0,
+            // A sub panel starts rolled up, unless it was left open.
+            slide: if rolled { 1.0 } else { 0.0 },
             slide_at: Instant::now(),
-            collapsed: false,
+            collapsed: rolled,
             hovered: false,
             left_at: None,
+            entered: None,
+            reveal_at: None,
+            summon: None,
+            shut: false,
             region: None,
             last: Vec::new(),
         }
@@ -751,12 +767,19 @@ impl Shell {
         self.surfs.retain(|sf| sf.kind != Kind::Panel || new.get(sf.idx).is_some_and(|c| c.on(&sf.output_name)));
         for sf in self.surfs.iter_mut().filter(|x| x.kind == Kind::Panel) {
             let (a, b) = (old.get(sf.idx), &new[sf.idx]);
-            if a.is_none_or(|a| a.edge != b.edge || a.floating != b.floating || a.hide != b.hide || a.height() != b.height()) {
-                shape_panel(&sf.layer, b);
+            // Its place among the others too: a sub panel left open moves the ones around it.
+            if a.is_none_or(|a| a.floating != b.floating) || panel_shape(old, sf.idx, &sf.output_name) != panel_shape(&new, sf.idx, &sf.output_name) {
+                shape_panel(&sf.layer, &new, sf.idx, &sf.output_name);
                 sf.layer.commit();
                 sf.dirty = true;
             } else if a != Some(b) {
                 sf.dirty = true;
+            }
+            // A sub panel no longer left open rolls up in its own time, not at once.
+            if let Some(sub) = b.sub.as_ref().filter(|sub| !sub.stay)
+                && a.is_some_and(|a| a.kept())
+            {
+                sf.summon = Some(Instant::now() + Duration::from_secs_f32(sub.secs));
             }
         }
         for o in self.output_state.outputs().collect::<Vec<_>>() {
@@ -974,6 +997,19 @@ impl Shell {
                         self.act(Act::NightLight(!on));
                     }
                     ("keep-awake", _) => self.act(Act::KeepAwake(self.inhibitor.is_none())),
+                    ("subpanel" | "sub-panel", _) => {
+                        // "NAME" or "NAME open" (close, toggle, stay); no name: the first one.
+                        let (name, what) = match arg.rsplit_once(' ') {
+                            Some((n, w)) if ui::SubDo::from(w).is_some() => (n.trim(), ui::SubDo::from(w).unwrap_or(ui::SubDo::Toggle)),
+                            _ if crate::panels::find_sub(&self.s.panels, arg).is_none() && ui::SubDo::from(arg).is_some() => ("", ui::SubDo::from(arg).unwrap_or(ui::SubDo::Toggle)),
+                            _ => (arg, ui::SubDo::Toggle),
+                        };
+                        let name = if name.is_empty() { self.s.panels.iter().find_map(|p| p.sub.as_ref().map(|x| x.name.clone())).unwrap_or_default() } else { name.to_string() };
+                        if crate::panels::find_sub(&self.s.panels, &name).is_none() {
+                            eprintln!("rivet-shell: no sub panel named {name:?}");
+                        }
+                        self.sub_panel(&name, what, "");
+                    }
                     ("lock", _) => self.locker.lock(&self.s),
                     ("unlock", _) => self.locker.unlock(),
                     ("settings", _) => open_settings(),
@@ -1348,6 +1384,55 @@ impl Shell {
         crate::greeter::publish(&self.s, [rgb(r.primary), rgb(r.secondary), rgb(r.tertiary)]);
     }
 
+    /// Open, close or keep a sub panel, as its item or a key asked (`output` empty: on every
+    /// screen it's on). One that stays open is opened and closed for good, and its room kept or
+    /// given back; one that rolls up is opened for its time, or shut now.
+    fn sub_panel(&mut self, name: &str, what: ui::SubDo, output: &str) {
+        use ui::SubDo;
+        let Some(idx) = crate::panels::find_sub(&self.s.panels, name) else { return };
+        let Some(sub) = self.s.panels[idx].sub.clone() else { return };
+        let set = |s: &mut Settings, stay: bool, open: bool| {
+            if let Some(x) = s.panels.get_mut(idx).and_then(|p| p.sub.as_mut()) {
+                (x.stay, x.open) = (stay, open);
+            }
+        };
+        match (what, sub.stay) {
+            // Left open, or back to rolling up by itself (after its usual time).
+            (SubDo::Stay, stay) => return self.change_settings(|s| set(s, !stay, !stay)),
+            (SubDo::Toggle, true) => return self.change_settings(|s| set(s, true, !sub.open)),
+            (SubDo::Open, true) if !sub.open => return self.change_settings(|s| set(s, true, true)),
+            (SubDo::Close, true) if sub.open => return self.change_settings(|s| set(s, true, false)),
+            (_, true) => return,
+            _ => {}
+        }
+        let now = Instant::now();
+        let until = now + Duration::from_secs_f32(sub.secs);
+        let panels = &self.s.panels;
+        let here = |sf: &Surf| sf.kind == Kind::Panel && (output.is_empty() || sf.output_name.is_empty() || sf.output_name == output);
+        // Open already (on any of the screens asked about): a toggle shuts it.
+        let showing = self.surfs.iter().any(|sf| here(sf) && sf.idx == idx && !sf.collapsed && (sf.summon.is_some() || sf.hovered || sf.left_at.is_some()));
+        let open = match what {
+            SubDo::Open => true,
+            SubDo::Close => false,
+            _ => !showing,
+        };
+        for sf in self.surfs.iter_mut().filter(|sf| here(sf)) {
+            let other = panels.get(sf.idx).and_then(|p| p.sub.as_ref()).filter(|x| sf.idx != idx && x.host == sub.host && !x.stay);
+            if sf.idx == idx {
+                sf.summon = open.then_some(until);
+                sf.left_at = None;
+                sf.shut = !open && sf.hovered;
+                sf.dirty = true;
+            } else if open && other.is_some() {
+                // One at a time under a host: the others that roll up make way.
+                sf.summon = None;
+                sf.left_at = None;
+                sf.shut = sf.hovered;
+                sf.dirty = true;
+            }
+        }
+    }
+
     /// The docks and the panels show or slide away as their hide settings say: shown while the
     /// pointer is on one (and a moment after it leaves) or a popup of its is open; with Smart,
     /// also while the screen's workspace has no windows. Out of sight, a dock shrinks to a thin
@@ -1360,21 +1445,45 @@ impl Shell {
         let popup_on = self.popup.as_ref().filter(|_| !menu).map(|p| p.output.clone());
         let (s, apps, running) = (&self.s, &self.apps, &self.prev_status.running);
         let workspaces = &self.prev_status.workspaces;
+        // The panel a popup was opened from: a sub panel stays for its own popups only.
+        let popup_from = self.popup.as_ref().filter(|_| !menu).and_then(|p| p.panel);
+        // Hosts with a sub panel in view (by screen): a host that hides stays out with it.
+        let hosting: Vec<(usize, String)> = self.surfs.iter().filter(|x| x.kind == Kind::Panel && !x.collapsed && x.slide < 1.0).filter_map(|x| Some((s.panels.get(x.idx)?.sub.as_ref()?.host?, x.output_name.clone()))).collect();
+        // Hosts the pointer has paused on, on the side their sub panels roll out from.
+        let revealing: Vec<(usize, String)> = self.surfs.iter().filter(|x| x.kind == Kind::Panel && x.reveal_at.is_some_and(|t| now.duration_since(t) >= SUB_DWELL)).map(|x| (x.idx, x.output_name.clone())).collect();
         for sf in self.surfs.iter_mut().filter(|x| matches!(x.kind, Kind::Dock | Kind::Panel)) {
             let dock = sf.kind == Kind::Dock;
-            let mode = if dock { s.dock_hide } else { s.panels.get(sf.idx).map(|p| p.hide).unwrap_or_default() };
-            if sf.left_at.is_some_and(|t| now.duration_since(t) >= DOCK_LINGER) {
+            let cfg = if dock { None } else { s.panels.get(sf.idx) };
+            let sub = cfg.and_then(|c| c.sub.as_ref());
+            let mode = if dock { s.dock_hide } else { cfg.map(|p| p.hide).unwrap_or_default() };
+            // A sub panel stays a good while after the pointer leaves; the rest, a moment.
+            let linger = sub.map_or(DOCK_LINGER, |x| Duration::from_secs_f32(x.secs));
+            if sf.left_at.is_some_and(|t| now.duration_since(t) >= linger) {
                 sf.left_at = None;
             }
+            if sf.summon.is_some_and(|t| now >= t) {
+                sf.summon = None;
+            }
             let open = if dock { menu } else { popup_on.as_ref().is_some_and(|o| o.is_empty() || sf.output_name.is_empty() || *o == sf.output_name) };
-            let near = sf.hovered || sf.left_at.is_some() || open;
+            let near = sf.hovered || sf.left_at.is_some() || open || hosting.iter().any(|(h, o)| *h == sf.idx && !dock && *o == sf.output_name);
             // Windows on this screen's workspace (a compositor that doesn't say: as if there were).
             let here: Vec<_> = workspaces.iter().filter(|w| w.active && (w.output.is_empty() || sf.output_name.is_empty() || w.output == sf.output_name)).collect();
             let busy = here.is_empty() || here.iter().any(|w| w.busy);
-            let show = match mode {
-                DockHide::Never => true,
-                DockHide::Auto => near,
-                DockHide::Smart => near || !busy,
+            let show = match (sub, mode) {
+                (Some(x), _) if x.stay => x.open,
+                (Some(x), _) => {
+                    // Asked for from its host's side: as if by its button, for as long as the
+                    // pointer stays there and its usual time after.
+                    if x.reveal && !sf.shut && revealing.iter().any(|(h, o)| Some(*h) == x.host && *o == sf.output_name) {
+                        sf.summon = Some(now + linger);
+                    }
+                    // Rolled up, the pointer has to rest on its edge a moment to open it.
+                    let resting = sf.hovered && (!sf.collapsed || sf.entered.is_some_and(|t| now.duration_since(t) >= SUB_DWELL));
+                    !sf.shut && (resting || sf.left_at.is_some() || sf.summon.is_some() || (open && popup_from == Some(sf.idx)))
+                }
+                (None, DockHide::Never) => true,
+                (None, DockHide::Auto) => near,
+                (None, DockHide::Smart) => near || !busy,
             };
             if show && sf.collapsed {
                 // Full size again (still out of sight), then slide in.
@@ -1493,7 +1602,7 @@ impl Shell {
             // A panel shorter than its edge, or hidden, takes the pointer only where it is (or
             // along its strip); the rest of its surface lets clicks through.
             let full = Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32));
-            let want = settings.panels.get(idx).and_then(|c| c.pointer_rect(full, surf.collapsed)).map(|r| [r.left() as i32, r.top() as i32, r.width().ceil() as i32, r.height().ceil() as i32]);
+            let want = crate::panels::pointer_rect(&settings.panels, idx, full, surf.collapsed, &surf.output_name).map(|r| [r.left() as i32, r.top() as i32, r.width().ceil() as i32, r.height().ceil() as i32]);
             if want != surf.region {
                 surf.region = want;
                 match want.and_then(|q| smithay_client_toolkit::compositor::Region::new(&*compositor).ok().map(|r| (q, r))) {
@@ -1551,10 +1660,26 @@ impl Shell {
             match kind {
                 Kind::Background => ui::widgets(ui, &mut m, &mut surf.kit),
                 Kind::Panel => {
-                    // Slid part of the way off its edge (a hidden one shows nothing).
+                    // Slid part of the way off its edge (a hidden one shows nothing, but a
+                    // sub panel's handle: where to pause the pointer to open it).
+                    if collapsed {
+                        ui::sub_handle(ui, settings, &surf.kit, idx, &output_name);
+                    }
                     if !collapsed {
                         let by = settings.panels.get(idx).map(|c| c.slide(slide)).unwrap_or_default();
                         let mut c = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect().translate(by)));
+                        // A drawer rolls up behind its host: nothing of it shows over the
+                        // host's bar on the way (its surface reaches under the host's corners).
+                        if let Some(cfg) = settings.panels.get(idx).filter(|p| slide > 0.0 && p.drawer()) {
+                            let mut clip = ui.max_rect();
+                            match cfg.edge {
+                                Edge::Top => clip.min.y += cfg.lead,
+                                Edge::Bottom => clip.max.y -= cfg.lead,
+                                Edge::Left => clip.min.x += cfg.lead,
+                                Edge::Right => clip.max.x -= cfg.lead,
+                            }
+                            c.set_clip_rect(clip);
+                        }
                         crate::bar::panel(&mut c, &mut m, &mut surf.kit, idx);
                     }
                 }
@@ -1707,6 +1832,7 @@ impl Shell {
             Act::Workspace(k) => sys::focus_workspace(self.comp, &k),
             Act::Open(p) => self.open_popup(p),
             Act::Close => self.close_popup(),
+            Act::SubPanel(name, what, output) => self.sub_panel(&name, what, &output),
             Act::CloseWindows(ids) => sys::close_windows(self.comp, ids),
             Act::Auth(mut text) => {
                 if let Some(a) = self.polkit.as_mut() {
@@ -2010,6 +2136,11 @@ impl PointerHandler for Shell {
                 PointerEventKind::Enter { .. } => {
                     s.hovered = true;
                     s.left_at = None;
+                    s.entered = Some(Instant::now());
+                    if s.collapsed {
+                        // Look again once the pointer has rested (a sub panel's edge).
+                        s.repaint_at = Some(Instant::now() + SUB_DWELL);
+                    }
                     if let Some(p) = &self.pointer {
                         let _ = p.set_cursor(&self.conn, CursorIcon::Default);
                     }
@@ -2017,10 +2148,26 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Leave { .. } => {
                     s.hovered = false;
-                    s.left_at = Some(Instant::now());
+                    s.reveal_at = None;
+                    // Passing over a rolled-up sub panel's edge isn't a visit to linger after.
+                    let passing = s.collapsed && s.kind == Kind::Panel && self.s.panels.get(s.idx).is_some_and(|p| p.sub.is_some());
+                    s.left_at = (!passing && !s.shut).then(Instant::now);
+                    s.shut = false;
                     s.events.push(egui::Event::PointerGone);
                 }
-                PointerEventKind::Motion { .. } => s.events.push(egui::Event::PointerMoved(pos)),
+                PointerEventKind::Motion { .. } => {
+                    // Pausing on the side a panel's sub panels roll out from opens them.
+                    if s.kind == Kind::Panel {
+                        let full = Rect::from_min_size(Pos2::ZERO, Vec2::new(s.size.0 as f32, s.size.1 as f32));
+                        if !crate::panels::on_reveal_side(&self.s.panels, s.idx, full, pos) {
+                            s.reveal_at = None;
+                        } else if s.reveal_at.is_none() {
+                            s.reveal_at = Some(Instant::now());
+                            s.repaint_at = Some(Instant::now() + SUB_DWELL);
+                        }
+                    }
+                    s.events.push(egui::Event::PointerMoved(pos));
+                }
                 PointerEventKind::Press { button, .. } | PointerEventKind::Release { button, .. } => {
                     let pressed = matches!(e.kind, PointerEventKind::Press { .. });
                     let b = match button {
@@ -2121,19 +2268,37 @@ delegate_registry!(Shell);
 
 /// The panel's place and size: spanning its edge (a shorter one draws on part of that, and
 /// takes the pointer only there), keeping windows clear of it unless it hides.
-fn shape_panel(layer: &LayerSurface, p: &crate::panels::PanelCfg) {
-    let h = p.height() as u32;
-    match p.edge {
+fn shape_panel(layer: &LayerSurface, panels: &[crate::panels::PanelCfg], idx: usize, output: &str) {
+    let Some(p) = panels.get(idx) else { return };
+    let (edge, h, zone, margin, ends) = panel_shape(panels, idx, output);
+    match edge {
         Edge::Top | Edge::Bottom => {
-            layer.set_anchor(if p.edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM } | Anchor::LEFT | Anchor::RIGHT);
+            layer.set_anchor(if edge == Edge::Top { Anchor::TOP } else { Anchor::BOTTOM } | Anchor::LEFT | Anchor::RIGHT);
             layer.set_size(0, h);
         }
         Edge::Left | Edge::Right => {
-            layer.set_anchor(if p.edge == Edge::Left { Anchor::LEFT } else { Anchor::RIGHT } | Anchor::TOP | Anchor::BOTTOM);
+            layer.set_anchor(if edge == Edge::Left { Anchor::LEFT } else { Anchor::RIGHT } | Anchor::TOP | Anchor::BOTTOM);
             layer.set_size(h, 0);
         }
     }
-    layer.set_exclusive_zone(p.reserved() as i32);
+    layer.set_exclusive_zone(zone);
+    if p.sub.is_some() {
+        // Down a side, it runs between the top and bottom panels, as its host does.
+        let m = |e: Edge| if e == edge { margin } else if edge.vertical() && e == Edge::Top { ends.0 } else if edge.vertical() && e == Edge::Bottom { ends.1 } else { 0 };
+        layer.set_margin(m(Edge::Top), m(Edge::Right), m(Edge::Bottom), m(Edge::Left));
+    }
+}
+
+/// A panel's surface: its edge, its thickness, the room it keeps from windows, and how far in
+/// from the edge it sits. A sub panel keeps no room of its own (its host keeps it, for one left
+/// open) and is placed where its host ends, whatever else is along that edge.
+fn panel_shape(panels: &[crate::panels::PanelCfg], idx: usize, output: &str) -> (Edge, u32, i32, i32, (i32, i32)) {
+    let Some(p) = panels.get(idx) else { return (Edge::Top, 0, 0, 0, (0, 0)) };
+    let room = |e: Edge| crate::panels::room(panels, output, e) as i32;
+    match p.sub {
+        Some(_) => (p.edge, p.height() as u32, -1, crate::panels::sub_start(panels, idx, output) as i32, (room(Edge::Top), room(Edge::Bottom))),
+        None => (p.edge, p.height() as u32, crate::panels::reserved(panels, idx) as i32, 0, (0, 0)),
+    }
 }
 
 /// The dock's size for its pinned apps, at the bottom, keeping windows clear of it when asked.

@@ -207,6 +207,15 @@ impl Settings {
         let own = self.panels.get(idx).map(|p| p.look).unwrap_or_default();
         self.look.over(own).on(BASE)
     }
+    /// Put the panel list right after a change (see `panels::tidy`), and work out how far each
+    /// drawer reaches under its host's corners: the host's radius, when it's a floating bar.
+    pub fn tidy_panels(&mut self) {
+        crate::panels::tidy(&mut self.panels);
+        for i in 0..self.panels.len() {
+            let host = self.panels[i].sub.as_ref().filter(|s| s.drawer).and_then(|s| s.host).filter(|h| self.panels[*h].floating);
+            self.panels[i].lead = host.map_or(0.0, |h| radius(&self.panel_look(h)).nw as f32);
+        }
+    }
     pub fn dock_look(&self) -> Resolved {
         self.look.over(self.dock_look).on(BASE)
     }

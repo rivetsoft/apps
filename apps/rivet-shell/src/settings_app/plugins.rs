@@ -176,7 +176,7 @@ impl SettingsApp {
                         // They come with the shell: nothing to install, only to turn on.
                         if s.plugins.contains(&m.id) {
                             state(ui, "On");
-                        } else if ui.button("Turn On").clicked() {
+                        } else if super::controls::button(ui, super::controls::Icon::Check, "Turn On").clicked() {
                             turn_on = Some(m.id.clone());
                         }
                     });
@@ -185,21 +185,21 @@ impl SettingsApp {
                     let have = found.iter().find(|m| m.id == l.id);
                     card(ui, &l.name, false, &l.description, &l.author, &l.version, &mut |ui| {
                         if busy.as_deref() == Some(l.id.as_str()) {
-                            ui.add_enabled(false, egui::Button::new("Installing…"));
+                            super::controls::button_if(ui, false, super::controls::Icon::Download, "Installing…");
                         } else if let Some(m) = have {
                             if plugin_store::update(m, std::slice::from_ref(*l)).is_some() {
-                                if ui.add_enabled(busy.is_none(), egui::Button::new(format!("Update to {}", l.version))).clicked() {
+                                if super::controls::button_if(ui, busy.is_none(), super::controls::Icon::Download, &format!("Update to {}", l.version)).clicked() {
                                     install = Some((*l).clone());
                                 }
                             } else if s.plugins.contains(&m.id) {
                                 state(ui, "On");
-                            } else if ui.button("Turn On").clicked() {
+                            } else if super::controls::button(ui, super::controls::Icon::Check, "Turn On").clicked() {
                                 turn_on = Some(m.id.clone());
                             }
-                        } else if ui.add_enabled(busy.is_none(), egui::Button::new("Install")).clicked() {
+                        } else if super::controls::primary_if(ui, busy.is_none(), super::controls::Icon::Download, "Install").clicked() {
                             install = Some((*l).clone());
                         }
-                        if !l.homepage.is_empty() && ui.button("View Source").on_hover_text(&l.homepage).clicked() {
+                        if !l.homepage.is_empty() && super::controls::button(ui, super::controls::Icon::Out, "View Source").on_hover_text(&l.homepage).clicked() {
                             crate::sys::spawn("xdg-open", &[&l.homepage]);
                         }
                     });
@@ -210,7 +210,7 @@ impl SettingsApp {
                         None => hint(ui, "Getting the plugins other people have shared…"),
                         Some(Err(e)) => {
                             ui.label(e);
-                            retry = ui.button("Try Again").clicked();
+                            retry = super::controls::button(ui, super::controls::Icon::Reset, "Try Again").clicked();
                         }
                         Some(Ok(_)) if shared.is_empty() => hint(ui, "Plugins other people share will be listed here."),
                         Some(Ok(_)) => {}
@@ -290,7 +290,7 @@ impl SettingsApp {
                 egui::Frame::NONE.fill(v.panel_fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        if ui.checkbox(&mut on, "").changed() {
+                        if super::controls::switch(ui, &mut on, "").changed() {
                             // Off: its item comes off the panels too.
                             turn_off(s, &m.id);
                             if on {
@@ -325,14 +325,14 @@ impl SettingsApp {
                             // One the person installed: it can be removed, and updated when the list has a newer one.
                             if plugin_store::removable(m) {
                                 if busy.as_deref() == Some(m.id.as_str()) {
-                                    ui.add_enabled(false, egui::Button::new("Working…"));
+                                    super::controls::button_if(ui, false, super::controls::Icon::Reset, "Working…");
                                     return;
                                 }
-                                if ui.add_enabled(busy.is_none(), egui::Button::new("Remove…")).clicked() {
+                                if super::controls::danger_if(ui, busy.is_none(), "Remove…").clicked() {
                                     ask_remove = Some(m.id.clone());
                                 }
                                 if let Some(l) = plugin_store::update(m, &listed)
-                                    && ui.add_enabled(busy.is_none(), egui::Button::new(format!("Update to {}", l.version))).clicked()
+                                    && super::controls::button_if(ui, busy.is_none(), super::controls::Icon::Download, &format!("Update to {}", l.version)).clicked()
                                 {
                                     install = Some(l.clone());
                                 }
@@ -342,19 +342,19 @@ impl SettingsApp {
                             }
                             if s.panels.iter().any(|p| p.has(&item)) {
                                 ui.label(egui::RichText::new("On a panel").color(v.weak_text_color()).size(12.0));
-                            } else if !s.panels.is_empty() && ui.button("Add to Panel").on_hover_text("Puts its item on the first panel. Move it on the Panels page.").clicked() {
+                            } else if !s.panels.is_empty() && super::controls::button(ui, super::controls::Icon::Plus, "Add to Panel").on_hover_text("Puts its item on the first panel. Move it on the Panels page.").clicked() {
                                 s.panels[0].zones[2].insert(0, item.clone());
                             }
                         });
                     });
                     if self.store.removing.as_deref() == Some(m.id.as_str()) {
                         ui.add_space(8.0);
+                        ui.label(format!("Remove {}? Its files are deleted. Your settings for it are kept.", m.name));
                         ui.horizontal(|ui| {
-                            ui.label(format!("Remove {}? Its files are deleted. Your settings for it are kept.", m.name));
-                            if ui.button("Remove Plugin").clicked() {
+                            if super::controls::danger(ui, "Remove Plugin").clicked() {
                                 remove = Some((m.id.clone(), m.name.clone()));
                             }
-                            if ui.button("Keep It").clicked() {
+                            if super::controls::button(ui, super::controls::Icon::Back, "Keep It").clicked() {
                                 keep = true;
                             }
                         });
@@ -371,7 +371,7 @@ impl SettingsApp {
                                         SettingKind::Toggle => {
                                             ui.label("");
                                             let mut yes = value == "true";
-                                            ui.checkbox(&mut yes, &set.label).on_hover_text(&set.hint);
+                                            super::controls::switch(ui, &mut yes, &set.label).on_hover_text(&set.hint);
                                             value = if yes { "true".into() } else { String::new() };
                                         }
                                         SettingKind::Text => {
@@ -382,7 +382,7 @@ impl SettingsApp {
                                             ui.label(&set.label);
                                             ui.horizontal(|ui| {
                                                 ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint));
-                                                if ui.add_enabled(can_pick, egui::Button::new("Choose…")).clicked() {
+                                                if super::controls::button_if(ui, can_pick, super::controls::Icon::Folder, "Choose…").clicked() {
                                                     ask = Some((m.id.clone(), set.key.clone(), set.label.clone()));
                                                 }
                                             });
@@ -401,10 +401,10 @@ impl SettingsApp {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if ui.button("Get Plugins…").clicked() {
+                if super::controls::button(ui, super::controls::Icon::Download, "Get Plugins…").clicked() {
                     self.store.open = true;
                 }
-                if ui.button("Open Plugins Folder").clicked() {
+                if super::controls::button(ui, super::controls::Icon::Folder, "Open Plugins Folder").clicked() {
                     let dir = user_dir();
                     let _ = std::fs::create_dir_all(&dir);
                     crate::sys::spawn("xdg-open", &[&dir.display().to_string()]);

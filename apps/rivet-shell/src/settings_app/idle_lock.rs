@@ -38,7 +38,7 @@ impl SettingsApp {
         let other = crate::idle::other_daemon();
         section(ui, "When idle", &mut |ui| {
             let s = &mut self.s;
-            ui.checkbox(&mut s.idle_on, "Let Rivet Shell handle idle");
+            super::controls::master(ui, &mut s.idle_on, "Let Rivet Shell handle idle");
             if let Some(d) = &other {
                 let warn = rivet_look::theme::status(ui.ctx()).warning;
                 ui.label(egui::RichText::new(format!("{d} is also running, so each step would happen twice. Stop {d}, or turn this off and let {d} handle idle.")).color(warn));
@@ -48,7 +48,7 @@ impl SettingsApp {
             if !s.idle_on {
                 return;
             }
-            ui.add_space(10.0);
+            super::controls::rule(ui);
             grid(ui, "idle-times", &mut |ui| {
                 ui.label("Dim the screen");
                 time_combo(ui, "idle-dim", &mut s.idle_dim);
@@ -63,18 +63,19 @@ impl SettingsApp {
                 time_combo(ui, "idle-suspend", &mut s.idle_suspend);
                 ui.end_row();
             });
-            ui.add_space(8.0);
-            ui.checkbox(&mut s.idle_media, "Not while music or a video plays");
+            super::controls::rule(ui);
+            super::controls::switch(ui, &mut s.idle_media, "Not while music or a video plays");
             hint(ui, "Any player that shows in Now Playing counts.");
         });
         section(ui, "Lock screen", &mut |ui| {
             let s = &mut self.s;
-            ui.checkbox(&mut s.lock_on_sleep, "Lock before the computer sleeps");
-            ui.add_space(6.0);
+            super::controls::switch(ui, &mut s.lock_on_sleep, "Lock before the computer sleeps");
+            super::controls::rule(ui);
             let mut own = s.lock_cmd.trim().is_empty();
-            ui.horizontal(|ui| {
-                ui.radio_value(&mut own, true, "Rivet Shell's Lock Screen");
-                ui.radio_value(&mut own, false, "Another Program");
+            grid(ui, "lock-with", &mut |ui| {
+                ui.label("Lock with");
+                super::panel_editor::segmented(ui, &mut own, &[(true, "Rivet Shell"), (false, "Another Program")]);
+                ui.end_row();
             });
             if own && !s.lock_cmd.trim().is_empty() {
                 s.lock_cmd.clear();
@@ -83,11 +84,10 @@ impl SettingsApp {
             }
             ui.add_space(6.0);
             if own {
-                ui.checkbox(&mut s.lock_blur, "Blur the wallpaper");
-                ui.checkbox(&mut s.lock_power, "Show suspend, restart and shut down buttons");
-                ui.add_space(4.0);
-                ui.add_space(6.0);
-                if ui.button("Try It").on_hover_text("Shows the lock screen without locking anything. Press Escape to leave.").clicked()
+                super::controls::switch(ui, &mut s.lock_blur, "Blur the wallpaper");
+                super::controls::switch(ui, &mut s.lock_power, "Show suspend, restart and shut down buttons");
+                ui.add_space(10.0);
+                if super::controls::primary(ui, super::controls::Icon::Play, "Try It").on_hover_text("Shows the lock screen without locking anything. Press Escape to leave.").clicked()
                     && let Ok(exe) = std::env::current_exe()
                 {
                     {
@@ -104,13 +104,13 @@ impl SettingsApp {
             }
         });
         section(ui, "Passwords", &mut |ui| {
-            ui.checkbox(&mut self.s.ask_passwords, "Ask for the password when an app needs administrator rights");
+            super::controls::switch(ui, &mut self.s.ask_passwords, "Ask for the password when an app needs administrator rights");
             hint(ui, "If another password prompt is already running, it asks instead.");
         });
         section(ui, "Keys", &mut |ui| {
-            hint(ui, "Bind this in your compositor's settings to lock right away:");
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("rivet-shell msg lock").monospace().size(12.0));
+            hint(ui, "Bind this in your compositor's settings.");
+            ui.add_space(6.0);
+            super::controls::command(ui, "Lock the screen", "rivet-shell msg lock");
             hint(ui, "loginctl lock-session does the same, while the shell runs.");
         });
     }

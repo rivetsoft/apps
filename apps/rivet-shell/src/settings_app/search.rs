@@ -70,6 +70,7 @@ pub const INDEX: &[Entry] = &[
     e(Page::Panel, "", "Floating or edge to edge", "panel style rounded margin full width"),
     e(Page::Panel, "", "Panel screen", "monitor output display every screen"),
     e(Page::Panel, "", "Add or remove a panel", "new duplicate second panel"),
+    e(Page::Panel, "", "Sub panels", "sub panel drawer shelf extra hidden panel roll out reveal stay open attach key binding"),
     e(Page::Panel, "", "Panel items", "zones left center centre right drag reorder widgets add launcher network bluetooth media notifications power"),
     item("launcher", "Launcher icon", "apps menu start button symbol logo distro distributor grid custom picture image"),
     item("clock", "Clock format", "time date 24 hour 12 hour am pm strftime custom seconds"),

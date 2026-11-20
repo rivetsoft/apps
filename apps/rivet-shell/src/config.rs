@@ -1120,6 +1120,7 @@ impl Settings {
         if count.is_some() || !panels.is_empty() {
             panels.sort_by_key(|p| p.0);
             self.panels = panels.into_iter().map(|p| p.1).take(count.unwrap_or(usize::MAX)).collect();
+            self.tidy_panels();
         } else if old.seen {
             self.panels = if old.off {
                 Vec::new()

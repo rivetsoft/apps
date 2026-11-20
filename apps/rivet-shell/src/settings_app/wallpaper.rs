@@ -93,7 +93,7 @@ impl SettingsApp {
             ui.spacing_mut().item_spacing.x = 10.0;
             super::panel_editor::segmented(ui, &mut at, &choices);
             self.wall_screen = if at == 0 { String::new() } else { names[at - 1].clone() };
-            if !self.wall_screen.is_empty() && self.s.has_own_wallpaper(&self.wall_screen) && ui.button("Use the Shared Picture").on_hover_text("Show the shared wallpaper on this screen").clicked() {
+            if !self.wall_screen.is_empty() && self.s.has_own_wallpaper(&self.wall_screen) && super::controls::button(ui, super::controls::Icon::Back, "Use the Shared Picture").on_hover_text("Show the shared wallpaper on this screen").clicked() {
                 let name = self.wall_screen.clone();
                 self.s.set_wallpaper_on(&name, "");
             }
@@ -141,12 +141,12 @@ impl SettingsApp {
                     ui.add_space(14.0);
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
-                        let change = ui.button("Change…").on_hover_text("Pictures from the wallpaper folder");
+                        let change = super::controls::primary(ui, super::controls::Icon::Picture, "Change…").on_hover_text("Pictures from the wallpaper folder");
                         self.chooser(ui, &change, &dir, &now, accent);
-                        if ui.add_enabled(self.picking.is_none(), egui::Button::new("Choose a File…")).on_hover_text("A picture from anywhere, with the file picker").clicked() {
+                        if super::controls::button_if(ui, self.picking.is_none(), super::controls::Icon::Folder, "Choose a File…").on_hover_text("A picture from anywhere, with the file picker").clicked() {
                             self.ask_picker(Pick::Picture);
                         }
-                        if self.wall_screen.is_empty() && !self.s.wallpaper.is_empty() && ui.button("No Wallpaper").on_hover_text("A plain background in the theme's colors").clicked() {
+                        if self.wall_screen.is_empty() && !self.s.wallpaper.is_empty() && super::controls::button(ui, super::controls::Icon::Off, "No Wallpaper").on_hover_text("A plain background in the theme's colors").clicked() {
                             self.s.wallpaper.clear();
                         }
                     });

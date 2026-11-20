@@ -43,17 +43,15 @@ impl SettingsApp {
                 return;
             };
             let s = &mut self.s;
-            ui.label(egui::RichText::new(format!("{} is running", comp.name())).strong());
-            ui.add_space(6.0);
-            ui.checkbox(&mut s.comp_on, format!("Set {}'s gaps, borders and corners here", comp.name()));
+            super::controls::master(ui, &mut s.comp_on, format!("Set {}'s gaps, borders and corners here", comp.name()));
             hint(ui, "Borders can follow the accent and change with the wallpaper.");
             if s.comp_on {
-                ui.add_space(8.0);
+                super::controls::rule(ui);
                 if !included {
                     let warn = rivet_look::theme::status(ui.ctx()).warning;
                     ui.label(egui::RichText::new(format!("{} doesn't include it yet, so these don't show.", name(&t.main))).color(warn));
                     ui.add_space(4.0);
-                    if ui.button(format!("Add the Include to {}", name(&t.main))).clicked() {
+                    if super::controls::button(ui, super::controls::Icon::Plus, &format!("Add the Include to {}", name(&t.main))).clicked() {
                         let (accent, dark) = comp::shell_look(s);
                         let look = comp::Look::from(s, accent, dark);
                         msg = Some(comp::add_include(t, Some(&look), &s.displays).map(|_| format!("Added. The original is saved as {}.rivet-backup.", name(&t.main))));
@@ -89,10 +87,10 @@ impl SettingsApp {
                     }
                     ui.end_row();
                     ui.label("");
-                    ui.checkbox(&mut s.comp_accent_borders, "Focused window's border in the accent color");
+                    super::controls::switch(ui, &mut s.comp_accent_borders, "Focused window's border in the accent color");
                     ui.end_row();
                     ui.label("");
-                    ui.checkbox(&mut s.comp_shadows, "Shadows under windows");
+                    super::controls::switch(ui, &mut s.comp_shadows, "Shadows under windows");
                     ui.end_row();
                 });
             }

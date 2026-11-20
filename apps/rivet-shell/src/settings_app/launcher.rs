@@ -91,7 +91,7 @@ impl SettingsApp {
                 ui.label("Font");
                 ui.horizontal(|ui| {
                     super::font_pick::font_pick(ui, "shell-launcher-font", &mut s.launcher_font, &follow);
-                    if !s.launcher_font.is_empty() && ui.small_button("Reset").clicked() {
+                    if !s.launcher_font.is_empty() && super::controls::reset(ui).clicked() {
                         s.launcher_font.clear();
                     }
                 });
@@ -101,20 +101,20 @@ impl SettingsApp {
         });
         section(ui, "As you type", &mut |ui| {
             let s = &mut self.s;
-            ui.checkbox(&mut s.launch_calc, "Answer sums");
+            super::controls::switch(ui, &mut s.launch_calc, "Answer sums");
             hint(ui, "Type 12*4 or (3+5)/2, then press Enter to copy the answer.");
         });
         section(ui, "Behind the launcher", &mut |ui| {
             let middle = self.s.launch_place == LaunchPlace::Center;
-            ui.add_enabled(middle, egui::Checkbox::new(&mut self.s.launch_dim, "Dim the screen"));
+            ui.add_enabled_ui(middle, |ui| super::controls::switch(ui, &mut self.s.launch_dim, "Dim the screen"));
             if !middle {
                 hint(ui, "Only when the launcher opens in the middle.");
             }
         });
         section(ui, "Keys", &mut |ui| {
-            hint(ui, "Bind this in your compositor's settings to open the launcher:");
-            ui.add_space(4.0);
-            ui.label(egui::RichText::new("rivet-shell msg launcher").monospace().size(12.0));
+            hint(ui, "Bind this in your compositor's settings.");
+            ui.add_space(6.0);
+            super::controls::command(ui, "Open the launcher", "rivet-shell msg launcher");
         });
     }
 }

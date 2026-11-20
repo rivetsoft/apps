@@ -311,7 +311,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.add_enabled(asked.is_none(), egui::Button::new("Choose…")).clicked() {
+                if super::controls::button_if(ui, asked.is_none(), super::controls::Icon::Folder, "Choose…").clicked() {
                     let (tx, rx) = mpsc::channel();
                     let start = crate::wall::expand(s.launcher_custom.trim()).parent().map(std::path::Path::to_path_buf);
                     std::thread::spawn(move || {
@@ -524,7 +524,7 @@ fn ai(ui: &mut egui::Ui, s: &mut Settings) {
     if n > 0 {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(format!("{n} pinned limit{} first", if n == 1 { "" } else { "s" })).font(ui_font(12.5)));
-            if ui.button("Unpin All").clicked() {
+            if super::controls::button(ui, super::controls::Icon::Off, "Unpin All").clicked() {
                 s.ai_pins.clear();
             }
         });

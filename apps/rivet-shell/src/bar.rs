@@ -112,6 +112,10 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
     if let Some(pid) = id.strip_prefix("plugin:") {
         return plugin_want(b, pid);
     }
+    // A sub panel's button, for as long as that sub panel is attached to a panel.
+    if let Some(name) = id.strip_prefix("sub:") {
+        return crate::panels::find_sub(&s.panels, name).filter(|i| s.panels[*i].on(b.m.output)).map(|_| (SLOT, false));
+    }
     // Empty room, along the panel either way (less the gap either side of every item).
     if let Some(n) = crate::panels::spacer(id) {
         return Some(((n as f32 - b.gap * 2.0).max(0.0), false));
@@ -521,8 +525,20 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
     *ui.visuals_mut() = v.clone();
     let full = ui.max_rect();
     // The bar sits against its edge (a floating one with room around it).
-    let bar = cfg.bar_rect(full);
-    let radius = if cfg.floating { style::radius(&look) } else { egui::CornerRadius::ZERO };
+    let bar = crate::panels::bar_rect(&m.s.panels, idx, full);
+    let mut radius = if cfg.floating { style::radius(&look) } else { egui::CornerRadius::ZERO };
+    // A drawer under its host: square where they meet, and nothing of it (its shadow) drawn
+    // over the host.
+    let joined = crate::panels::joined(&m.s.panels, idx, m.output);
+    let mut clip = ui.clip_rect();
+    if joined {
+        match cfg.edge {
+            Edge::Top => (radius.nw, radius.ne, clip.min.y) = (0, 0, clip.min.y.max(bar.top())),
+            Edge::Bottom => (radius.sw, radius.se, clip.max.y) = (0, 0, clip.max.y.min(bar.bottom())),
+            Edge::Left => (radius.nw, radius.sw, clip.min.x) = (0, 0, clip.min.x.max(bar.left())),
+            Edge::Right => (radius.ne, radius.se, clip.max.x) = (0, 0, clip.max.x.min(bar.right())),
+        }
+    }
     // A side panel's surface is too narrow for hover text: it would wrap a word to a line.
     // (Only on a panel's own surface, which is all panel: narrow, or flat.)
     let screen = ui.ctx().content_rect();
@@ -542,7 +558,10 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
         };
         (side, lo - off, hi - off, style::radius(&look).nw as f32)
     });
-    crate::ui::surface_open(ui.painter(), bar, &v, look.opacity, radius, look.border, open);
+    crate::ui::surface_open(&ui.painter().with_clip_rect(clip), bar, &v, look.opacity, radius, look.border, open);
+    if joined && cfg.lead > 0.0 {
+        fillets(ui.painter(), bar, cfg.edge, cfg.lead, v.panel_fill.gamma_multiply(look.opacity));
+    }
     let reach = crate::panels::reach(&m.s.panels, idx, m.output);
     let mut acts = Vec::new();
     {
@@ -560,6 +579,42 @@ pub fn panel(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit, idx: usize) {
         acts.append(&mut b.acts);
     }
     m.acts.extend(acts);
+}
+
+/// A drawer's fill under its host's rounded corners: at each end of the side toward the host,
+/// the corner-shaped piece between the host's curve and a square corner, `r` points each way,
+/// so the host's bar seems to run straight on into the drawer.
+fn fillets(p: &egui::Painter, bar: Rect, edge: Edge, r: f32, fill: Color32) {
+    // Toward the host, and along the side they share.
+    let (back, along) = match edge {
+        Edge::Top => (Vec2::new(0.0, -1.0), Vec2::new(1.0, 0.0)),
+        Edge::Bottom => (Vec2::new(0.0, 1.0), Vec2::new(1.0, 0.0)),
+        Edge::Left => (Vec2::new(-1.0, 0.0), Vec2::new(0.0, 1.0)),
+        Edge::Right => (Vec2::new(1.0, 0.0), Vec2::new(0.0, 1.0)),
+    };
+    let ends = match edge {
+        Edge::Top => [(bar.left_top(), 1.0), (bar.right_top(), -1.0)],
+        Edge::Bottom => [(bar.left_bottom(), 1.0), (bar.right_bottom(), -1.0)],
+        Edge::Left => [(bar.left_top(), 1.0), (bar.left_bottom(), -1.0)],
+        Edge::Right => [(bar.right_top(), 1.0), (bar.right_bottom(), -1.0)],
+    };
+    for (corner, dir) in ends {
+        let inward = along * dir;
+        // The host's corner curves about this point; the piece is what's outside the curve.
+        let centre = corner + back * r + inward * r;
+        let mut mesh = egui::Mesh::default();
+        mesh.colored_vertex(corner, fill);
+        const STEPS: usize = 12;
+        for k in 0..=STEPS {
+            let a = std::f32::consts::FRAC_PI_2 * k as f32 / STEPS as f32;
+            // From straight out past the host's end, round to the middle of the shared side.
+            mesh.colored_vertex(centre - inward * (r * a.cos()) - back * (r * a.sin()), fill);
+        }
+        for k in 1..=STEPS as u32 {
+            mesh.add_triangle(0, k, k + 1);
+        }
+        p.add(egui::Shape::mesh(mesh));
+    }
 }
 
 fn layout(ui: &mut egui::Ui, b: &mut Bar, cfg: &PanelCfg, bar: Rect) {
@@ -905,6 +960,36 @@ fn more(ui: &mut egui::Ui, b: &mut Bar, group: usize, r: Rect) {
     }
 }
 
+/// A sub panel's button: a bar with an arrow to where the sub panel rolls out (back toward the
+/// bar while it's left open). A click opens or closes it; a right-click keeps it open or lets
+/// it roll up by itself again.
+fn sub_button(ui: &mut egui::Ui, b: &mut Bar, id: &str, name: &str, r: Rect) {
+    let Some(sub) = crate::panels::find_sub(&b.m.s.panels, name).and_then(|i| b.m.s.panels[i].sub.clone()) else { return };
+    let resp = b.button(ui, r, id);
+    let col = if sub.stay && sub.open { b.accent } else { b.fg() };
+    // Away from the screen's edge, where the sub panel is.
+    let out = match b.m.s.panels.get(sub.host.unwrap_or(b.idx)).map(|p| p.edge).unwrap_or(Edge::Top) {
+        Edge::Top => Vec2::new(0.0, 1.0),
+        Edge::Bottom => Vec2::new(0.0, -1.0),
+        Edge::Left => Vec2::new(1.0, 0.0),
+        Edge::Right => Vec2::new(-1.0, 0.0),
+    };
+    let along = Vec2::new(out.y.abs(), out.x.abs());
+    let c = r.center();
+    let stroke = egui::Stroke::new(1.6, col);
+    b.p.line_segment([c - out * 4.5 - along * 5.5, c - out * 4.5 + along * 5.5], stroke);
+    let d = if sub.stay && sub.open { -1.0 } else { 1.0 };
+    let tip = c + out * (1.5 + 2.0 * d);
+    b.p.add(egui::Shape::line(vec![tip - out * 4.0 * d - along * 4.0, tip, tip - out * 4.0 * d + along * 4.0], stroke));
+    let hint = if sub.stay { "Right-click to let it roll up by itself." } else { "Right-click to keep it open." };
+    let resp = resp.on_hover_text(format!("{}. {hint}", sub.name));
+    if resp.secondary_clicked() {
+        b.acts.push(Act::SubPanel(sub.name.clone(), crate::ui::SubDo::Stay, b.m.output.to_string()));
+    } else if resp.clicked() {
+        b.acts.push(Act::SubPanel(sub.name.clone(), crate::ui::SubDo::Toggle, b.m.output.to_string()));
+    }
+}
+
 fn wheel(ui: &egui::Ui) -> f32 {
     ui.input(|i| i.events.iter().filter_map(|e| if let egui::Event::MouseWheel { delta, .. } = e { Some(delta.y) } else { None }).sum())
 }
@@ -917,6 +1002,10 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
     let ex = b.m.extra;
     if let Some(pid) = id.strip_prefix("plugin:") {
         plugin_draw(ui, b, pid, r);
+        return;
+    }
+    if let Some(name) = id.strip_prefix("sub:") {
+        sub_button(ui, b, id, name, r);
         return;
     }
     // Down a side panel, the items with text draw another way.

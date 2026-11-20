@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Settings is easier to read: on and off are switches, choices are one kind of row, buttons carry a symbol for what they do, and long cards are split into named parts. The Panels page lines its settings up in rows, and each key command has a Copy button.
+- **Sub panels**: a panel that stays rolled up under another until you ask for it, to keep the
+  main panel clean. Add one with Add Sub Panel on Settings' Panels page and put any items on
+  it. Open it with its button, a key (`rivet-shell msg subpanel NAME`) or by pausing the pointer
+  just past the panel. It rolls back up a few seconds after you leave it, or stays
+  open until you close it: right-click its button to switch. A sub panel can be attached to
+  another panel, and is kept when its panel is removed. It joins its panel like a drawer pulled
+  out of it, as long as the panel and filled in under its rounded corners; both can be turned off.
+  While it's rolled up, a small handle past the panel shows where to pause the pointer; you
+  choose its shape (a bar, a line, an arrow or dots), size, place along the panel, distance
+  from it, color and opacity, or hide it.
 - Right-click an open app in the dock and choose Close to close its windows, on niri and Hyprland.
 - Plugins from other people: Get Plugins, on Settings' Plugins page, lists the ones that have
   been shared beside the shell's own, and installs and updates them. One you install stays off

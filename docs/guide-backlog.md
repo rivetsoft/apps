@@ -60,6 +60,48 @@ in the middle and Right ends at the right end. On a side panel the zones are Top
 On a side panel, numbers sit under their symbols, the clock wraps onto lines and the window title
 runs downward. When items don't fit, the ones nearest the middle are hidden first.
 
+### Panels: sub panels
+
+From `settings_app/panel_editor.rs` (Add Sub Panel, and a sub panel's own card), `panels.rs` and
+`rivet-shell msg subpanel`.
+
+A sub panel is a panel that stays rolled up under another panel, its host, until it's asked for.
+It holds items like any panel (zones, groups, its own look and size) and takes its edge and
+screen from its host. Add one with Add Sub Panel on a panel's page; it gets a button on that
+panel, which can be moved or removed like any item, and added to other panels from Add Item.
+
+Three ways to open one: its button; a key bound in the compositor to
+`rivet-shell msg subpanel NAME` (add `open`, `close` or `stay` to do only that; with no name, the
+first sub panel); and pausing the pointer for a moment just past the host (below a top panel, above a bottom one), which can be
+turned off. The place to pause runs the length of the host's bar: from the last few points of the bar, on the
+side the sub panel rolls out from, to a little past the host, where a small handle shows while
+the sub panel is rolled up. Moving straight through on the way to or from the panel doesn't
+open it. The handle has a section of its own under Look. It can be hidden; drawn as a bar, a
+line, an arrow (pointing the way the sub panel rolls out) or dots; made 12 to 400 points long
+and 2 to 10 thick; placed at either end of the panel or its middle; set from 8 points over the
+panel's edge to 40 points away from it; shown in the panel's own color (outlined) or the
+primary, secondary or tertiary color; and made see-through, down to 15%. The place that takes
+the pointer grows to take in the handle wherever it's put.
+
+"Rolls Back Up": it stays while the pointer is on it or one of its popups is open, and for the
+time set (4 seconds to start with, 1 to 30) after the pointer leaves or after it was opened
+without being visited. It draws over windows. Opening one closes the host's other sub panels
+that roll up. "Stays Open": it's opened and closed only by its button or key, stays across
+restarts, and keeps its room from windows the way its host does. Right-clicking the button
+switches between the two; one switched back to rolling up waits its usual time first.
+
+"Join it to the panel, like a drawer pulled out of it" (on to start with): the sub panel's bar
+begins where its panel's bar ends, with no room between them, its corners on that side are
+square, and it fills in under the panel's rounded corners, so the two read as one shape. Only
+the sub panel right under the panel joins it; one stacked after another that's left open sits
+below as a bar of its own. "Match the panel's length and place" (always so for a drawer) makes
+the sub panel as long as its panel and in line with it, whatever its own length says.
+
+"Attached to" moves a sub panel to another panel. When its host is removed the sub panel is
+kept, attached to nothing and not shown, until it's given another. A sub panel under a panel
+that hides brings that panel out with it. With several screens, a key opens the sub panel on
+each screen it's on; its button, only on that screen.
+
 ### Displays and window look: how Rivet Shell changes the compositor's settings
 
 From `settings_app/displays.rs` and `settings_app/window_look.rs`.

@@ -19,6 +19,7 @@ mod displays;
 mod item_opts;
 mod launcher;
 mod nav;
+mod controls;
 mod look_opts;
 mod font_pick;
 mod wallpaper;
@@ -120,6 +121,7 @@ impl SettingsApp {
     pub fn new(_cc: &eframe::CreationContext, shot: Option<PathBuf>) -> SettingsApp {
         let mut s = Settings::load();
         let mut demo_dir = None;
+        let mut sub_sel = None;
         if shot.is_some() {
             crate::config::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
             rivet_media::thumbs::NO_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -183,6 +185,19 @@ impl SettingsApp {
             }
             if let (Ok(h), Some(p)) = (std::env::var("RIVET_SHELL_HIDE"), s.panels.first_mut()) {
                 p.hide = DockHide::from(&h);
+            }
+            // RIVET_SHELL_SUB=open|stay: a sub panel under the first panel, chosen on the Panels page.
+            if let Ok(how) = std::env::var("RIVET_SHELL_SUB")
+                && let Some(i) = crate::panels::add_sub(&mut s.panels, 0)
+            {
+                let list = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+                s.panels[i].zones = [list(&["dock"]), Vec::new(), list(&["system", "ai"])];
+                if let Some(sub) = s.panels[i].sub.as_mut() {
+                    (sub.stay, sub.open) = (how == "stay", how == "stay");
+                }
+                crate::panels::rename_sub(&mut s.panels, i, "Shortcuts");
+                s.tidy_panels();
+                sub_sel = Some(i);
             }
             demo_dir = Some(d);
             // RIVET_SHELL_TEXT=15 sets the text size.
@@ -266,7 +281,7 @@ impl SettingsApp {
             wall_screen: std::env::var("RIVET_SHELL_WALL_SCREEN").ok().filter(|_| shot.is_some()).unwrap_or_default(),
             add_filter: String::new(),
             screens: if shot.is_some() { vec!["DP-1".into(), "HDMI-A-1".into()] } else { crate::sys::screens(crate::sys::Compositor::detect()) },
-            panel_sel: 0,
+            panel_sel: sub_sel.unwrap_or(0),
             preview_kit: None,
             note: None,
             app_icon: None,
@@ -298,15 +313,15 @@ impl Drop for SettingsApp {
 
 fn section(ui: &mut egui::Ui, title: &str, body: &mut dyn FnMut(&mut egui::Ui)) {
     let fill = ui.visuals().faint_bg_color;
-    ui.label(egui::RichText::new(title).strong().size(14.5));
-    ui.add_space(4.0);
-    let fr = egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(18, 16)).show(ui, |ui| {
+    ui.label(egui::RichText::new(title).strong().size(15.0));
+    ui.add_space(6.0);
+    let fr = egui::Frame::NONE.fill(fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(20, 18)).show(ui, |ui| {
         ui.set_width(ui.available_width());
         on_card(ui.visuals_mut(), fill);
         body(ui);
     });
     search::mark(ui, title, fr.response.rect);
-    ui.add_space(22.0);
+    ui.add_space(28.0);
 }
 
 /// Controls on a card: wells, rails and outlines set from the card's own color, so fields,
@@ -341,11 +356,11 @@ fn hint(ui: &mut egui::Ui, text: &str) {
         return;
     }
     let weak = ui.visuals().weak_text_color();
-    ui.add(egui::Label::new(egui::RichText::new(text).small().color(weak)).wrap());
+    ui.add(egui::Label::new(egui::RichText::new(text).size(12.0).color(weak)).wrap());
 }
 
 fn grid(ui: &mut egui::Ui, id: &str, body: &mut dyn FnMut(&mut egui::Ui)) {
-    egui::Grid::new(id).num_columns(2).spacing([24.0, 16.0]).min_col_width(140.0).show(ui, |ui| body(ui));
+    egui::Grid::new(id).num_columns(2).spacing([24.0, 14.0]).min_col_width(170.0).show(ui, |ui| body(ui));
 }
 
 impl eframe::App for SettingsApp {
@@ -595,7 +610,7 @@ impl SettingsApp {
                 ui.add_space(8.0);
                 hint(ui, "Secondary and tertiary colors look close to the accent because Rivet's colors in matugen are out of date. Update them to get the full range.");
                 ui.add_space(4.0);
-                if ui.button("Update Rivet's Colors").on_hover_text("Updates Rivet's colors in matugen and recolors the desktop now").clicked() {
+                if controls::button(ui, controls::Icon::Reset, "Update Rivet's Colors").on_hover_text("Updates Rivet's colors in matugen and recolors the desktop now").clicked() {
                     self.note = Some(match palette::install_matugen_template() {
                         Ok(_) => {
                             let pic = std::path::PathBuf::from(self.s.matugen_picture());
@@ -619,22 +634,13 @@ impl SettingsApp {
                 ui.label("Font");
                 ui.horizontal(|ui| {
                     font_pick::font_pick(ui, "shell-font", &mut self.s.font, &format!("Like the Desktop ({})", font_pick::desktop_name()));
-                    if !self.s.font.is_empty() && ui.small_button("Reset").clicked() {
+                    if !self.s.font.is_empty() && controls::reset(ui).clicked() {
                         self.s.font.clear();
                     }
                 });
                 ui.end_row();
                 ui.label("Text size");
-                ui.horizontal(|ui| {
-                    if ui.selectable_label(self.s.text_size == 0.0, "Like the Desktop").clicked() {
-                        self.s.text_size = 0.0;
-                    }
-                    for (pt, label) in [(12.5, "Small"), (13.5, "Medium"), (15.0, "Large")] {
-                        if ui.selectable_label(self.s.text_size == pt, label).clicked() {
-                            self.s.text_size = pt;
-                        }
-                    }
-                });
+                panel_editor::segmented(ui, &mut self.s.text_size, &[(0.0, "Like the Desktop"), (12.5, "Small"), (13.5, "Medium"), (15.0, "Large")]);
                 ui.end_row();
             });
         });
@@ -649,9 +655,9 @@ impl SettingsApp {
 
     fn notifications_page(&mut self, ui: &mut egui::Ui) {
         section(ui, "Notifications", &mut |ui| {
-            ui.checkbox(&mut self.s.notifications, "Show apps' notifications");
+            controls::master(ui, &mut self.s.notifications, "Show apps' notifications");
             hint(ui, "Past notifications stay in quick settings. If mako, dunst or another shell is running, it shows them instead.");
-            ui.add_space(10.0);
+            controls::rule(ui);
             if self.s.notifications {
                 self.notes_preview(ui);
                 ui.add_space(10.0);
@@ -680,17 +686,19 @@ impl SettingsApp {
                     ui.add(egui::Slider::new(&mut s.note_max, 1..=8).suffix(" on screen"));
                     ui.end_row();
                 });
+                ui.add_space(6.0);
                 hint(ui, "Apps that ask for their own time keep it, and urgent ones stay until you close them.");
             });
         });
         self.note_look_section(ui);
         section(ui, "Volume and brightness pop-up", &mut |ui| {
-            ui.checkbox(&mut self.s.osd, "Show volume and brightness as they change");
-            ui.add_enabled(self.s.osd, egui::Checkbox::new(&mut self.s.osd_keys, "Show Caps Lock and Num Lock turning on and off"));
-            ui.add_space(6.0);
+            controls::master(ui, &mut self.s.osd, "Show volume and brightness as they change");
+            controls::rule(ui);
             let on = self.s.osd;
             let s = &mut self.s;
             ui.add_enabled_ui(on, |ui| {
+                controls::switch(ui, &mut s.osd_keys, "Show Caps Lock and Num Lock turning on and off");
+                ui.add_space(8.0);
                 grid(ui, "shell-osd", &mut |ui| {
                     use crate::config::{LaunchSize, OsdPlace};
                     use crate::style::Role;
@@ -722,24 +730,20 @@ impl SettingsApp {
             });
         });
         section(ui, "Keys", &mut |ui| {
-            hint(ui, "Bind these in your compositor's settings:");
-            ui.add_space(4.0);
-            let weak = ui.visuals().weak_text_color();
+            hint(ui, "Bind these in your compositor's settings.");
+            ui.add_space(6.0);
             for (cmd, what) in [
-                ("rivet-shell msg launcher", "Apps"),
+                ("rivet-shell msg launcher", "The launcher"),
                 ("rivet-shell msg control-center", "Quick settings"),
                 ("rivet-shell msg volume up | down | mute", "Volume"),
                 ("rivet-shell msg brightness up | down", "Brightness"),
                 ("rivet-shell msg media play-pause | next | previous", "Music and video"),
                 ("rivet-shell msg dnd", "Do Not Disturb"),
-                ("rivet-shell msg wallpaper random | next | previous", "Another wallpaper from the folder"),
-                ("rivet-shell msg power", "Lock, suspend, restart, shut down"),
+                ("rivet-shell msg wallpaper random | next | previous", "Another wallpaper"),
+                ("rivet-shell msg power", "The power menu"),
                 ("rivet-shell msg lock", "Lock the screen"),
             ] {
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(cmd).monospace().size(12.0));
-                    ui.label(egui::RichText::new(what).color(weak).size(12.0));
-                });
+                controls::command(ui, what, cmd);
             }
         });
     }
@@ -748,19 +752,15 @@ impl SettingsApp {
         let ctx = ui.ctx().clone();
         let knows_windows = knows_windows();
         section(ui, "Dock", &mut |ui| {
-            ui.checkbox(&mut self.s.dock, "Show the dock");
-            ui.add_space(8.0);
+            controls::master(ui, &mut self.s.dock, "Show the dock");
+            controls::rule(ui);
             ui.add_enabled_ui(self.s.dock, |ui| {
                 grid(ui, "shell-dock", &mut |ui| {
                     ui.label("Icon size");
                     ui.add(egui::Slider::new(&mut self.s.dock_icon, 28.0..=80.0).step_by(2.0).suffix(" pt"));
                     ui.end_row();
                     ui.label("Hide");
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Never, "Never");
-                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Auto, "Auto-Hide");
-                        ui.selectable_value(&mut self.s.dock_hide, DockHide::Smart, "Smart Hide");
-                    });
+                    panel_editor::segmented(ui, &mut self.s.dock_hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-Hide"), (DockHide::Smart, "Smart Hide")]);
                     ui.end_row();
                 });
                 hint(
@@ -771,13 +771,13 @@ impl SettingsApp {
                         DockHide::Smart => if knows_windows { "The dock shows on an empty workspace and slides away when a window opens." } else { "Smart Hide needs niri, Hyprland or mango; here it works like Auto-Hide." },
                     },
                 );
-                ui.add_space(6.0);
+                controls::rule(ui);
                 ui.add_enabled_ui(self.s.dock_hide == DockHide::Never, |ui| {
-                    ui.checkbox(&mut self.s.dock_reserve, "Keep windows clear of the dock");
+                    controls::switch(ui, &mut self.s.dock_reserve, "Keep windows clear of the dock");
                 });
                 if knows_windows {
-                    ui.checkbox(&mut self.s.dock_running, "A dot under apps with windows open");
-                    ui.checkbox(&mut self.s.dock_open_apps, "Show open apps that aren't pinned");
+                    controls::switch(ui, &mut self.s.dock_running, "A dot under apps with windows open");
+                    controls::switch(ui, &mut self.s.dock_open_apps, "Show open apps that aren't pinned");
                 }
             });
         });
@@ -841,22 +841,19 @@ impl SettingsApp {
 
     fn widgets_page(&mut self, ui: &mut egui::Ui) {
         section(ui, "On the desktop", &mut |ui| {
-            ui.checkbox(&mut self.s.widget_clock, "A large clock and the date");
-            ui.checkbox(&mut self.s.widget_system, "Processor, memory and battery");
-            ui.add_space(8.0);
+            controls::switch(ui, &mut self.s.widget_clock, "A large clock and the date");
+            controls::switch(ui, &mut self.s.widget_system, "Processor, memory and battery");
+            controls::rule(ui);
             grid(ui, "shell-widgets", &mut |ui| {
                 ui.label("Side");
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.s.widget_side, Side::Left, "Left");
-                    ui.selectable_value(&mut self.s.widget_side, Side::Right, "Right");
-                });
+                panel_editor::segmented(ui, &mut self.s.widget_side, &[(Side::Left, "Left"), (Side::Right, "Right")]);
                 ui.end_row();
             });
             ui.add_space(8.0);
             hint(ui, "Drag a widget on the desktop to move it, or double-click it to put it back.");
             if self.s.widget_clock_at.is_some() || self.s.widget_system_at.is_some() {
                 ui.add_space(6.0);
-                if ui.button("Reset Positions").on_hover_text("Puts the widgets back on the side chosen above").clicked() {
+                if controls::button(ui, controls::Icon::Reset, "Reset Positions").on_hover_text("Puts the widgets back on the side chosen above").clicked() {
                     (self.s.widget_clock_at, self.s.widget_system_at) = (None, None);
                 }
             }

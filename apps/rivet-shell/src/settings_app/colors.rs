@@ -80,7 +80,7 @@ impl SettingsApp {
 
     /// The colours made from the wallpaper: by matugen, run here, or by whatever else writes them.
     fn wallpaper_colors(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(&mut self.s.matugen, "Make colors with matugen when the wallpaper changes");
+        super::controls::switch(ui, &mut self.s.matugen, "Make colors with matugen when the wallpaper changes");
         if !self.s.matugen {
             hint(ui, "The shell follows the colors another theme tool sets for the desktop.");
             return;
@@ -105,7 +105,7 @@ impl SettingsApp {
             ui.label("Contrast");
             ui.horizontal(|ui| {
                 ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).on_hover_text("Lower for softer colors, higher for stronger ones. 0 keeps the scheme as designed.");
-                if self.s.matugen_contrast != 0.0 && ui.small_button("Reset").clicked() {
+                if self.s.matugen_contrast != 0.0 && super::controls::reset(ui).clicked() {
                     self.s.matugen_contrast = 0.0;
                 }
             });
@@ -124,7 +124,7 @@ impl SettingsApp {
                 ui.end_row();
             }
             ui.label("Rivet apps");
-            if ui.button("Add Rivet's Colors to matugen").on_hover_text("Rivet apps then change color with the wallpaper, like the rest of the desktop").clicked() {
+            if super::controls::button(ui, super::controls::Icon::Plus, "Add Rivet's Colors to matugen").on_hover_text("Rivet apps then change color with the wallpaper, like the rest of the desktop").clicked() {
                 self.note = Some(match palette::install_matugen_template() {
                     Ok(m) => m,
                     Err(e) => format!("Couldn't update matugen's config: {e}"),
@@ -175,7 +175,7 @@ impl SettingsApp {
             self.surfaces(ui);
             ui.end_row();
             ui.label("");
-            ui.checkbox(&mut self.s.surface_tint, "Tint the surface with the accent");
+            super::controls::switch(ui, &mut self.s.surface_tint, "Tint the surface with the accent");
             ui.end_row();
         });
     }
