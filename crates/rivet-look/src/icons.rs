@@ -464,6 +464,21 @@ impl IconTheme {
         None
     }
 
+    /// Rivet's own symbolic icons (names starting "rivet-", such as the column view's) are in
+    /// no icon theme, so they come from the built-in set even when the theme's icons are used.
+    /// Without this, a theme's icon for a later name in the list stood in for them.
+    fn own_icon(&mut self, ctx: &egui::Context, names: &[&str], px: u32) -> Option<Option<egui::TextureHandle>> {
+        let key = names.iter().filter(|n| n.starts_with("rivet-")).find_map(|n| crate::builtin_icons::lookup(n)).map(|(k, _)| k).filter(|k| k.starts_with("s:"))?;
+        if let Some(t) = self.builtin_tex.get(&(key, px)) {
+            return Some(Some(t.clone()));
+        }
+        // Symbolic icons are white strokes, tinted when drawn, so the colours don't matter.
+        let white = crate::builtin_icons::BuiltinColors { accent: egui::Color32::WHITE, bg: egui::Color32::BLACK, fg: egui::Color32::WHITE, dark: true };
+        let t = render_svg(crate::builtin_icons::svg(key, &white).as_bytes(), px).map(|img| ctx.load_texture(format!("builtin:{key}:{px}"), img, egui::TextureOptions::LINEAR));
+        self.builtin_tex.insert((key, px), t.clone()?);
+        Some(t)
+    }
+
     /// Get a texture for the first available icon name, rendered at `px` pixels.
     pub fn texture(&mut self, ctx: &egui::Context, names: &[&str], px: u32) -> Option<egui::TextureHandle> {
         if let Some(t) = self.nerd_texture(ctx, names, px, false) {
@@ -483,6 +498,9 @@ impl IconTheme {
                     }
                 }
             }
+        }
+        if let Some(t) = self.own_icon(ctx, names, px) {
+            return t;
         }
         let lookup_size = nominal_size(px);
         let (name, path) = self.find(names, lookup_size)?;
@@ -524,6 +542,9 @@ impl IconTheme {
                     return t;
                 }
             }
+        }
+        if let Some(t) = self.own_icon(ctx, names, px) {
+            return t;
         }
         let (name, path) = self.find(names, nominal_size(px))?;
         self.mask_path(ctx, &name, &path, px)

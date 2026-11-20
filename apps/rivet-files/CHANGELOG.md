@@ -12,6 +12,7 @@
 - **Column view keeps up**: the other columns are read in the background, so moving through
   large folders no longer pauses the window.
 - **Opens sooner**: about 30 ms quicker to the first window (more with a large matugen setup).
+- The column view's button shows the column view with any icon theme, not a theme's row of bars.
 
 ## 0.8.0
 
