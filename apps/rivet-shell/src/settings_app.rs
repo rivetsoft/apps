@@ -563,6 +563,7 @@ impl SettingsApp {
     }
 
     fn appearance_page(&mut self, ui: &mut egui::Ui) {
+        self.colors_preview(ui);
         self.colors_section(ui);
         section(ui, "Color use", &mut |ui| {
             grid(ui, "shell-color-use", &mut |ui| {

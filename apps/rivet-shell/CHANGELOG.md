@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Appearance opens with a preview of your colors: the four surfaces, from the base up to a pop-up, with text on each and a button in each color.
 - Settings is easier to read: on and off are switches, choices are one kind of row, buttons carry a symbol for what they do, and long cards are split into named parts. The Panels page lines its settings up in rows, and each key command has a Copy button.
 - **Sub panels**: a panel that stays rolled up under another until you ask for it, to keep the
   main panel clean. Add one with Add Sub Panel on Settings' Panels page and put any items on

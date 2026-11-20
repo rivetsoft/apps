@@ -2,7 +2,7 @@
 //! the Dock page and each panel. Each row starts with a chip for the level above (Appearance's
 //! value, or the default on Appearance itself); changing the row's control gives it its own.
 
-use eframe::egui::{self, Align2, Color32, Pos2, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Pos2, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::r_sm;
 
@@ -148,18 +148,6 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
             *own = Style::default();
         }
     }
-}
-
-/// A strip of the theme's colours, as the look editor uses them.
-pub(super) fn palette_strip(ui: &mut egui::Ui, colors: &Roles) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        for (role, name) in [(colors.primary, "Primary"), (colors.secondary, "Secondary"), (colors.tertiary, "Tertiary")] {
-            let (r, _) = ui.allocate_exact_size(Vec2::new(92.0, 30.0), Sense::hover());
-            ui.painter().rect_filled(r, r_sm(), role);
-            ui.painter().text(r.center(), Align2::CENTER_CENTER, name, rivet_look::fonts::ui_font(12.0), crate::ui::on(role));
-        }
-    });
 }
 
 impl SettingsApp {

@@ -3,7 +3,7 @@
 
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rivet_look::palette;
-use rivet_look::theme::{ACCENTS, Mode};
+use rivet_look::theme::{ACCENTS, Mode, r_lg, r_md};
 
 use super::panel_editor::segmented;
 use super::{SettingsApp, grid, hint, section};
@@ -73,9 +73,61 @@ impl SettingsApp {
                 Source::Palette => self.palette_tiles(ui),
                 Source::Accent => self.own_colors(ui),
             }
-            ui.add_space(14.0);
-            super::look_opts::palette_strip(ui, &Roles::new(&self.look, &self.s));
         });
+    }
+
+    /// The colours as they're used, at the top of the page: the theme's four surfaces, each a
+    /// step above the last, with text on every one and the three colours as buttons on the top one.
+    pub(super) fn colors_preview(&self, ui: &mut egui::Ui) {
+        let v = ui.visuals().clone();
+        let colors = Roles::new(&self.look, &self.s);
+        let w = ui.available_width();
+        let (r, _) = ui.allocate_exact_size(Vec2::new(w, 196.0), Sense::hover());
+        let p = ui.painter_at(r);
+        let (text, weak) = (v.text_color(), v.weak_text_color());
+        let font = |size: f32| rivet_look::fonts::ui_font(size);
+        // Each surface starts a step in from the one under it, which leaves that one a strip
+        // down its left for its name and text.
+        let step = (w * 0.165).max(96.0);
+        let levels = [("Base", v.extreme_bg_color), ("Card", v.faint_bg_color), ("Panel", v.panel_fill), ("Pop-up", v.window_fill)];
+        let mut top = r;
+        for (i, (name, fill)) in levels.into_iter().enumerate() {
+            let n = i as f32;
+            let at = egui::Rect::from_min_max(r.min + Vec2::new(step * n, 13.0 * n), r.max - Vec2::splat(13.0 * n));
+            if i == 3 {
+                p.add(v.popup_shadow.as_shape(at, r_md()));
+            }
+            p.rect_filled(at, if i == 0 { r_lg() } else { r_md() }, fill);
+            p.rect_stroke(at, if i == 0 { r_lg() } else { r_md() }, Stroke::new(1.0, palette::mix(fill, text, 0.1)), egui::StrokeKind::Inside);
+            let from = at.min + Vec2::new(14.0, 12.0);
+            p.text(from, egui::Align2::LEFT_TOP, name.to_uppercase(), font(10.5), weak);
+            if i < 3 {
+                p.text(from + Vec2::new(0.0, 22.0), egui::Align2::LEFT_TOP, "Text", font(13.5), text);
+                p.text(from + Vec2::new(0.0, 42.0), egui::Align2::LEFT_TOP, "Muted", font(12.0), weak);
+            }
+            top = at;
+        }
+        // On the pop-up: a button in each colour, then an outlined one and a switch that's on.
+        let inner = top.shrink2(Vec2::new(14.0, 0.0));
+        let gap = 8.0;
+        let bw = ((inner.width() - gap * 2.0) / 3.0).min(112.0);
+        let y = top.top() + 36.0;
+        for (i, (name, fill)) in [("Primary", colors.primary), ("Secondary", colors.secondary), ("Tertiary", colors.tertiary)].into_iter().enumerate() {
+            let b = egui::Rect::from_min_size(egui::pos2(inner.left() + (bw + gap) * i as f32, y), Vec2::new(bw, 28.0));
+            p.rect_filled(b, 14.0, fill);
+            p.text(b.center(), egui::Align2::CENTER_CENTER, name, font(12.0), crate::ui::on(fill));
+        }
+        let y = y + 28.0 + 12.0;
+        let b = egui::Rect::from_min_size(egui::pos2(inner.left(), y), Vec2::new(bw, 28.0));
+        p.rect_filled(b, 14.0, palette::mix(v.window_fill, text, 0.07));
+        p.rect_stroke(b, 14.0, Stroke::new(1.0, palette::mix(v.window_fill, text, 0.2)), egui::StrokeKind::Inside);
+        p.text(b.center(), egui::Align2::CENTER_CENTER, "Button", font(12.0), text);
+        let track = egui::Rect::from_min_size(egui::pos2(b.right() + gap + 4.0, b.center().y - 9.0), Vec2::new(32.0, 18.0));
+        let on = colors.tone(crate::style::Slot::Toggle, self.s.color_use);
+        p.rect_filled(track, 9.0, on);
+        p.circle_filled(egui::pos2(track.right() - 9.0, track.center().y), 6.5, crate::ui::on(on));
+        p.text(egui::pos2(track.right() + 10.0, b.center().y), egui::Align2::LEFT_CENTER, "Text", font(13.5), text);
+        ui.add_space(24.0);
     }
 
     /// The colours made from the wallpaper: by matugen, run here, or by whatever else writes them.
