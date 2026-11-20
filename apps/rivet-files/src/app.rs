@@ -29,7 +29,6 @@ mod quickview;
 mod views;
 mod zen;
 mod commands;
-mod crashview;
 mod pickview;
 mod split;
 mod keymap;
@@ -148,7 +147,7 @@ enum Dialog {
     Message(String, String),
     Shortcuts,
     /// A crash report from last time (and whether it was copied).
-    Crash(Box<crate::crash::Report>, bool),
+    Crash(Box<rivet_look::crash::Notice>),
     Compress { paths: Vec<PathBuf>, name: String, format: crate::archive::Format, focus: bool },
     BulkRename(Box<bulkrename::BulkState>),
     Convert(Box<mediatools::ConvertState>),
@@ -650,9 +649,8 @@ impl RivetApp {
         // Rivet crashed last time: show the report once. (Checks show it only when asked.)
         if app.screenshot.is_none()
             && !crate::picker::active()
-            && let Some(r) = crate::crash::unseen() {
-                crate::crash::mark_seen(&r);
-                app.dialog = Dialog::Crash(Box::new(r), false);
+            && let Some(n) = rivet_look::crash::Notice::unseen(crate::crash::APP) {
+                app.dialog = Dialog::Crash(Box::new(n));
             }
         // Test hook for checks: RIVET_SPLIT=1 (or a folder for the other pane) opens split view.
         if let Ok(v) = std::env::var("RIVET_SPLIT") {
@@ -666,8 +664,8 @@ impl RivetApp {
         }
         match std::env::var("RIVET_DIALOG").as_deref() {
             Ok("crash") => {
-                if let Some(r) = crate::crash::reports().first().and_then(|p| crate::crash::Report::load(p)) {
-                    app.dialog = Dialog::Crash(Box::new(r), false);
+                if let Some(n) = rivet_look::crash::Notice::latest(crate::crash::APP) {
+                    app.dialog = Dialog::Crash(Box::new(n));
                 }
             }
             Ok("about") => app.open_about(),

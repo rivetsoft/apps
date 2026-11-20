@@ -19,7 +19,7 @@ currently written as part of the Rivet window, so it needs a small refactor firs
 | **rivet-look** | `palette` (live desktop colors), `fonts`, `icons` + `builtin_icons` + `nerd`, `highlight` (theme-colored code), `quick` (the Quick Open / Quick Actions panel and its fuzzy matching, used by Rivet Notes), plus the theme setup now in app.rs: visuals, corner radii (`r_xs`…`r_lg`, square mode), status colors, terminal-mode helpers, `paint_tex` | yes | medium: it reads `Settings` directly in a few places |
 | **rivet-media** | `thumbs` (freedesktop thumbnail cache + thumbnailers), `preview`, `media` (ffmpeg check, video frames) | yes (textures) | small |
 | **rivet-clip** | `wlclip` (Wayland clipboard and drag-out with uri-lists, cut/copy markers) | window handle only | small |
-| **rivet-kit** | `headless` (in-memory screenshots for checks), the crash-report dialog, the key=value settings store (load/save, never write during checks), the background `watch` waker, the shortcut-window layout | yes | small–medium |
+| **rivet-kit** | `headless` (in-memory screenshots for checks), the key=value settings store (load/save, never write during checks), the background `watch` waker, the shortcut-window layout | yes | small–medium |
 | **rivet-widgets** | stepped path bar + fuzzy suggestions, the three file views (icons/list/compact), sidebar rows and sections, toolbar buttons, status bar, tabs, split panes, Quick Open / Quick Actions palette, Peek panel, preview light box, dialog shell | yes | **large**: all of it is `impl RivetApp` today |
 
 Stays in Rivet: the file picker and portal (`picker`, `portal`, `portal_setup`, `pickview`), gvfs
@@ -72,7 +72,9 @@ reads (show hidden, picker filter) removes both dependencies.
    - ✅ **rivet-kit**: the in-memory screenshot renderer, and a `Shot` helper that gives any
      app `--screenshot FILE.png`.
    - ✅ **rivet-media**: `preview` and `thumbs`, plus the light box (`lightbox`), used by both apps.
-   - Next: rivet-fs, rivet-clip, and `crash` into rivet-xdg.
+   - ✅ **`crash`** into rivet-xdg, with personal details taken out of every report, and the
+     window that shows one into `rivet_look::crash`. Files and Notes use them.
+   - Next: rivet-fs and rivet-clip.
 3. ✅ **rivet-look:** `palette`, `fonts`, `icons`, `builtin_icons`, `nerd` and `highlight`
    moved over unchanged. The theme moved too: `theme::apply` takes a small `Look` value (light,
    dark or system; accent; desktop palette; terminal mode) and also provides the corner radii and

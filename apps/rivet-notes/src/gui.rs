@@ -150,6 +150,8 @@ pub struct NotesApp {
     wl_drops_started: bool,
     /// The open note's backlinks: for which note and list, and the notes with their lines.
     backlinks: Option<(PathBuf, u64, Vec<Backlink>)>,
+    /// Rivet Notes crashed last time: the report, shown once.
+    crash: Option<Box<rivet_look::crash::Notice>>,
 }
 
 const SAVE_AFTER: f64 = 1.0;
@@ -259,6 +261,12 @@ impl NotesApp {
             drop_done: false,
             wl_drops_started: false,
             backlinks: None,
+            // Test hook: RIVET_NOTES_CRASH shows the newest crash report.
+            crash: if checking {
+                std::env::var_os("RIVET_NOTES_CRASH").and_then(|_| rivet_look::crash::Notice::latest(crate::CRASH)).map(Box::new)
+            } else {
+                rivet_look::crash::Notice::unseen(crate::CRASH).map(Box::new)
+            },
         };
         let start = open.or_else(|| app.s.vaults.iter().find(|p| p.is_dir()).cloned());
         if let Some(v) = start {
@@ -1093,6 +1101,9 @@ impl eframe::App for NotesApp {
             rivet_look::builtin_icons::BuiltinColors { accent: self.look.accent(&c), bg: v.extreme_bg_color, fg: v.text_color(), dark: v.dark_mode }
         });
         self.icons.set_builtin(kit);
+        if self.crash.as_mut().is_some_and(|n| n.show(&ctx)) {
+            self.crash = None;
+        }
         self.shortcuts(&ctx);
         let now = ctx.input(|i| i.time);
         // Save after a pause in typing; pick up changes made elsewhere every few seconds.

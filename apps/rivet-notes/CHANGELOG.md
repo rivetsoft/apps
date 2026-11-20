@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Crash reports**: if Rivet Notes closes unexpectedly, a report is saved on your computer and
+  shown the next time it starts, with personal details left out. Nothing is sent unless you
+  choose Report on GitHub, which opens an issue for you to check and send.
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
 
 ## 0.3.0

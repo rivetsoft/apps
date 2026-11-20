@@ -504,8 +504,8 @@ impl RivetApp {
             Dialog::Shortcuts => {
                 close = self.keymap_dialog(ctx);
             }
-            Dialog::Crash(..) => {
-                close = self.crash_dialog(ctx);
+            Dialog::Crash(n) => {
+                close = n.show(ctx);
             }
         }
         if let Some(n) = next {
@@ -1800,7 +1800,7 @@ impl RivetApp {
             }
         }
         if let Some(r) = show_crash.and_then(|p| crate::crash::Report::load(&p)) {
-            self.dialog = Dialog::Crash(Box::new(r), false);
+            self.dialog = Dialog::Crash(Box::new(rivet_look::crash::Notice::new(crate::crash::APP, r)));
         }
         self.prefs_win = win;
         if let Some(r) = shown.rect {

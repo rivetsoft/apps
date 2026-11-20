@@ -76,7 +76,12 @@ fn install_desktop_entry() -> Result<PathBuf, String> {
     Ok(entry)
 }
 
+/// Where crash reports go, and the issue form they're shared on.
+pub const CRASH: rivet_xdg::crash::App = rivet_xdg::crash::App { name: "Rivet Notes", id: "notes", state: "rivet-notes", version: env!("CARGO_PKG_VERSION"), repo: env!("CARGO_PKG_REPOSITORY") };
+
 fn main() -> ExitCode {
+    // A bug that stops Rivet Notes leaves a report on this computer (shown on the next start).
+    rivet_xdg::crash::install(CRASH);
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut screenshot = None;
     if let Some(i) = args.iter().position(|a| a == "--screenshot") {
@@ -165,6 +170,7 @@ fn main() -> ExitCode {
     }
     let mut open = args.first().map(|a| home_path(a)).or_else(|| vault_arg.as_deref().map(home_path));
     if screenshot.is_some() {
+        rivet_xdg::crash::NO_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
         if open.is_none() && std::env::var_os("RIVET_NOTES_EMPTY").is_none() {
             open = sample_vault();
         }
