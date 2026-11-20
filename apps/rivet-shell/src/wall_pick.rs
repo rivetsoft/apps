@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::theme::r_md;
 
-use crate::portal::Pick;
+use rivet_xdg::portal::Pick;
 use crate::wall::{self, Gallery, Picture};
 
 #[derive(Default)]

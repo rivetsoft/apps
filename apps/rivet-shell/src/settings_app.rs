@@ -89,7 +89,7 @@ pub struct SettingsApp {
     picker: crate::wall_pick::Picker,
     /// The file picker's answer, on its way.
     #[allow(clippy::type_complexity)]
-    picking: Option<Receiver<(crate::portal::Pick, Result<Option<PathBuf>, String>)>>,
+    picking: Option<Receiver<(rivet_xdg::portal::Pick, Result<Option<PathBuf>, String>)>>,
     /// A folder being chosen for a plugin's setting: (plugin, key), and the picker's answer.
     #[allow(clippy::type_complexity)]
     plugin_pick: Option<(String, String, Receiver<Result<Option<PathBuf>, String>>)>,

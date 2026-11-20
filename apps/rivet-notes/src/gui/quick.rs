@@ -207,7 +207,7 @@ impl NotesApp {
             Cmd::Preferences => self.prefs_open = true,
             Cmd::Reload => self.rescan(),
             Cmd::SwitchVault(p) => self.open_vault(p),
-            Cmd::OpenVault => self.prompt = Some(Prompt::OpenVault(String::new())),
+            Cmd::OpenVault => self.ask_vault(),
         }
         self.s.save();
     }

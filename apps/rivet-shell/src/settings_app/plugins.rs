@@ -434,7 +434,7 @@ impl SettingsApp {
             let start = Some(self.s.plugin_value(&id, &key)).filter(|v| !v.is_empty()).map(crate::wall::expand).or_else(|| Some(rivet_xdg::places::home()));
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || {
-                let _ = tx.send(crate::portal::choose(crate::portal::Pick::Folder, &title, start.as_deref()));
+                let _ = tx.send(rivet_xdg::portal::choose(rivet_xdg::portal::Pick::Folder, &title, start.as_deref()));
             });
             self.plugin_pick = Some((id, key, rx));
         }

@@ -1345,7 +1345,7 @@ impl NotesApp {
             ui.label(egui::RichText::new("A vault is a folder of Markdown notes. Open one to start.").color(v.weak_text_color()));
             ui.add_space(18.0);
             if ui.add(egui::Button::new(egui::RichText::new("Open Folder as Vault…").color(v.selection.stroke.color)).fill(v.selection.bg_fill).corner_radius(r_md()).min_size(Vec2::new(220.0, 36.0))).clicked() {
-                self.prompt = Some(Prompt::OpenVault(String::new()));
+                self.ask_vault();
             }
             let recent: Vec<PathBuf> = self.s.vaults.iter().filter(|p| p.is_dir()).cloned().collect();
             if !recent.is_empty() {

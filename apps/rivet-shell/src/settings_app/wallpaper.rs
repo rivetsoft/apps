@@ -9,7 +9,7 @@ use rivet_look::palette::mix;
 use rivet_look::theme::{r_lg, r_md};
 
 use super::{SettingsApp, hint, section};
-use crate::portal::Pick;
+use rivet_xdg::portal::Pick;
 use crate::wall;
 
 /// Recent folders kept.
@@ -36,7 +36,7 @@ impl SettingsApp {
         let (tx, rx) = channel();
         std::thread::spawn(move || {
             let title = if kind == Pick::Folder { "Wallpaper Folder" } else { "Wallpaper" };
-            let _ = tx.send((kind, crate::portal::choose(kind, title, Some(&start))));
+            let _ = tx.send((kind, rivet_xdg::portal::choose(kind, title, Some(&start))));
         });
         self.picking = Some(rx);
     }

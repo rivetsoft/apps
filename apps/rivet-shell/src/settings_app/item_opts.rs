@@ -315,7 +315,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
                     let (tx, rx) = mpsc::channel();
                     let start = crate::wall::expand(s.launcher_custom.trim()).parent().map(std::path::Path::to_path_buf);
                     std::thread::spawn(move || {
-                        let _ = tx.send(crate::portal::choose(crate::portal::Pick::Icon, "Launcher Icon", start.as_deref()));
+                        let _ = tx.send(rivet_xdg::portal::choose(rivet_xdg::portal::Pick::Icon, "Launcher Icon", start.as_deref()));
                     });
                     ui.data_mut(|d| d.insert_temp::<Asked>(key, Arc::new(Mutex::new(rx))));
                 }

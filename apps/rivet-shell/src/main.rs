@@ -28,7 +28,6 @@ mod panels;
 mod plugin_store;
 mod plugins;
 mod polkit;
-mod portal;
 mod power_ui;
 mod quick;
 mod radio;

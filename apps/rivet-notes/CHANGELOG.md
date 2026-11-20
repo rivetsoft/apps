@@ -6,6 +6,8 @@
   shown the next time it starts, with personal details left out. Nothing is sent unless you
   choose Report on GitHub, which opens an issue for you to check and send.
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
+- **Open Folder as Vault uses your desktop's folder picker**, so you choose a folder that
+  exists instead of typing its path. Typing a path is still there for desktops without a picker.
 
 ## 0.3.0
 

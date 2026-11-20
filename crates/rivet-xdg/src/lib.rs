@@ -6,3 +6,5 @@ pub mod crash;
 pub mod launch;
 pub mod mime;
 pub mod places;
+#[cfg(feature = "portal")]
+pub mod portal;

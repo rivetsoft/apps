@@ -107,6 +107,8 @@ pub struct NotesApp {
     prefs_page: prefs::Page,
     about_open: bool,
     shot: Option<rivet_kit::Shot>,
+    /// The desktop's folder picker, open on a thread to choose a vault.
+    vault_pick: Option<std::sync::mpsc::Receiver<Result<Option<PathBuf>, String>>>,
     edit_cmd: Option<EditCmd>,
     /// The window title shown (it names the vault).
     title: String,
@@ -237,6 +239,7 @@ impl NotesApp {
             prefs_page: prefs::Page::from_name(&std::env::var("RIVET_NOTES_PREFS").unwrap_or_default()),
             about_open: false,
             shot: screenshot.map(rivet_kit::Shot::new),
+            vault_pick: None,
             edit_cmd: None,
             title: String::new(),
             families: None,
@@ -386,6 +389,44 @@ impl NotesApp {
     }
 
     // ---------------------------------------------------------------- vaults
+
+    /// Choose a vault with the desktop's folder picker, so it is always a real folder. The
+    /// picker waits for the person, so it runs on a thread. Where the desktop has no picker
+    /// (and in checks, which never open one), the folder is typed instead.
+    pub(crate) fn ask_vault(&mut self) {
+        if self.vault_pick.is_some() {
+            return;
+        }
+        if self.shot.is_some() {
+            self.prompt = Some(Prompt::OpenVault(String::new()));
+            return;
+        }
+        let start = self.vault.as_ref().and_then(|v| v.parent()).map(Path::to_path_buf).unwrap_or_else(rivet_xdg::places::home);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(rivet_xdg::portal::choose(rivet_xdg::portal::Pick::Folder, "Open Folder as Vault", Some(&start)));
+        });
+        self.vault_pick = Some(rx);
+    }
+
+    /// The folder picker's answer, once there is one.
+    fn poll_vault_pick(&mut self, ctx: &egui::Context) {
+        let Some(rx) = &self.vault_pick else { return };
+        let answer = match rx.try_recv() {
+            Ok(a) => a,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint_after(std::time::Duration::from_millis(200));
+                return;
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => Err(String::new()),
+        };
+        self.vault_pick = None;
+        match answer {
+            Ok(Some(p)) => self.open_vault(p),
+            Ok(None) => {}
+            Err(_) => self.prompt = Some(Prompt::OpenVault(String::new())),
+        }
+    }
 
     fn open_vault(&mut self, p: PathBuf) {
         let p = std::fs::canonicalize(&p).unwrap_or(p);
@@ -873,7 +914,7 @@ impl NotesApp {
                 self.vault_list(ui);
             });
             if ui.button("Open Folder as Vault…").clicked() {
-                self.prompt = Some(Prompt::OpenVault(String::new()));
+                self.ask_vault();
                 ui.close();
             }
             if ui.add_enabled(has_vault, egui::Button::new("Show Vault Folder")).clicked() {
@@ -1014,7 +1055,7 @@ impl NotesApp {
         }
         ui.separator();
         if ui.button("Open Folder as Vault…").clicked() {
-            self.prompt = Some(Prompt::OpenVault(String::new()));
+            self.ask_vault();
             ui.close();
         }
     }
@@ -1101,6 +1142,7 @@ impl eframe::App for NotesApp {
             rivet_look::builtin_icons::BuiltinColors { accent: self.look.accent(&c), bg: v.extreme_bg_color, fg: v.text_color(), dark: v.dark_mode }
         });
         self.icons.set_builtin(kit);
+        self.poll_vault_pick(&ctx);
         if self.crash.as_mut().is_some_and(|n| n.show(&ctx)) {
             self.crash = None;
         }

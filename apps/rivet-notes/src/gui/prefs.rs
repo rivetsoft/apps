@@ -480,7 +480,7 @@ impl NotesApp {
             self.open_vault(p);
         }
         if ask_vault {
-            self.prompt = Some(Prompt::OpenVault(String::new()));
+            self.ask_vault();
         }
         if self.s != before {
             self.s.save();

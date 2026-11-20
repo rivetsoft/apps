@@ -7,5 +7,10 @@ description = "Shared desktop plumbing for Rivet apps: XDG folders, bookmarks an
 license = "MIT OR Apache-2.0"
 publish = false
 
+[features]
+# The desktop's file picker, through the portal (needs a D-Bus library).
+portal = ["dep:zbus"]
+
 [dependencies]
 libc = "0.2.191"
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"], optional = true }
