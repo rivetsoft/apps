@@ -716,43 +716,36 @@ impl FtpApp {
         }
     }
 
+    /// The transfer list under the panes: a card like theirs, with a heading that says how far
+    /// the batch has got, then the transfers, the ones still to go first.
     pub(super) fn queue_panel(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            let waiting = self.queue.iter().filter(|j| j.state == JobState::Waiting).count();
-            let failed = self.queue.iter().filter(|j| matches!(j.state, JobState::Failed(_))).count();
-            let head = if waiting > 0 {
-                format!("Transfers · {waiting} to go")
-            } else if !self.queue.is_empty() {
-                format!("Transfers · all done{}", if failed > 0 { format!(", {failed} failed") } else { String::new() })
-            } else {
-                "Transfers".into()
-            };
-            ui.label(egui::RichText::new(head).strong());
-            if let Some((msg, bad)) = &self.note {
-                ui.add_space(12.0);
-                let c = if *bad { status(&ctx).danger } else { v.weak_text_color() };
-                ui.label(egui::RichText::new(first_line(msg)).color(c)).on_hover_text(msg.as_str());
-            }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.queue.iter().any(|j| j.state != JobState::Waiting) && ui.add(egui::Button::new("Clear finished").corner_radius(r_sm())).clicked() {
-                    self.queue.retain(|j| j.state == JobState::Waiting);
-                }
-            });
-        });
-        ui.add_space(4.0);
-        self.edits_panel(ui);
+        let st = status(&ctx);
+        let weak = v.weak_text_color();
+        let accent = v.selection.bg_fill;
+        let card = ui.max_rect();
+        ui.painter().rect_filled(card, r_lg(), v.extreme_bg_color);
+        // The card fills the panel, so the panel keeps its height whatever is in it.
+        ui.advance_cursor_after_rect(card);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(card.shrink2(Vec2::new(10.0, 8.0))).layout(egui::Layout::top_down(egui::Align::Min)));
+        let ui = &mut child;
+
+        let n = self.queue.len();
+        let waiting = self.queue.iter().filter(|j| j.state == JobState::Waiting).count();
+        let failed = self.queue.iter().filter(|j| matches!(j.state, JobState::Failed(_))).count();
+        let done = n - waiting - failed;
         let running = self.queue.iter().find(|j| j.state == JobState::Waiting).map(|j| j.id);
-        // The running one: note when it started, and its speed over the last few seconds.
-        let mut progress: std::collections::HashMap<u64, (u64, f64)> = std::collections::HashMap::new();
+
+        // The running one: note when it started, and how much has arrived with its speed over
+        // the last few seconds (downloads only: sftp doesn't say how far an upload got).
+        let mut current: Option<(u64, f64)> = None;
         if let Some(j) = self.queue.iter_mut().find(|j| Some(j.id) == running) {
             let now = std::time::Instant::now();
             j.started.get_or_insert(now);
-            if let Some(n) = j.local_target.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()) {
+            if let Some(got) = j.local_target.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()) {
                 if j.samples.back().is_none_or(|(t, _)| now.duration_since(*t).as_millis() >= 250) {
-                    j.samples.push_back((now, n));
+                    j.samples.push_back((now, got));
                 }
                 while j.samples.len() > 2 && j.samples.front().is_some_and(|(t, _)| now.duration_since(*t).as_secs_f64() > 4.0) {
                     j.samples.pop_front();
@@ -761,89 +754,202 @@ impl FtpApp {
                     (Some((t0, b0)), Some((t1, b1))) if t1 > t0 => (b1.saturating_sub(*b0)) as f64 / t1.duration_since(*t0).as_secs_f64(),
                     _ => 0.0,
                 };
-                progress.insert(j.id, (n, speed));
+                current = Some((got, speed));
             }
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+            ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
+        let current_frac = self.queue.iter().find(|j| Some(j.id) == running).and_then(|j| current.filter(|_| j.size > 0).map(|(got, _)| (got as f32 / j.size as f32).clamp(0.0, 1.0)));
+
+        // Heading: what's left or how it went, the last message, and what can be done.
+        let mut retry_failed = false;
+        ui.horizontal(|ui| {
+            ui.set_height(24.0);
+            ui.label(egui::RichText::new("Transfers").strong());
+            ui.spacing_mut().item_spacing.x = 6.0;
+            if waiting > 0 {
+                ui.label(egui::RichText::new(format!("{waiting} to go")).color(weak));
+            } else if done > 0 {
+                ui.label(egui::RichText::new(format!("{done} done")).color(weak));
+            }
+            if failed > 0 {
+                if waiting > 0 || done > 0 {
+                    ui.label(egui::RichText::new("·").color(weak));
+                }
+                ui.label(egui::RichText::new(format!("{failed} failed")).color(st.danger));
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let flat = |label: &str| egui::Button::new(label).frame_when_inactive(false).corner_radius(r_sm());
+                if waiting < n && ui.add(flat("Clear Finished")).clicked() {
+                    self.queue.retain(|j| j.state == JobState::Waiting);
+                }
+                if failed > 0 && self.transfer.is_some() && ui.add(flat("Retry Failed")).clicked() {
+                    retry_failed = true;
+                }
+                if let Some((msg, bad)) = &self.note {
+                    let c = if *bad { st.danger } else { weak };
+                    ui.add(egui::Label::new(egui::RichText::new(first_line(msg)).color(c)).truncate()).on_hover_text(msg.as_str());
+                }
+            });
+        });
+        // A line under the heading, which fills as the batch goes.
+        let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 7.0), Sense::hover());
+        let line = Rect::from_center_size(line.center(), Vec2::new(line.width(), if waiting > 0 { 3.0 } else { 1.0 }));
+        if waiting > 0 {
+            ui.painter().rect_filled(line, 2.0, v.widgets.noninteractive.bg_stroke.color);
+            let frac = ((n - waiting) as f32 + current_frac.unwrap_or(0.0)) / n as f32;
+            ui.painter().rect_filled(Rect::from_min_size(line.min, Vec2::new(line.width() * frac, line.height())), 2.0, accent);
+        } else {
+            ui.painter().rect_filled(line, 0.0, v.widgets.noninteractive.bg_stroke.color);
+        }
+        ui.add_space(2.0);
+        self.edits_panel(ui);
+
+        if n == 0 {
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("Files you send show here. Drag them between the panes, or use Upload and Download.").color(weak));
+            return;
+        }
+
+        // Still to go first, in the order they'll be sent, then finished ones, newest first.
+        let order: Vec<usize> = (0..n).filter(|&i| self.queue[i].state == JobState::Waiting).chain((0..n).rev().filter(|&i| self.queue[i].state != JobState::Waiting)).collect();
+        let icon = |me: &mut Self, names: &[&str]| me.icon_named(&ctx, names);
+        let up = icon(self, &["go-up-symbolic", "go-up"]);
+        let down = icon(self, &["go-down-symbolic", "go-down"]);
+        let ok = icon(self, &["object-select-symbolic", "emblem-ok-symbolic"]);
+        let bad = icon(self, &["dialog-error-symbolic", "dialog-warning-symbolic"]);
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
         let mut retry: Option<usize> = None;
-        let mut arrows = std::collections::HashMap::new();
-        for n in [["go-up-symbolic", "go-up"], ["go-down-symbolic", "go-down"]] {
-            arrows.insert(n[0], self.icon_named(&ctx, &n));
-        }
-        if self.queue.is_empty() {
-            ui.label(egui::RichText::new("Drag files between the panes, double-click a file, or use Upload and Download.").weak());
-        }
+        let mut remove: Option<usize> = None;
         // Only the rows in view are laid out, so thousands of transfers cost no more than a few.
-        let row_h = 28.0 - ui.spacing().item_spacing.y;
-        let n = self.queue.len();
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_h, n, |ui, range| {
-            for r in range {
-                let idx = n - 1 - r;
+        let row_h = 30.0;
+        ui.spacing_mut().item_spacing.y = 0.0;
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, row_h, order.len(), |ui, range| {
+            for &idx in &order[range] {
+                let (name, is_dir) = (self.queue[idx].name.clone(), self.queue[idx].is_dir);
+                let file_icon = self.icon(&ctx, &Entry { name, is_dir, ..Default::default() });
                 let j = &self.queue[idx];
-                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::hover());
-                let mut row = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-                {
-                    let ui = &mut row;
-                    let names: &[&str] = if j.dir == Dir::Up { &["go-up-symbolic", "go-up"] } else { &["go-down-symbolic", "go-down"] };
-                    match arrows.get(names[0]).cloned().flatten() {
-                        Some(t) => {
-                            ui.add(egui::Image::from_texture(&t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.selection.bg_fill));
-                        }
-                        None => {
-                            ui.label(egui::RichText::new(if j.dir == Dir::Up { "Up" } else { "Down" }).color(v.selection.bg_fill));
-                        }
+                let is_running = Some(j.id) == running;
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
+                if resp.hovered() {
+                    ui.painter().rect_filled(rect, r_sm(), v.widgets.hovered.weak_bg_fill);
+                }
+                let p = ui.painter();
+                let cy = rect.center().y;
+                // Which way it goes, then what it is.
+                let arrow_col = if is_running { accent } else { weak };
+                match if j.dir == Dir::Up { &up } else { &down } {
+                    Some(t) => {
+                        p.image(t.id(), Rect::from_center_size(Pos2::new(rect.left() + 11.0, cy), Vec2::splat(13.0)), uv, arrow_col);
                     }
-                    // What and where: "report.pdf to /var/www", the full paths on hover.
-                    let dest = if j.dir == Dir::Up { j.to_dir.clone() } else { tilde_path(&j.to_dir) };
-                    ui.label(&j.name).on_hover_text(format!("From {}\nTo {}", j.from, j.to));
-                    ui.label(egui::RichText::new(format!("to {dest}")).weak()).on_hover_text(&j.to);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| match &j.state {
-                        JobState::Done => {
-                            let mut text = if j.is_dir { "Done".to_string() } else { format!("Done · {}", listing::human_size(j.size)) };
-                            if let Some(t) = j.took {
-                                text.push_str(&format!(" in {}", fmt_secs(t.as_secs_f64())));
-                                if !j.is_dir && t.as_secs_f64() > 0.2 {
-                                    text.push_str(&format!(" · {}/s", listing::human_size((j.size as f64 / t.as_secs_f64()) as u64)));
-                                }
+                    None => {
+                        p.text(Pos2::new(rect.left() + 11.0, cy), Align2::CENTER_CENTER, if j.dir == Dir::Up { "↑" } else { "↓" }, fonts::ui_font(13.0), arrow_col);
+                    }
+                }
+                if let Some(t) = &file_icon {
+                    p.image(t.id(), Rect::from_center_size(Pos2::new(rect.left() + 32.0, cy), Vec2::splat(16.0)), uv, Color32::WHITE);
+                }
+
+                // The right side: how it's going, and a mark for done, failed or running.
+                let mark = Pos2::new(rect.right() - 14.0, cy);
+                let status_w = (rect.width() * 0.42).clamp(150.0, 320.0);
+                let mut text_right = rect.right() - 30.0;
+                let (text, col) = match &j.state {
+                    JobState::Done => {
+                        mark_icon(p, &ok, mark, st.success);
+                        let mut text = if j.is_dir { "Done".to_string() } else { listing::human_size(j.size) };
+                        if let Some(t) = j.took {
+                            text.push_str(&format!(" in {}", fmt_secs(t.as_secs_f64())));
+                            if !j.is_dir && t.as_secs_f64() > 0.2 {
+                                text.push_str(&format!(" · {}/s", listing::human_size((j.size as f64 / t.as_secs_f64()) as u64)));
                             }
-                            ui.label(egui::RichText::new(text).color(status(&ctx).success));
                         }
-                        JobState::Failed(e) => {
-                            if self.transfer.is_some() && ui.add(egui::Button::new("Retry").corner_radius(r_sm())).clicked() {
+                        (text, weak)
+                    }
+                    JobState::Failed(e) => {
+                        mark_icon(p, &bad, mark, st.danger);
+                        if self.transfer.is_some() {
+                            let b = Rect::from_min_max(Pos2::new(text_right - 52.0, rect.top() + 3.0), Pos2::new(text_right, rect.bottom() - 3.0));
+                            // In a child of its own, so the button doesn't move the next row.
+                            if ui.new_child(egui::UiBuilder::new().max_rect(b)).add(egui::Button::new("Retry").corner_radius(r_sm())).clicked() {
                                 retry = Some(idx);
                             }
-                            ui.label(egui::RichText::new("Failed").color(status(&ctx).danger)).on_hover_text(e);
+                            text_right = b.left() - 8.0;
                         }
-                        JobState::Waiting if Some(j.id) == running => {
-                            let elapsed = j.started.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0);
-                            match (j.local_target.as_ref().and_then(|p| std::fs::metadata(p).ok()).map(|m| m.len()), progress.get(&j.id)) {
-                                // Downloads: how much has arrived, the speed and the time left.
-                                (Some(n), Some(&(_, speed))) if j.size > 0 => {
-                                    let mut text = format!("{} of {}", listing::human_size(n.min(j.size)), listing::human_size(j.size));
-                                    if speed > 0.0 {
-                                        text.push_str(&format!(" · {}/s · {} left", listing::human_size(speed as u64), fmt_secs((j.size.saturating_sub(n)) as f64 / speed)));
-                                    }
-                                    ui.label(egui::RichText::new(text).weak());
-                                    ui.add(egui::ProgressBar::new((n as f32 / j.size as f32).clamp(0.0, 1.0)).desired_width(140.0).corner_radius(r_sm()));
+                        (e.clone(), st.danger)
+                    }
+                    JobState::Waiting if is_running => {
+                        egui::Spinner::new().size(14.0).paint_at(ui, Rect::from_center_size(mark, Vec2::splat(14.0)));
+                        let text = match (current, current_frac) {
+                            // Downloads: how much has arrived, the speed and the time left.
+                            (Some((got, speed)), Some(frac)) => {
+                                let bar = Rect::from_min_max(Pos2::new(rect.left() + 4.0, rect.bottom() - 3.0), Pos2::new(rect.right() - 4.0, rect.bottom() - 1.0));
+                                ui.painter().rect_filled(bar, 1.0, v.widgets.noninteractive.bg_stroke.color);
+                                ui.painter().rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac, bar.height())), 1.0, accent);
+                                let mut text = format!("{} of {}", listing::human_size(got.min(j.size)), listing::human_size(j.size));
+                                if speed > 0.0 {
+                                    text.push_str(&format!(" · {}/s · {} left", listing::human_size(speed as u64), fmt_secs(j.size.saturating_sub(got) as f64 / speed)));
                                 }
-                                // Uploads and folders: sftp doesn't report how far it got, so the time so far.
-                                _ => {
-                                    let what = if j.dir == Dir::Up { "Uploading" } else { "Downloading" };
-                                    let size = if j.is_dir { String::new() } else { format!(" {}", listing::human_size(j.size)) };
-                                    ui.label(egui::RichText::new(format!("{what}{size} · {}", fmt_secs(elapsed))).weak());
-                                    ui.add(egui::Spinner::new().size(14.0));
-                                }
+                                text
                             }
+                            // Uploads and folders: the time so far.
+                            _ => {
+                                let what = if j.dir == Dir::Up { "Uploading" } else { "Downloading" };
+                                let elapsed = j.started.map(|t| t.elapsed().as_secs_f64()).unwrap_or(0.0);
+                                format!("{what} · {}", fmt_secs(elapsed))
+                            }
+                        };
+                        (text, v.text_color())
+                    }
+                    JobState::Waiting => ("Waiting".to_string(), weak),
+                };
+                let status_rect = Rect::from_min_max(Pos2::new(rect.right() - status_w, rect.top()), Pos2::new(text_right, rect.bottom()));
+                let mut job = egui::text::LayoutJob::single_section(text, egui::TextFormat::simple(fonts::ui_font(12.0), col));
+                job.wrap = egui::text::TextWrapping::truncate_at_width(status_rect.width().max(0.0));
+                let g = ui.fonts_mut(|f| f.layout_job(job));
+                ui.painter().galley(Pos2::new(status_rect.right() - g.size().x, cy - g.size().y / 2.0), g, col);
+
+                // What and where: "report.pdf to /var/www", cut short before the status.
+                let what_rect = Rect::from_min_max(Pos2::new(rect.left() + 48.0, rect.top()), Pos2::new(status_rect.left() - 12.0, rect.bottom()));
+                let dest = if j.dir == Dir::Up { j.to_dir.clone() } else { tilde_path(&j.to_dir) };
+                let mut job = egui::text::LayoutJob::default();
+                job.append(&j.name, 0.0, egui::TextFormat::simple(fonts::ui_font(13.0), v.text_color()));
+                job.append(&format!("to {dest}"), 8.0, egui::TextFormat::simple(fonts::ui_font(12.0), weak));
+                job.wrap = egui::text::TextWrapping::truncate_at_width(what_rect.width().max(0.0));
+                let g = ui.fonts_mut(|f| f.layout_job(job));
+                ui.painter().galley(Pos2::new(what_rect.left(), cy - g.size().y / 2.0), g, v.text_color());
+
+                let tip = match &j.state {
+                    JobState::Failed(e) => format!("From {}\nTo {}\n\n{e}", j.from, j.to),
+                    _ => format!("From {}\nTo {}", j.from, j.to),
+                };
+                let finished = j.state != JobState::Waiting;
+                let can_retry = matches!(j.state, JobState::Failed(_)) && self.transfer.is_some();
+                let resp = resp.on_hover_text(tip);
+                if finished {
+                    resp.context_menu(|ui| {
+                        menu_style(ui);
+                        if can_retry && ui.button("Retry").clicked() {
+                            retry = Some(idx);
+                            ui.close();
                         }
-                        JobState::Waiting => {
-                            ui.label(egui::RichText::new("Waiting").weak());
+                        if ui.button("Remove from List").clicked() {
+                            remove = Some(idx);
+                            ui.close();
                         }
                     });
                 }
             }
         });
-        if let Some(i) = retry {
+        if retry_failed {
+            for i in 0..self.queue.len() {
+                if matches!(self.queue[i].state, JobState::Failed(_)) {
+                    self.retry_job(i);
+                }
+            }
+        } else if let Some(i) = retry {
             self.retry_job(i);
+        } else if let Some(i) = remove {
+            self.queue.remove(i);
         }
     }
 }
@@ -918,6 +1024,18 @@ fn connection_tooltip(ui: &mut egui::Ui, c: &rivet_connections::Connection) {
     });
     ui.add_space(2.0);
     ui.label(egui::RichText::new(c.url()).small().color(weak));
+}
+
+/// A transfer's state mark: a tinted symbolic icon, or a dot without one.
+fn mark_icon(p: &egui::Painter, t: &Option<egui::TextureHandle>, at: Pos2, col: Color32) {
+    match t {
+        Some(t) => {
+            p.image(t.id(), Rect::from_center_size(at, Vec2::splat(14.0)), Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), col);
+        }
+        None => {
+            p.circle_filled(at, 3.5, col);
+        }
+    }
 }
 
 /// 75 → "1 min 15 s", 4 → "4 s", 0.3 → "under a second".

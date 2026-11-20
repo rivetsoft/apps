@@ -54,6 +54,7 @@ impl FtpApp {
             prompt: None,
             shot: screenshot.map(rivet_kit::Shot::new),
             hook_send: std::env::var("RIVET_FTP_SEND").ok(),
+            hook_queue: std::env::var_os("RIVET_FTP_QUEUE").is_some(),
             keys: Vec::new(),
             keys_rx: None,
             keys_asked: false,
@@ -750,6 +751,39 @@ impl FtpApp {
     }
 
     /// Send a failed transfer again.
+    /// Screenshots of the transfer list: one of each kind, with ids no reply will match.
+    pub(super) fn sample_queue(&mut self) {
+        let remote = self.remote.path.clone();
+        let local = self.local.path.clone();
+        let mut id = u64::MAX;
+        let mut add = |dir: Dir, name: &str, is_dir: bool, size: u64, state: JobState, took: Option<f64>| {
+            id -= 1;
+            let (from_dir, to_dir) = if dir == Dir::Up { (&local, &remote) } else { (&remote, &local) };
+            let job = Job {
+                id,
+                dir,
+                name: name.into(),
+                to: format!("{to_dir}/{name}"),
+                to_dir: to_dir.clone(),
+                from: format!("{from_dir}/{name}"),
+                is_dir,
+                size,
+                local_target: None,
+                state,
+                started: Some(std::time::Instant::now() - std::time::Duration::from_secs(4)),
+                took: took.map(std::time::Duration::from_secs_f64),
+                samples: Default::default(),
+            };
+            self.queue.push(job);
+        };
+        add(Dir::Up, "contact.html", false, 56, JobState::Done, Some(0.1));
+        add(Dir::Down, "backup-2026-11.tar.gz", false, 84_000_000, JobState::Done, Some(12.4));
+        add(Dir::Up, "cgi-bin", true, 0, JobState::Failed("Permission denied: /var/www/example.com/cgi-bin".into()), None);
+        add(Dir::Down, "hero.jpg", false, 48_000, JobState::Waiting, None);
+        add(Dir::Up, "style.css", false, 1_200, JobState::Waiting, None);
+        add(Dir::Up, "blog", true, 0, JobState::Waiting, None);
+    }
+
     pub(super) fn retry_job(&mut self, i: usize) {
         let Some(t) = self.transfer.as_mut() else { return };
         let j = &mut self.queue[i];

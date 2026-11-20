@@ -330,6 +330,8 @@ pub struct FtpApp {
     shot: Option<rivet_kit::Shot>,
     /// Test hook RIVET_FTP_SEND="up:a,b;down:c": transfers to start once the server folder is listed.
     hook_send: Option<String>,
+    /// Test hook RIVET_FTP_QUEUE=1: sample transfers in every state, added before the picture.
+    hook_queue: bool,
 
     /// SSH keys in ~/.ssh (read in the background when first needed).
     keys: Vec<rivet_connections::keys::SshKey>,
@@ -428,8 +430,10 @@ impl eframe::App for FtpApp {
             egui::Panel::left("sites").show_separator_line(false).frame(side).resizable(true).default_size(220.0).size_range(170.0..=360.0).show(ui, |ui| self.sidebar(ui));
         }
         if self.s.show_queue {
-            let q = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 2, bottom: 8 });
-            egui::Panel::bottom("queue").show_separator_line(false).frame(q).resizable(true).default_size(150.0).size_range(90.0..=400.0).show(ui, |ui| self.queue_panel(ui));
+            // A card lined up under the panes, the same gap below them as between them.
+            let left = if self.s.show_sidebar { 0 } else { 12 };
+            let q = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left, right: 12, top: 10, bottom: 12 });
+            egui::Panel::bottom("queue").show_separator_line(false).frame(q).resizable(true).default_size(230.0).size_range(110.0..=440.0).show(ui, |ui| self.queue_panel(ui));
         } else {
             let st = egui::Frame::new().fill(v.panel_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 4, bottom: 6 });
             egui::Panel::bottom("status").show_separator_line(false).frame(st).show(ui, |ui| self.status_line(ui));
@@ -454,6 +458,14 @@ impl eframe::App for FtpApp {
         self.windows(&ctx);
         self.dialogs(&ctx);
         self.preview_window(&ctx);
+        // RIVET_FTP_QUEUE: once connected and the real transfers are done, add the samples and
+        // take the picture straight away (they never finish).
+        if self.hook_queue && self.shot.is_some() && !self.connecting && !self.remote.loading && self.hook_send.is_none() && !self.queue.iter().any(|j| j.state == JobState::Waiting) {
+            self.hook_queue = false;
+            self.sample_queue();
+            self.shot_wait = 800;
+            ctx.request_repaint();
+        }
         if let Some(shot) = self.shot.as_mut() {
             // Checks: wait for logging in and listing to finish first (up to about 10 s).
             let editing = self.hook_edit.is_some() || self.edits.iter().any(|e| e.saved_at.is_none() && !matches!(e.state, edit::EditState::Failed(_)));

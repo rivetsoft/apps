@@ -9,6 +9,10 @@
   times faster, and the window stays responsive while a slow drive answers.
 - **Opens sooner**: the first frame is ready about 100 ms earlier.
 - Going up a folder scrolls to the folder you came from, even in a long list.
+- **A cleaner transfer list**: it sits in a card under the panes, with a line that fills as the
+  batch goes. Transfers still to go are listed first. Each one shows its file's icon and a mark
+  for done or failed. Retry Failed sends every failed one again, and right-clicking a finished
+  transfer removes it from the list.
 
 ## 0.3.0
 
