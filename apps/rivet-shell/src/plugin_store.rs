@@ -3,8 +3,10 @@
 //! folder or taking it out again. Everything here downloads or touches the disk, so it's called
 //! from a thread or the command line, never from a frame.
 //!
-//! A listing names one archive and its SHA-256, so what's installed is the very file that was
-//! looked at when the listing was accepted; a new version is a new line in the list. Installing
+//! A plugin is accepted into the list once. After that its author publishes updates themselves:
+//! the listing points at a small file of theirs (its release file) that names the current
+//! version, its archive and the archive's SHA-256. So the list says who a plugin is by, not that
+//! anyone has read this version of it, which is what the third-party warnings are for. Installing
 //! never turns a plugin on: that stays the person's choice in Settings.
 
 use std::path::{Component, Path, PathBuf};
@@ -29,8 +31,11 @@ pub struct Listing {
     pub author: String,
     /// Where its source is, for anyone who wants to read it first.
     pub homepage: String,
+    /// The author's release file: JSON with `version`, `download` and `sha256`.
+    pub release: String,
+    /// From the release file: the current version, a `.tar.gz` with the plugin's folder (or its
+    /// files) in it, and that archive's checksum.
     pub version: String,
-    /// A `.tar.gz` with the plugin's folder (or its files) in it.
     pub download: String,
     pub sha256: String,
 }
@@ -40,21 +45,22 @@ pub fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 40 && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_') && id.starts_with(|c: char| c.is_ascii_alphanumeric())
 }
 
-/// The list from its JSON. A listing that can't be installed safely (no checksum, a download
-/// that isn't https, an id that isn't a folder name) is left out rather than failing the rest.
-///
-/// `local` is for a list read from a file on this computer, which may also name archives here
-/// (`file://`): how an author tries a listing before proposing it.
+/// An address the shell will read: https, or for a list read from a file on this computer, a
+/// file there too (`file://`), which is how an author tries a listing before proposing it.
+fn address_ok(url: &str, local: bool) -> bool {
+    url.starts_with("https://") || (local && url.starts_with("file://"))
+}
+
+/// The list from its JSON, before the release files are read. A listing with no usable release
+/// file or an id that isn't a folder name is left out rather than failing the rest.
 pub fn parse(text: &str, local: bool) -> Result<Vec<Listing>, String> {
     let v: serde_json::Value = serde_json::from_str(text).map_err(|_| "the plugin list isn't readable just now".to_string())?;
     let rows = v.get("plugins").and_then(|p| p.as_array()).ok_or("the plugin list isn't readable just now")?;
     let mut out: Vec<Listing> = Vec::new();
     for r in rows {
         let f = |k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
-        let l = Listing { id: f("id"), name: f("name"), description: f("description"), author: f("author"), homepage: f("homepage"), version: f("version"), download: f("download"), sha256: f("sha256").to_lowercase() };
-        let sum_ok = l.sha256.len() == 64 && l.sha256.chars().all(|c| c.is_ascii_hexdigit());
-        let from_ok = l.download.starts_with("https://") || (local && l.download.starts_with("file://"));
-        if valid_id(&l.id) && !l.name.is_empty() && from_ok && sum_ok && !out.iter().any(|o| o.id == l.id) {
+        let l = Listing { id: f("id"), name: f("name"), description: f("description"), author: f("author"), homepage: f("homepage"), release: f("release"), ..Default::default() };
+        if valid_id(&l.id) && !l.name.is_empty() && address_ok(&l.release, local) && !out.iter().any(|o| o.id == l.id) {
             out.push(Listing { homepage: Some(l.homepage.clone()).filter(|h| h.starts_with("https://")).unwrap_or_default(), ..l });
         }
     }
@@ -62,21 +68,39 @@ pub fn parse(text: &str, local: bool) -> Result<Vec<Listing>, String> {
     Ok(out)
 }
 
-/// The list, from the network (or the file or address in `RIVET_SHELL_REGISTRY`).
+/// What an author's release file says: the version, the archive and its checksum. None when it
+/// isn't one the shell would install from.
+pub fn parse_release(text: &str, local: bool) -> Option<(String, String, String)> {
+    let v: serde_json::Value = serde_json::from_str(text).ok()?;
+    let f = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    let (version, download, sum) = (f("version"), f("download"), f("sha256").to_lowercase());
+    let sum_ok = sum.len() == 64 && sum.chars().all(|c| c.is_ascii_hexdigit());
+    (!version.is_empty() && version.len() <= 40 && address_ok(&download, local) && sum_ok).then_some((version, download, sum))
+}
+
+/// The list, from the network (or the file or address in `RIVET_SHELL_REGISTRY`), with each
+/// plugin's release file read alongside. A plugin whose release file can't be read just now is
+/// left out: there is nothing to install it from.
 pub fn fetch() -> Result<Vec<Listing>, String> {
     let from = std::env::var("RIVET_SHELL_REGISTRY").ok().filter(|s| !s.is_empty());
     let local = from.as_deref().is_some_and(|f| !f.contains("://"));
     let text = match from.as_deref() {
         Some(f) if local => std::fs::read_to_string(f).map_err(|e| format!("couldn't read {f}: {e}"))?,
-        other => {
-            let out = curl().args(["--max-time", "20", other.unwrap_or(REGISTRY)]).output().map_err(no_curl)?;
-            if !out.status.success() {
-                return Err("Couldn't get the plugin list. Check your connection and try again.".into());
-            }
-            String::from_utf8_lossy(&out.stdout).into_owned()
-        }
+        other => get(other.unwrap_or(REGISTRY)).ok_or("Couldn't get the plugin list. Check your connection and try again.")?,
     };
-    parse(&text, local)
+    let list = parse(&text, local)?;
+    // Side by side: each is a small file on someone else's server.
+    let read: Vec<Option<(String, String, String)>> = std::thread::scope(|s| {
+        let hs: Vec<_> = list.iter().map(|l| s.spawn(move || get(&l.release).and_then(|t| parse_release(&t, local)))).collect();
+        hs.into_iter().map(|h| h.join().ok().flatten()).collect()
+    });
+    Ok(list.into_iter().zip(read).filter_map(|(l, r)| r.map(|(version, download, sha256)| Listing { version, download, sha256, ..l })).collect())
+}
+
+/// A small text file from an address, or None.
+fn get(url: &str) -> Option<String> {
+    let out = curl().args(["--max-time", "20", url]).output().ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 fn curl() -> Command {
@@ -114,14 +138,14 @@ impl Drop for Staging {
     }
 }
 
-/// Install a plugin from the list: its archive is downloaded and must match the listing's
-/// checksum. The plugin as it is once installed (off until it's turned on).
+/// Install a plugin from the list: its archive is downloaded and must match the checksum its
+/// author published with it. The plugin as it is once installed (off until it's turned on).
 pub fn install(l: &Listing) -> Result<Manifest, String> {
     let stage = Staging::new()?;
     let file = stage.0.join("download.tar.gz");
     download(&l.download, &file)?;
     if sha256(&file)? != l.sha256 {
-        return Err("The download doesn't match the plugin list, so nothing was installed. Try again later.".into());
+        return Err("The download doesn't match what its author published, so nothing was installed. Try again later.".into());
     }
     place(&stage, &file, Some(&l.id))
 }
@@ -263,14 +287,14 @@ pub fn remove(id: &str) -> Result<(), String> {
 }
 
 /// The listing a newer version of this installed plugin is in. Versions are compared as text:
-/// the list is the authority, so anything other than what it names is behind it.
+/// the author's release file is the authority, so anything other than what it names is behind it.
 pub fn update<'a>(m: &Manifest, list: &'a [Listing]) -> Option<&'a Listing> {
     list.iter().find(|l| l.id == m.id && removable(m) && !l.version.is_empty() && l.version != m.version)
 }
 
 /// Sample listings, for screenshots.
 pub fn sample() -> Vec<Listing> {
-    let l = |id: &str, name: &str, description: &str, author: &str, version: &str| Listing { id: id.into(), name: name.into(), description: description.into(), author: author.into(), homepage: format!("https://example.org/{id}"), version: version.into(), download: format!("https://example.org/{id}.tar.gz"), sha256: "0".repeat(64) };
+    let l = |id: &str, name: &str, description: &str, author: &str, version: &str| Listing { id: id.into(), name: name.into(), description: description.into(), author: author.into(), homepage: format!("https://example.org/{id}"), release: format!("https://example.org/{id}/release.json"), version: version.into(), download: format!("https://example.org/{id}.tar.gz"), sha256: "0".repeat(64) };
     vec![l("weather", "Weather", "Today's forecast on the panel, and the week in its menu.", "Sam Rivera", "1.2"), l("pomodoro", "Pomodoro", "A work timer on the panel that tells you when to take a break.", "Kit Okafor", "0.4")]
 }
 
@@ -279,22 +303,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn listings_that_cant_be_trusted_are_left_out() {
-        let sum = "a".repeat(64);
-        let text = format!(
-            r#"{{"plugins":[
-            {{"id":"weather","name":"Weather","version":"1.2","download":"https://x.org/w.tar.gz","sha256":"{sum}","homepage":"javascript:alert(1)"}},
-            {{"id":"no-sum","name":"No Sum","download":"https://x.org/w.tar.gz"}},
-            {{"id":"plain","name":"Plain","download":"http://x.org/w.tar.gz","sha256":"{sum}"}},
-            {{"id":"../up","name":"Up","download":"https://x.org/w.tar.gz","sha256":"{sum}"}},
-            {{"id":"weather","name":"Twice","download":"https://x.org/w.tar.gz","sha256":"{sum}"}}
-            ]}}"#
-        );
-        let list = parse(&text, false).unwrap();
+    fn listings_that_cant_be_used_are_left_out() {
+        let text = r#"{"plugins":[
+            {"id":"weather","name":"Weather","release":"https://x.org/release.json","homepage":"javascript:alert(1)"},
+            {"id":"no-release","name":"No Release"},
+            {"id":"plain","name":"Plain","release":"http://x.org/release.json"},
+            {"id":"here","name":"Here","release":"file:///tmp/release.json"},
+            {"id":"../up","name":"Up","release":"https://x.org/release.json"},
+            {"id":"weather","name":"Twice","release":"https://x.org/release.json"}
+            ]}"#;
+        let list = parse(text, false).unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!((list[0].id.as_str(), list[0].homepage.as_str()), ("weather", ""));
+        // A list on this computer may point at files here.
+        assert_eq!(parse(text, true).unwrap().len(), 2);
         assert!(parse("<html>", false).is_err());
         assert!(valid_id("disk-space_2") && !valid_id("Disk") && !valid_id(".hidden") && !valid_id("a/b") && !valid_id(""));
+    }
+
+    #[test]
+    fn release_files() {
+        let sum = "A".repeat(64);
+        let ok = format!(r#"{{"version":"1.2","download":"https://x.org/w-1.2.tar.gz","sha256":"{sum}"}}"#);
+        assert_eq!(parse_release(&ok, false), Some(("1.2".into(), "https://x.org/w-1.2.tar.gz".into(), "a".repeat(64))));
+        assert_eq!(parse_release(&ok.replace("https", "http"), false), None);
+        assert_eq!(parse_release(&ok.replace("https://x.org", "file:///tmp"), false), None);
+        assert!(parse_release(&ok.replace("https://x.org", "file:///tmp"), true).is_some());
+        assert_eq!(parse_release(r#"{"version":"1.2","download":"https://x.org/w.tar.gz"}"#, false), None);
+        assert_eq!(parse_release(&ok.replace("1.2", ""), false), None);
+        assert_eq!(parse_release("not found", false), None);
     }
 
     /// The list in the repository: every listing in it must be one the shell would show, and
@@ -304,11 +341,11 @@ mod tests {
         let text = include_str!("../../../plugins/registry.json");
         let raw: serde_json::Value = serde_json::from_str(text).unwrap();
         let list = parse(text, false).unwrap();
-        assert_eq!(list.len(), raw["plugins"].as_array().unwrap().len(), "a listing is missing a field, or its id, download or sha256 isn't valid");
+        assert_eq!(list.len(), raw["plugins"].as_array().unwrap().len(), "a listing is missing its name, or its id or release address isn't valid");
         let own = concat!(env!("CARGO_MANIFEST_DIR"), "/data/plugins");
         for l in &list {
             assert!(!Path::new(own).join(&l.id).exists(), "{} is the id of a plugin that comes with the shell", l.id);
-            assert!(!l.description.is_empty() && !l.author.is_empty() && !l.version.is_empty() && !l.homepage.is_empty(), "{} needs a description, author, version and homepage", l.id);
+            assert!(!l.description.is_empty() && !l.author.is_empty() && !l.homepage.is_empty(), "{} needs a description, author and homepage", l.id);
         }
     }
 

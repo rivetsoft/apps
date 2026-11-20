@@ -41,9 +41,11 @@ examples to copy.
 From `settings_app/plugins.rs`, the Get Plugins window ("Other people make third-party plugins. A
 plugin can do anything you can, so turn on only ones you trust.").
 
-The list is `plugins/registry.json` in Rivet's repository. Each listing names one archive and its
-checksum, and the shell refuses a download that doesn't match, so what is installed is the file
-that was read when the listing was accepted. Installing copies the plugin into
+The list is `plugins/registry.json` in Rivet's repository. A plugin is accepted into it once; its
+author then publishes updates themselves, in a release file the listing points to, which names the
+current version, its archive and the archive's checksum. The shell refuses a download that doesn't
+match that checksum, but nobody at Rivet reads an update before it reaches people, which is why
+third-party plugins carry the warning. Installing copies the plugin into
 `~/.local/share/rivet-shell/plugins/`; it runs only once it's turned on. Remove deletes that folder
 and keeps the plugin's settings. View Source opens the plugin's own page. A plugin that isn't in
 the list can be installed from a terminal (`rivet-shell plugin install FILE`), with no checksum

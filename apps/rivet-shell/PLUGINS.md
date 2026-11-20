@@ -166,8 +166,28 @@ Removing a plugin deletes its folder and keeps your settings for it.
 
 ## Sharing a plugin
 
-The list is [`plugins/registry.json`](../../plugins/registry.json) in Rivet's repository. To add
-a plugin, open a pull request that adds a listing:
+The list is [`plugins/registry.json`](../../plugins/registry.json) in Rivet's repository. A
+plugin is added to it once, by a pull request; after that you publish updates yourself.
+
+**1. A release file.** Keep a small JSON file at an `https` address that doesn't change, such as
+`release.json` on your repository's main branch. It names the current version:
+
+```json
+{
+  "version": "1.0",
+  "download": "https://github.com/you/rivet-weather/releases/download/v1.0/weather-1.0.tar.gz",
+  "sha256": "the archive's SHA-256, as sha256sum prints it"
+}
+```
+
+- `download` is an `https` address of a `.tar.gz` holding the plugin's folder (or its files at
+  the top), with `plugin.conf` in it. Links inside it may only point inside the plugin's own
+  folder.
+- `version` is the same text as `version=` in the plugin's `plugin.conf`. The shell offers an
+  update when the two differ.
+- The shell refuses a download that doesn't match `sha256`.
+
+**2. A listing.** Open a pull request that adds the plugin to `plugins/registry.json`:
 
 ```json
 {
@@ -176,28 +196,21 @@ a plugin, open a pull request that adds a listing:
   "description": "Today's forecast on the panel, and the week in its menu.",
   "author": "Your Name",
   "homepage": "https://github.com/you/rivet-weather",
-  "version": "1.0",
-  "download": "https://github.com/you/rivet-weather/releases/download/v1.0/weather-1.0.tar.gz",
-  "sha256": "the archive's SHA-256, as sha256sum prints it"
+  "release": "https://raw.githubusercontent.com/you/rivet-weather/main/release.json"
 }
 ```
 
 - `id` is the folder the plugin is installed as: small letters, digits, `-` and `_`. It can't be
   the id of a plugin that comes with the shell.
-- `download` is an `https` address of a `.tar.gz` holding the plugin's folder (or its files at
-  the top), with `plugin.conf` in it. Point it at a file that never changes, such as a release
-  asset or a tagged archive, since the shell refuses a download that doesn't match `sha256`.
-- `version` is the same text as `version=` in the plugin's `plugin.conf`. The shell offers an
-  update when the two differ.
 - `homepage` is where the source can be read.
-- Links inside the archive may only point inside the plugin's own folder.
 
-A listing names one exact file, so what people install is the file that was read when the pull
-request was accepted. A new version is another pull request that changes `version`, `download`
-and `sha256`.
+**Updating.** Publish the new archive and change your release file. People who have the plugin
+see Update in Settings; nothing in Rivet's repository changes. That also means nobody at Rivet
+reads an update before it reaches people, which is why third-party plugins carry a warning and
+stay off until they're turned on.
 
 To try a listing before proposing it, point the shell at a list of your own; a list read from a
-file may name archives on your computer with `file://`:
+file may name files on your computer with `file://`:
 
 ```sh
 RIVET_SHELL_REGISTRY=./my-registry.json rivet-shell plugin install weather
