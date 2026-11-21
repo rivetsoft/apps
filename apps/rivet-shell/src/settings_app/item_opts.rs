@@ -20,7 +20,7 @@ fn ui_font(size: f32) -> egui::FontId {
 
 /// The items with options.
 pub fn has_options(id: &str) -> bool {
-    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "media" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings") || id.starts_with("plugin:")
+    matches!(id, "launcher" | "clock" | "workspaces" | "ai" | "weather" | "media" | "volume" | "brightness" | "battery" | "tray" | "dock" | "power" | "quick-settings") || id.starts_with("plugin:")
 }
 
 /// The choice between icons in their own colours and in one of the panel's.
@@ -47,6 +47,7 @@ fn tip(id: &str) -> &'static str {
         "clock" => "How the clock shows",
         "workspaces" => "How the workspaces show",
         "ai" => "What the AI item reads and shows",
+        "weather" => "The weather's place and units",
         "tray" => "How apps' tray icons show",
         "dock" => "What the dock item shows",
         "media" => "What Now Playing shows and does",
@@ -90,6 +91,7 @@ pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut 
             "clock" => clock(ui, s),
             "workspaces" => workspaces(ui, s, accent),
             "ai" => ai(ui, s),
+            "weather" => super::weather_opts::options(ui, s, WIDTH),
             plug if plug.starts_with("plugin:") => {
                 let pid = &plug["plugin:".len()..];
                 section(ui, "Icon");

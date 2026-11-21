@@ -76,6 +76,7 @@ pub const INDEX: &[Entry] = &[
     item("clock", "Clock format", "time date 24 hour 12 hour am pm strftime custom seconds"),
     item("workspaces", "Workspaces style", "pills dots numbers names hide empty scroll switch"),
     item("ai", "AI usage", "claude codex grok openrouter deepseek limits quota usage pin keys"),
+    item("weather", "Weather in the panel", "forecast temperature place city town location celsius fahrenheit units rain"),
     item("volume", "Volume in the panel", "sound audio speaker icon percent scroll mute"),
     item("brightness", "Brightness in the panel", "screen backlight icon percent scroll"),
     item("battery", "Battery in the panel", "power charge icon percent hide charged full"),
@@ -107,6 +108,8 @@ pub const INDEX: &[Entry] = &[
     e(Page::Idle, "Passwords", "Ask for the password for administrator rights", "polkit authentication agent prompt pkexec sudo root admin authorize"),
     e(Page::Widgets, "On the desktop", "System widget", "processor cpu memory ram battery"),
     e(Page::Widgets, "On the desktop", "Widgets side", "left right"),
+    e(Page::Widgets, "On the desktop", "Weather widget", "forecast temperature rain sky"),
+    e(Page::Widgets, "Weather", "Weather place and units", "city town location celsius fahrenheit forecast"),
     // Notifications
     e(Page::Notifications, "Notifications", "Notifications", "popups toasts cards history mako dunst corner position place width timeout duration seconds how many"),
     e(Page::Notifications, "Notification look", "Notification look", "cards corners radius opacity color background outline border style"),

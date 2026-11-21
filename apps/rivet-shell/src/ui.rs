@@ -87,6 +87,8 @@ pub enum PopupKind {
     Bluetooth,
     /// AI plans' usage.
     Ai,
+    /// The weather: now, the next hours and the week.
+    Weather,
     /// The notification history (and later perhaps more beside it).
     Notifications,
     /// Sound devices and apps (`drag`: a volume being dragged).
@@ -175,6 +177,8 @@ pub struct Extra {
     pub radios: crate::radio::Radios,
     /// AI plans' usage (while a panel shows the AI item).
     pub ai: crate::ai::Quotas,
+    /// The weather (while the widget or a panel's item shows it).
+    pub weather: crate::weather::Weather,
     /// Sound devices and apps (while the Sound popup is open).
     pub audio: crate::audio::Audio,
     /// Apps' tray icons, and the open tray menu.
@@ -219,6 +223,8 @@ pub enum Act {
     Radio(crate::radio::Job),
     /// Read the AI plans' usage again now.
     AiRefresh,
+    /// Read the weather again now.
+    WeatherRefresh,
     /// Pin a limit to the panel or take it off ("provider:limit name").
     AiPin(String),
     NightLight(bool),
@@ -750,6 +756,7 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
 pub enum Widget {
     Clock,
     System,
+    Weather,
 }
 
 /// Where a widget of `size` goes: its saved place in `area`, else `usual`; while it's being
@@ -759,6 +766,7 @@ fn widget_place(ui: &egui::Ui, m: &mut Model, which: Widget, area: Rect, usual: 
     let saved = match which {
         Widget::Clock => m.s.widget_clock_at,
         Widget::System => m.s.widget_system_at,
+        Widget::Weather => m.s.widget_weather_at,
     };
     let room = (area.size() - size).max(Vec2::ZERO);
     let base = saved.map(|(fx, fy)| area.min + Vec2::new(room.x * fx, room.y * fy)).unwrap_or(usual);
@@ -791,8 +799,8 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let side = |e: Edge| crate::panels::room(&m.s.panels, m.output, e);
     // The room the widgets move in: the screen less its panels, with a margin.
     let area = Rect::from_min_max(Pos2::new(full.left() + side(Edge::Left) + 28.0, full.top() + side(Edge::Top) + 24.0), Pos2::new(full.right() - side(Edge::Right) - 28.0, full.bottom() - side(Edge::Bottom) - 24.0));
-    let w = 280.0;
-    let x = if m.s.widget_side == Side::Left { area.left() } else { area.right() - w };
+    let w_card = 280.0;
+    let x = if m.s.widget_side == Side::Left { area.left() } else { area.right() - w_card };
     // The next free place in the usual stack, for a widget that hasn't been moved.
     let mut y = area.top();
     let p = ui.painter().clone();
@@ -819,7 +827,7 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         let (pad, step) = (16.0, 36.0);
         let first = pad + 8.0;
         let last_bottom = first + 2.0 * step + if st.battery.is_some() { 15.0 } else { 8.0 };
-        let size = Vec2::new(w, last_bottom + pad);
+        let size = Vec2::new(w_card, last_bottom + pad);
         let at = widget_place(ui, m, Widget::System, area, Pos2::new(x, y), size);
         let r = Rect::from_min_size(at, size);
         card(&p, r, &v, 0.82, r_lg());
@@ -846,6 +854,18 @@ pub fn widgets(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
                 p.text(Pos2::new(r.right() - pad, ys[2]), Align2::RIGHT_CENTER, format!("{} h {} min", up / 3600, up / 60 % 60), ui_font(12.5), txt);
             }
         }
+        if m.s.widget_system_at.is_none() {
+            y += size.y + 14.0;
+        }
+    }
+    if m.s.widget_weather {
+        let ex = m.extra;
+        let w = &ex.weather;
+        let size = Vec2::new(w_card, crate::weather_ui::card_height(w));
+        let at = widget_place(ui, m, Widget::Weather, area, Pos2::new(x, y), size);
+        let r = Rect::from_min_size(at, size);
+        card(&p, r, &v, 0.82, r_lg());
+        crate::weather_ui::card(&p, r, w, m.s.weather_units, crate::weather_ui::Tones::of(&v, accent));
     }
 }
 
@@ -1002,6 +1022,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::DockMenu { app, pinned } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 } + if closable(m, app).is_empty() { 0.0 } else { 34.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Weather => Vec2::new(340.0, crate::weather_ui::popup_height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Notifications => Vec2::new(crate::notes_pop::WIDTH, crate::notes_pop::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Plugin { id } => Vec2::new(PLUGIN_W, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
@@ -1106,6 +1127,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
         PopupKind::Bluetooth => crate::conn::bluetooth(&mut child, m, kit),
         PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
+        PopupKind::Weather => crate::weather_ui::popup(&mut child, m, kit),
         PopupKind::Notifications => crate::notes_pop::popup(&mut child, m, kit),
         PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
         PopupKind::TrayMenu { key, path } => crate::tray_ui::menu(&mut child, key, path, m),

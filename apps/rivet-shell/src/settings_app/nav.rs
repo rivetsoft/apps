@@ -16,7 +16,7 @@ pub(super) fn about(page: Page) -> &'static str {
         Page::Appearance => "Colors, text, and the look of panels and windows",
         Page::Panel => "The bars along the screen's edges and the items on each",
         Page::Dock => "Pinned and open apps along the bottom",
-        Page::Widgets => "A clock and system readings on the desktop",
+        Page::Widgets => "A clock, system readings and the weather on the desktop",
         Page::Launcher => "How the launcher looks and what it answers as you type",
         Page::Notifications => "Notifications, on-screen volume and brightness, and Night Light",
         Page::Displays => "Resolution, scale, rotation and arrangement of each screen",

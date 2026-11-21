@@ -102,6 +102,32 @@ kept, attached to nothing and not shown, until it's given another. A sub panel u
 that hides brings that panel out with it. With several screens, a key opens the sub panel on
 each screen it's on; its button, only on that screen.
 
+### Weather: where it comes from, and what leaves the computer
+
+(`weather.rs`, `settings_app/weather_opts.rs`: "Open-Meteo is asked for the weather at this place…")
+
+The weather is one reading for one place, shown by the desktop widget (Widgets › "The weather for
+a place you choose") and by the Weather panel item, whose popup has the next hours and the week.
+Both share the place and the units, set under Widgets › Weather or from the item's gear.
+
+Choosing a place: type a town's name and press Find, then pick from the places found. The name
+goes to Open-Meteo's place search; the shell keeps the place's name, latitude and longitude in
+its settings file. Nothing finds the computer's location by itself.
+
+While the widget or the item is on and a place is chosen, the shell asks Open-Meteo for that
+place's forecast every 15 minutes, and again after a minute when a try fails. With both off,
+nothing is asked. It needs curl, and no account or key. The Refresh button in the popup reads
+again at once. `rivet-shell msg weather` opens the popup from a key.
+
+Readings are kept in metric and shown in the units chosen, so changing units is instant. The
+units start as °F and mph where the computer's region uses them (United States, Liberia,
+Myanmar), else °C and km/h.
+
+For anyone adding a widget: `weather_ui` draws the weather from parts (`Part::Place`, `Now`,
+`Details`, `Hours(n)`, `Days(n)`). `view` stacks the parts asked for into a rectangle,
+`height` says how tall they are, and `icon` draws a sky at any size. The desktop card and the
+popup are two choices of parts over the same reading (`Extra::weather`).
+
 ### Displays and window look: how Rivet Shell changes the compositor's settings
 
 From `settings_app/displays.rs` and `settings_app/window_look.rs`.

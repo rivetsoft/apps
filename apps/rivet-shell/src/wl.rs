@@ -179,6 +179,8 @@ pub struct Shell {
     radio_gen: u64,
     ai: crate::ai::AiLive,
     ai_gen: u64,
+    weather: crate::weather::WeatherLive,
+    weather_gen: u64,
     tray: crate::tray::TrayLive,
     tray_gen: u64,
     apps: Vec<rivet_xdg::launch::DesktopApp>,
@@ -270,6 +272,12 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         }
     });
     let wake_tx = std::sync::Mutex::new(tx.clone());
+    let weather = crate::weather::start(move || {
+        if let Ok(t) = wake_tx.lock() {
+            let _ = t.send(Msg::Wake);
+        }
+    });
+    let wake_tx = std::sync::Mutex::new(tx.clone());
     let tray = crate::tray::TrayLive::new(move || {
         if let Ok(t) = wake_tx.lock() {
             let _ = t.send(Msg::Wake);
@@ -324,6 +332,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         radio_gen: 0,
         ai,
         ai_gen: 0,
+        weather,
+        weather_gen: 0,
         tray,
         tray_gen: 0,
         apps: load_apps(),
@@ -849,6 +859,10 @@ impl Shell {
         if p.kind == PopupKind::Ai {
             self.ai.refresh(false);
         }
+        // An hour-old reading is read again as its popup opens.
+        if p.kind == PopupKind::Weather && chrono::Utc::now().timestamp() - self.weather.get().at > 3600 {
+            self.weather.refresh();
+        }
         self.audio.want(matches!(p.kind, PopupKind::Sound { .. }));
         self.radio.want(match p.kind {
             PopupKind::Network { .. } => crate::radio::WIFI,
@@ -871,6 +885,7 @@ impl Shell {
     /// The AI item's readings run while a panel shows it.
     fn set_ai(&self) {
         self.ai.set(self.s.panels.iter().any(|p| p.has("ai")), &self.s.ai_providers);
+        self.weather.set(self.s.shows_weather(), &self.s.weather_place, self.s.weather_at);
         // The tray starts once a panel has it (and then keeps apps' icons registered).
         if self.s.panels.iter().any(|p| p.has("tray")) {
             self.tray.start();
@@ -972,6 +987,7 @@ impl Shell {
                     ("network" | "wifi", _) => self.open_popup(Popup::at(PopupKind::Network { ask: None }, right, "")),
                     ("bluetooth", _) => self.open_popup(Popup::at(PopupKind::Bluetooth, right, "")),
                     ("ai", _) => self.open_popup(Popup::at(PopupKind::Ai, right, "")),
+                    ("weather", _) => self.open_popup(Popup::at(PopupKind::Weather, right, "")),
                     ("sound" | "audio", _) => self.open_popup(Popup::at(PopupKind::Sound { drag: None }, right, "")),
                     ("volume", "up" | "down") => self.act(Act::Volume(arg == "up")),
                     ("volume", "mute") => self.act(Act::Mute),
@@ -1163,6 +1179,12 @@ impl Shell {
             self.ai_gen = ag;
             let pop = self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Ai);
             self.redraw_kinds(if pop { &[Kind::Panel, Kind::Popup] } else { &[Kind::Panel] });
+        }
+        let wg = self.weather.generation();
+        if wg != self.weather_gen {
+            self.weather_gen = wg;
+            let pop = self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Weather);
+            self.redraw_kinds(if pop { &[Kind::Background, Kind::Panel, Kind::Popup] } else { &[Kind::Background, Kind::Panel] });
         }
         let ag = self.audio.generation();
         if ag != self.audio_gen {
@@ -1600,6 +1622,7 @@ impl Shell {
             audio: if kind == Kind::Popup { self.audio.get() } else { Default::default() },
             plugins: if matches!(kind, Kind::Panel | Kind::Popup) { self.plugins.get() } else { Default::default() },
             ai: if matches!(kind, Kind::Panel | Kind::Popup) { self.ai.get() } else { Default::default() },
+            weather: if matches!(kind, Kind::Background | Kind::Panel | Kind::Popup) { self.weather.get() } else { Default::default() },
             tray: if matches!(kind, Kind::Panel | Kind::Popup) { self.tray.get() } else { Default::default() },
             join: if kind == Kind::Panel { self.popup.as_ref().filter(|p| p.output.is_empty() || p.output == self.surfs[i].output_name).and_then(|p| Some((p.attach?, p.join?.0, p.join?.1))) } else { None },
             auth: if kind == Kind::Popup { self.polkit.as_ref().and_then(|a| a.view()) } else { None },
@@ -1898,6 +1921,7 @@ impl Shell {
                 }
             }
             Act::AiRefresh => self.ai.refresh(true),
+            Act::WeatherRefresh => self.weather.refresh(),
             Act::AiPin(key) => self.change_settings(|s| {
                 if s.ai_pins.contains(&key) {
                     s.ai_pins.retain(|k| k != &key);
@@ -1946,6 +1970,7 @@ impl Shell {
             Act::MoveWidget(which, at) => self.change_settings(|s| match which {
                 ui::Widget::Clock => s.widget_clock_at = at,
                 ui::Widget::System => s.widget_system_at = at,
+                ui::Widget::Weather => s.widget_weather_at = at,
             }),
             Act::Pin(id) => {
                 let apps = self.apps.clone();

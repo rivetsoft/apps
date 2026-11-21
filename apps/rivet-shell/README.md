@@ -34,7 +34,8 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   reaches the bottom edge) or smart-hide (shown while the workspace has no windows).
 - **Launcher**: every installed app, searched as you type; arrows and Enter, or click. Type a sum
   (`12*(3+4)`) for its answer; Enter copies it.
-- **Widgets** on the desktop: a large clock and the date, processor, memory and battery.
+- **Widgets** on the desktop: a large clock and the date, processor, memory and battery, and the
+  weather for a place you choose (also a panel item, with the forecast in its popup).
 - **Wallpaper and colors**: choose a picture in Settings; the shell shows it on every screen and
   runs [matugen](https://github.com/InioX/matugen) on it, so the desktop's colors (and every
   Rivet app's, which follow matugen live) come from the picture.

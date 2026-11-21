@@ -736,6 +736,15 @@ pub struct Settings {
     /// usual place, on `widget_side`.
     pub widget_clock_at: Option<(f32, f32)>,
     pub widget_system_at: Option<(f32, f32)>,
+    /// The weather widget (off until a person turns it on: it needs a place, and asks a
+    /// service on the internet).
+    pub widget_weather: bool,
+    pub widget_weather_at: Option<(f32, f32)>,
+    /// The weather, for the widget and the panel item: the place chosen (its name as shown,
+    /// and its latitude and longitude; None: no place yet), and the units it shows in.
+    pub weather_place: String,
+    pub weather_at: Option<(f32, f32)>,
+    pub weather_units: crate::weather::Units,
 }
 
 impl Default for Settings {
@@ -854,6 +863,11 @@ impl Default for Settings {
             widget_side: Side::Left,
             widget_clock_at: None,
             widget_system_at: None,
+            widget_weather: false,
+            widget_weather_at: None,
+            weather_place: String::new(),
+            weather_at: None,
+            weather_units: crate::weather::Units::local(),
         }
     }
 }
@@ -917,6 +931,11 @@ struct OldPanel {
 }
 
 impl Settings {
+    /// Whether anything shows the weather: the desktop widget, or the item on a panel.
+    pub fn shows_weather(&self) -> bool {
+        self.widget_weather || self.panels.iter().any(|p| p.has("weather"))
+    }
+
     pub fn load() -> Settings {
         let mut s = Settings::default();
         let Ok(text) = std::fs::read_to_string(path()) else { return s };
@@ -1114,6 +1133,11 @@ impl Settings {
                 "widget_side" => self.widget_side = if v == "right" { Side::Right } else { Side::Left },
                 "widget_clock_at" => self.widget_clock_at = fraction_pair(v),
                 "widget_system_at" => self.widget_system_at = fraction_pair(v),
+                "widget_weather" => self.widget_weather = b,
+                "widget_weather_at" => self.widget_weather_at = fraction_pair(v),
+                "weather_place" => self.weather_place = v.to_string(),
+                "weather_at" => self.weather_at = lat_lon(v),
+                "weather_units" => self.weather_units = crate::weather::Units::parse(v).unwrap_or(self.weather_units),
                 _ => {}
             }
         }
@@ -1189,6 +1213,7 @@ impl Settings {
         t.push_str(&format!("color_use={}\nsecondary={}\ntertiary={}\n", self.color_use, rgb_text(self.secondary), rgb_text(self.tertiary)));
         let at = |p: Option<(f32, f32)>| p.map(|(x, y)| format!("{x:.4},{y:.4}")).unwrap_or_default();
         t.push_str(&format!("widget_clock_at={}\nwidget_system_at={}\n", at(self.widget_clock_at), at(self.widget_system_at)));
+        t.push_str(&format!("widget_weather={}\nwidget_weather_at={}\nweather_place={}\nweather_at={}\nweather_units={}\n", self.widget_weather, at(self.widget_weather_at), one(&self.weather_place), at(self.weather_at), self.weather_units.name()));
         t.push_str(&format!("font={}\nlauncher_font={}\n", font_name(&self.font), font_name(&self.launcher_font)));
         t.push_str(&format!("quick_icon={}\n", self.quick_icon.name()));
         t.push_str(&format!("launcher_icon={}\nlauncher_custom={}\n", self.launcher_icon.name(), self.launcher_custom.replace('\n', "")));
@@ -1387,6 +1412,13 @@ impl Settings {
     }
 }
 
+/// "latitude,longitude" in degrees (the weather's place); anything else is None.
+fn lat_lon(v: &str) -> Option<(f32, f32)> {
+    let (lat, lon) = v.split_once(',')?;
+    let (lat, lon) = (lat.trim().parse::<f32>().ok()?, lon.trim().parse::<f32>().ok()?);
+    (lat.abs() <= 90.0 && lon.abs() <= 180.0).then_some((lat, lon))
+}
+
 /// "x,y" with both from 0 to 1 (a widget's place); anything else is None.
 fn fraction_pair(v: &str) -> Option<(f32, f32)> {
     let (x, y) = v.split_once(',')?;
@@ -1403,6 +1435,7 @@ mod tests {
         let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.widget_system_at = Some((0.25, 0.5));
+        (s.widget_weather, s.widget_weather_at, s.weather_place, s.weather_at, s.weather_units) = (true, Some((1.0, 0.0)), "Portland, Oregon".into(), Some((45.5234, -122.6762)), crate::weather::Units::Imperial);
         s.secondary = Some([0x35, 0x84, 0xe4]);
         (s.wallpaper_screens, s.wall_transition, s.wall_transition_ms, s.matugen_screen, s.matugen_contrast) = (vec![("DP-2".into(), "/p/two.png".into())], Transition::Grow, 900, "DP-2".into(), 0.5);
         assert_eq!((s.wallpaper_on("DP-2"), s.wallpaper_on("DP-1"), s.matugen_picture()), ("/p/two.png", "/p/a b.jpg", "/p/two.png"));

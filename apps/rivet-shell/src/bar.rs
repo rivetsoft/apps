@@ -158,6 +158,10 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
             (PAD * 2.0 + media_lead(b) + tw + if media_viz(b) { VIZ_W + ICON_GAP } else { 0.0 } + if s.media_controls { MEDIA_SKIP * 2.0 + ICON_GAP } else { 0.0 }, tw > 0.0)
         }
         "system" => (b.text_w(system_text(b)) + PAD * 2.0 + ICON + ICON_GAP, false),
+        "weather" => match &b.m.extra.weather.now {
+            Some(n) => (b.text_w(s.weather_units.temp(n.temp)) + PAD * 2.0 + WEATHER_ICON + ICON_GAP, false),
+            None => (SLOT, false),
+        },
         "volume" => (level_w(b, s.vol_show, ICON, &volume_text(st.volume?, s.vol_show, false)), false),
         "brightness" => (level_w(b, s.bright_show, ICON, &format!("{}%", st.brightness?)), false),
         "battery" => {
@@ -205,6 +209,7 @@ fn want_down(b: &Bar, id: &str) -> Option<(f32, bool)> {
         "clock" => (clock_lines(&Local::now().format(&s.clock_format).to_string()).len() as f32 * CLOCK_LINE + 10.0, false),
         "media" => (if shown_media(b).is_some() { SLOT } else { return None }, false),
         "system" => (STACK, false),
+        "weather" => (if b.m.extra.weather.now.is_some() { STACK } else { SLOT }, false),
         "volume" => (level_w(b, s.vol_show, ICON, &volume_text(st.volume?, s.vol_show, true)), false),
         "brightness" => (level_w(b, s.bright_show, ICON, &format!("{}%", st.brightness?)), false),
         "battery" => {
@@ -315,6 +320,8 @@ const MEDIA_ICON: f32 = 12.0;
 const WS_PAD: f32 = 4.0;
 /// Between parts: room, a thin line, room.
 const AI_SEP: f32 = 17.0;
+/// The Weather item's sky.
+const WEATHER_ICON: f32 = 18.0;
 
 fn ai_part_w(b: &Bar, part: &AiPart) -> f32 {
     let tw = |t: &str, size: f32| b.p.layout_no_wrap(t.to_string(), ui_font(size), b.fg()).size().x;
@@ -1132,6 +1139,36 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let g = p.layout_no_wrap(system_text(b), ui_font(12.5), fg);
             p.galley(Pos2::new(r.left() + PAD + ICON + ICON_GAP, cy - g.size().y / 2.0), g, fg);
             resp.on_hover_text("Processor use · memory in use");
+        }
+        "weather" => {
+            use crate::weather::Sky;
+            let w = &ex.weather;
+            let units = b.m.s.weather_units;
+            let resp = b.button(ui, r, id);
+            let tip = match &w.now {
+                Some(n) => {
+                    let sky = Sky::of(n.code);
+                    let temp = units.temp(n.temp);
+                    if b.vert {
+                        crate::weather_ui::icon(&p, Pos2::new(r.center().x, r.top() + 13.0), WEATHER_ICON, sky, n.day, fg, accent);
+                        small(&p, Pos2::new(r.center().x, r.bottom() - 9.0), &temp, SMALL, fg);
+                    } else {
+                        crate::weather_ui::icon(&p, Pos2::new(r.left() + PAD + WEATHER_ICON / 2.0, cy), WEATHER_ICON, sky, n.day, fg, accent);
+                        let g = p.layout_no_wrap(temp.clone(), ui_font(12.5), fg);
+                        p.galley(Pos2::new(r.left() + PAD + WEATHER_ICON + ICON_GAP, cy - g.size().y / 2.0), g, fg);
+                    }
+                    let today = w.days.first().map(|d| format!(" · high {} low {}", units.temp(d.high), units.temp(d.low))).unwrap_or_default();
+                    format!("{}\n{temp}, {}{today}\nClick for the forecast", w.place, crate::weather::words(n.code).to_lowercase())
+                }
+                None => {
+                    crate::weather_ui::icon(&p, r.center(), WEATHER_ICON, Sky::Cloudy, true, weak.gamma_multiply(0.6), accent);
+                    w.message().unwrap_or("Weather").to_string()
+                }
+            };
+            if resp.on_hover_text(tip).clicked() {
+                let a = b.popup(PopupKind::Weather, b.at(r));
+                b.acts.push(a);
+            }
         }
         "volume" => {
             let Some((vol, muted)) = st.volume else { return };

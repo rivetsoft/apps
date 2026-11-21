@@ -43,6 +43,8 @@ mod viz;
 mod wall;
 mod wall_pick;
 mod wl;
+mod weather;
+mod weather_ui;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -65,7 +67,7 @@ Usage:
   rivet-shell greeter               The lock screen as greetd's login screen, over the
                                     wallpaper chosen last; --setup (with sudo) prepares it
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
-                                    power, network, bluetooth, ai, sound, media (each opens or closes it); volume up|down|mute|N,
+                                    power, network, bluetooth, ai, weather, sound, media (each opens or closes it); volume up|down|mute|N,
                                     mic mute, brightness up|down|N, media play-pause|next|previous,
                                     dnd, night-light, keep-awake (each turns it on or off);
                                     subpanel NAME (opens or closes that sub panel; add open,

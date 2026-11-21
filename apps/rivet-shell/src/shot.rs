@@ -159,6 +159,17 @@ impl ShotApp {
         if let Ok(l) = std::env::var("RIVET_SHELL_LOOK") {
             s.look = crate::style::Style::parse(&l, '=', ';');
         }
+        // RIVET_SHELL_WEATHER=1: the weather widget and the panel's Weather item, with a sample
+        // reading (none: no place chosen; failed: the service can't be reached; night: a clear
+        // night). RIVET_SHELL_POPUP=weather opens the item's popup. RIVET_SHELL_UNITS=imperial.
+        if std::env::var("RIVET_SHELL_WEATHER").is_ok() || std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("weather") {
+            s.widget_weather = true;
+            (s.weather_place, s.weather_at) = ("Portland, Oregon, United States".into(), Some((45.52, -122.68)));
+            s.weather_units = std::env::var("RIVET_SHELL_UNITS").ok().and_then(|u| crate::weather::Units::parse(&u)).unwrap_or(crate::weather::Units::Metric);
+            let right = &mut s.panels[0].zones[2];
+            let at = right.iter().position(|i| i == "network").unwrap_or(0);
+            right.insert(at, "weather".into());
+        }
         if std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("ai") {
             let right = &mut s.panels[0].zones[2];
             let at = right.iter().position(|i| i == "network").unwrap_or(0);
@@ -318,6 +329,7 @@ impl ShotApp {
             Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("weather") => Some(Popup { kind: PopupKind::Weather, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("sound") => Some(Popup { kind: PopupKind::Sound { drag: None }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("media") => Some(Popup { kind: PopupKind::Media, anchor_x: 760.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("auth") => Some(Popup { kind: PopupKind::Auth { typed: "secret".into(), round: 1 }, anchor_x: 0.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
@@ -353,6 +365,18 @@ impl ShotApp {
             user: "Sam Rivers".into(),
             radios: demo_radios(),
             ai: demo_ai(),
+            weather: match std::env::var("RIVET_SHELL_WEATHER").as_deref() {
+                Ok("none") => Default::default(),
+                Ok("failed") => crate::weather::Weather { state: crate::weather::State::Failed("Couldn't reach the weather service.".into()), place: "Portland, Oregon, United States".into(), ..Default::default() },
+                Ok("night") => {
+                    let mut w = crate::weather::sample();
+                    if let Some(n) = &mut w.now {
+                        (n.day, n.code, n.temp) = (false, 0, -3.4);
+                    }
+                    w
+                }
+                _ => crate::weather::sample(),
+            },
             audio: crate::audio::demo(),
             join: None,
             auth: Some(crate::polkit::demo()),

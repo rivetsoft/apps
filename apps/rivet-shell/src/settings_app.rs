@@ -31,6 +31,7 @@ mod notes_preview;
 mod panel_editor;
 mod plugins;
 mod search;
+mod weather_opts;
 mod window_look;
 
 pub const ICON_SVG: &str = include_str!("../data/rivet-shell.svg");
@@ -126,6 +127,16 @@ impl SettingsApp {
             crate::config::NO_SAVE.store(true, std::sync::atomic::Ordering::Relaxed);
             rivet_media::thumbs::NO_WRITE.store(true, std::sync::atomic::Ordering::Relaxed);
             s = Settings::default();
+            // RIVET_SHELL_WEATHER=1: the weather widget on, with a place chosen (none: with no
+            // place yet). RIVET_SHELL_WEATHER_FIND: see weather_opts.
+            if let Ok(w) = std::env::var("RIVET_SHELL_WEATHER") {
+                s.widget_weather = true;
+                s.weather_units = crate::weather::Units::Metric;
+                if w != "none" {
+                    (s.weather_place, s.weather_at) = ("Portland, Oregon, United States".into(), Some((45.52, -122.68)));
+                }
+                weather_opts::preload();
+            }
             let d = std::env::temp_dir().join(format!("rivet-shell-demo-{}", std::process::id()));
             let _ = std::fs::create_dir_all(&d);
             if let Some(p) = crate::wall::demo_png(&d) {
@@ -844,6 +855,7 @@ impl SettingsApp {
         section(ui, "On the desktop", &mut |ui| {
             controls::switch(ui, &mut self.s.widget_clock, "A large clock and the date");
             controls::switch(ui, &mut self.s.widget_system, "Processor, memory and battery");
+            controls::switch(ui, &mut self.s.widget_weather, "The weather for a place you choose");
             controls::rule(ui);
             grid(ui, "shell-widgets", &mut |ui| {
                 ui.label("Side");
@@ -852,13 +864,17 @@ impl SettingsApp {
             });
             ui.add_space(8.0);
             hint(ui, "Drag a widget on the desktop to move it, or double-click it to put it back.");
-            if self.s.widget_clock_at.is_some() || self.s.widget_system_at.is_some() {
+            if self.s.widget_clock_at.is_some() || self.s.widget_system_at.is_some() || self.s.widget_weather_at.is_some() {
                 ui.add_space(6.0);
                 if controls::button(ui, controls::Icon::Reset, "Reset Positions").on_hover_text("Puts the widgets back on the side chosen above").clicked() {
-                    (self.s.widget_clock_at, self.s.widget_system_at) = (None, None);
+                    (self.s.widget_clock_at, self.s.widget_system_at, self.s.widget_weather_at) = (None, None, None);
                 }
             }
         });
+        // The weather's place and units, for the widget and the panel's Weather item alike.
+        if self.s.shows_weather() {
+            section(ui, "Weather", &mut |ui| weather_opts::options(ui, &mut self.s, 360.0));
+        }
     }
 
     fn about_page(&mut self, ui: &mut egui::Ui) {
