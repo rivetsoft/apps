@@ -374,6 +374,36 @@ def scene_named():
             + f'<g class="mascot-bubble">{bubble}{words}</g>')
 
 
+def crt(x, y, w, h, screen, rot=0):
+    """A beige 90s monitor, `w` by `h`, with `screen` drawn on its glass (in a 100 by 70 box)."""
+    k = (w - 24) / 100
+    el = (f'<path d="M{x + w * 0.3} {y + h} h{w * 0.4} l8 14 h-{w * 0.4 + 16} Z" fill="{MAUVE}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>'
+          f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="8" fill="{PAPER}" stroke="{INK}" stroke-width="{W}"/>')
+    glass = (f'<rect x="{x + 12}" y="{y + 10}" width="{w - 24}" height="{70 * k:.1f}" rx="5" fill="{INK}" stroke="{INK}" stroke-width="3"/>'
+             f'<g transform="translate({x + 12} {y + 10}) scale({k:.3f})">{screen}</g>'
+             f'<circle cx="{x + w - 16}" cy="{y + h - 9}" r="3.2" fill="{GREEN}"/>'
+             f'<path d="M{x + 14} {y + h - 9} h{w * 0.3}" stroke="{INK}" stroke-width="3" stroke-linecap="round"/>')
+    return f'<g transform="rotate({rot} {x + w / 2} {y + h / 2})">{hard(el, 7, 8)}{glass}</g>'
+
+
+def scene_vibes():
+    """The website's footer: he owns up to how all of this was made, beside the computers that did it."""
+    sans = 'font-family="Space Grotesk, DejaVu Sans, sans-serif" font-weight="700"'
+    bubble = hard(f'<path d="M14 22 H390 V84 L430 100 L390 116 V178 H14 Z" fill="{WHITE}" stroke="{INK}" stroke-width="{W}" stroke-linejoin="round"/>', 8, 9)
+    lines = (("An idiot told a bunch of computers", 21, 62), ("what to do, and they did it.", 21, 90),
+             ("He probably didn&#8217;t read the code.", 21, 118), ("I certainly didn&#8217;t, I&#8217;m a rivet.", 17, 152))
+    words = "".join(f'<text x="202" y="{ty}" text-anchor="middle" {sans} font-size="{size}" fill="{INK}">{t}</text>' for t, size, ty in lines)
+    code = "".join(f'<path d="M{8 + ind} {12 + n * 11} h{length}" stroke="{color}" stroke-width="4.5" stroke-linecap="round"/>'
+                   for n, (ind, length, color) in enumerate(((0, 46, GREEN), (10, 62, GREEN), (10, 30, YELLOW), (20, 50, GREEN), (0, 22, PINK_SOFT))))
+    grin = (f'<circle cx="36" cy="26" r="5" fill="{YELLOW}"/><circle cx="64" cy="26" r="5" fill="{YELLOW}"/>'
+            f'<path d="M28 42 Q50 62 72 42" fill="none" stroke="{YELLOW}" stroke-width="6" stroke-linecap="round"/>')
+    okay = f'<text x="50" y="50" text-anchor="middle" font-family="DejaVu Sans Mono, monospace" font-weight="700" font-size="38" fill="{GREEN}">OK</text>'
+    machines = crt(590, 124, 124, 100, code) + crt(700, 138, 104, 86, okay, 3) + crt(626, 30, 112, 92, grin, -6)
+    return ('<g class="mascot-back">' + machines + '</g>'
+            + '<g class="mascot-rivet">' + rivet(506, 172, 0.52, -5, look=(-12, -6), brows="raised", mood="o") + '</g>'
+            + f'<g class="mascot-bubble">{bubble}{words}</g>')
+
+
 def scene_island():
     """Rivet Welcome: it installs everything, so he is on a small island with a coconut."""
     dark = "#6a3050"
@@ -435,7 +465,7 @@ def scene_solo_shut():
 
 
 # Scenes that are not the usual 640x480.
-SIZES = {"named": (770, 236), "solo": (300, 340), "solo-shut": (300, 340), "island": (900, 424)}
+SIZES = {"named": (770, 236), "vibes": (830, 246), "solo": (300, 340), "solo-shut": (300, 340), "island": (900, 424)}
 
 SCENES = {
     "hello": scene_hello,
@@ -451,6 +481,7 @@ SCENES = {
     "docs": scene_docs,
     "blog": scene_blog,
     "named": scene_named,
+    "vibes": scene_vibes,
     "island": scene_island,
     "solo": scene_solo,
     "solo-shut": scene_solo_shut,
