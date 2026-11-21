@@ -67,7 +67,7 @@
   the regular one).
 
 ### Changed
-- Rivet Files now lives in the [Rivet Apps](https://github.com/ulinaaron/rivet-apps) repository,
+- Rivet Files now lives in the [Rivet Apps](https://github.com/rivetsoft/apps) repository,
   beside Rivet FTP and Rivet Notes; its downloads, Flatpak id and AUR packages are unchanged.
 
 ## 0.6.0

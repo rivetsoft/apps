@@ -48,7 +48,7 @@ More in [Rivet Notes](../../docs/rivet-notes.md) (every feature and key) and the
 ## Install
 
 Download `rivet-notes-0.1.0-x86_64-linux.tar.gz` from the Rivet Notes release on the
-[Releases page](https://github.com/ulinaaron/rivet-apps/releases) (tag `rivet-notes-v0.1.0`), then:
+[Releases page](https://github.com/rivetsoft/apps/releases) (tag `rivet-notes-v0.1.0`), then:
 
 ```sh
 tar xzf rivet-notes-0.1.0-x86_64-linux.tar.gz

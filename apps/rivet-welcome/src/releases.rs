@@ -11,7 +11,7 @@ use std::time::SystemTime;
 use serde_json::Value;
 
 /// Where the apps are released.
-pub const REPO: &str = "ulinaaron/rivet-apps";
+pub const REPO: &str = "rivetsoft/apps";
 
 /// The repository to look in (`RIVET_WELCOME_REPO=owner/name` for testing a fork).
 pub fn repo() -> String {

@@ -64,7 +64,7 @@ Wait until the Flatpak path fixes are in a tagged release. The copy in this repo
 
    ```yaml
        - type: git
-         url: https://github.com/ulinaaron/rivet-apps.git
+         url: https://github.com/rivetsoft/apps.git
          tag: vX.Y.Z
          commit: COMMIT
        - cargo-sources.json
@@ -93,7 +93,7 @@ Wait until the Flatpak path fixes are in a tagged release. The copy in this repo
 
 10. After it is merged, Flathub creates `flathub/io.github.ulinaaron.rivet-files` and invites the GitHub account. Accept within a week. Later updates are commits to that repository's `master`, not another submission through `new-pr`.
 
-The app id `io.github.ulinaaron.rivet-files` is Rivet Files' Flathub id (under `io.github.ulinaaron`, the GitHub account); it stays the same now that the repository is `https://github.com/ulinaaron/rivet-apps`.
+The app id `io.github.ulinaaron.rivet-files` is Rivet Files' Flathub id (under `io.github.ulinaaron`, the GitHub account); it stays the same now that the repository is `https://github.com/rivetsoft/apps`.
 
 ## Publishing to the AUR
 

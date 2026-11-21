@@ -18,8 +18,8 @@ root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-bin_url="https://github.com/ulinaaron/rivet-apps/releases/download/v${ver}/rivet-files-${ver}-x86_64-linux.tar.gz"
-src_url="https://github.com/ulinaaron/rivet-apps/archive/refs/tags/v${ver}.tar.gz"
+bin_url="https://github.com/rivetsoft/apps/releases/download/v${ver}/rivet-files-${ver}-x86_64-linux.tar.gz"
+src_url="https://github.com/rivetsoft/apps/archive/refs/tags/v${ver}.tar.gz"
 curl -fL --proto '=https' -o "$tmp/bin.tar.gz" "$bin_url"
 curl -fL --proto '=https' -o "$tmp/src.tar.gz" "$src_url"
 bin_sha=$(sha256sum "$tmp/bin.tar.gz" | awk '{print $1}')
@@ -58,13 +58,13 @@ rewrite(
     f"{root}/rivet-files-bin/PKGBUILD",
     f"{root}/rivet-files-bin/.SRCINFO",
     bin_sha,
-    f"source = https://github.com/ulinaaron/rivet-apps/releases/download/v{ver}/rivet-files-{ver}-x86_64-linux.tar.gz",
+    f"source = https://github.com/rivetsoft/apps/releases/download/v{ver}/rivet-files-{ver}-x86_64-linux.tar.gz",
 )
 rewrite(
     f"{root}/rivet-files/PKGBUILD",
     f"{root}/rivet-files/.SRCINFO",
     src_sha,
-    f"source = rivet-files-{ver}.tar.gz::https://github.com/ulinaaron/rivet-apps/archive/refs/tags/v{ver}.tar.gz",
+    f"source = rivet-files-{ver}.tar.gz::https://github.com/rivetsoft/apps/archive/refs/tags/v{ver}.tar.gz",
 )
 print(f"rivet-files-bin {ver} {bin_sha}")
 print(f"rivet-files {ver} {src_sha}")

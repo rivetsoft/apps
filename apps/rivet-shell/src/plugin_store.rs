@@ -16,7 +16,7 @@ use crate::plugins::{Manifest, found, user_dir};
 
 /// The list, as published. `RIVET_SHELL_REGISTRY=FILE-or-URL` reads another (checks, and trying
 /// a listing before proposing it).
-const REGISTRY: &str = "https://raw.githubusercontent.com/ulinaaron/rivet-apps/main/plugins/registry.json";
+const REGISTRY: &str = "https://raw.githubusercontent.com/rivetsoft/apps/main/plugins/registry.json";
 
 /// The biggest download taken: a plugin is a script or a small program.
 const MAX_BYTES: &str = "33554432";

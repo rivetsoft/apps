@@ -5,17 +5,17 @@
   "draft": true,
   "prerelease": true,
   "published_at": "2026-11-18T00:00:00Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-draft-v9.0.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-draft-v9.0.0",
   "body": "",
   "assets": [
    {
     "name": "rivet-draft-9.0.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-draft-v9.0.0/rivet-draft-9.0.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-draft-v9.0.0/rivet-draft-9.0.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-draft-9.0.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-draft-v9.0.0/rivet-draft-9.0.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-draft-v9.0.0/rivet-draft-9.0.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -26,17 +26,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-18T10:00:00Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-welcome-v0.1.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-welcome-v0.1.0",
   "body": "The first version.",
   "assets": [
    {
     "name": "rivet-welcome-0.1.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-welcome-v0.1.0/rivet-welcome-0.1.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-welcome-v0.1.0/rivet-welcome-0.1.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-welcome-0.1.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-welcome-v0.1.0/rivet-welcome-0.1.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-welcome-v0.1.0/rivet-welcome-0.1.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -47,17 +47,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-17T20:19:43Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-terminal-v0.1.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-terminal-v0.1.0",
   "body": "The first version.",
   "assets": [
    {
     "name": "rivet-terminal-0.1.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-terminal-v0.1.0/rivet-terminal-0.1.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-terminal-v0.1.0/rivet-terminal-0.1.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-terminal-0.1.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-terminal-v0.1.0/rivet-terminal-0.1.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-terminal-v0.1.0/rivet-terminal-0.1.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -68,17 +68,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-17T20:17:01Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-edit-v0.1.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-edit-v0.1.0",
   "body": "The first version.",
   "assets": [
    {
     "name": "rivet-edit-0.1.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-edit-v0.1.0/rivet-edit-0.1.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-edit-v0.1.0/rivet-edit-0.1.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-edit-0.1.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-edit-v0.1.0/rivet-edit-0.1.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-edit-v0.1.0/rivet-edit-0.1.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -89,17 +89,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-17T20:16:14Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-notes-v0.2.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-notes-v0.2.0",
   "body": "- Super todos on a board.",
   "assets": [
    {
     "name": "rivet-notes-0.2.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-notes-v0.2.0/rivet-notes-0.2.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-notes-v0.2.0/rivet-notes-0.2.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-notes-0.2.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-notes-v0.2.0/rivet-notes-0.2.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-notes-v0.2.0/rivet-notes-0.2.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -110,17 +110,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-17T20:15:25Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-ftp-v0.2.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-ftp-v0.2.0",
   "body": "- Edit server files in place.",
   "assets": [
    {
     "name": "rivet-ftp-0.2.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-ftp-v0.2.0/rivet-ftp-0.2.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-ftp-v0.2.0/rivet-ftp-0.2.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-ftp-0.2.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-ftp-v0.2.0/rivet-ftp-0.2.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-ftp-v0.2.0/rivet-ftp-0.2.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -131,17 +131,17 @@
   "draft": false,
   "prerelease": false,
   "published_at": "2026-11-17T20:08:21Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/v0.7.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/v0.7.0",
   "body": "- Peek previews for more file types.",
   "assets": [
    {
     "name": "rivet-files-0.7.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/v0.7.0/rivet-files-0.7.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/v0.7.0/rivet-files-0.7.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-files-0.7.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/v0.7.0/rivet-files-0.7.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/v0.7.0/rivet-files-0.7.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -152,17 +152,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-17T05:25:07Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-ftp-v0.1.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-ftp-v0.1.0",
   "body": "The first version.",
   "assets": [
    {
     "name": "rivet-ftp-0.1.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-ftp-v0.1.0/rivet-ftp-0.1.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-ftp-v0.1.0/rivet-ftp-0.1.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-ftp-0.1.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-ftp-v0.1.0/rivet-ftp-0.1.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-ftp-v0.1.0/rivet-ftp-0.1.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -173,17 +173,17 @@
   "draft": false,
   "prerelease": true,
   "published_at": "2026-11-17T05:24:54Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/rivet-notes-v0.1.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/rivet-notes-v0.1.0",
   "body": "The first version.",
   "assets": [
    {
     "name": "rivet-notes-0.1.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-notes-v0.1.0/rivet-notes-0.1.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-notes-v0.1.0/rivet-notes-0.1.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-notes-0.1.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/rivet-notes-v0.1.0/rivet-notes-0.1.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/rivet-notes-v0.1.0/rivet-notes-0.1.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]
@@ -194,17 +194,17 @@
   "draft": false,
   "prerelease": false,
   "published_at": "2026-11-15T01:26:14Z",
-  "html_url": "https://github.com/ulinaaron/rivet-apps/releases/tag/v0.6.0",
+  "html_url": "https://github.com/rivetsoft/apps/releases/tag/v0.6.0",
   "body": "- Split view.",
   "assets": [
    {
     "name": "rivet-files-0.6.0-x86_64-linux.tar.gz",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/v0.6.0/rivet-files-0.6.0-x86_64-linux.tar.gz",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/v0.6.0/rivet-files-0.6.0-x86_64-linux.tar.gz",
     "size": 9000000
    },
    {
     "name": "rivet-files-0.6.0-x86_64-linux.tar.gz.sha256",
-    "browser_download_url": "https://github.com/ulinaaron/rivet-apps/releases/download/v0.6.0/rivet-files-0.6.0-x86_64-linux.tar.gz.sha256",
+    "browser_download_url": "https://github.com/rivetsoft/apps/releases/download/v0.6.0/rivet-files-0.6.0-x86_64-linux.tar.gz.sha256",
     "size": 100
    }
   ]

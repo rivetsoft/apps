@@ -1771,7 +1771,7 @@ impl RivetApp {
                             ui.set_max_width(380.0);
                             ui.add(egui::Label::new("Rivet is a powerful traditional file manager that can be as bloated or as minimal as you need.").halign(egui::Align::Center).wrap());
                             ui.add_space(14.0);
-                            ui.hyperlink_to("github.com/ulinaaron/rivet-apps", "https://github.com/ulinaaron/rivet-apps");
+                            ui.hyperlink_to("github.com/rivetsoft/apps", "https://github.com/rivetsoft/apps");
                             ui.add_space(6.0);
                             ui.label(egui::RichText::new("Licensed under MIT or Apache-2.0").small().color(weak));
                             ui.label(egui::RichText::new(format!("Icon theme in use: {}", self.icons.name)).small().color(weak));

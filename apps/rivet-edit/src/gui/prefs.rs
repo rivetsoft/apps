@@ -434,7 +434,7 @@ impl EditApp {
                                                 .wrap(),
                                         );
                                         ui.add_space(14.0);
-                                        ui.hyperlink_to("github.com/ulinaaron/rivet-apps", "https://github.com/ulinaaron/rivet-apps");
+                                        ui.hyperlink_to("github.com/rivetsoft/apps", "https://github.com/rivetsoft/apps");
                                         ui.add_space(6.0);
                                         ui.label(egui::RichText::new("Licensed under MIT or Apache-2.0").small().color(weak));
                                     });

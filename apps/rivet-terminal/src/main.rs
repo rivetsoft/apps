@@ -73,7 +73,7 @@ case "$1" in
   p 'colors'; echo
   for i in 0 1 2 3 4 5 6 7; do printf '%s[4%sm    %s[0m' "$e" "$i" "$e"; done; echo
   for i in 0 1 2 3 4 5 6 7; do printf '%s[10%sm    %s[0m' "$e" "$i" "$e"; done; echo
-  printf 'Docs: %s[4;34mhttps://github.com/ulinaaron/rivet-apps%s[0m\n' "$e" "$e"
+  printf 'Docs: %s[4;34mhttps://github.com/rivetsoft/apps%s[0m\n' "$e" "$e"
   p '' ;;
 esac
 exec sleep 600

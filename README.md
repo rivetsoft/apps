@@ -14,10 +14,10 @@
   <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="88" alt="Rivet Welcome icon">
 </p>
 
-# Rivet Apps
+# Rivetsoft Apps
 
-[![CI](https://github.com/ulinaaron/rivet-apps/actions/workflows/ci.yml/badge.svg)](https://github.com/ulinaaron/rivet-apps/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ulinaaron/rivet-apps?label=release)](https://github.com/ulinaaron/rivet-apps/releases/latest)
+[![CI](https://github.com/rivetsoft/apps/actions/workflows/ci.yml/badge.svg)](https://github.com/rivetsoft/apps/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/rivetsoft/apps?label=release)](https://github.com/rivetsoft/apps/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-informational)](#the-apps)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20egui-orange)](https://github.com/emilk/egui)
@@ -128,7 +128,7 @@ some other way (AUR, a distribution package) are shown but left alone.
 ## Install
 
 Each app is released on its own, with its own version and changelog, on the
-[Releases page](https://github.com/ulinaaron/rivet-apps/releases). Rivet Files has an AppImage,
+[Releases page](https://github.com/rivetsoft/apps/releases). Rivet Files has an AppImage,
 Flatpak and AUR packages; the other released apps come as an archive with an installer. Each
 app's README has the steps.
 

@@ -2,7 +2,7 @@ pkgbase = rivet-files
 	pkgdesc = Classic Linux file manager, like Nemo, Thunar and Caja, written in Rust
 	pkgver = 0.8.0
 	pkgrel = 1
-	url = https://github.com/ulinaaron/rivet-apps
+	url = https://github.com/rivetsoft/apps
 	arch = x86_64
 	arch = aarch64
 	license = MIT
@@ -16,7 +16,7 @@ pkgbase = rivet-files
 	depends = wayland
 	makedepends = cargo
 	conflicts = rivet-files-bin
-	source = rivet-files-0.8.0.tar.gz::https://github.com/ulinaaron/rivet-apps/archive/refs/tags/v0.8.0.tar.gz
+	source = rivet-files-0.8.0.tar.gz::https://github.com/rivetsoft/apps/archive/refs/tags/v0.8.0.tar.gz
 	sha256sums = ff5018a167c1ed96e98788e4670dda57f7979ef1ef8d3d4079509ef16d583f48
 
 pkgname = rivet-files

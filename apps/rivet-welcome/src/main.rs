@@ -32,7 +32,7 @@ Usage:
   rivet-welcome -V, --version       The version
 
 Apps are installed for you alone (no password): programs in ~/.local/bin, and the apps in
-your launcher, from the archives on https://github.com/ulinaaron/rivet-apps/releases.";
+your launcher, from the archives on https://github.com/rivetsoft/apps/releases.";
 
 /// The window's name on the session bus: a second `rivet-welcome` asks it to come forward.
 const WINDOW_NAME: &str = "io.github.ulinaaron.RivetWelcome";

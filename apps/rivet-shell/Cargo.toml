@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.88"
 description = "A desktop shell for Wayland compositors (niri, Hyprland, Sway and others with the layer-shell protocol): panel, dock, desktop widgets, wallpaper with matugen colours, and settings, in the Rivet apps' look"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/ulinaaron/rivet-apps"
+repository = "https://github.com/rivetsoft/apps"
 publish = false
 
 [[bin]]

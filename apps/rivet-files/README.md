@@ -2,8 +2,8 @@
 
 # Rivet Files
 
-[![CI](https://github.com/ulinaaron/rivet-apps/actions/workflows/ci.yml/badge.svg)](https://github.com/ulinaaron/rivet-apps/actions/workflows/ci.yml)
-[![Latest release](https://img.shields.io/github/v/release/ulinaaron/rivet-apps?label=release)](https://github.com/ulinaaron/rivet-apps/releases/latest)
+[![CI](https://github.com/rivetsoft/apps/actions/workflows/ci.yml/badge.svg)](https://github.com/rivetsoft/apps/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/rivetsoft/apps?label=release)](https://github.com/rivetsoft/apps/releases/latest)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#-license)
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-informational)](#-install)
 [![Built with Rust](https://img.shields.io/badge/built%20with-Rust%20%2B%20egui-orange)](https://github.com/emilk/egui)
@@ -165,7 +165,7 @@ Appearance → Typography) and any installed Nerd Font.
 
 ## 📦 Install
 
-Grab the latest Rivet Files release (tags `vX.Y.Z`; the Rivet FTP and Rivet Notes releases share the page) from the [Releases page](https://github.com/ulinaaron/rivet-apps/releases):
+Grab the latest Rivet Files release (tags `vX.Y.Z`; the Rivet FTP and Rivet Notes releases share the page) from the [Releases page](https://github.com/rivetsoft/apps/releases):
 
 - **AppImage** — one file, nothing else to install: `chmod +x Rivet_Files-*.AppImage` and run it.
   It includes the keyboard libraries below and runs on Ubuntu 22.04, Debian 12, and newer.

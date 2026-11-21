@@ -882,7 +882,7 @@ impl SettingsApp {
             let keys = egui::RichText::new("Bind a key to open the launcher:  rivet-shell msg launcher").font(fonts::ui_font(12.0)).color(weak);
             ui.label(keys);
             ui.add_space(14.0);
-            ui.hyperlink_to("github.com/ulinaaron/rivet-apps", "https://github.com/ulinaaron/rivet-apps");
+            ui.hyperlink_to("github.com/rivetsoft/apps", "https://github.com/rivetsoft/apps");
             ui.add_space(6.0);
             ui.label(egui::RichText::new("Licensed under MIT or Apache-2.0").small().color(weak));
         });

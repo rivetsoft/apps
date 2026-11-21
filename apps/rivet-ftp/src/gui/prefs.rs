@@ -571,7 +571,7 @@ impl FtpApp {
                                         ui.label("Transfer files to and from your servers, side by side.");
                                         ui.label(egui::RichText::new("Built on Rivet Files. No GTK or Qt.").color(weak));
                                         ui.add_space(14.0);
-                                        ui.hyperlink_to("Source code", "https://github.com/ulinaaron/rivet-apps");
+                                        ui.hyperlink_to("Source code", "https://github.com/rivetsoft/apps");
                                     });
                                 }
                             }
