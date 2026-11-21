@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0
 
 - **Crash reports leave out personal details**: your user and computer names, file paths and
   server addresses are taken out before the report is saved. Report on GitHub now opens an
