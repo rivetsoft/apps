@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A Rivet color theme, in Rivet's own pink, blue and yellow.
 - Rivet Shell's Edit plugin: your five most recent folders on the panel and in the launcher
   (`@edit`), each opening in a new window (turn it on in the shell's Settings, Plugins).
 - A new icon in Rivet's pink, to match the rest of the apps and the website.

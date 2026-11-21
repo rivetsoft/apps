@@ -28,7 +28,9 @@ const fn s(name: &'static str, dark: bool, c: [u32; 9]) -> Scheme {
 }
 
 //                  background  text      comment   keyword   string    number    function  type      punct
-pub const SCHEMES: [Scheme; 39] = [
+pub const SCHEMES: [Scheme; 40] = [
+    // Rivet's own: its pink as the accent, with the blue and yellow that go with it.
+    s("Rivet", true, [0x1e131a, 0xe8dde3, 0x8c7a85, 0x0084b8, 0x8fd4a0, 0xf5a26b, 0xd53f8c, 0xfff270, 0xb9a9b3]),
     s("One Dark", true, [0x282c34, 0xabb2bf, 0x5c6370, 0xc678dd, 0x98c379, 0xd19a66, 0x61afef, 0xe5c07b, 0xabb2bf]),
     s("One Light", false, [0xfafafa, 0x383a42, 0xa0a1a7, 0xa626a4, 0x50a14f, 0x986801, 0x4078f2, 0xc18401, 0x383a42]),
     s("Dracula", true, [0x282a36, 0xf8f8f2, 0x6272a4, 0xff79c6, 0xf1fa8c, 0xbd93f9, 0x50fa7b, 0x8be9fd, 0xf8f8f2]),
@@ -179,6 +181,11 @@ mod tests {
         // As a desktop palette, each reads back in its own mode with its colours.
         let one = Scheme::by_name("One Light").unwrap();
         assert!(one.palette_css().contains("@define-color view_bg_color #fafafa;\n@define-color view_fg_color #383a42;"));
+        // Rivet's own gives the shell its three colours exactly.
+        let css = Scheme::by_name("Rivet").unwrap().palette_css();
+        for line in ["accent_bg_color #d53f8c;", "secondary #0084b8;", "tertiary #fff270;"] {
+            assert!(css.contains(line), "{line}");
+        }
         let names: std::collections::HashSet<&str> = SCHEMES.iter().map(|s| s.name).collect();
         assert_eq!(names.len(), SCHEMES.len());
     }
