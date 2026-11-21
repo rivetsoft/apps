@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - A Rivet color theme, in Rivet's own pink, blue and yellow.
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
