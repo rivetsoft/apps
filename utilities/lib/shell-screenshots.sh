@@ -4,8 +4,8 @@
 #
 #   utilities/rivet-dev shell-screenshots WALLPAPER
 #
-# The wallpaper isn't kept in the repository. The README's is "Sunset View" by Vittorio
-# Staffolani: https://www.pexels.com/photo/sunset-view-1606327/
+# The README's wallpaper is Rivet at dusk: `python3 docs/mascot/wallpaper.py` writes it to
+# docs/mascot/wallpaper/rivet-dusk.png (the PNG isn't kept in the repository; its SVG is).
 # Nothing of yours is read or changed: the colors are made in a throwaway folder.
 set -e
 WALL=$(realpath "${1:?usage: rivet-dev shell-screenshots WALLPAPER}")
