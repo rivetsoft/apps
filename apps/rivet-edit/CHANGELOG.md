@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - A Rivet color theme, in Rivet's own pink, blue and yellow.
 - Rivet Shell's Edit plugin: your five most recent folders on the panel and in the launcher
