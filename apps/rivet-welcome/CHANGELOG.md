@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
 - Clicking the tray icon again brings the open window forward instead of opening another one.
