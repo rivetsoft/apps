@@ -60,16 +60,16 @@ ask() {
     [ -t 0 ] || printf '%s\n' "${REPLY:-(Enter)}" >&2
 }
 
-# The next version: a first release keeps its version (0.1.0); later ones go up a minor step
-# while below 1.0, a patch step after.
+# The next version: a first release keeps its version (0.1.0); every later one goes up a minor
+# step (0.8.0 to 0.9.0, 1.2.3 to 1.3.0). Type a version at the question for anything else.
 suggest() {
     v=$1 last=$2
     if [ -z "$last" ]; then
         echo "$v"
         return
     fi
-    major=$(echo "$v" | cut -d. -f1) minor=$(echo "$v" | cut -d. -f2) patch=$(echo "$v" | cut -d. -f3)
-    if [ "$major" = 0 ]; then echo "0.$((minor + 1)).0"; else echo "$major.$minor.$((patch + 1))"; fi
+    major=$(echo "$v" | cut -d. -f1) minor=$(echo "$v" | cut -d. -f2)
+    echo "$major.$((minor + 1)).0"
 }
 
 APPS="files ftp notes edit terminal welcome"
