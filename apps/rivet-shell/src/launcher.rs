@@ -101,6 +101,17 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     // A steady cursor: a blinking one redraws the whole launcher twice a second.
     ui.visuals_mut().text_cursor.blink = false;
     let v = ui.visuals().clone();
+    let id = egui::Id::unique("launcher-search");
+    // A command's word, typed in full (or with a space after it), is locked in: it becomes a
+    // badge before the field, and the field holds only the words that search its entries. The
+    // query keeps both, as `@word words`.
+    let mut badge = locked(query, m);
+    if let Some((word, ..)) = &badge
+        && !query.trim_start().contains(char::is_whitespace)
+    {
+        *query = format!("@{word} ");
+        cursor_to_end(ui.ctx(), id, 0);
+    }
     // A command: `@word` shows only that plugin's entries, and the words after it search them
     // (`@ftp work`); `@` alone, or the start of a word, lists the words there are.
     let command = query.trim_start().strip_prefix('@').map(|q| {
@@ -110,7 +121,6 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     // Commands' entries have a second line: always a list.
     let list = m.s.launch_view == LaunchView::List || command.is_some();
     let icon = m.s.launch_icon.clamp(24, 64) as f32;
-    let id = egui::Id::unique("launcher-search");
     let has_words = m.extra.plugins.iter().any(|(_, it)| !it.keyword.is_empty());
     let hint = match (m.s.launch_calc, has_words) {
         (true, true) => "Search apps, type a sum, or @ for commands…",
@@ -118,8 +128,36 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         (false, true) => "Search apps, or @ for commands…",
         (false, false) => "Search apps…",
     };
-    let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| {
-        ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text(hint).desired_width(f32::INFINITY))
+    // Backspace in an empty field takes the badge off, back to the list of commands.
+    if let Some((word, ..)) = &badge
+        && query.trim_start().strip_prefix(&format!("@{word}")).is_some_and(|r| r.trim().is_empty())
+        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Backspace))
+    {
+        *query = "@".into();
+        *sel = 0;
+        badge = None;
+        cursor_to_end(ui.ctx(), id, 1);
+    }
+    let field = egui::Frame::NONE.fill(mix(v.panel_fill, v.text_color(), 0.07)).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 9)).show(ui, |ui| match &badge {
+        Some((word, name, icon)) => ui
+            .horizontal(|ui| {
+                let accent = kit.accent(m.s);
+                egui::Frame::NONE.fill(accent.gamma_multiply(0.22)).stroke(Stroke::new(1.0, accent.gamma_multiply(0.6))).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(8, 2)).show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    ui.horizontal(|ui| {
+                        if let Some(t) = kit.named_icon(ui.ctx(), icon, 16.0) {
+                            ui.image((t.id(), Vec2::splat(16.0)));
+                        }
+                        ui.label(egui::RichText::new(name).font(ui_font(14.0)).color(v.strong_text_color()));
+                    });
+                });
+                let mut words = query.trim_start().strip_prefix(&format!("@{word}")).unwrap_or("").trim_start().to_string();
+                let resp = ui.add(egui::TextEdit::singleline(&mut words).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text(format!("Search {name}…")).desired_width(f32::INFINITY));
+                *query = format!("@{word} {words}");
+                resp
+            })
+            .inner,
+        None => ui.add(egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).font(ui_font(16.0)).hint_text(hint).desired_width(f32::INFINITY)),
     });
     let resp = field.inner;
     if focus || !resp.has_focus() {
@@ -320,12 +358,30 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         None => {}
     }
     if let Some(text) = fill {
+        // It shows as a badge, with the field empty after it.
         *query = text;
         *sel = 0;
-        // The cursor after it.
-        let mut st = egui::TextEdit::load_state(ui.ctx(), id).unwrap_or_default();
-        st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(query.chars().count()))));
-        st.store(ui.ctx(), id);
-        ui.ctx().request_repaint();
+        cursor_to_end(ui.ctx(), id, 0);
     }
+}
+
+/// The command locked in by the query, as its word, its plugin's name and its icon: `@word`
+/// followed by a space, or a whole word that no other command's word goes on from.
+fn locked(query: &str, m: &Model) -> Option<(String, String, String)> {
+    let q = query.trim_start().strip_prefix('@')?;
+    let (word, spaced) = match q.split_once(char::is_whitespace) {
+        Some((w, _)) => (w.to_lowercase(), true),
+        None => (q.to_lowercase(), false),
+    };
+    let words = || m.extra.plugins.iter().map(|(_, it)| &it.keyword).filter(|k| !k.is_empty());
+    let (_, it) = m.extra.plugins.iter().find(|(_, it)| !word.is_empty() && it.keyword == word)?;
+    (spaced || words().all(|k| *k == word || !k.starts_with(word.as_str()))).then(|| (word.clone(), it.name.clone(), it.icon.clone()))
+}
+
+/// Puts the search field's cursor after its first `chars` characters, next frame.
+fn cursor_to_end(ctx: &egui::Context, id: egui::Id, chars: usize) {
+    let mut st = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+    st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(chars))));
+    st.store(ctx, id);
+    ctx.request_repaint();
 }

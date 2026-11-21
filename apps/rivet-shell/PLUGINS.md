@@ -75,7 +75,8 @@ An entry has a `sub` (shown after its name in a list) and an `icon` too.
 
 **Commands.** With `keyword=ftp` in its `plugin.conf`, a plugin has a word in the launcher:
 `@ftp` shows only its entries, all of them, and words after it search them by `label` and `sub`
-(`@ftp work`). `@` alone lists the words there are; choosing one types it. An entry with
+(`@ftp work`). Once the whole word is typed it shows as a badge, and Backspace in the empty field
+takes it off. `@` alone lists the words there are; choosing one puts in its badge. An entry with
 `"scoped": true` shows only under the plugin's word, never in an ordinary search: for long
 lists (every note, every bookmark) that shouldn't crowd the apps.
 

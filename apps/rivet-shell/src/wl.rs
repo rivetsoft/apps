@@ -1526,10 +1526,21 @@ impl Shell {
                 s.dirty = true;
             }
         }
-        for i in 0..self.surfs.len() {
-            if self.surfs[i].dirty && self.surfs[i].configured && !self.surfs[i].waiting_frame {
+        // Drawing a surface carries out what was clicked on it, which can close other surfaces
+        // (a popup, the notification cards): the list is then shorter and its places have moved,
+        // so the walk starts over. One just drawn waits for its frame and isn't drawn twice.
+        let mut i = 0;
+        while i < self.surfs.len() {
+            let s = &self.surfs[i];
+            if s.dirty && s.configured && !s.waiting_frame {
+                let n = self.surfs.len();
                 self.draw(i);
+                if self.surfs.len() != n {
+                    i = 0;
+                    continue;
+                }
             }
+            i += 1;
         }
     }
 

@@ -235,6 +235,29 @@ pub(super) fn rule(ui: &mut egui::Ui) {
     ui.add_space(8.0);
 }
 
+/// What marks an area as a picture of the settings, not something to click: an eye and
+/// "Preview" over it. Call before the preview, and `preview_edge` once its place is known.
+pub(super) fn preview_head(ui: &mut egui::Ui) {
+    let weak = ui.visuals().weak_text_color();
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());
+    let c = egui::pos2(r.left() + 8.0, r.center().y);
+    let p = ui.painter();
+    p.add(egui::epaint::EllipseShape::stroke(c, Vec2::new(6.5, 4.0), Stroke::new(1.3, weak)));
+    p.circle_filled(c, 1.8, weak);
+    p.text(egui::pos2(r.left() + 22.0, r.center().y), Align2::LEFT_CENTER, "PREVIEW", ui_font(10.5), weak);
+    ui.add_space(6.0);
+}
+
+/// The dashed line around a preview, a little outside it.
+pub(super) fn preview_edge(ui: &egui::Ui, r: Rect) {
+    let r = r.expand(4.0);
+    let stroke = Stroke::new(1.0, rivet_look::palette::mix(ui.visuals().panel_fill, ui.visuals().text_color(), 0.34));
+    let k = 6.0;
+    for (a, b) in [(r.left_top() + Vec2::new(k, 0.0), r.right_top() - Vec2::new(k, 0.0)), (r.right_top() + Vec2::new(0.0, k), r.right_bottom() - Vec2::new(0.0, k)), (r.right_bottom() - Vec2::new(k, 0.0), r.left_bottom() + Vec2::new(k, 0.0)), (r.left_bottom() - Vec2::new(0.0, k), r.left_top() + Vec2::new(0.0, k))] {
+        ui.painter().extend(egui::Shape::dashed_line(&[a, b], stroke, 5.0, 4.0));
+    }
+}
+
 /// A small heading over a few related rows on a long card.
 pub(super) fn subhead(ui: &mut egui::Ui, text: &str) {
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 18.0), Sense::hover());

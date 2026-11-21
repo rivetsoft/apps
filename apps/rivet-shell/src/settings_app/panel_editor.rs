@@ -252,6 +252,7 @@ impl SettingsApp {
     /// The chosen panel as it looks, over a strip of the desktop.
     fn preview(&mut self, ui: &mut egui::Ui, sel: usize) {
         let ctx = ui.ctx().clone();
+        super::controls::preview_head(ui);
         // A drawer is shown on its own here: as a bar, not as the part that joins its host.
         let mut p = self.s.panels[sel].clone();
         if let Some(sub) = p.sub.as_mut() {
@@ -266,6 +267,7 @@ impl SettingsApp {
         let (virt_w, scale) = if down { (1024.0f32.min(w / 0.5), 0.5) } else { (w.max(1200.0), w / w.max(1200.0)) };
         let back_h = if down { 640.0 * scale + 10.0 } else { (ph + 34.0) * scale + 10.0 };
         let (r, _) = ui.allocate_exact_size(Vec2::new(virt_w * scale, back_h), Sense::hover());
+        super::controls::preview_edge(ui, r);
         backdrop(ui, r);
         let kit = self.preview_kit.get_or_insert_with(|| crate::ui::Kit::new(self.shot.is_none()));
         kit.begin(&ctx, &self.s);

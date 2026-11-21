@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed a crash that could happen when a click closed a popup or a notification while other parts of the desktop were being drawn.
+- A palette of Rivet's own colors: choose Rivet under A Palette on Appearance for the pink accent with its blue and yellow on a dark plum surface.
+- Previews in Settings are marked: an eye and "Preview" above, and a dashed line around.
 - Appearance opens with a preview of your colors: the four surfaces, from the base up to a pop-up, with text on each and a button in each color.
 - Settings is easier to read: on and off are switches, choices are one kind of row, buttons carry a symbol for what they do, and long cards are split into named parts. The Panels page lines its settings up in rows, and each key command has a Copy button.
 - **Sub panels**: a panel that stays rolled up under another until you ask for it, to keep the
@@ -14,6 +17,8 @@
   While it's rolled up, a small handle past the panel shows where to pause the pointer; you
   choose its shape (a bar, a line, an arrow or dots), size, place along the panel, distance
   from it, color and opacity, or hide it.
+- In the launcher, a command such as @1p or @ftp turns into a badge once its word is typed, and
+  what you type next searches its entries. Backspace in the empty field takes it off.
 - Right-click an open app in the dock and choose Close to close its windows, on niri and Hyprland.
 - Plugins from other people: Get Plugins, on Settings' Plugins page, lists the ones that have
   been shared beside the shell's own, and installs and updates them. One you install stays off

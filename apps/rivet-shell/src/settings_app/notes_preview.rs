@@ -13,9 +13,11 @@ const SCREEN: Vec2 = Vec2::new(1000.0, 380.0);
 impl SettingsApp {
     pub(super) fn notes_preview(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        super::controls::preview_head(ui);
         let w = ui.available_width();
         let scale = w / SCREEN.x;
         let (r, _) = ui.allocate_exact_size(SCREEN * scale, Sense::hover());
+        super::controls::preview_edge(ui, r);
         backdrop(ui, r);
         let kit = self.preview_kit.get_or_insert_with(|| crate::ui::Kit::new(self.shot.is_none()));
         kit.begin(&ctx, &self.s);

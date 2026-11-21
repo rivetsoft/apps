@@ -81,8 +81,10 @@ impl SettingsApp {
     pub(super) fn colors_preview(&self, ui: &mut egui::Ui) {
         let v = ui.visuals().clone();
         let colors = Roles::new(&self.look, &self.s);
+        super::controls::preview_head(ui);
         let w = ui.available_width();
         let (r, _) = ui.allocate_exact_size(Vec2::new(w, 196.0), Sense::hover());
+        super::controls::preview_edge(ui, r);
         let p = ui.painter_at(r);
         let (text, weak) = (v.text_color(), v.weak_text_color());
         let font = |size: f32| rivet_look::fonts::ui_font(size);
