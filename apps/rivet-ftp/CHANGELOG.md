@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
 - **Smoother with big folders and long transfer lists**: scrolling and redrawing no longer
