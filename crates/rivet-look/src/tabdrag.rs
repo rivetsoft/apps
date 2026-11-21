@@ -12,6 +12,10 @@
 //!
 //! The dragged tab is remembered by its place in the strip, not by its widget, so the strip can
 //! keep giving its tabs ids by position.
+//!
+//! With [`TabDrag::tear_off`], a tab pulled well above or below the strip comes loose: it follows
+//! the pointer freely, stops trading places, and [`TabDrag::finish_drop`] reports where it was let
+//! go (Rivet Terminal moves it to another window).
 
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
@@ -36,12 +40,33 @@ pub struct TabDrag {
     pointer: Option<Pos2>,
     bounds: Option<Rect>,
     loaded: bool,
+    tear: bool,
 }
+
+/// How far above or below the strip a tab comes loose (points).
+const TEAR: f32 = 28.0;
+
+/// A tab let go while pulled loose: which, and where the pointer was.
+pub type Dropped = Option<(usize, Pos2)>;
 
 impl TabDrag {
     /// Start a strip; `id` names it (one drag per strip).
-    pub fn new(id: &'static str) -> TabDrag {
-        TabDrag { id: egui::Id::unique(("rivet-tab-drag", id)), rects: Vec::new(), started: None, state: State::default(), now: 0.0, pointer: None, bounds: None, loaded: false }
+    pub fn new(id: impl std::hash::Hash + std::fmt::Debug) -> TabDrag {
+        TabDrag { id: egui::Id::unique(("rivet-tab-drag", id)), rects: Vec::new(), started: None, state: State::default(), now: 0.0, pointer: None, bounds: None, loaded: false, tear: false }
+    }
+
+    /// Let a tab come loose when pulled away from the strip (needs [`TabDrag::within`]).
+    pub fn tear_off(mut self, on: bool) -> TabDrag {
+        self.tear = on;
+        self
+    }
+
+    /// Whether the dragged tab is pulled loose now.
+    pub fn torn(&self) -> bool {
+        match (self.tear, self.state.held, self.bounds, self.pointer) {
+            (true, Some(_), Some(b), Some(p)) => p.y < b.top() - TEAR || p.y > b.bottom() + TEAR,
+            _ => false,
+        }
     }
 
     /// Keep the dragged tab inside `r` (the strip's own area).
@@ -76,6 +101,9 @@ impl TabDrag {
         if let (Some((k, grab)), Some(p)) = (self.state.held, self.pointer)
             && k == i
         {
+            if self.torn() {
+                return Rect::from_min_size(Pos2::new(p.x - grab, p.y - r.height() / 2.0), r.size());
+            }
             let mut left = p.x - grab;
             if let Some(b) = self.bounds {
                 left = left.clamp(b.left(), (b.right() - r.width()).max(b.left()));
@@ -136,7 +164,12 @@ impl TabDrag {
 
     /// After the last tab: the tabs to swap this frame, `(from, to)`. Swap them, and move the
     /// open tab along if it's one of them.
-    pub fn finish(mut self, ctx: &egui::Context) -> Option<(usize, usize)> {
+    pub fn finish(self, ctx: &egui::Context) -> Option<(usize, usize)> {
+        self.finish_drop(ctx).0
+    }
+
+    /// [`TabDrag::finish`], and a tab let go while pulled loose: which, and where the pointer was.
+    pub fn finish_drop(mut self, ctx: &egui::Context) -> (Option<(usize, usize)>, Dropped) {
         if !self.loaded {
             self = self.load(ctx);
         }
@@ -147,7 +180,7 @@ impl TabDrag {
             } else {
                 ctx.data_mut(|d| d.remove::<State>(self.id));
             }
-            return None;
+            return (None, None);
         }
         if let Some(s) = self.started {
             self.state.held = Some(s);
@@ -156,6 +189,7 @@ impl TabDrag {
         let down = ctx.input(|i| i.pointer.primary_down());
         if !down || k >= self.rects.len() {
             // Let go: glide from where it was drawn back into its slot.
+            let dropped = if self.torn() { self.pointer.map(|p| (k, p)) } else { None };
             if let Some(r) = self.rects.get(k).copied() {
                 let shown = self.shown(k, r);
                 self.state.slides.push((k, shown.left() - r.left(), self.now));
@@ -163,12 +197,14 @@ impl TabDrag {
             self.state.held = None;
             ctx.data_mut(|d| d.insert_temp(self.id, self.state));
             ctx.request_repaint();
-            return None;
+            return (None, dropped);
         }
         ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
         ctx.request_repaint();
         let x = self.pointer.map(|p| p.x).unwrap_or(self.rects[k].center().x);
-        let to = if k + 1 < self.rects.len() && x > self.rects[k + 1].center().x {
+        let to = if self.torn() {
+            k
+        } else if k + 1 < self.rects.len() && x > self.rects[k + 1].center().x {
             k + 1
         } else if k > 0 && x < self.rects[k - 1].center().x {
             k - 1
@@ -184,7 +220,7 @@ impl TabDrag {
         }
         self.state.held = Some((to, grab));
         ctx.data_mut(|d| d.insert_temp(self.id, self.state));
-        (to != k).then_some((k, to))
+        ((to != k).then_some((k, to)), None)
     }
 }
 
@@ -206,34 +242,44 @@ mod tests {
     /// Three 100-point tabs in a row; drag the first by its middle to `to_x` over a few frames,
     /// applying each swap as an app would. The order at the end.
     fn drag_first_to(to_x: f32) -> Vec<&'static str> {
+        drag_first_to_y(to_x, 15.0).0
+    }
+
+    /// The same, to (`to_x`, `to_y`), with tearing off allowed: the order, and a tab let go
+    /// while pulled loose.
+    fn drag_first_to_y(to_x: f32, to_y: f32) -> (Vec<&'static str>, Option<(usize, Pos2)>) {
         let ctx = egui::Context::default();
         let mut tabs = vec!["a", "b", "c"];
         let y = 15.0;
         let mut steps: Vec<Vec<egui::Event>> = vec![vec![egui::Event::PointerMoved(egui::pos2(50.0, y))]];
         steps.push(vec![egui::Event::PointerButton { pos: egui::pos2(50.0, y), button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() }]);
         for k in 1..=10 {
-            steps.push(vec![egui::Event::PointerMoved(egui::pos2(50.0 + (to_x - 50.0) * k as f32 / 10.0, y))]);
+            let t = k as f32 / 10.0;
+            steps.push(vec![egui::Event::PointerMoved(egui::pos2(50.0 + (to_x - 50.0) * t, y + (to_y - y) * t))]);
         }
         for _ in 0..4 {
             steps.push(Vec::new());
         }
-        steps.push(vec![egui::Event::PointerButton { pos: egui::pos2(to_x, y), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        steps.push(vec![egui::Event::PointerButton { pos: egui::pos2(to_x, to_y), button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }]);
+        let mut dropped = None;
         for events in steps {
             let input = egui::RawInput { events, screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 100.0))), ..Default::default() };
             let mut out = ctx.run_ui(input, |ui| {
-                let mut drag = TabDrag::new("test-tabs");
+                let mut drag = TabDrag::new("test-tabs").within(Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(300.0, 30.0))).tear_off(true).load(ui.ctx());
                 for (i, _) in tabs.iter().enumerate() {
                     let r = Rect::from_min_size(egui::pos2(i as f32 * 100.0, 0.0), egui::vec2(100.0, 30.0));
                     let resp = ui.interact(r, egui::Id::unique(("tab", i)), egui::Sense::click_and_drag());
                     drag.add(r, &resp);
                 }
-                if let Some((a, b)) = drag.finish(ui.ctx()) {
+                let (swap, out) = drag.finish_drop(ui.ctx());
+                if let Some((a, b)) = swap {
                     tabs.swap(a, b);
                 }
+                dropped = dropped.or(out);
             });
             out.textures_delta.clear();
         }
-        tabs
+        (tabs, dropped)
     }
 
     #[test]
@@ -242,6 +288,16 @@ mod tests {
         assert_eq!(drag_first_to(160.0), ["b", "a", "c"]);
         // Not past the neighbor's middle: stays.
         assert_eq!(drag_first_to(120.0), ["a", "b", "c"]);
+    }
+
+    #[test]
+    fn a_tab_pulled_away_comes_loose() {
+        // Well below the strip: no swaps on the way, and it's reported where it was let go.
+        let (order, dropped) = drag_first_to_y(260.0, 200.0);
+        assert_eq!(order, ["a", "b", "c"]);
+        assert_eq!(dropped, Some((0, egui::pos2(260.0, 200.0))));
+        // Let go on the strip: nothing to report.
+        assert_eq!(drag_first_to_y(260.0, 20.0).1, None);
     }
 
     #[test]

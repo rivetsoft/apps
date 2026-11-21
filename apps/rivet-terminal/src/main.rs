@@ -1,6 +1,7 @@
 //! Rivet Terminal: a terminal with tabs and split panes, in the Rivet apps' look.
 
 mod gui;
+mod instance;
 mod settings;
 
 use std::path::PathBuf;
@@ -14,6 +15,8 @@ Usage:
                                     Start in DIR
   rivet-terminal -e PROGRAM [ARGS...]
                                     Run PROGRAM instead of the shell (everything after -e)
+  rivet-terminal --separate         Open a window that doesn't join the Rivet Terminal already
+                                    running (its tabs and panes can't move to the others)
   rivet-terminal --install-desktop-entry
                                     Add Rivet Terminal to the app launcher (for this user)
   rivet-terminal -h, --help         This help
@@ -106,6 +109,7 @@ fn main() -> ExitCode {
         }
     }
     let mut start = gui::Start::default();
+    let mut separate = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -129,6 +133,7 @@ fn main() -> ExitCode {
                     }
                 };
             }
+            "--separate" => separate = true,
             "-d" | "--directory" | "--working-directory" => {
                 i += 1;
                 start.cwd = args.get(i).map(PathBuf::from);
@@ -153,16 +158,22 @@ fn main() -> ExitCode {
             let (w, h) = v.split_once('x')?;
             Some([w.parse().ok()?, h.parse().ok()?])
         });
-        rivet_kit::headless::run(size.unwrap_or([1100.0, 700.0]), move |cc| Box::new(gui::TermApp::new(cc, start, screenshot)));
+        rivet_kit::headless::run(size.unwrap_or([1100.0, 700.0]), move |cc| Box::new(gui::Windows::new(gui::TermApp::new(cc, start, screenshot, None))));
         return ExitCode::SUCCESS;
     }
+    // A Rivet Terminal is already running: it opens the window, so tabs and panes can move
+    // between all of them.
+    if !separate && instance::send(&start) {
+        return ExitCode::SUCCESS;
+    }
+    let inbox = if separate { None } else { instance::listen() };
     let mut viewport = eframe::egui::ViewportBuilder::default().with_title("Rivet Terminal").with_app_id("rivet-terminal").with_inner_size([960.0, 620.0]).with_min_inner_size([420.0, 260.0]);
     if let Some(img) = rivet_look::icons::render_svg(gui::ICON_SVG.as_bytes(), 128) {
         let rgba = img.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
         viewport = viewport.with_icon(eframe::egui::IconData { rgba, width: 128, height: 128 });
     }
     let options = eframe::NativeOptions { viewport, persist_window: false, ..Default::default() };
-    match eframe::run_native("Rivet Terminal", options, Box::new(move |cc| Ok(Box::new(gui::TermApp::new(cc, start, None))))) {
+    match eframe::run_native("Rivet Terminal", options, Box::new(move |cc| Ok(Box::new(gui::Windows::new(gui::TermApp::new(cc, start, None, inbox)))))) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("rivet-terminal: couldn't open the window: {e}");

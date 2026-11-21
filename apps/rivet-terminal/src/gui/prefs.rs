@@ -86,9 +86,9 @@ impl TermApp {
         let fams = self.families.get_or_insert_with(fonts::mono_families).clone();
         let system_mono = fonts::system_mono_name();
         let before = self.s.clone();
-        let page_now = self.prefs_page;
+        let page_now = self.w.prefs_page;
         let mut pick: Option<Page> = None;
-        let mut win = std::mem::replace(&mut self.prefs_win, windows::WinState::new(1, Vec2::ZERO));
+        let mut win = std::mem::replace(&mut self.w.prefs_win, windows::WinState::new(1, Vec2::ZERO));
         let shown = windows::show(ctx, &mut win, &chrome, area, Vec2::new(600.0, 380.0), |ui| {
             let v = ui.visuals().clone();
             let weak = v.weak_text_color();
@@ -346,13 +346,13 @@ impl TermApp {
                 });
             });
         });
-        self.prefs_win = win;
+        self.w.prefs_win = win;
         if let Some(p) = pick {
-            self.prefs_page = p;
+            self.w.prefs_page = p;
         }
         if !shown.open {
-            self.prefs_open = false;
-            self.refocus = true;
+            self.w.prefs_open = false;
+            self.w.refocus = true;
         }
         if self.s != before {
             self.s.save();

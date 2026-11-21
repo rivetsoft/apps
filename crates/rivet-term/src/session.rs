@@ -58,13 +58,16 @@ impl From<Size> for WindowSize {
 pub struct Listener {
     tx: Sender<Event>,
     ctx: Option<egui::Context>,
+    /// The window (viewport) the session is shown in, which is the one to wake.
+    viewport: Arc<std::sync::Mutex<egui::ViewportId>>,
 }
 
 impl EventListener for Listener {
     fn send_event(&self, event: Event) {
         let _ = self.tx.send(event);
         if let Some(c) = &self.ctx {
-            c.request_repaint();
+            let vp = *self.viewport.lock().unwrap_or_else(|e| e.into_inner());
+            c.request_repaint_of(vp);
         }
     }
 }
@@ -92,11 +95,13 @@ pub struct Session {
     pub pid: u32,
     /// The last bell, by the window's clock (for a short flash).
     pub bell_at: Option<f64>,
+    viewport: Arc<std::sync::Mutex<egui::ViewportId>>,
 }
 
 impl Session {
     /// Start a program in a new pseudo-terminal of `size`.
     pub fn spawn(spawn: &Spawn, size: Size, ctx: Option<egui::Context>) -> Result<Session, String> {
+        let viewport = Arc::new(std::sync::Mutex::new(egui::ViewportId::ROOT));
         let mut env = spawn.env.clone();
         env.entry("TERM".into()).or_insert_with(|| "xterm-256color".into());
         env.entry("COLORTERM".into()).or_insert_with(|| "truecolor".into());
@@ -110,13 +115,22 @@ impl Session {
         let pty = tty::new(&options, size.into(), 0).map_err(|e| format!("couldn't start the shell: {e}"))?;
         let pid = pty.child().id();
         let (tx, rx) = channel();
-        let listener = Listener { tx, ctx };
+        let listener = Listener { tx, ctx, viewport: viewport.clone() };
         let config = Config { scrolling_history: spawn.scrollback.clamp(100, 200_000), ..Default::default() };
         let term = Arc::new(FairMutex::new(Term::new(config, &size, listener.clone())));
         let event_loop = EventLoop::new(term.clone(), listener, pty, true, false).map_err(|e| e.to_string())?;
         let sender = event_loop.channel();
         event_loop.spawn();
-        Ok(Session { term, sender, rx, size, title: None, exited: false, pid, bell_at: None })
+        Ok(Session { term, sender, rx, size, title: None, exited: false, pid, bell_at: None, viewport })
+    }
+
+    /// Say which window shows the session now, so its output wakes that one (an app with
+    /// several windows).
+    pub fn show_in(&self, vp: egui::ViewportId) {
+        let mut v = self.viewport.lock().unwrap_or_else(|e| e.into_inner());
+        if *v != vp {
+            *v = vp;
+        }
     }
 
     /// Send bytes to the program, as if typed.

@@ -8,6 +8,10 @@ yet; build it from source.
 - **Tabs and panes.** Each tab holds one or more panes, arranged by a layout: Tall (one on the
   left, the rest stacked on the right), Fat, Grid, Side by Side, Stacked, or One at a Time.
   New tabs and panes start in the folder you're in.
+- **Moving between windows.** Drag a pane by the bar at its top onto another pane to swap
+  them, or out of the window to move it to another window or into one of its own. A tab pulled
+  down out of the strip moves the same way, and Detach Pane, Move Pane To and the tab's
+  right-click menu do it from the menus. The programs keep running as they move.
 - **Your colors.** It follows your desktop's colors (matugen / GTK) and accent, light or dark,
   as the other Rivet apps do, with Rivet's sixteen terminal colors leaning toward your accent.
   Or pick any of Rivet Edit's 39 color themes (One Dark, Dracula, Catppuccin, Gruvbox, Tokyo

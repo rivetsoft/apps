@@ -2,7 +2,16 @@
 
 ## Unreleased
 
+- A Rivet color theme, in Rivet's own pink, blue and yellow.
 - A new icon in Rivet's pink, to match the rest of the apps and the website.
+- **Move panes and tabs between windows.** Drag a pane by the bar at its top onto another
+  pane to swap them, or out of the window: it moves to the Rivet Terminal window you let go
+  over, or opens in a window of its own. Tabs pulled down out of the strip move the same way.
+  Detach Pane and Move Pane To are in the File menu and a pane's right-click menu, and a tab's
+  right-click menu has Detach Tab and Move Tab To. What runs in them keeps running.
+- Every Rivet Terminal window is now part of one running program, so they can trade panes and
+  tabs. Opening Rivet Terminal again adds a window to it; `--separate` opens one that stays apart.
+- File has Close Window, and Quit closes every window.
 
 ## 0.2.0
 

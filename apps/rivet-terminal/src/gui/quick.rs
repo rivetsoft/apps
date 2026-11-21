@@ -18,6 +18,8 @@ enum Cmd {
     NewTab,
     NewPane,
     NewWindow,
+    Detach,
+    MoveTo(egui::ViewportId),
     ClosePane,
     CloseTab,
     NextTab,
@@ -53,16 +55,22 @@ struct Action {
 
 impl TermApp {
     pub(crate) fn open_quick(&mut self, kind: QuickKind) {
-        self.quick = Some((kind, QuickPanel::new()));
+        self.w.quick = Some((kind, QuickPanel::new()));
     }
 
     fn actions(&self) -> Vec<Action> {
-        let layout = self.tabs.get(self.active).map(|t| t.layout).unwrap_or_default();
+        let layout = self.w.tabs.get(self.w.active).map(|t| t.layout).unwrap_or_default();
         let mut out = Vec::new();
         let mut add = |group, label: &str, keys, state, cmd| out.push(Action { group, label: label.to_string(), keys, state, cmd });
         add("File", "New Tab", "Ctrl+Shift+T", None, Cmd::NewTab);
         add("File", "New Pane", "Ctrl+Shift+Enter", None, Cmd::NewPane);
         add("File", "New Window", "Ctrl+Shift+N", None, Cmd::NewWindow);
+        if self.w.panes() > 1 {
+            add("File", "Detach Pane", "", None, Cmd::Detach);
+        }
+        for (vp, name) in self.window_names() {
+            add("File", &format!("Move Pane To {name}"), "", None, Cmd::MoveTo(vp));
+        }
         add("File", "Close Pane", "Ctrl+Shift+W", None, Cmd::ClosePane);
         add("File", "Close Tab", "Ctrl+Shift+Q", None, Cmd::CloseTab);
         add("Go", "Next Tab", "Ctrl+Shift+Right", None, Cmd::NextTab);
@@ -101,11 +109,13 @@ impl TermApp {
             }
             Cmd::NewPane => self.split(),
             Cmd::NewWindow => self.new_window(),
+            Cmd::Detach => self.send_pane(Dest::NewWindow),
+            Cmd::MoveTo(vp) => self.send_pane(Dest::Window(vp)),
             Cmd::ClosePane => {
-                let f = self.tabs.get(self.active).map(|t| t.focus).unwrap_or(0);
-                self.close_pane(self.active, f, false);
+                let f = self.w.tabs.get(self.w.active).map(|t| t.focus).unwrap_or(0);
+                self.close_pane(self.w.active, f, false);
             }
-            Cmd::CloseTab => self.close_tab(self.active, false),
+            Cmd::CloseTab => self.close_tab(self.w.active, false),
             Cmd::NextTab => self.go_tab(1),
             Cmd::PrevTab => self.go_tab(-1),
             Cmd::NextPane => self.focus_pane(1),
@@ -128,19 +138,19 @@ impl TermApp {
             }
             Cmd::MenuBar => self.s.show_menubar = !self.s.show_menubar,
             Cmd::CopyOnSelect => self.s.copy_on_select = !self.s.copy_on_select,
-            Cmd::Preferences => self.prefs_open = true,
+            Cmd::Preferences => self.w.prefs_open = true,
             Cmd::Keyboard => {
-                self.prefs_page = super::prefs::Page::Keyboard;
-                self.prefs_open = true;
+                self.w.prefs_page = super::prefs::Page::Keyboard;
+                self.w.prefs_open = true;
             }
         }
         self.s.save();
-        self.refocus = true;
+        self.w.refocus = true;
     }
 
     /// Draw the open quick panel, if any, and act on what's chosen.
     pub(crate) fn quick_panel(&mut self, ctx: &egui::Context) {
-        let Some((kind, mut panel)) = self.quick.take() else { return };
+        let Some((kind, mut panel)) = self.w.quick.take() else { return };
         let q = panel.query.trim().to_string();
         let search = self.icon(ctx, &["edit-find-symbolic", "system-search-symbolic"], 18.0);
         let mut keep = true;
@@ -198,10 +208,10 @@ impl TermApp {
                 }
             }
         }
-        if keep && self.quick.is_none() {
-            self.quick = Some((kind, panel));
+        if keep && self.w.quick.is_none() {
+            self.w.quick = Some((kind, panel));
         } else if !keep {
-            self.refocus = true;
+            self.w.refocus = true;
         }
     }
 }

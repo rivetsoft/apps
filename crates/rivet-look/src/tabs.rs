@@ -6,6 +6,8 @@
 //! - **Closing:** with its ×, or a middle-click.
 //! - **Moving:** drag a tab to move it ([`crate::tabdrag`]). It lifts and follows the pointer,
 //!   with a glow, and the tabs it passes slide aside.
+//! - **Pulling a tab away** ([`TabStrip::tear_off`]): it comes loose from the strip, and
+//!   [`TabOutput::dropped`] says where it was let go.
 //! - **Too many to fit:** the strip scrolls sideways, with < and > at its end, the mouse wheel,
 //!   and faded edges. The open tab is brought into view when it changes, and dragging a tab near
 //!   either end scrolls the strip too.
@@ -46,7 +48,8 @@ pub enum TabEvent {
 }
 
 pub struct TabStrip {
-    id: &'static str,
+    id: egui::Id,
+    tear: bool,
     accent: Color32,
     min_width: f32,
     max_width: f32,
@@ -60,6 +63,8 @@ pub struct TabOutput {
     /// Each tab's response, in order (for things particular to an app, like files dropped on
     /// a tab).
     pub responses: Vec<egui::Response>,
+    /// A tab let go while pulled away from the strip, and where (with [`TabStrip::tear_off`]).
+    pub dropped: Option<(usize, Pos2)>,
 }
 
 impl TabOutput {
@@ -80,7 +85,19 @@ impl TabStrip {
     /// A strip named `id` (its scroll and drag are kept under it), with `accent` for the open
     /// tab's line and the drag's glow.
     pub fn new(id: &'static str, accent: Color32) -> TabStrip {
-        TabStrip { id, accent, min_width: 0.0, max_width: 320.0, height: 30.0, reserve: 0.0 }
+        TabStrip { id: egui::Id::unique(("rivet-tabs", id)), tear: false, accent, min_width: 0.0, max_width: 320.0, height: 30.0, reserve: 0.0 }
+    }
+
+    /// Tell this strip apart from others with the same name (one per window of an app).
+    pub fn salt(mut self, salt: impl std::hash::Hash + std::fmt::Debug) -> TabStrip {
+        self.id = self.id.with(salt);
+        self
+    }
+
+    /// Let a tab come loose when pulled up or down away from the strip.
+    pub fn tear_off(mut self, on: bool) -> TabStrip {
+        self.tear = on;
+        self
     }
 
     /// Each tab's width, at least and at most (labels too long are cut with …).
@@ -141,7 +158,7 @@ impl TabStrip {
         if let Some(x) = ctx.data_mut(|d| d.remove_temp::<f32>(goto_id)) {
             sa = sa.horizontal_scroll_offset(x);
         }
-        let mut drag = TabDrag::new(self.id).within(tabs_rect).load(&ctx);
+        let mut drag = TabDrag::new(self.id).within(tabs_rect).tear_off(self.tear).load(&ctx);
         let lifted = drag.dragging(&ctx);
         let mut responses = Vec::with_capacity(tabs.len());
         let raised = palette::mix(v.panel_fill, v.text_color(), if v.dark_mode { 0.09 } else { 0.07 });
@@ -208,7 +225,8 @@ impl TabStrip {
                 }
             });
         });
-        if let Some((a, b)) = drag.finish(&ctx) {
+        let (swap, dropped) = drag.finish_drop(&ctx);
+        if let Some((a, b)) = swap {
             events.push(TabEvent::Swap(a, b));
         }
 
@@ -284,6 +302,6 @@ impl TabStrip {
         if off < max - 0.5 {
             fade(tabs_rect.right(), -28.0);
         }
-        TabOutput { events, responses }
+        TabOutput { events, responses, dropped }
     }
 }
