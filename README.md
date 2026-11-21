@@ -26,6 +26,8 @@
 An ecosystem of Linux desktop software written in Rust, with no GTK or Qt: a desktop shell, a
 set of apps, and a small helper that keeps them all up to date.
 
+The website and the docs are at [rivetsoft.github.io](https://rivetsoft.github.io/).
+
 Every piece works on its own. Rivet Files is a file manager on GNOME, KDE or any other desktop;
 Rivet Shell runs alongside whatever apps you already use; nothing needs anything else installed.
 Each one is released separately, with its own version and changelog. Put them together, though,
