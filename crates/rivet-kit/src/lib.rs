@@ -92,3 +92,10 @@ pub fn scripted_click(prefix: &str, frame: u32, raw: &mut egui::RawInput) {
         _ => {}
     }
 }
+
+/// Save a picture held in memory as a PNG file (a picture pasted from the clipboard).
+pub fn save_png(path: &std::path::Path, img: &egui::ColorImage) -> Result<(), String> {
+    let [w, h] = img.size;
+    let buf: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+    image::save_buffer(path, &buf, w as u32, h as u32, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())
+}

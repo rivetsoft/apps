@@ -19,14 +19,39 @@ pub fn copy_in(file: &Path, dest: &Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(dest)?;
     let stem = file.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
     let ext = file.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let to = free_name(dest, &stem, &ext);
+    std::fs::copy(file, &to)?;
+    Ok(to)
+}
+
+/// A name in `dest` not taken yet: "photo.png", then "photo 2.png". `ext` has its dot.
+pub fn free_name(dest: &Path, stem: &str, ext: &str) -> PathBuf {
     let mut to = dest.join(format!("{stem}{ext}"));
     let mut n = 2;
     while to.exists() {
         to = dest.join(format!("{stem} {n}{ext}"));
         n += 1;
     }
-    std::fs::copy(file, &to)?;
-    Ok(to)
+    to
+}
+
+/// The picture files a pasted text stands for, when it is nothing but pictures copied in a file
+/// manager: one `file://` address or full path on each line, every one a picture that exists.
+/// Any other text is text.
+pub fn pasted_pictures(text: &str) -> Option<Vec<PathBuf>> {
+    let mut out = Vec::new();
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let p = match line.strip_prefix("file://") {
+            Some(_) => rivet_kit::wldrop::parse_uri_list(line).pop()?,
+            None if line.starts_with('/') => PathBuf::from(line),
+            None => return None,
+        };
+        if !is_picture(&p) || !p.is_file() {
+            return None;
+        }
+        out.push(p);
+    }
+    (!out.is_empty()).then_some(out)
 }
 
 /// `to` as a path from the folder `from` ("../Attachments/a.png"), with `/` between parts.
@@ -60,6 +85,24 @@ pub fn insert_block(body: &str, at: usize, block: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_copied_pictures_are_taken_from_pasted_text() {
+        let t = std::env::temp_dir().join(format!("rivet-paste-test-{}", std::process::id()));
+        std::fs::create_dir_all(&t).unwrap();
+        let (pic, doc) = (t.join("My shot.png"), t.join("doc.pdf"));
+        std::fs::write(&pic, b"x").unwrap();
+        std::fs::write(&doc, b"x").unwrap();
+        let uri = format!("file://{}", pic.display()).replace(' ', "%20");
+        assert_eq!(pasted_pictures(&pic.to_string_lossy()), Some(vec![pic.clone()]));
+        assert_eq!(pasted_pictures(&format!("{uri}\r\n")), Some(vec![pic.clone()]));
+        assert_eq!(pasted_pictures(&doc.to_string_lossy()), None);
+        assert_eq!(pasted_pictures(&format!("see {}", pic.display())), None);
+        assert_eq!(pasted_pictures(&t.join("gone.png").to_string_lossy()), None);
+        assert_eq!(pasted_pictures("a line of text"), None);
+        assert_eq!(free_name(&t, "My shot", ".png"), t.join("My shot 2.png"));
+        let _ = std::fs::remove_dir_all(&t);
+    }
 
     #[test]
     fn links_relative_to_the_note() {

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Paste a picture into a note**: a picture copied from a screenshot tool or a browser is saved
+  in the attachments folder and shown where the cursor is. Picture files copied in a file manager
+  are added the same way.
 - **Crash reports**: if Rivet Notes closes unexpectedly, a report is saved on your computer and
   shown the next time it starts, with personal details left out. Nothing is sent unless you
   choose Report on GitHub, which opens an issue for you to check and send.

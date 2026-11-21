@@ -209,8 +209,8 @@ impl super::NotesApp {
         out
     }
 
-    /// Files dropped on the window (with a note open): copied into the attachments folder and
-    /// linked at the cursor (or the end of the note).
+    /// Files dropped on the window and pictures pasted (with a note open): copied into the
+    /// attachments folder and linked at the cursor (or the end of the note).
     pub(super) fn take_drops(&mut self, ctx: &egui::Context) {
         let mut dropped: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
         // On Wayland the toolkit doesn't report drops; the shared listener does.
@@ -233,7 +233,8 @@ impl super::NotesApp {
             let folder = if self.s.attachments_folder.is_empty() { "the top of the vault".to_string() } else { format!("\"{}\"", self.s.attachments_folder) };
             painter.text(r.center(), egui::Align2::CENTER_CENTER, format!("Drop to add to {folder}"), rivet_look::fonts::ui_font(15.0), v.selection.bg_fill);
         }
-        if dropped.is_empty() {
+        let pasted = self.take_pasted(ctx, &mut dropped);
+        if dropped.is_empty() && pasted.is_empty() {
             return;
         }
         let (Some(vault), Some(d)) = (self.vault.clone(), self.doc.as_ref()) else { return };
@@ -244,6 +245,18 @@ impl super::NotesApp {
             match crate::attach::copy_in(f, &dest) {
                 Ok(to) => links.push(crate::attach::markdown(&to, &note_dir)),
                 Err(e) => self.note_msg = Some((format!("Couldn't add {}: {e}", f.display()), true)),
+            }
+        }
+        // A picture off the clipboard has no file yet: it is saved as one, named for the moment.
+        for img in &pasted {
+            let stem = chrono::Local::now().format("Pasted %Y-%m-%d %H.%M.%S").to_string();
+            let saved = std::fs::create_dir_all(&dest).map_err(|e| e.to_string()).and_then(|_| {
+                let to = crate::attach::free_name(&dest, &stem, ".png");
+                rivet_kit::save_png(&to, img).map(|_| to)
+            });
+            match saved {
+                Ok(to) => links.push(crate::attach::markdown(&to, &note_dir)),
+                Err(e) => self.note_msg = Some((format!("Couldn't save the pasted picture: {e}"), true)),
             }
         }
         if links.is_empty() {
@@ -257,6 +270,48 @@ impl super::NotesApp {
         d.dirty = true;
         self.rescan();
         ctx.request_repaint();
+    }
+}
+
+impl super::NotesApp {
+    /// What a paste brought that belongs in the attachments folder, taken out of this frame's
+    /// input so the text box doesn't also paste it: a picture off the clipboard (returned), and
+    /// picture files copied in a file manager (added to `files`). Only for a paste into the note,
+    /// not into another text box.
+    fn take_pasted(&mut self, ctx: &egui::Context, files: &mut Vec<std::path::PathBuf>) -> Vec<std::sync::Arc<egui::ColorImage>> {
+        let mut pictures = Vec::new();
+        // Checks: RIVET_NOTES_PASTE=picture pastes that picture as if it were on the clipboard.
+        static PASTE_DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        if self.shot.is_some()
+            && self.doc.is_some()
+            && let Ok(v) = std::env::var("RIVET_NOTES_PASTE")
+            && !PASTE_DONE.swap(true, std::sync::atomic::Ordering::Relaxed)
+            && let Some(img) = rivet_look::icons::load_picture(std::path::Path::new(&v), 1600)
+        {
+            pictures.push(std::sync::Arc::new(img));
+        }
+        let focused = ctx.memory(|m| m.focused());
+        let in_note = focused.is_none() || focused == self.caret_state.map(|(id, _)| id);
+        if self.doc.is_none() || !in_note {
+            return pictures;
+        }
+        ctx.input_mut(|i| {
+            i.events.retain(|e| match e {
+                egui::Event::PasteImage(img) => {
+                    pictures.push(img.clone());
+                    false
+                }
+                egui::Event::Paste(text) => match crate::attach::pasted_pictures(text) {
+                    Some(found) => {
+                        files.extend(found);
+                        false
+                    }
+                    None => true,
+                },
+                _ => true,
+            });
+        });
+        pictures
     }
 }
 
