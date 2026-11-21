@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Paste a picture into a note**: a picture copied from a screenshot tool or a browser is saved
   in the attachments folder and shown where the cursor is. Picture files copied in a file manager
