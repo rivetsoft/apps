@@ -1417,9 +1417,9 @@ impl TermApp {
             Prompt::Quit { what } if self.others.is_empty() => (format!("Quit while {what} is running?"), "Everything running in the window will be stopped.", "Quit"),
             Prompt::Quit { what } => (format!("Quit while {what} is running?"), "Everything running in every window will be stopped.", "Quit"),
         };
-        // Return is the highlighted button, as Escape is Cancel. The key is taken so nothing
-        // behind the question sees it.
-        let mut answer = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter)).then_some(true);
+        // Return is the highlighted button, as Escape is Cancel, unless Tab has put the keyboard
+        // on Cancel. The key is taken so nothing behind the question sees it.
+        let mut answer = (rivet_look::widgets::return_default(ctx) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Enter))).then_some(true);
         let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(24)).corner_radius(r_lg());
         egui::Modal::new(egui::Id::unique(("rivet-term-prompt", self.w.vp))).frame(frame).show(ctx, |ui| {
             ui.set_width(420.0);

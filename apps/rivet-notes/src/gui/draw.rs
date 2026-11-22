@@ -1371,6 +1371,8 @@ impl NotesApp {
         let note_icon = self.icon(ctx, &["text-markdown", "text-x-generic"], px);
         let folder_icon = self.icon(ctx, &["folder", "inode-directory"], px);
         let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(26)).corner_radius(r_lg());
+        // Return is the highlighted button when no field or button has the keyboard.
+        let ret = rivet_look::widgets::return_default(ctx);
         egui::Modal::new(egui::Id::unique("notes-prompt")).frame(frame).show(ctx, |ui| {
             ui.set_width(440.0);
             let v = ui.visuals().clone();
@@ -1477,7 +1479,7 @@ impl NotesApp {
                         ok = ui.add(egui::Button::new(egui::RichText::new("Move to Trash").color(rivet_look::theme::StatusColors::on(danger))).fill(danger).corner_radius(r_sm())).clicked();
                         cancel = ui.add(egui::Button::new("Cancel").corner_radius(r_sm())).clicked();
                     });
-                    if ok {
+                    if ok || (ret && !cancel) {
                         self.trash(&path);
                     } else if !(cancel || esc) {
                         next = Some(Prompt::Delete(path));
@@ -1523,7 +1525,7 @@ impl NotesApp {
                         keep = ui.add(egui::Button::new(egui::RichText::new("Keep Mine").color(v.selection.stroke.color)).fill(v.selection.bg_fill).corner_radius(r_sm())).clicked();
                         theirs = ui.add(egui::Button::new("Load Theirs").corner_radius(r_sm())).clicked();
                     });
-                    if keep {
+                    if keep || (ret && !theirs) {
                         self.save_now();
                     } else if theirs {
                         if let Some(p) = self.doc.take().map(|d| d.path) {

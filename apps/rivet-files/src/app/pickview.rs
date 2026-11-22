@@ -335,6 +335,7 @@ impl RivetApp {
         let mut go = false;
         let mut back = false;
         let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(super::r_lg());
+        let enter = rivet_look::widgets::return_default(ctx);
         let r = egui::Modal::new(Id::unique("picker-replace")).frame(frame).show(ctx, |ui| {
             ui.set_width(380.0);
             ui.label(egui::RichText::new(title).heading());
@@ -356,7 +357,7 @@ impl RivetApp {
         if r.should_close() {
             back = true;
         }
-        if go {
+        if go || (enter && !back) {
             self.pick_confirm = None;
             self.picker_done(ctx, answer);
         } else if back {

@@ -4,6 +4,7 @@
 
 - When Rivet Terminal asks before closing something that is still running, Return closes it
   and Escape cancels.
+- In that question, Tab to Cancel and Return now cancels. It used to close anyway.
 
 ## 0.3.0
 

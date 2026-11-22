@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Return in a question presses the highlighted button**: Empty Trash, a message's OK and
+  Replace in the file picker answer to Return, as Delete already did. Tab to Cancel and Return
+  cancels; before, Return in the Delete and Open With questions went ahead even with Cancel
+  focused.
+
 ## 0.9.0
 
 - **Crash reports leave out personal details**: your user and computer names, file paths and

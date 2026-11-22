@@ -450,6 +450,7 @@ impl RivetApp {
                 close = self.resize_dialog(ctx);
             }
             Dialog::ConfirmEmptyTrash => {
+                let enter = rivet_look::widgets::return_default(ctx);
                 let r = egui::Modal::new(Id::unique("emptytrash")).show(ctx, |ui| {
                     ui.set_width(380.0);
                     ui.heading("Empty all items from Trash?");
@@ -458,7 +459,7 @@ impl RivetApp {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| (danger_button(ui, "Empty Trash"), ui.button("Cancel").clicked())).inner
                 });
-                if r.inner.0 {
+                if r.inner.0 || (enter && !r.inner.1) {
                     self.ops.push(fsops::spawn_op(OpKind::EmptyTrash, vec![], None));
                     close = true;
                 }
@@ -467,6 +468,7 @@ impl RivetApp {
                 }
             }
             Dialog::Message(title, body) => {
+                let enter = rivet_look::widgets::return_default(ctx);
                 let r = egui::Modal::new(Id::unique("msg")).show(ctx, |ui| {
                     ui.set_max_width(440.0);
                     ui.heading(title.as_str());
@@ -475,7 +477,7 @@ impl RivetApp {
                     ui.add_space(8.0);
                     ui.button("OK").clicked()
                 });
-                if r.inner || r.should_close() {
+                if r.inner || enter || r.should_close() {
                     close = true;
                 }
             }
@@ -546,6 +548,7 @@ impl RivetApp {
         let mut choice: Option<bool> = None; // Some(true) = permanently, Some(false) = trash
         // A roomier box than the default dialog frame.
         let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(super::r_lg());
+        let enter = rivet_look::widgets::return_default(ctx);
         let r = egui::Modal::new(Id::unique("confirmdel")).frame(frame).show(ctx, |ui| {
             ui.set_width(440.0);
             let v = ui.visuals().clone();
@@ -624,7 +627,8 @@ impl RivetApp {
             })
             .inner
         });
-        if choice.is_none() && ctx.input(|i| i.key_pressed(Key::Enter)) {
+        // Return is the highlighted button, unless Tab has put the keyboard on another one.
+        if choice.is_none() && !r.inner && enter {
             choice = Some(permanent_default);
         }
         let paths = match &self.dialog {
@@ -800,7 +804,7 @@ impl RivetApp {
                 *show_all = !*show_all;
             }
         });
-        if ctx.input(|i| i.key_pressed(Key::Enter)) && chosen.is_some() {
+        if ctx.input(|i| i.key_pressed(Key::Enter)) && chosen.is_some() && !cancel {
             launch_now = true;
         }
         if launch_now

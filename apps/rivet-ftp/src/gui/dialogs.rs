@@ -511,6 +511,8 @@ impl FtpApp {
             _ => (None, String::new()),
         };
         let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(r_lg());
+        // Return is the highlighted button when no field or button has the keyboard.
+        let ret = rivet_look::widgets::return_default(ctx);
         egui::Modal::new(egui::Id::unique("prompt")).frame(frame).show(ctx, |ui| {
             ui.set_width(400.0);
             let esc = ui.input(|i| i.key_pressed(Key::Escape));
@@ -558,7 +560,7 @@ impl FtpApp {
                         ok = ui.add(egui::Button::new(egui::RichText::new("Delete").color(rivet_look::theme::StatusColors::on(status(ctx).danger))).fill(status(ctx).danger).corner_radius(r_sm())).clicked();
                         cancel = plain(ui, "Cancel");
                     });
-                    if ok {
+                    if ok || (ret && !cancel) {
                         self.delete_remote(items);
                     } else if !(cancel || esc) {
                         next = Some(Prompt::Delete(items));
@@ -709,9 +711,9 @@ impl FtpApp {
                     let hook = std::env::var("RIVET_FTP_CHMOD").ok().filter(|_| self.shot.is_some()).and_then(|m| u32::from_str_radix(&m, 8).ok());
                     if let Some(m) = hook {
                         self.apply_mode(info.side, &e, m, false);
-                    } else if ok {
+                    } else if ok || (ret && changed && !cancel) {
                         self.apply_mode(info.side, &e, info.mode, info.recursive);
-                    } else if !(cancel || esc) {
+                    } else if !(cancel || esc || ret) {
                         next = Some(Prompt::Info(info));
                     }
                 }
@@ -762,7 +764,7 @@ impl FtpApp {
                         replace = primary(ui, "Replace Server's Copy");
                         later = plain(ui, "Not Now");
                     });
-                    if replace && i < self.edits.len() {
+                    if (replace || (ret && !later)) && i < self.edits.len() {
                         self.upload_edit(i);
                     } else if later || esc {
                         // Keep watching; the next save asks again.
@@ -833,7 +835,7 @@ impl FtpApp {
                         skip = plain(ui, if p.items.len() > n { "Skip These" } else { "Keep Theirs" });
                         cancel = plain(ui, "Cancel");
                     });
-                    if replace {
+                    if replace || (ret && !(newer_only || skip || cancel)) {
                         self.enqueue(p, true);
                     } else if newer_only {
                         // Keep the ones that are as new or newer there; replace the rest.

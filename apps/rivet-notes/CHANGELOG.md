@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Return in a question presses the highlighted button**: Move to Trash and Keep Mine answer
+  to Return. Tab moves between the buttons, and Return on Cancel cancels.
+
 ## 0.4.0
 
 - **Paste a picture into a note**: a picture copied from a screenshot tool or a browser is saved

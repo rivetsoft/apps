@@ -978,6 +978,8 @@ impl EditApp {
         let names: Vec<String> = self.tabs.iter().map(Tab::name).collect();
         let dirty: Vec<String> = self.tabs.iter().filter(|t| t.dirty()).map(Tab::name).collect();
         let ws = self.workspace_name().unwrap_or_default();
+        // Return is the highlighted button when no field or button has the keyboard.
+        let ret = rivet_look::widgets::return_default(ctx);
         egui::Modal::new(egui::Id::unique("edit-prompt")).frame(frame).show(ctx, |ui| {
             ui.set_width(440.0);
             let v = ui.visuals().clone();
@@ -1001,7 +1003,7 @@ impl EditApp {
                         }
                     }
                 });
-                hit
+                hit.or(ret.then_some(0))
             };
             let field = |ui: &mut egui::Ui, text: &mut String, hint: &str| -> bool {
                 let id = egui::Id::unique(("edit-field", hint));

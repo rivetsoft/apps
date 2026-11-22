@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Return in a question presses the highlighted button**: Delete, Replace, the changed-on-the-
+  server question and Info answer to Return. Tab moves between the buttons, and Return on
+  Cancel cancels.
+- Tab moves through the New Key window, where it used to switch panes behind it.
+
 ## 0.4.0
 
 - A new icon in Rivet's pink, to match the rest of the apps and the website.

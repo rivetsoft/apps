@@ -279,7 +279,7 @@ impl FtpApp {
     /// Shortcuts: the global ones always, the list ones when no text field or dialog has the
     /// keyboard.
     pub(super) fn shortcuts(&mut self, ctx: &egui::Context) {
-        if self.preview.is_some() || self.form.is_some() || self.prompt.is_some() {
+        if self.preview.is_some() || self.form.is_some() || self.prompt.is_some() || self.new_key.is_some() {
             return;
         }
         let typing = ctx.memory(|m| m.focused().is_some());

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Return in a question presses the highlighted button**: Save, Replace, Discard and Move to
+  Trash answer to Return. Tab moves between the buttons, and Return on Cancel cancels.
+
 ## 0.3.0
 
 - A Rivet color theme, in Rivet's own pink, blue and yellow.
