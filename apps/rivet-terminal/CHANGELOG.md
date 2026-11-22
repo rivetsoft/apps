@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- When Rivet Terminal asks before closing something that is still running, Return closes it
+  and Escape cancels.
+
 ## 0.3.0
 
 - A Rivet color theme, in Rivet's own pink, blue and yellow.
