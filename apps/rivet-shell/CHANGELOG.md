@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Softcore**: under Softcore, Rivet's own compositor, the panel shows workspaces and the focused window's title, the dock shows what is open and can close it, and Log Out and turning the screens off work.
 - **Weather**: a desktop widget and a panel item show the sky and the temperature for a place you choose. Click the panel item for the next hours and the week. Turn the widget on under Widgets in Settings, where you also pick the place and °C or °F.
 - Fixed a crash that could happen when a click closed a popup or a notification while other parts of the desktop were being drawn.
 - A palette of Rivet's own colors: choose Rivet under A Palette on Appearance for the pink accent with its blue and yellow on a dark plum surface.

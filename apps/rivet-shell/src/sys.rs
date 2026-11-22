@@ -21,6 +21,8 @@ use serde_json::Value;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Compositor {
     Niri,
+    /// Softcore, Rivet's own. `softcore msg` answers as `niri msg` does.
+    Softcore,
     Hyprland,
     /// mango (mangowm), talked to with mmsg.
     Mango,
@@ -33,7 +35,9 @@ impl Compositor {
     /// XDG_CURRENT_DESKTOP (for a program started some other way).
     pub fn detect() -> Compositor {
         let has = |k: &str| std::env::var_os(k).is_some_and(|v| !v.is_empty());
-        if has("NIRI_SOCKET") {
+        if has("SOFTCORE_SOCKET") {
+            return Compositor::Softcore;
+        } else if has("NIRI_SOCKET") {
             return Compositor::Niri;
         } else if has("HYPRLAND_INSTANCE_SIGNATURE") {
             return Compositor::Hyprland;
@@ -44,7 +48,9 @@ impl Compositor {
         }
         let desk = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
         let named = |n: &str| desk.split(':').any(|d| d == n);
-        if named("niri") {
+        if named("softcore") {
+            Compositor::Softcore
+        } else if named("niri") {
             Compositor::Niri
         } else if named("hyprland") {
             Compositor::Hyprland
@@ -57,9 +63,15 @@ impl Compositor {
         }
     }
 
+    /// The program that talks to niri, or to Softcore, which takes the same words.
+    pub fn msg(self) -> &'static str {
+        if self == Compositor::Softcore { "softcore" } else { "niri" }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Compositor::Niri => "niri",
+            Compositor::Softcore => "Softcore",
             Compositor::Hyprland => "Hyprland",
             Compositor::Mango => "mango",
             Compositor::Sway => "Sway",
@@ -272,7 +284,7 @@ fn pactl_wants(line: &str) -> bool {
 fn follow_all(compositor: Compositor, told: &Arc<Told>, poke: &Sender<bool>) {
     let any = |_: &str| true;
     let comp = match compositor {
-        Compositor::Niri => Some((Source::Program("niri", vec!["msg", "-j", "event-stream"]), niri_wants as fn(&str) -> bool)),
+        Compositor::Niri | Compositor::Softcore => Some((Source::Program(compositor.msg(), vec!["msg", "-j", "event-stream"]), niri_wants as fn(&str) -> bool)),
         Compositor::Hyprland => std::env::var_os("XDG_RUNTIME_DIR").zip(std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")).map(|(run, his)| (Source::Socket(std::path::PathBuf::from(run).join("hypr").join(his).join(".socket2.sock")), any as fn(&str) -> bool)),
         Compositor::Sway => Some((Source::Program("swaymsg", vec!["-m", "-t", "subscribe", "[\"workspace\",\"window\"]"]), any as fn(&str) -> bool)),
         Compositor::Mango | Compositor::Other => None,
@@ -388,8 +400,8 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
     let s = |v: &Value, k: &str| v.get(k).map(|x| x.as_str().map(String::from).unwrap_or_else(|| x.to_string())).unwrap_or_default();
     let b = |v: &Value, k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
     let mut out = match c {
-        Compositor::Niri => {
-            let Some(Value::Array(list)) = json("niri", &["msg", "-j", "workspaces"]) else { return Vec::new() };
+        Compositor::Niri | Compositor::Softcore => {
+            let Some(Value::Array(list)) = json(c.msg(), &["msg", "-j", "workspaces"]) else { return Vec::new() };
             list.iter()
                 .map(|w| {
                     let idx = s(w, "idx");
@@ -438,7 +450,7 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
 pub fn screens(c: Compositor) -> Vec<String> {
     let from_list = |v: Option<Value>| -> Vec<String> { v.and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|o| o.get("name").and_then(Value::as_str).map(String::from)).collect() };
     let mut names = match c {
-        Compositor::Niri => json("niri", &["msg", "-j", "outputs"]).and_then(|v| v.as_object().map(|o| o.keys().cloned().collect())).unwrap_or_default(),
+        Compositor::Niri | Compositor::Softcore => json(c.msg(), &["msg", "-j", "outputs"]).and_then(|v| v.as_object().map(|o| o.keys().cloned().collect())).unwrap_or_default(),
         Compositor::Hyprland => from_list(json("hyprctl", &["-j", "monitors"])),
         Compositor::Mango => from_list(json("mmsg", &["get", "all-monitors"]).and_then(|v| v.get("monitors").cloned())),
         Compositor::Sway => from_list(json("swaymsg", &["-t", "get_outputs", "-r"])),
@@ -451,7 +463,7 @@ pub fn screens(c: Compositor) -> Vec<String> {
 /// Open apps, keeping the order they were first seen in (so the dock doesn't shuffle).
 fn running(c: Compositor, before: &[String]) -> Vec<String> {
     let list: Vec<String> = match c {
-        Compositor::Niri => json("niri", &["msg", "-j", "windows"]).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|w| w.get("app_id").and_then(Value::as_str).map(String::from)).collect(),
+        Compositor::Niri | Compositor::Softcore => json(c.msg(), &["msg", "-j", "windows"]).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|w| w.get("app_id").and_then(Value::as_str).map(String::from)).collect(),
         Compositor::Hyprland => json("hyprctl", &["-j", "clients"]).and_then(|v| v.as_array().cloned()).unwrap_or_default().iter().filter_map(|w| w.get("class").and_then(Value::as_str).map(String::from)).collect(),
         Compositor::Mango => json("mmsg", &["get", "all-clients"]).and_then(|v| v.get("clients").and_then(Value::as_array).cloned()).unwrap_or_default().iter().filter_map(|w| w.get("appid").and_then(Value::as_str).map(String::from)).collect(),
         _ => Vec::new(),
@@ -468,7 +480,7 @@ fn running(c: Compositor, before: &[String]) -> Vec<String> {
 
 fn focused_title(c: Compositor) -> String {
     let v = match c {
-        Compositor::Niri => json("niri", &["msg", "-j", "focused-window"]),
+        Compositor::Niri | Compositor::Softcore => json(c.msg(), &["msg", "-j", "focused-window"]),
         Compositor::Hyprland => json("hyprctl", &["-j", "activewindow"]),
         Compositor::Mango => json("mmsg", &["get", "focusing-client"]),
         _ => None,
@@ -686,7 +698,7 @@ pub fn reap(mut child: std::process::Child) {
 
 pub fn focus_workspace(c: Compositor, key: &str) {
     match c {
-        Compositor::Niri => spawn("niri", &["msg", "action", "focus-workspace", key]),
+        Compositor::Niri | Compositor::Softcore => spawn(c.msg(), &["msg", "action", "focus-workspace", key]),
         Compositor::Hyprland => spawn("hyprctl", &["dispatch", "workspace", key]),
         Compositor::Mango => spawn("mmsg", &["dispatch", &format!("view,{key},0")]),
         Compositor::Sway => spawn("swaymsg", &["workspace", "number", key]),
@@ -696,7 +708,7 @@ pub fn focus_workspace(c: Compositor, key: &str) {
 
 /// Whether the shell can close an app's windows on this compositor.
 pub fn can_close(c: Compositor) -> bool {
-    matches!(c, Compositor::Niri | Compositor::Hyprland)
+    matches!(c, Compositor::Niri | Compositor::Softcore | Compositor::Hyprland)
 }
 
 /// Closes every window whose app id (lowercase) is one of `ids`, on a thread.
@@ -704,12 +716,12 @@ pub fn close_windows(c: Compositor, ids: Vec<String>) {
     std::thread::spawn(move || {
         let has = |w: &Value, key: &str| w.get(key).and_then(Value::as_str).is_some_and(|a| ids.contains(&a.to_lowercase()));
         match c {
-            Compositor::Niri => {
-                for w in json("niri", &["msg", "-j", "windows"]).and_then(|v| v.as_array().cloned()).unwrap_or_default() {
+            Compositor::Niri | Compositor::Softcore => {
+                for w in json(c.msg(), &["msg", "-j", "windows"]).and_then(|v| v.as_array().cloned()).unwrap_or_default() {
                     if has(&w, "app_id")
                         && let Some(id) = w.get("id").and_then(Value::as_u64)
                     {
-                        output("niri", &["msg", "action", "close-window", "--id", &id.to_string()]);
+                        output(c.msg(), &["msg", "action", "close-window", "--id", &id.to_string()]);
                     }
                 }
             }
@@ -907,7 +919,7 @@ pub fn power(c: Compositor, p: Power) {
         Power::Restart => spawn("systemctl", &["reboot"]),
         Power::ShutDown => spawn("systemctl", &["poweroff"]),
         Power::LogOut => match c {
-            Compositor::Niri => spawn("niri", &["msg", "action", "quit", "--skip-confirmation"]),
+            Compositor::Niri | Compositor::Softcore => spawn(c.msg(), &["msg", "action", "quit", "--skip-confirmation"]),
             Compositor::Hyprland => spawn("hyprctl", &["dispatch", "exit"]),
             Compositor::Mango => spawn("mmsg", &["dispatch", "quit"]),
             Compositor::Sway => spawn("swaymsg", &["exit"]),

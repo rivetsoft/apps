@@ -5,7 +5,7 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
 
 ![Rivet Shell: the panel, widgets and dock over a wallpaper](../../docs/screenshots/shell-wide.jpg)
 
-- **Panel**: a launcher button, workspaces (niri, Hyprland, Sway), the focused window's title,
+- **Panel**: a launcher button, workspaces (Softcore, niri, Hyprland, Sway), the focused window's title,
   the clock (click for a calendar), what's playing (click for the player: cover, progress,
   controls and a visualizer), volume and brightness
   (scroll to change), network, battery, notifications, quick settings and a power menu (lock,
@@ -30,7 +30,7 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   another agent is already running.
 - **On-screen display**: volume and brightness show as they change, from keys or anywhere else.
 - **Dock**: pinned apps, then open apps that aren't pinned; a dot under the ones with windows
-  open (niri, Hyprland); right-click an icon to pin, unpin or move it. It can auto-hide (back when the pointer
+  open (Softcore, niri, Hyprland); right-click an icon to pin, unpin or move it. It can auto-hide (back when the pointer
   reaches the bottom edge) or smart-hide (shown while the workspace has no windows).
 - **Launcher**: every installed app, searched as you type; arrows and Enter, or click. Type a sum
   (`12*(3+4)`) for its answer; Enter copies it.

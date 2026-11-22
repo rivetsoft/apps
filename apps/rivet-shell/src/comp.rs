@@ -106,7 +106,8 @@ pub fn target(comp: Compositor) -> Option<Target> {
             let (format, main) = if !conf.is_file() && toml.is_file() { (Format::MangoToml, toml) } else { (Format::MangoConf, conf) };
             Some(Target { comp, format, main, ours: dir.join("rivet-shell.conf") })
         }
-        Compositor::Sway | Compositor::Other => None,
+        // Softcore takes its look from Rivet directly, and has a settings file of its own.
+        Compositor::Softcore | Compositor::Sway | Compositor::Other => None,
     }
 }
 

@@ -65,7 +65,7 @@ pub fn other_daemon() -> Option<String> {
 /// (mango sleeps each by name).
 pub fn screens(c: Compositor, on: bool, outputs: &[String]) {
     match c {
-        Compositor::Niri => sys::spawn("niri", &["msg", "action", if on { "power-on-monitors" } else { "power-off-monitors" }]),
+        Compositor::Niri | Compositor::Softcore => sys::spawn(c.msg(), &["msg", "action", if on { "power-on-monitors" } else { "power-off-monitors" }]),
         Compositor::Hyprland => sys::spawn("hyprctl", &["dispatch", "dpms", if on { "on" } else { "off" }]),
         Compositor::Mango => {
             for o in outputs {
