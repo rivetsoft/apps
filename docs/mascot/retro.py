@@ -229,6 +229,20 @@ def scene_shell():
             + rivet(510, 300, 0.62, -6, look=(-14, 4)))
 
 
+def scene_softcore():
+    """Softcore: beside a strip of columns that runs off both sides."""
+    lines = lambda colors: "".join(bar(16, 18 + i * 26, w, c) for i, (c, w) in enumerate(colors))
+    left = window(-150, 96, 280, 250, BLUE, "", PAPER, lines([(PINK, 200), (MAUVE, 150), (MAUVE, 220), (GREEN, 120)]))
+    right = window(470, 96, 300, 250, GREEN, "Edit", PAPER, lines([(BLUE, 110), (MAUVE, 90), (PINK, 60)]))
+    # The focused column: a thicker outline in the accent, as Softcore draws its border.
+    mid = (f'<rect x="{164 - 9}" y="{76 - 9}" width="{270 + 18}" height="{290 + 18}" fill="none" stroke="{YELLOW}" stroke-width="8"/>'
+           + window(164, 76, 270, 290, PINK, "Terminal", INK,
+                    f'<text x="16" y="34" font-family="DejaVu Sans Mono, monospace" font-size="16" font-weight="700" fill="{GREEN}">~ $</text>'
+                    f'<rect x="58" y="20" width="11" height="19" fill="{PINK}"/>'))
+    return (card(BLUE, "gridBlue") + left + right + mid
+            + rivet(500, 330, 0.6, -6, look=(-14, 2), brows="raised"))
+
+
 def scene_edit():
     """Rivet Edit: studying the code in an editor window."""
     rows = [(0, [(PINK, 60), (GREEN, 90)]), (1, [(YELLOW, 70), (PAPER, 110)]), (1, [(BLUE, 50), (PAPER, 80), (GREEN, 40)]),
@@ -471,6 +485,7 @@ SCENES = {
     "hello": scene_hello,
     "files": scene_files,
     "shell": scene_shell,
+    "softcore": scene_softcore,
     "edit": scene_edit,
     "terminal": scene_terminal,
     "notes": scene_notes,
