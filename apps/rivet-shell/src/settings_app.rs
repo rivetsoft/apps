@@ -358,7 +358,7 @@ pub(super) fn on_card(v: &mut egui::Visuals, card: egui::Color32) {
 /// which Smart Hide and the dock's open-app dots need. Screenshots draw as if it does.
 pub(super) fn knows_windows() -> bool {
     use crate::sys::Compositor;
-    matches!(Compositor::detect(), Compositor::Niri | Compositor::Hyprland | Compositor::Mango) || std::env::args().any(|a| a == "--screenshot")
+    matches!(Compositor::detect(), Compositor::Niri | Compositor::Softcore | Compositor::Hyprland | Compositor::Mango) || std::env::args().any(|a| a == "--screenshot")
 }
 
 fn hint(ui: &mut egui::Ui, text: &str) {

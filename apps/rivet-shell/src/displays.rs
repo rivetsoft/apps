@@ -1,7 +1,8 @@
 //! Displays: each screen's resolution, refresh rate, scale, rotation and place, read from the
 //! compositor and written, with the window look, to the overrides file its config includes
 //! (see comp.rs). niri (`niri msg --json outputs`, `output "NAME" { … }`) and Hyprland
-//! (`hyprctl monitors all -j`, `monitor = …` in hyprland.conf).
+//! (`hyprctl monitors all -j`, `monitor = …` in hyprland.conf). Softcore answers as niri does
+//! (`softcore msg --json outputs`) and takes `output.NAME=…` lines.
 
 use crate::comp::Format;
 use crate::sys::Compositor;
@@ -92,13 +93,13 @@ pub struct Output {
 
 /// Whether displays can be set for this compositor's config.
 pub fn supported(format: Format) -> bool {
-    matches!(format, Format::Kdl | Format::HyprConf)
+    matches!(format, Format::Kdl | Format::HyprConf | Format::Softcore)
 }
 
 /// The connected screens.
 pub fn read(comp: Compositor) -> Result<Vec<Output>, String> {
     let (cmd, args): (&str, &[&str]) = match comp {
-        Compositor::Niri => ("niri", &["msg", "--json", "outputs"]),
+        Compositor::Niri | Compositor::Softcore => (comp.msg(), &["msg", "--json", "outputs"]),
         Compositor::Hyprland => ("hyprctl", &["monitors", "all", "-j"]),
         _ => return Err(format!("Displays can't be read from {}.", comp.name())),
     };
@@ -107,7 +108,7 @@ pub fn read(comp: Compositor) -> Result<Vec<Output>, String> {
         return Err(format!("{cmd} failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    let mut list = if comp == Compositor::Niri { from_niri(&text) } else { from_hyprland(&text) }?;
+    let mut list = if comp == Compositor::Hyprland { from_hyprland(&text) } else { from_niri(&text) }?;
     list.sort_by(|a, b| (a.now.pos, &a.name).cmp(&(b.now.pos, &b.name)));
     // A screen that's off has no place: after the others, so turning it on overlaps nothing.
     let mut right = list.iter().filter(|o| o.now.on).map(|o| o.now.pos.0 + o.now.size(o.preferred).0.round() as i32).max().unwrap_or(0);
@@ -230,6 +231,23 @@ pub fn render(format: Format, displays: &[Display]) -> String {
                 t.push_str(&format!("monitor = {}, {mode}, {}x{}, {}, transform, {turn}, vrr, {}\n", d.name, d.pos.0, d.pos.1, trim_num(d.scale), u8::from(d.vrr)));
             }
         }
+        Format::Softcore => {
+            t.push_str("\n# Displays (Settings, Displays).\n");
+            for d in displays {
+                if !d.on {
+                    t.push_str(&format!("output.{}=off\n", d.name));
+                    continue;
+                }
+                let mode = d.mode.map(|m| format!("mode={}x{}@{:.3} ", m.w, m.h, m.hz())).unwrap_or_default();
+                let turn = match (d.flip, d.rotate) {
+                    (false, 0) => "normal".to_string(),
+                    (false, r) => r.to_string(),
+                    (true, 0) => "flipped".to_string(),
+                    (true, r) => format!("flipped-{r}"),
+                };
+                t.push_str(&format!("output.{}={mode}scale={} position={},{} transform={turn}\n", d.name, trim_num(d.scale), d.pos.0, d.pos.1));
+            }
+        }
         Format::HyprLua => t.push_str("\n-- Displays aren't written for hyprland.lua yet.\n"),
         Format::MangoConf | Format::MangoToml => t.push_str("\n# Displays aren't written for mango yet.\n"),
     }
@@ -276,6 +294,14 @@ mod tests {
         let h = render(Format::HyprConf, &[big.now.clone(), lap.now.clone()]);
         assert!(h.contains("monitor = DP-5, 3840x2160@30.000, 0x0, 1.25, transform, 5, vrr, 1") && h.contains("monitor = eDP-1, disable"));
         assert!(render(Format::Kdl, &[]).is_empty());
+    }
+
+    #[test]
+    fn writes_softcore() {
+        let d = |name: &str, on: bool, mode: Option<Mode>, rotate: u32, flip: bool| Display { name: name.into(), on, mode, scale: 1.5, pos: (2560, 0), rotate, flip, vrr: false };
+        let t = render(Format::Softcore, &[d("DP-5", true, Some(Mode { w: 2560, h: 1440, mhz: 59951 }), 0, false), d("HDMI-A-1", true, None, 90, true), d("eDP-1", false, None, 0, false)]);
+        assert!(t.contains("output.DP-5=mode=2560x1440@59.951 scale=1.5 position=2560,0 transform=normal\n"), "{t}");
+        assert!(t.contains("output.HDMI-A-1=scale=1.5 position=2560,0 transform=flipped-90\n") && t.contains("output.eDP-1=off\n"), "{t}");
     }
 
     #[test]

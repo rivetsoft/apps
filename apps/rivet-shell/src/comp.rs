@@ -9,6 +9,9 @@
 //! - mango: `rivet-shell.conf`, by `source=…` from config.conf, or from config.toml's
 //!   `source = […]`; then `mmsg dispatch reload_config`.
 //!
+//! - Softcore: `rivet-shell.settings`, by `include=rivet-shell.settings` from its settings
+//!   file; Softcore reads it again by itself.
+//!
 //! The override file is written whenever the look changes. The include line is added to the
 //! person's config only when they ask (a copy of the config is kept first, once, as
 //! `<config>.rivet-backup`), at its end so it wins over what's above it. Turned off, the file
@@ -62,6 +65,8 @@ pub enum Format {
     /// mango's key=value (config.conf).
     MangoConf,
     MangoToml,
+    /// Softcore's key=value settings.
+    Softcore,
 }
 
 /// Where the compositor's config is, and ours.
@@ -106,8 +111,12 @@ pub fn target(comp: Compositor) -> Option<Target> {
             let (format, main) = if !conf.is_file() && toml.is_file() { (Format::MangoToml, toml) } else { (Format::MangoConf, conf) };
             Some(Target { comp, format, main, ours: dir.join("rivet-shell.conf") })
         }
-        // Softcore takes its look from Rivet directly, and has a settings file of its own.
-        Compositor::Softcore | Compositor::Sway | Compositor::Other => None,
+        Compositor::Softcore => {
+            let main = std::env::var_os("SOFTCORE_CONFIG").map(PathBuf::from).filter(|p| !p.as_os_str().is_empty()).unwrap_or_else(|| cfg.join("softcore/settings"));
+            let ours = main.parent().unwrap_or(Path::new(".")).join("rivet-shell.settings");
+            Some(Target { comp, format: Format::Softcore, main, ours })
+        }
+        Compositor::Sway | Compositor::Other => None,
     }
 }
 
@@ -171,6 +180,13 @@ pub fn render(format: Format, look: Option<&Look>) -> String {
             t.push_str("    },\n");
             t.push_str(&format!("    decoration = {{\n        rounding = {},\n        inactive_opacity = {op},\n        shadow = {{\n            enabled = {},\n        }},\n    }},\n}})\n", l.radius, l.shadows));
         }
+        Format::Softcore => {
+            t.push_str(&format!("\ngaps={}\ngaps_out={}\nborder={}\nradius={}\ninactive_opacity={op}\nshadows={}\n", l.gaps_in, l.gaps_out, l.border, l.radius, l.shadows));
+            // Left out, Softcore's borders follow the Rivet accent by themselves.
+            if let Some((a, i)) = l.colors {
+                t.push_str(&format!("border_active=#{}\nborder_inactive=#{}\n", hex(a), hex(i)));
+            }
+        }
         Format::MangoConf | Format::MangoToml => {
             // Sourced files are read by their own extension, so the key=value form serves both.
             t.push('\n');
@@ -197,6 +213,7 @@ pub fn include_line(t: &Target) -> String {
         Format::HyprLua => "require(\"rivet-shell\")".into(),
         Format::MangoConf => format!("source={}", t.ours.display()),
         Format::MangoToml => format!("\"{}\"", t.ours.display()),
+        Format::Softcore => format!("include={}", file_name(&t.ours)),
     }
 }
 
@@ -211,6 +228,8 @@ pub fn included(t: &Target) -> bool {
     let stem = name.rsplit_once('.').map(|s| s.0).unwrap_or(&name).to_string();
     text.lines().map(str::trim).filter(|l| !l.starts_with("//") && !l.starts_with('#') && !l.starts_with("--")).any(|l| match t.format {
         Format::HyprLua => l.contains(&format!("\"{stem}\"")) || l.contains(&format!("'{stem}'")),
+        // An include of it, not any line that happens to name the shell (spawn=rivet-shell).
+        Format::Softcore => l.split_once('=').is_some_and(|(k, v)| k.trim() == "include" && v.trim().ends_with(&name)),
         _ => l.contains(&name),
     })
 }
@@ -374,6 +393,8 @@ mod tests {
         assert!(h.contains("gaps_out = 12") && h.contains("col.active_border = rgb(e66100)") && h.contains("rounding = 10"));
         let l = render(Format::HyprLua, Some(&look()));
         assert!(l.starts_with("--") && l.contains("hl.config({") && l.contains("active_border = \"rgb(e66100)\""));
+        let sc = render(Format::Softcore, Some(&look()));
+        assert!(sc.starts_with('#') && sc.contains("gaps=8\ngaps_out=12\nborder=2\nradius=10\ninactive_opacity=0.90\nshadows=true") && sc.contains("border_active=#e66100"));
         let m = render(Format::MangoConf, Some(&look()));
         assert!(m.contains("gap_outer_vertical=12") && m.contains("border_px=2") && m.contains("focus_color=0xe66100ff") && m.contains("shadows=1"));
         // Off: a comment only.
@@ -393,6 +414,35 @@ mod tests {
         assert!(c.contains("  \"./env.toml\",\n\"/h/.config/mango/rivet-shell.conf\"]"));
         let d = toml_source("blur = 0\n", item);
         assert!(d.starts_with("[global]\nsource = ["));
+    }
+
+    #[test]
+    fn softcore_is_included_by_its_own_line() {
+        let dir = std::env::temp_dir().join(format!("rivet-comp-softcore-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let t = Target { comp: Compositor::Softcore, format: Format::Softcore, main: dir.join("settings"), ours: dir.join("rivet-shell.settings") };
+        // A line that only names the shell is not the include.
+        std::fs::write(&t.main, "gaps=4\nspawn=rivet-shell\n").unwrap();
+        assert!(!included(&t));
+        add_include(&t, Some(&look()), &[]).unwrap();
+        add_include(&t, Some(&look()), &[]).unwrap();
+        let text = std::fs::read_to_string(&t.main).unwrap();
+        assert_eq!(text.matches("include=rivet-shell.settings").count(), 1);
+        assert!(text.ends_with("include=rivet-shell.settings\n") && included(&t) && std::fs::read_to_string(&t.ours).unwrap().contains("gaps=8"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// With Softcore running: turn its first display and scale it, through the files, as
+    /// the Displays page does. `cargo test -p rivet-shell softcore_live -- --ignored`
+    #[test]
+    #[ignore]
+    fn softcore_live() {
+        let t = target(Compositor::Softcore).unwrap();
+        let mut displays: Vec<Display> = crate::displays::read(Compositor::Softcore).unwrap().into_iter().map(|o| o.now).collect();
+        displays[0].scale = 1.25;
+        displays[0].rotate = 90;
+        add_include(&t, Some(&look()), &displays).unwrap();
+        println!("{}\n{}", std::fs::read_to_string(&t.main).unwrap(), std::fs::read_to_string(&t.ours).unwrap());
     }
 
     #[test]
