@@ -5,6 +5,7 @@
 - **Softcore**: under Softcore, Rivet's own compositor, the panel shows workspaces and the focused window's title, the dock shows what is open and can close it, and Log Out and turning the screens off work. Displays and the window look (gaps, borders, corners) can be set from Settings there too; Softcore applies them as you change them.
 - **A Softcore page in Settings**, shown only under Softcore: its windows, columns, motion, keyboard and pointer settings, and your key bindings. Each change is one line of Softcore's settings file, so what you wrote there by hand stays, and a change made by hand shows in the window.
 - **Weather**: a desktop widget and a panel item show the sky and the temperature for a place you choose. Click the panel item for the next hours and the week. Turn the widget on under Widgets in Settings, where you also pick the place and °C or °F.
+- Holding a key repeats it in the launcher and the other popups: hold Down to run through the launcher's entries, or Backspace to clear what you typed.
 - Fixed a crash that could happen when a click closed a popup or a notification while other parts of the desktop were being drawn.
 - A palette of Rivet's own colors: choose Rivet under A Palette on Appearance for the pink accent with its blue and yellow on a dark plum surface.
 - Previews in Settings are marked: an eye and "Preview" above, and a dashed line around.

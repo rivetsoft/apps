@@ -160,6 +160,8 @@ pub struct Shell {
     surfs: Vec<Surf>,
     pointer: Option<ThemedPointer>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
+    /// The event loop, where a held key's repeats are timed.
+    handle: LoopHandle<'static, Shell>,
     kb_mods: egui::Modifiers,
     s: Settings,
     s_mtime: Option<SystemTime>,
@@ -305,6 +307,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     sys::watch_lock_keys(move |caps, on| {
         let _ = key_tx.send(Msg::LockKey { caps, on });
     });
+    let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
+    let handle: LoopHandle<Shell> = event_loop.handle();
     let mut shell = Shell {
         conn: conn.clone(),
         qh: qh.clone(),
@@ -317,6 +321,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         surfs: Vec::new(),
         pointer: None,
         keyboard: None,
+        handle: handle.clone(),
         kb_mods: egui::Modifiers::NONE,
         s_mtime: crate::config::mtime(),
         s: settings,
@@ -378,8 +383,6 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     shell.apply_comp();
     shell.plugins.sync(&shell.s.plugins.clone(), &shell.s.plugin_set.clone());
     shell.event("start", &[]);
-    let mut event_loop: EventLoop<Shell> = EventLoop::try_new().map_err(|e| e.to_string())?;
-    let handle: LoopHandle<Shell> = event_loop.handle();
     WaylandSource::new(conn, queue).insert(handle.clone()).map_err(|e| e.to_string())?;
     handle.insert_source(ipc, |ev, _, shell: &mut Shell| {
         if let ChanEvent::Msg(m) = ev {
@@ -2145,7 +2148,9 @@ impl SeatHandler for Shell {
             self.pointer = self.seat_state.get_pointer_with_theme(qh, &seat, self.shm.wl_shm(), surface, ThemeSpec::default()).ok();
         }
         if cap == Capability::Keyboard && self.keyboard.is_none() {
-            self.keyboard = self.seat_state.get_keyboard(qh, &seat, None).ok();
+            // With repeats, so a held arrow keeps moving through a list and held Backspace keeps
+            // deleting, at the rate the compositor sets.
+            self.keyboard = self.seat_state.get_keyboard_with_repeat(qh, &seat, None, self.handle.clone(), Box::new(|shell: &mut Shell, _, e| shell.key(&e, true, true))).ok();
         }
     }
     fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, cap: Capability) {
@@ -2244,6 +2249,10 @@ fn key_of(k: Keysym) -> Option<egui::Key> {
 
 impl Shell {
     fn key(&mut self, e: &KeyEvent, pressed: bool, repeat: bool) {
+        // A held Return or Escape acts once: a repeat could answer whatever opens next.
+        if repeat && matches!(e.keysym, Keysym::Return | Keysym::KP_Enter | Keysym::Escape) {
+            return;
+        }
         let Some(i) = self.surfs.iter().position(|s| s.kind == Kind::Popup) else { return };
         let mods = self.kb_mods;
         let s = &mut self.surfs[i];
