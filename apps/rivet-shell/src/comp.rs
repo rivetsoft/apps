@@ -235,7 +235,7 @@ pub fn included(t: &Target) -> bool {
 /// Add the include to the main config (a copy kept first), and write our file before it so
 /// the include never points at nothing.
 pub fn add_include(t: &Target, look: Option<&Look>, displays: &[Display]) -> Result<(), String> {
-    write_ours(t, look, displays)?;
+    write_ours(t, look, "", displays)?;
     if included(t) {
         return Ok(());
     }
@@ -324,8 +324,8 @@ fn write_atomic(p: &Path, text: &str) -> Result<(), String> {
 }
 
 /// Write our file when it would change; true when it did.
-fn write_ours(t: &Target, look: Option<&Look>, displays: &[Display]) -> Result<bool, String> {
-    let text = format!("{}{}", render(t.format, look), crate::displays::render(t.format, displays));
+fn write_ours(t: &Target, look: Option<&Look>, colors: &str, displays: &[Display]) -> Result<bool, String> {
+    let text = format!("{}{colors}{}", render(t.format, look), crate::displays::render(t.format, displays));
     if std::fs::read_to_string(&t.ours).is_ok_and(|old| old == text) {
         return Ok(false);
     }
@@ -341,14 +341,37 @@ fn write_ours(t: &Target, look: Option<&Look>, displays: &[Display]) -> Result<b
 /// shell never wrote the file and the look is off.
 pub fn apply(comp: Compositor, s: &Settings, accent: [u8; 3], dark: bool) -> Result<(), String> {
     let Some(t) = target(comp) else { return Ok(()) };
-    if !s.comp_on && s.displays.is_empty() && !t.ours.exists() {
+    let follows = t.format == Format::Softcore && !s.softcore_colors.is_empty();
+    if !s.comp_on && s.displays.is_empty() && !follows && !t.ours.exists() {
         return Ok(());
     }
     let look = s.comp_on.then(|| Look::from(s, accent, dark));
-    if write_ours(&t, look.as_ref(), &s.displays)? && included(&t) {
+    let colors = if follows { softcore_colors(s) } else { String::new() };
+    if write_ours(&t, look.as_ref(), &colors, &s.displays)? && included(&t) {
         reload(comp);
     }
     Ok(())
+}
+
+/// Softcore's colours that follow the theme (Settings, Softcore), as the theme's are now.
+/// This file is written again whenever the theme's colours change, which is how they follow.
+fn softcore_colors(s: &Settings) -> String {
+    let live = rivet_look::live::LiveLook::new();
+    let roles = crate::style::Roles::new(&live, s);
+    softcore_color_lines(&s.softcore_colors, [roles.primary, roles.secondary, roles.tertiary].map(|c| [c.r(), c.g(), c.b()]))
+}
+
+fn softcore_color_lines(bound: &[(String, String)], [accent, secondary, tertiary]: [[u8; 3]; 3]) -> String {
+    let mut t = String::from("\n# Colors that follow the theme (Settings, Softcore).\n");
+    for (key, role) in bound {
+        let c = match role.as_str() {
+            "secondary" => secondary,
+            "tertiary" => tertiary,
+            _ => accent,
+        };
+        t.push_str(&format!("{key}=#{}\n", hex(c)));
+    }
+    t
 }
 
 /// apply() with the shell's look now: its accent (the desktop's colours when followed) and
@@ -395,6 +418,8 @@ mod tests {
         assert!(sc.starts_with('#') && sc.contains("gaps=8\ngaps_out=12\nborder=2\nradius=10\ninactive_opacity=0.90\nshadows=true") && !sc.contains("border_active"));
         let m = render(Format::MangoConf, Some(&look()));
         assert!(m.contains("gap_outer_vertical=12") && m.contains("border_px=2") && m.contains("focus_color=0xe66100ff") && m.contains("shadows=1"));
+        let c = softcore_color_lines(&[("border_active".into(), "accent".into()), ("border_active_to".into(), "tertiary".into())], [[0xe6, 0x61, 0x00], [1, 2, 3], [0x0a, 0x0b, 0x0c]]);
+        assert!(c.contains("border_active=#e66100\nborder_active_to=#0a0b0c\n"));
         // Off: a comment only.
         assert!(render(Format::Kdl, None).lines().all(|l| l.starts_with("//")));
         // No border in niri: off, not a zero width.

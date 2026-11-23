@@ -47,6 +47,13 @@ struct Page {
     /// The border colours set to Custom, so the picker shows even while the value is one of
     /// the theme's.
     custom: std::collections::HashSet<String>,
+    /// The colours that follow the theme, as Rivet Shell's settings have them: (key, `accent`,
+    /// `secondary` or `tertiary`). Changed here while the page is drawn and handed back after.
+    roles: Vec<(String, String)>,
+    /// Whether a colour can follow the theme: Softcore's settings include Rivet Shell's file,
+    /// which is where the shell keeps such a colour up to date. Looked at every two seconds.
+    follows: bool,
+    follows_at: f64,
     channel: Option<(Sender<Answer>, Receiver<Answer>)>,
 }
 
@@ -72,6 +79,19 @@ fn times(state: &State) -> Vec<Option<SystemTime>> {
 }
 
 impl Page {
+    fn role(&self, key: &str) -> Option<&str> {
+        self.roles.iter().find(|(k, _)| k == key).map(|(_, r)| r.as_str()).filter(|_| self.follows)
+    }
+
+    /// Have a colour follow one of the theme's (None: no longer).
+    fn follow(&mut self, key: &str, role: Option<&str>) {
+        self.roles.retain(|(k, _)| k != key);
+        if let Some(r) = role {
+            self.roles.push((key.to_string(), r.to_lowercase()));
+            self.roles.sort();
+        }
+    }
+
     fn tx(&mut self) -> Sender<Answer> {
         self.channel.get_or_insert_with(channel).0.clone()
     }
@@ -265,22 +285,29 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
             Kind::Color => {
                 let mut c = rgb(&shown).unwrap_or([0, 0, 0]);
                 if s.key.starts_with("border_") && !theme.is_empty() {
-                    // Softcore keeps a colour, not a name: the theme's colour it equals is the one chosen.
                     let hex = |c: Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
-                    let auto = listed && shown.is_empty() && !page.custom.contains(&s.key);
-                    let from = theme.iter().position(|(_, c)| hex(*c).eq_ignore_ascii_case(shown.trim())).filter(|_| !page.custom.contains(&s.key));
+                    // A colour that follows the theme is named in Rivet Shell's settings. Where it
+                    // can't follow, Softcore's file has the colour alone, and the theme's colour
+                    // it equals is the one chosen.
+                    let from = if page.follows {
+                        page.role(&s.key).and_then(|r| theme.iter().position(|(n, _)| n.eq_ignore_ascii_case(r)))
+                    } else {
+                        theme.iter().position(|(_, c)| hex(*c).eq_ignore_ascii_case(shown.trim())).filter(|_| !page.custom.contains(&s.key))
+                    };
+                    let auto = listed && shown.is_empty() && from.is_none() && !page.custom.contains(&s.key);
                     let dot = |ui: &mut egui::Ui, c: Color32| {
                         let (r, _) = ui.allocate_exact_size(egui::Vec2::splat(14.0), egui::Sense::hover());
                         ui.painter().circle_filled(r.center(), 6.0, c);
                         ui.painter().circle_stroke(r.center(), 6.0, egui::Stroke::new(1.0, ui.visuals().weak_text_color().gamma_multiply(0.5)));
                     };
-                    if from.is_some() {
-                        dot(ui, Color32::from_rgb(c[0], c[1], c[2]));
+                    if let Some(i) = from {
+                        dot(ui, theme[i].1);
                     }
                     egui::ComboBox::from_id_salt(("softcore-color", &s.key)).selected_text(if auto { "Automatic" } else { from.map_or("Custom", |i| theme[i].0) }).width(120.0).show_ui(ui, |ui| {
                         if listed && ui.selectable_label(auto, "Automatic").clicked() {
                             page.custom.remove(&s.key);
-                            if !shown.is_empty() {
+                            page.follow(&s.key, None);
+                            if now.in_file {
                                 change = Some(None);
                             }
                         }
@@ -289,7 +316,14 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
                                 dot(ui, *color);
                                 if ui.selectable_label(from == Some(i), *name).clicked() {
                                     page.custom.remove(&s.key);
-                                    if from != Some(i) {
+                                    if page.follows {
+                                        // The shell writes the colour, now and when the theme changes;
+                                        // a line of Softcore's own would stand over it.
+                                        page.follow(&s.key, Some(name));
+                                        if now.in_file {
+                                            change = Some(None);
+                                        }
+                                    } else if from != Some(i) {
                                         change = Some(Some(hex(*color)));
                                     }
                                 }
@@ -297,8 +331,11 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
                         }
                         if ui.selectable_label(from.is_none() && !auto, "Custom").clicked() {
                             page.custom.insert(s.key.clone());
-                            // Softcore has no colour of its own to start from: the accent, then.
-                            if shown.is_empty() {
+                            // It starts as the colour it was; with none of its own, the accent.
+                            if let Some(i) = from.filter(|_| page.follows) {
+                                page.follow(&s.key, None);
+                                change = Some(Some(hex(theme[i].1)));
+                            } else if shown.is_empty() {
                                 change = Some(Some(hex(accent)));
                             }
                         }
@@ -386,10 +423,18 @@ impl SettingsApp {
         let theirs = |key: &str| self.s.comp_on && WINDOW_LOOK.contains(&key);
         let danger = rivet_look::theme::status(&ctx).danger;
         let roles = crate::style::Roles::new(&self.look, &self.s);
-        // Without a second and third colour in the theme they are the accent again: once is enough.
+        // Can a colour follow the theme? Softcore's settings have to include the shell's file.
+        let at = ctx.input(|i| i.time);
+        if at - page.follows_at >= 2.0 || page.follows_at == 0.0 {
+            page.follows_at = at;
+            page.follows = checking() || crate::comp::target(Compositor::Softcore).is_some_and(|t| crate::comp::included(&t));
+        }
+        page.roles = self.s.softcore_colors.clone();
+        // Where it can't, a colour is known by its value: without a second and third colour in
+        // the theme they are the accent again, and once is enough.
         let mut theme: Vec<(&str, Color32)> = Vec::new();
         for (name, color) in [("Accent", roles.primary), ("Secondary", roles.secondary), ("Tertiary", roles.tertiary)] {
-            if theme.iter().all(|(_, c)| *c != color) {
+            if page.follows || theme.iter().all(|(_, c)| *c != color) {
                 theme.push((name, color));
             }
         }
@@ -453,14 +498,25 @@ impl SettingsApp {
                             ui.set_max_width(room.min(420.0));
                             if let Some(to) = runs_to(&s.key) {
                                 let to_now = state.values.get(&to.key).cloned().unwrap_or_default();
-                                let was = !to_now.text.is_empty();
+                                let was = !to_now.text.is_empty() || page.role(&to.key).is_some();
                                 let mut two = was;
                                 super::panel_editor::segmented(ui, &mut two, &[(false, "One Color"), (true, "Two Colors")]);
                                 if two != was {
                                     // The second colour starts as one of the theme's that the first isn't.
                                     let hex = |c: Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
-                                    let start = theme.iter().map(|(_, c)| hex(*c)).find(|h| !h.eq_ignore_ascii_case(now.text.trim())).unwrap_or_else(|| hex(accent));
-                                    changes.push((to.key.clone(), two.then_some(start)));
+                                    if !two {
+                                        page.follow(&to.key, None);
+                                        if to_now.in_file || !page.follows {
+                                            changes.push((to.key.clone(), None));
+                                        }
+                                    } else if page.follows {
+                                        let first = page.role(&s.key).unwrap_or("accent").to_string();
+                                        let start = theme.iter().map(|(n, _)| *n).find(|n| !n.eq_ignore_ascii_case(&first)).unwrap_or("Accent");
+                                        page.follow(&to.key, Some(start));
+                                    } else {
+                                        let start = theme.iter().map(|(_, c)| hex(*c)).find(|h| !h.eq_ignore_ascii_case(now.text.trim())).unwrap_or_else(|| hex(accent));
+                                        changes.push((to.key.clone(), Some(start)));
+                                    }
                                 }
                                 // The first colour, then the one it runs to: side by side where there
                                 // is room for two, one under the other in a narrow window.
@@ -483,7 +539,7 @@ impl SettingsApp {
                                         ui.add(egui::Label::new(egui::RichText::new(format!("Softcore didn't take that: {why}.")).size(12.0).color(danger)).wrap());
                                     }
                                     // Said once, under the first of the two borders.
-                                    None if s.key == "border_active" => hint(ui, "Automatic follows the theme. Accent, Secondary and Tertiary stay as they are now."),
+                                    None if s.key == "border_active" && !page.follows => hint(ui, "Automatic follows the theme. Accent, Secondary and Tertiary stay as they are now."),
                                     None => {}
                                 }
                                 return;
@@ -572,6 +628,11 @@ impl SettingsApp {
 
         for change in changes {
             page.ask(&ctx, Some(change));
+        }
+        // Saved with Rivet Shell's settings; the shell then writes the colours where Softcore reads them.
+        let roles = std::mem::take(&mut page.roles);
+        if page.follows && roles != self.s.softcore_colors {
+            self.s.softcore_colors = roles;
         }
         // Once Softcore has taken a new binding, the fields are cleared for the next.
         if let Some(Ok(s)) = &page.state

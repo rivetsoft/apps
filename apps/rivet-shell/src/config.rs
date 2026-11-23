@@ -675,6 +675,9 @@ pub struct Settings {
     /// shell's events (event, command), by event.
     pub plugins: Vec<String>,
     pub hooks: Vec<(String, String)>,
+    /// Softcore's colours that follow the theme: (Softcore's key, `accent`, `secondary` or
+    /// `tertiary`), `softcore_color.KEY=ROLE`. The window-look file carries the colour itself.
+    pub softcore_colors: Vec<(String, String)>,
     /// The plugins' own settings: (plugin, key, value), `plugin.ID.KEY=value`.
     pub plugin_set: crate::plugins::Values,
     pub launch_view: LaunchView,
@@ -824,6 +827,7 @@ impl Default for Settings {
             ask_passwords: true,
             plugins: Vec::new(),
             hooks: Vec::new(),
+            softcore_colors: Vec::new(),
             plugin_set: Vec::new(),
             launch_view: LaunchView::Grid,
             launch_place: LaunchPlace::Center,
@@ -970,6 +974,14 @@ impl Settings {
             }
             if let Some((id, key)) = k.strip_prefix("plugin.").and_then(|r| r.split_once('.')).filter(|(i, k)| !i.is_empty() && !k.is_empty()) {
                 self.set_plugin(id, key, v.trim());
+                continue;
+            }
+            if let Some(key) = k.strip_prefix("softcore_color.").filter(|n| !n.is_empty()) {
+                self.softcore_colors.retain(|(k, _)| k != key);
+                if matches!(v.trim(), "accent" | "secondary" | "tertiary") {
+                    self.softcore_colors.push((key.to_string(), v.trim().to_string()));
+                    self.softcore_colors.sort();
+                }
                 continue;
             }
             if let Some(ev) = k.strip_prefix("hook.").filter(|n| !n.is_empty()) {
@@ -1249,6 +1261,9 @@ impl Settings {
         for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
             t.push_str(&format!("hook.{ev}={}\n", one(cmd)));
         }
+        for (key, role) in &self.softcore_colors {
+            t.push_str(&format!("softcore_color.{key}={role}\n"));
+        }
         for (id, key, v) in &self.plugin_set {
             t.push_str(&format!("plugin.{id}.{key}={}\n", one(v)));
         }
@@ -1478,7 +1493,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], softcore_colors: vec![("border_active".into(), "accent".into()), ("border_active_to".into(), "tertiary".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

@@ -163,10 +163,15 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
   row. One Color is a plain border; Two Colors is a gradient from the first color to the
   second, along Border gradient angle. Each color is Automatic (first color only: the accent
   for the focused window, the theme's outline for the others, following the theme as it
-  changes), Accent, Secondary or Tertiary from the theme, or Custom. Softcore's file holds a
-  color and not a name, so a color picked from the theme is the theme's color at that moment
-  and stays when the wallpaper or theme changes; pick it again to take the new one. Under
-  Softcore, Window Look (Appearance) leaves border colors alone and points here.
+  changes), Accent, Secondary or Tertiary from the theme, or Custom. A color picked from the
+  theme follows it: Rivet Shell's settings keep the name (`softcore_color.border_active=accent`)
+  and the shell writes the color itself into `rivet-shell.settings`, the file Softcore's
+  settings include, again each time the theme's colors change (a new wallpaper). Picking one
+  takes Softcore's own line for that color out of its settings file, since that line would
+  stand over the included one; Custom puts a line back. Without the include line in
+  Softcore's settings a theme color can't follow: it is written once, as the color it is
+  then, and the page says so. Under Softcore, Window Look (Appearance) leaves border colors
+  alone and points here.
 - Key bindings: the keys as Softcore names them (`Mod+Shift+T`) and an action (`spawn
   rivet-terminal`, `screenshot`, `title="Launcher" spawn …`). Softcore refuses keys or actions
   it doesn't know, and the page says why. A binding with no action takes away one of
