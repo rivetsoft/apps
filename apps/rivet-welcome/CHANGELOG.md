@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Rivet Snip is listed**, as coming soon until its first release. Then it installs and updates
+  like the other apps.
+
 ## 0.2.0
 
 - A new icon in Rivet's pink, to match the rest of the apps and the website.

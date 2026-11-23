@@ -116,6 +116,16 @@ pub fn known() -> Vec<Entry> {
             include_str!("../../rivet-ftp/data/rivet-ftp.svg"),
         ),
         entry(
+            "snip",
+            "Rivet Snip",
+            "rivet-snip",
+            "rivet-snip",
+            "rivet-snip-v",
+            "Crop and mark up screenshots, with arrows, text and blur.",
+            Kind::App,
+            include_str!("../../rivet-snip/data/rivet-snip.svg"),
+        ),
+        entry(
             "shell",
             "Rivet Shell",
             "rivet-shell",
