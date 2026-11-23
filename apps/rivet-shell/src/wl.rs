@@ -883,6 +883,10 @@ impl Shell {
         if let Err(e) = crate::comp::apply_now(self.comp, &self.s) {
             eprintln!("rivet-shell: window look: {e}");
         }
+        // The browsers follow the same colours. Off the event loop: it looks through the
+        // running programs for them.
+        let s = self.s.clone();
+        std::thread::spawn(move || crate::browser::apply(&s));
     }
 
     /// The AI item's readings run while a panel shows it.

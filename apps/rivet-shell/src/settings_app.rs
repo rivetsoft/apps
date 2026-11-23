@@ -26,6 +26,7 @@ mod wallpaper;
 mod idle_lock;
 mod colors;
 mod icon_pick;
+mod browser_colors;
 mod palette_pick;
 mod notes_preview;
 mod panel_editor;
@@ -670,6 +671,7 @@ impl SettingsApp {
         self.icons_section(ui);
         self.look_section(ui);
         self.window_look_section(ui);
+        self.browser_colors_section(ui);
     }
 
     fn panel_page(&mut self, ui: &mut egui::Ui) {

@@ -7,6 +7,7 @@ mod audio;
 mod auth_pop;
 mod auth;
 mod bar;
+mod browser;
 mod cc;
 mod comp;
 mod displays;

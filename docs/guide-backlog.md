@@ -139,6 +139,30 @@ settings take effect; Settings adds it on request and first saves the original a
 `NAME.rivet-backup`. Niri needs version 25.11 or later. "Leave the Screens to …" removes the
 screens from Rivet Shell's file so the compositor's own config sets them again.
 
+### Browser colors
+
+Location: `apps/rivet-shell/src/settings_app/browser_colors.rs`, Appearance, "Browser colors";
+the work is `apps/rivet-shell/src/browser.rs`.
+
+- Chromium, Chrome, Brave (and Brave Origin) and Edge take one color from the theme and make
+  their whole look from it, with light or dark to match. Tabs, toolbar and menus stay the
+  browser's own; extensions, sign-ins and protected video are untouched.
+- Color: Accent or Surface. The browser derives its tones from that one color, so single parts
+  can't be set.
+- It follows the theme: the shell writes the color again when the wallpaper's colors change
+  and tells a running browser to read it, so open windows recolor with no restart.
+- How: these browsers read "managed policies" from a folder under `/etc`
+  (`/etc/chromium/policies/managed`, `/etc/opt/chrome/…`, `/etc/brave/…`, `/etc/opt/edge/…`).
+  Rivet keeps one file there, `rivet-color.json`, with `BrowserThemeColor` and
+  `BrowserColorScheme`. The folders are root's, so Allow asks for the password once to make
+  that file and give it to the person; afterwards nothing asks again.
+- Side effect: the browser's menu and `chrome://management` say it is managed by your
+  organization. That is this file and nothing else.
+- Turning it off empties the file (the folder is root's, so Rivet can't delete it). To remove
+  it fully: `sudo rm /etc/*/policies/managed/rivet-color.json /etc/opt/*/policies/managed/rivet-color.json`.
+- Not covered: Flatpak and Snap browsers (they don't read `/etc` policies the same way),
+  Vivaldi, Opera and Firefox.
+
 ### Softcore: its settings in the Settings window
 
 Location: `apps/rivet-shell/src/settings_app/softcore_page.rs`, the Softcore page.
