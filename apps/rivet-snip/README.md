@@ -25,8 +25,8 @@ Rivet Snip doesn't need a particular compositor. A picture reaches it in one of 
 | A compositor that takes its own screenshots hands over the file | `rivet-snip FILE --replace` |
 | The same, without a file | `… \| rivet-snip -` (a PNG on standard input) |
 | It takes a picture of the screen itself | `rivet-snip capture` |
-| From the clipboard | `rivet-snip --clipboard`, or Ctrl+V in the empty window |
-| From a file manager | Open With on a PNG, JPEG or WebP picture, or drop one on the empty window |
+| From the clipboard | `rivet-snip --clipboard`, or Ctrl+V in the window |
+| From a file manager | Open With on a PNG, JPEG or WebP picture, or drop one on the window |
 
 `rivet-snip capture` uses `grim` on compositors that let programs read the screen (Sway,
 Hyprland, niri, Softcore and others with wlr-screencopy), and asks the desktop for the picture
@@ -46,7 +46,8 @@ To bind it to a key on a compositor with no screenshot tool of its own, bind
 - With no file (a capture, the clipboard, standard input): `Screenshot from DATE TIME.png` in
   `Pictures/Screenshots`, or in the folder `save_dir` names in the settings file.
 
-Save As asks where, in the desktop's file picker.
+Save As and Open use the desktop's file picker (xdg-desktop-portal). Where that isn't running,
+Save, dropping a picture on the window and pasting one all still work.
 
 ## Keys
 

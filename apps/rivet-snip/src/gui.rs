@@ -371,7 +371,8 @@ impl SnipApp {
                         return;
                     }
                     Err(e) => {
-                        let _ = tx.send(Done::Failed(format!("Couldn't ask where to save: {e}.")));
+                        eprintln!("rivet-snip: {e}");
+                        let _ = tx.send(Done::Failed("The desktop's file picker isn't running. Save still works: it chooses the place itself.".into()));
                         return;
                     }
                 }
@@ -409,7 +410,10 @@ impl SnipApp {
                     Err(e) => Done::Failed(format!("{e}.")),
                 },
                 Ok(None) => Done::Cancelled,
-                Err(e) => Done::Failed(format!("Couldn't open the file picker: {e}.")),
+                Err(e) => {
+                    eprintln!("rivet-snip: {e}");
+                    Done::Failed("The desktop's file picker isn't running. Drop a picture on this window instead.".into())
+                }
             };
             let _ = tx.send(done);
         });
@@ -579,8 +583,9 @@ impl SnipApp {
                 }
             }
         }
-        // A picture pasted or dropped in is opened, when there is none yet.
-        if self.doc.is_none() {
+        // A picture pasted or dropped in is opened, unless that would lose marks never copied
+        // or saved.
+        if !self.unsaved() {
             let pasted = ctx.input_mut(|i| {
                 let at = i.events.iter().position(|e| matches!(e, egui::Event::PasteImage(_)))?;
                 match i.events.remove(at) {
@@ -594,7 +599,8 @@ impl SnipApp {
             if let Some(file) = ctx.input(|i| i.raw.dropped_files.first().map(|f| f.path().to_path_buf())) {
                 match capture::open(&file) {
                     Ok(img) => self.set_picture(ctx, img, Some(file)),
-                    Err(e) => self.trouble = Some(format!("{e}.")),
+                    Err(e) if self.doc.is_none() => self.trouble = Some(format!("{e}.")),
+                    Err(e) => self.say(ctx, format!("{e}."), true),
                 }
             }
         }
