@@ -31,6 +31,7 @@ mod notes_preview;
 mod panel_editor;
 mod plugins;
 mod search;
+mod softcore_page;
 mod weather_opts;
 mod window_look;
 
@@ -49,11 +50,19 @@ enum Page {
     Displays,
     Idle,
     Plugins,
+    /// Softcore's own settings: only there under Softcore.
+    Softcore,
     About,
 }
 
 impl Page {
-    const ALL: [Page; 11] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::About];
+    const ALL: [Page; 12] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    /// Whether the page is in the sidebar and in search: all but the ones for a compositor
+    /// that isn't running.
+    fn shown(self) -> bool {
+        self != Page::Softcore || softcore_page::available()
+    }
+
     fn label(self) -> &'static str {
         match self {
             Page::Wallpaper => "Wallpaper",
@@ -66,6 +75,7 @@ impl Page {
             Page::Displays => "Displays",
             Page::Idle => "Idle & Lock",
             Page::Plugins => "Plugins",
+            Page::Softcore => "Softcore",
             Page::About => "About",
         }
     }
@@ -269,7 +279,7 @@ impl SettingsApp {
         }
         let shot_mode = shot.is_some();
         let page = match std::env::var("RIVET_SHELL_PAGE").as_deref() {
-            Ok(p) => Page::ALL.into_iter().find(|x| x.label().eq_ignore_ascii_case(p)).unwrap_or_default(),
+            Ok(p) => Page::ALL.into_iter().find(|x| x.label().eq_ignore_ascii_case(p) && x.shown()).unwrap_or_default(),
             _ => Page::default(),
         };
         let mut apps = rivet_xdg::launch::all_apps();
@@ -455,7 +465,7 @@ impl eframe::App for SettingsApp {
                     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
                     ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
                 }
-                for p in *pages {
+                for p in pages.iter().filter(|p| p.shown()) {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
                     let sel = *p == self.page;
                     if sel {
@@ -505,6 +515,7 @@ impl eframe::App for SettingsApp {
                         Page::Displays => self.displays_page(ui, accent),
                         Page::Idle => self.idle_page(ui),
                         Page::Plugins => self.plugins_page(ui),
+                        Page::Softcore => self.softcore_page(ui, accent),
                         Page::About => self.about_page(ui),
                     }
                 });

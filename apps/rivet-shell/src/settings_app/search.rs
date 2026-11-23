@@ -58,6 +58,13 @@ pub const INDEX: &[Entry] = &[
     e(Page::Appearance, "Panels and dock", "Panel and dock colors", "background tint primary secondary tertiary highlight colour"),
     // Panels
     e(Page::Panel, "", "Panels", "bar top bottom taskbar status"),
+    // Softcore (only found under Softcore)
+    e(Page::Softcore, "", "Softcore", "compositor window manager tiling scrolling columns settings"),
+    e(Page::Softcore, "", "Key bindings", "softcore keyboard shortcuts hotkeys keys bind spawn mod super"),
+    e(Page::Softcore, "", "Keyboard layout and key repeat", "softcore xkb language variant options repeat delay rate"),
+    e(Page::Softcore, "", "Touchpad: tap to click and natural scrolling", "softcore pointer mouse trackpad cursor size theme"),
+    e(Page::Softcore, "", "Columns and the overview", "softcore column widths scroll vertical horizontal tabs scratchpad"),
+    e(Page::Softcore, "", "Blur and animations", "softcore motion speed see-through transparent shadow"),
     e(Page::Displays, "", "Displays", "screens monitors outputs arrangement position"),
     e(Page::Displays, "", "Resolution and refresh rate", "display monitor mode hz hertz size"),
     e(Page::Displays, "", "Display scale", "monitor scaling hidpi fractional zoom percent"),
@@ -140,6 +147,7 @@ pub fn find(query: &str) -> Vec<&'static Entry> {
     let mut hits: Vec<(i32, usize, &Entry)> = INDEX
         .iter()
         .enumerate()
+        .filter(|(_, en)| en.page.shown())
         .filter_map(|(i, en)| {
             let title = en.title.to_lowercase();
             let rest = format!("{} {} {} {}", en.page.label(), en.section, en.words, en.item.map(crate::panels::label).unwrap_or_default()).to_lowercase();

@@ -33,6 +33,7 @@ mod quick;
 mod radio;
 mod settings_app;
 mod shot;
+mod softcore;
 mod sound_pop;
 mod style;
 mod sys;

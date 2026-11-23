@@ -7,7 +7,7 @@ use super::Page;
 use crate::glyph;
 
 /// The pages under a small heading each; About sits apart at the end.
-pub(super) const GROUPS: &[(&str, &[Page])] = &[("Look", &[Page::Wallpaper, Page::Appearance]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Notifications, Page::Idle, Page::Plugins]), ("", &[Page::About])];
+pub(super) const GROUPS: &[(&str, &[Page])] = &[("Look", &[Page::Wallpaper, Page::Appearance]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
 
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
@@ -22,6 +22,7 @@ pub(super) fn about(page: Page) -> &'static str {
         Page::Displays => "Resolution, scale, rotation and arrangement of each screen",
         Page::Idle => "What happens when the computer is idle, and the lock screen",
         Page::Plugins => "Plugins that add to the shell, and commands that run on events",
+        Page::Softcore => "The compositor's windows, columns, keyboard, pointer and key bindings",
         Page::About => "",
     }
 }
@@ -71,6 +72,12 @@ pub(super) fn icon(p: &egui::Painter, page: Page, c: Pos2, col: Color32) {
             p.rect_filled(Rect::from_min_max(c + Vec2::new(-6.5, -2.5), c + Vec2::new(4.0, 7.0)), 2.0, col);
             p.circle_filled(c + Vec2::new(-1.25, -3.5), 2.75, col);
             p.circle_filled(c + Vec2::new(5.0, 2.25), 2.75, col);
+        }
+        Page::Softcore => {
+            // Columns side by side, the one in the middle focused.
+            p.rect_stroke(Rect::from_min_max(c + Vec2::new(-7.5, -5.5), c + Vec2::new(-4.0, 5.5)), 1.5, s, egui::StrokeKind::Inside);
+            p.rect_filled(Rect::from_min_max(c + Vec2::new(-2.5, -6.5), c + Vec2::new(2.5, 6.5)), 1.5, col);
+            p.rect_stroke(Rect::from_min_max(c + Vec2::new(4.0, -5.5), c + Vec2::new(7.5, 5.5)), 1.5, s, egui::StrokeKind::Inside);
         }
         Page::About => {
             p.circle_stroke(c, 6.75, s);

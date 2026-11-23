@@ -139,6 +139,31 @@ settings take effect; Settings adds it on request and first saves the original a
 `NAME.rivet-backup`. Niri needs version 25.11 or later. "Leave the Screens to …" removes the
 screens from Rivet Shell's file so the compositor's own config sets them again.
 
+### Softcore: its settings in the Settings window
+
+Location: `apps/rivet-shell/src/settings_app/softcore_page.rs`, the Softcore page.
+
+The page is only in the sidebar and in search when Softcore is the compositor; on niri,
+Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide should cover:
+
+- The controls are Softcore's own list of settings, so a newer Softcore's settings appear
+  without a newer Rivet Shell. Their labels and notes are Softcore's words.
+- A change is one line of `~/.config/softcore/settings`, changed by `softcore settings set`.
+  Comments, order and anything typed by hand stay. Editing the file by hand and using the
+  window can be mixed freely: the window reads the file again when it changes, and Softcore
+  takes a change up by itself.
+- Reset takes the line out of the file, which puts the setting back to Softcore's own value.
+  "Follows" means nothing is set and the value follows something else (the edges follow the
+  gaps, colors follow Rivet); Set gives it a value of its own.
+- While Window Look is on (Appearance), gaps, borders, corners, unfocused opacity and shadows
+  are written by it and are left off the Softcore page.
+- Key bindings: the keys as Softcore names them (`Mod+Shift+T`) and an action (`spawn
+  rivet-terminal`, `screenshot`, `title="Launcher" spawn …`). Softcore refuses keys or actions
+  it doesn't know, and the page says why. A binding with no action takes away one of
+  Softcore's own. Softcore's own bindings aren't listed.
+- Window rules, layer rules, named workspaces, scratchpads, environment lines and startup
+  programs are not on the page yet: edit them in the file.
+
 ### Login screen (greetd)
 
 From `greeter.rs` and `rivet-shell greeter --setup`.

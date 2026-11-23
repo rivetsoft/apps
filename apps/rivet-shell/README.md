@@ -41,6 +41,8 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   Rivet app's, which follow matugen live) come from the picture.
 - **Settings** (`rivet-shell settings`): wallpaper, colors, panels, dock, widgets and notifications, like the
   other apps' Preferences. Changes apply to the running shell at once.
+  Under Softcore it has a page for the compositor's own settings and key bindings, which
+  changes Softcore's settings file a line at a time and leaves what you wrote there alone.
 
 ## Running it
 
