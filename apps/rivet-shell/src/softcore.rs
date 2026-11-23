@@ -176,6 +176,9 @@ const SAMPLE_TABLE: &str = r##"{"file":"/home/rivet/.config/softcore/settings","
 {"default":"12","group":"Windows","help":"In pixels.","key":"gaps","kind":{"max":200,"min":0,"type":"int"},"label":"Gaps between windows"},
 {"default":"","group":"Windows","help":"In pixels. Empty: the same as between windows.","key":"gaps_out","kind":{"max":400,"min":0,"optional":true,"type":"int"},"label":"Gaps at the screen's edges"},
 {"default":"","group":"Windows","help":"Empty: Rivet's accent.","key":"border_active","kind":{"optional":true,"type":"color"},"label":"Focused window's border"},
+{"default":"","group":"Windows","help":"A second colour makes the border a gradient from the first to this one. Empty: one colour.","key":"border_active_to","kind":{"optional":true,"type":"color"},"label":"Focused window's border runs to"},
+{"default":"","group":"Windows","help":"Empty: the Rivet theme's outline.","key":"border_inactive","kind":{"optional":true,"type":"color"},"label":"Other windows' border"},
+{"default":"","group":"Windows","help":"Empty: one colour.","key":"border_inactive_to","kind":{"optional":true,"type":"color"},"label":"Other windows' border runs to"},
 {"default":"0.4","group":"Windows","help":"","key":"shadow_opacity","kind":{"max":1.0,"min":0.0,"step":0.05,"type":"float"},"label":"Shadow strength"},
 {"default":"#000000","group":"Windows","help":"","key":"shadow_color","kind":{"type":"color"},"label":"Shadow colour"},
 {"default":"true","group":"Windows","help":"","key":"blur","kind":{"type":"bool"},"label":"Blur behind see-through windows"},
@@ -200,6 +203,9 @@ const SAMPLE_LISTING: &str = "# /home/rivet/.config/softcore/settings
 *gaps=14                                  # Gaps between windows
  gaps_out=                                # Gaps at the screen's edges
  border_active=                           # Focused window's border
+*border_active_to=#e5bd9b                 # Focused window's border runs to
+*border_inactive=#45454a                  # Other windows' border
+ border_inactive_to=                      # Other windows' border runs to
  shadow_opacity=0.4                       # Shadow strength
 *shadow_color=#1a1030                     # Shadow colour
  blur=true                                # Blur behind see-through windows

@@ -182,10 +182,8 @@ pub fn render(format: Format, look: Option<&Look>) -> String {
         }
         Format::Softcore => {
             t.push_str(&format!("\ngaps={}\ngaps_out={}\nborder={}\nradius={}\ninactive_opacity={op}\nshadows={}\n", l.gaps_in, l.gaps_out, l.border, l.radius, l.shadows));
-            // Left out, Softcore's borders follow the Rivet accent by themselves.
-            if let Some((a, i)) = l.colors {
-                t.push_str(&format!("border_active=#{}\nborder_inactive=#{}\n", hex(a), hex(i)));
-            }
+            // No border colours: Softcore's follow the Rivet accent by themselves, and its own
+            // page in Settings sets them (one colour or two, for focused windows and the rest).
         }
         Format::MangoConf | Format::MangoToml => {
             // Sourced files are read by their own extension, so the key=value form serves both.
@@ -394,7 +392,7 @@ mod tests {
         let l = render(Format::HyprLua, Some(&look()));
         assert!(l.starts_with("--") && l.contains("hl.config({") && l.contains("active_border = \"rgb(e66100)\""));
         let sc = render(Format::Softcore, Some(&look()));
-        assert!(sc.starts_with('#') && sc.contains("gaps=8\ngaps_out=12\nborder=2\nradius=10\ninactive_opacity=0.90\nshadows=true") && sc.contains("border_active=#e66100"));
+        assert!(sc.starts_with('#') && sc.contains("gaps=8\ngaps_out=12\nborder=2\nradius=10\ninactive_opacity=0.90\nshadows=true") && !sc.contains("border_active"));
         let m = render(Format::MangoConf, Some(&look()));
         assert!(m.contains("gap_outer_vertical=12") && m.contains("border_px=2") && m.contains("focus_color=0xe66100ff") && m.contains("shadows=1"));
         // Off: a comment only.

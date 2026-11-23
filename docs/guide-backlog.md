@@ -157,8 +157,16 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Reset takes the line out of the file, which puts the setting back to Softcore's own value.
   "Follows" means nothing is set and the value follows something else (the edges follow the
   gaps, colors follow Rivet); Set gives it a value of its own.
-- While Window Look is on (Appearance), gaps, borders, corners, unfocused opacity and shadows
-  are written by it and are left off the Softcore page.
+- While Window Look is on (Appearance), gaps, border width, corners, unfocused opacity and
+  shadows are written by it and are left off the Softcore page.
+- Window borders: the focused window's border and the other windows' border are each one
+  row. One Color is a plain border; Two Colors is a gradient from the first color to the
+  second, along Border gradient angle. Each color is Automatic (first color only: the accent
+  for the focused window, the theme's outline for the others, following the theme as it
+  changes), Accent, Secondary or Tertiary from the theme, or Custom. Softcore's file holds a
+  color and not a name, so a color picked from the theme is the theme's color at that moment
+  and stays when the wallpaper or theme changes; pick it again to take the new one. Under
+  Softcore, Window Look (Appearance) leaves border colors alone and points here.
 - Key bindings: the keys as Softcore names them (`Mod+Shift+T`) and an action (`spawn
   rivet-terminal`, `screenshot`, `title="Launcher" spawn …`). Softcore refuses keys or actions
   it doesn't know, and the page says why. A binding with no action takes away one of

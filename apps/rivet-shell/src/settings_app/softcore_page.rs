@@ -19,7 +19,7 @@ use crate::sys::Compositor;
 
 /// The settings the Appearance page's Window Look writes while it is on. They are left to it
 /// here, so one thing isn't set in two places.
-const WINDOW_LOOK: [&str; 8] = ["gaps", "gaps_out", "border", "radius", "inactive_opacity", "shadows", "border_active", "border_inactive"];
+const WINDOW_LOOK: [&str; 6] = ["gaps", "gaps_out", "border", "radius", "inactive_opacity", "shadows"];
 
 /// What came back from Softcore: everything as it is now, and what went wrong with a change.
 struct Answer {
@@ -44,6 +44,9 @@ struct Page {
     /// The cards that are open. They start closed: the page is long, and the list at its
     /// top says what is on it.
     open: std::collections::HashSet<String>,
+    /// The border colours set to Custom, so the picker shows even while the value is one of
+    /// the theme's.
+    custom: std::collections::HashSet<String>,
     channel: Option<(Sender<Answer>, Receiver<Answer>)>,
 }
 
@@ -219,13 +222,18 @@ fn tidy(v: f64, step: f64) -> String {
 
 /// One setting's control. Returns the change to make, if any: `Some(text)` to set it,
 /// `None` inside to put it back to its default.
-fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now, accent: Color32) -> Option<Option<String>> {
+///
+/// `theme` is the theme's colours by name. A border's colour is picked from them, or is one
+/// of its own under Custom; the other colours have no use for them.
+fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now, accent: Color32, theme: &[(&str, Color32)]) -> Option<Option<String>> {
     let mut change = None;
     let held = ui.input(|i| i.pointer.any_down());
     let shown = page.edits.get(&s.key).cloned().unwrap_or_else(|| now.text.clone());
     ui.horizontal(|ui| {
         // Nothing set, where nothing means "follow": say so, with a way to choose a value.
-        if s.optional && shown.is_empty() && matches!(s.kind, Kind::Int { .. } | Kind::Color) {
+        // A border's first colour has Automatic in its list of colours instead.
+        let listed = s.kind == Kind::Color && s.key.starts_with("border_") && !s.key.ends_with("_to") && !theme.is_empty();
+        if s.optional && shown.is_empty() && !listed && matches!(s.kind, Kind::Int { .. } | Kind::Color) {
             ui.label(egui::RichText::new("Follows").color(ui.visuals().weak_text_color()));
             if controls::button(ui, Icon::Plus, "Set").clicked() {
                 change = Some(Some(match &s.kind {
@@ -256,6 +264,57 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
             }
             Kind::Color => {
                 let mut c = rgb(&shown).unwrap_or([0, 0, 0]);
+                if s.key.starts_with("border_") && !theme.is_empty() {
+                    // Softcore keeps a colour, not a name: the theme's colour it equals is the one chosen.
+                    let hex = |c: Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+                    let auto = listed && shown.is_empty() && !page.custom.contains(&s.key);
+                    let from = theme.iter().position(|(_, c)| hex(*c).eq_ignore_ascii_case(shown.trim())).filter(|_| !page.custom.contains(&s.key));
+                    let dot = |ui: &mut egui::Ui, c: Color32| {
+                        let (r, _) = ui.allocate_exact_size(egui::Vec2::splat(14.0), egui::Sense::hover());
+                        ui.painter().circle_filled(r.center(), 6.0, c);
+                        ui.painter().circle_stroke(r.center(), 6.0, egui::Stroke::new(1.0, ui.visuals().weak_text_color().gamma_multiply(0.5)));
+                    };
+                    if from.is_some() {
+                        dot(ui, Color32::from_rgb(c[0], c[1], c[2]));
+                    }
+                    egui::ComboBox::from_id_salt(("softcore-color", &s.key)).selected_text(if auto { "Automatic" } else { from.map_or("Custom", |i| theme[i].0) }).width(120.0).show_ui(ui, |ui| {
+                        if listed && ui.selectable_label(auto, "Automatic").clicked() {
+                            page.custom.remove(&s.key);
+                            if !shown.is_empty() {
+                                change = Some(None);
+                            }
+                        }
+                        for (i, (name, color)) in theme.iter().enumerate() {
+                            ui.horizontal(|ui| {
+                                dot(ui, *color);
+                                if ui.selectable_label(from == Some(i), *name).clicked() {
+                                    page.custom.remove(&s.key);
+                                    if from != Some(i) {
+                                        change = Some(Some(hex(*color)));
+                                    }
+                                }
+                            });
+                        }
+                        if ui.selectable_label(from.is_none() && !auto, "Custom").clicked() {
+                            page.custom.insert(s.key.clone());
+                            // Softcore has no colour of its own to start from: the accent, then.
+                            if shown.is_empty() {
+                                change = Some(Some(hex(accent)));
+                            }
+                        }
+                    });
+                    if auto {
+                        return;
+                    }
+                    if from.is_some() {
+                        return;
+                    }
+                    // Custom: the picker alone. Automatic and One Color are the ways back, so no Reset.
+                    if ui.color_edit_button_srgb(&mut c).changed() {
+                        page.edits.insert(s.key.clone(), format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]));
+                    }
+                    return;
+                }
                 if ui.color_edit_button_srgb(&mut c).changed() {
                     page.edits.insert(s.key.clone(), format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2]));
                 }
@@ -326,6 +385,14 @@ impl SettingsApp {
         // Window Look, when on, writes these itself.
         let theirs = |key: &str| self.s.comp_on && WINDOW_LOOK.contains(&key);
         let danger = rivet_look::theme::status(&ctx).danger;
+        let roles = crate::style::Roles::new(&self.look, &self.s);
+        // Without a second and third colour in the theme they are the accent again: once is enough.
+        let mut theme: Vec<(&str, Color32)> = Vec::new();
+        for (name, color) in [("Accent", roles.primary), ("Secondary", roles.secondary), ("Tertiary", roles.tertiary)] {
+            if theme.iter().all(|(_, c)| *c != color) {
+                theme.push((name, color));
+            }
+        }
         let mut changes: Vec<(String, Option<String>)> = Vec::new();
 
         // What is on the page: each name opens its card and goes to it.
@@ -353,7 +420,10 @@ impl SettingsApp {
         let mut toggled: Vec<String> = Vec::new();
 
         for group in state.groups() {
-            let list: Vec<&Setting> = state.settings.iter().filter(|s| s.group == group && !theirs(&s.key)).collect();
+            // A border's colour and the one it runs to are one row: one colour or two.
+            let runs_to = |key: &str| state.settings.iter().find(|x| key.starts_with("border_") && x.kind == Kind::Color && x.key == format!("{key}_to"));
+            let second = |key: &str| key.strip_suffix("_to").is_some_and(|first| runs_to(first).is_some());
+            let list: Vec<&Setting> = state.settings.iter().filter(|s| s.group == group && !second(&s.key) && !theirs(&s.key)).collect();
             let hidden = state.settings.iter().any(|s| s.group == group && theirs(&s.key));
             if list.is_empty() && !hidden {
                 continue;
@@ -363,7 +433,7 @@ impl SettingsApp {
             let holds = if changed == 0 { count(list.len(), "setting", "settings") } else { format!("{} · {changed} changed", count(list.len(), "setting", "settings")) };
             let clicked = fold(ui, &group, &holds, open, &mut |ui| {
                 if hidden {
-                    hint(ui, "Gaps, borders, corners and shadows are set under Window Look on the Appearance page.");
+                    hint(ui, "Gaps, border width, corners and shadows are set under Window Look on the Appearance page.");
                     if !list.is_empty() {
                         ui.add_space(8.0);
                     }
@@ -381,7 +451,44 @@ impl SettingsApp {
                         });
                         ui.vertical(|ui| {
                             ui.set_max_width(room.min(420.0));
-                            if let Some(c) = control(ui, s, page, &now, accent) {
+                            if let Some(to) = runs_to(&s.key) {
+                                let to_now = state.values.get(&to.key).cloned().unwrap_or_default();
+                                let was = !to_now.text.is_empty();
+                                let mut two = was;
+                                super::panel_editor::segmented(ui, &mut two, &[(false, "One Color"), (true, "Two Colors")]);
+                                if two != was {
+                                    // The second colour starts as one of the theme's that the first isn't.
+                                    let hex = |c: Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+                                    let start = theme.iter().map(|(_, c)| hex(*c)).find(|h| !h.eq_ignore_ascii_case(now.text.trim())).unwrap_or_else(|| hex(accent));
+                                    changes.push((to.key.clone(), two.then_some(start)));
+                                }
+                                // The first colour, then the one it runs to: side by side where there
+                                // is room for two, one under the other in a narrow window.
+                                let mut both = |ui: &mut egui::Ui| {
+                                    ui.spacing_mut().item_spacing.x = 12.0;
+                                    if let Some(c) = control(ui, s, page, &now, accent, &theme) {
+                                        changes.push((s.key.clone(), c));
+                                    }
+                                    if was && let Some(c) = control(ui, to, page, &to_now, accent, &theme) {
+                                        changes.push((to.key.clone(), c));
+                                    }
+                                };
+                                if room >= 400.0 {
+                                    ui.horizontal(both);
+                                } else {
+                                    both(ui);
+                                }
+                                match page.refused.get(&s.key).or(page.refused.get(&to.key)) {
+                                    Some(why) => {
+                                        ui.add(egui::Label::new(egui::RichText::new(format!("Softcore didn't take that: {why}.")).size(12.0).color(danger)).wrap());
+                                    }
+                                    // Said once, under the first of the two borders.
+                                    None if s.key == "border_active" => hint(ui, "Automatic follows the theme. Accent, Secondary and Tertiary stay as they are now."),
+                                    None => {}
+                                }
+                                return;
+                            }
+                            if let Some(c) = control(ui, s, page, &now, accent, &theme) {
                                 changes.push((s.key.clone(), c));
                             }
                             match page.refused.get(&s.key) {

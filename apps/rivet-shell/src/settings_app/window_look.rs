@@ -86,8 +86,13 @@ impl SettingsApp {
                         s.comp_inactive_opacity = pct as f32 / 100.0;
                     }
                     ui.end_row();
+                    // Softcore's borders follow the accent by themselves, and its own page sets them.
                     ui.label("");
-                    super::controls::switch(ui, &mut s.comp_accent_borders, "Focused window's border in the accent color");
+                    if comp == Compositor::Softcore {
+                        hint(ui, "Border colors are on the Softcore page.");
+                    } else {
+                        super::controls::switch(ui, &mut s.comp_accent_borders, "Focused window's border in the accent color");
+                    }
                     ui.end_row();
                     ui.label("");
                     super::controls::switch(ui, &mut s.comp_shadows, "Shadows under windows");
