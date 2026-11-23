@@ -40,7 +40,9 @@ pub fn outgoing(body: &str) -> Vec<Link> {
                 i += 1;
                 continue;
             }
-            if line[i..].starts_with("[[")
+            // `i` walks bytes and can stand inside a letter of more than one byte, so the mark
+            // is looked for in the bytes; the text is only cut just after one.
+            if b[i..].starts_with(b"[[")
                 && let Some(off) = line[i + 2..].find("]]")
             {
                 let inner = &line[i + 2..i + 2 + off];
@@ -156,6 +158,16 @@ mod tests {
         assert!(l.context.starts_with("See [[Rivet FTP]]"));
         assert_eq!(link_at(t, 8).map(|l| l.target), Some("Rivet FTP".into()));
         assert_eq!(link_at(t, 1), None);
+    }
+
+    #[test]
+    fn letters_of_more_than_one_byte() {
+        let t = "Wait… see [[Nöte|é]] and [ñ…](Pläne/Übung.md) — `[[…]]` 🙂\n";
+        let l = outgoing(t);
+        assert_eq!(l.iter().map(|l| l.target.as_str()).collect::<Vec<_>>(), ["Nöte", "Pläne/Übung"]);
+        assert_eq!(&t[l[0].range.clone()], "[[Nöte|é]]");
+        // Asked about a byte inside a letter, as a caret position can be.
+        assert!((0..t.len()).all(|b| link_at(t, b).is_none_or(|l| l.range.contains(&b))));
     }
 
     #[test]
