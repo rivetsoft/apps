@@ -13,7 +13,7 @@ use std::time::SystemTime;
 use eframe::egui::{self, Color32};
 
 use super::controls::{self, Icon};
-use super::{SettingsApp, hint, section};
+use super::{SettingsApp, hint, on_card, search, section};
 use crate::softcore::{self, Kind, Setting, State};
 use crate::sys::Compositor;
 
@@ -41,6 +41,9 @@ struct Page {
     checked: f64,
     new_keys: String,
     new_action: String,
+    /// The cards that are open. They start closed: the page is long, and the list at its
+    /// top says what is on it.
+    open: std::collections::HashSet<String>,
     channel: Option<(Sender<Answer>, Receiver<Answer>)>,
 }
 
@@ -53,7 +56,8 @@ fn checking() -> bool {
 /// Whether the page is shown: Softcore is the compositor. Nothing of Softcore's is looked for
 /// or run anywhere else.
 pub(super) fn available() -> bool {
-    // Checks: RIVET_SHELL_SOFTCORE=1 shows the page with sample settings, on any compositor.
+    // Checks: RIVET_SHELL_SOFTCORE=1 shows the page with sample settings, on any compositor
+    // (a card's name instead of 1 also opens that card).
     if checking() {
         return std::env::var_os("RIVET_SHELL_SOFTCORE").is_some();
     }
@@ -114,6 +118,8 @@ impl Page {
         if self.state.is_none() && !self.waiting {
             if checking() {
                 self.state = Some(Ok(softcore::sample()));
+                // Checks: RIVET_SHELL_SOFTCORE=Keyboard (or another card's name) shows it open.
+                self.open.extend(std::env::var("RIVET_SHELL_SOFTCORE").ok().filter(|v| v != "1"));
             } else {
                 self.ask(ctx, None);
             }
@@ -150,6 +156,46 @@ fn apply_locally(state: &mut State, key: &str, value: Option<&str>) {
         Some(v) => (v.to_string(), true),
         None => (default, false),
     };
+}
+
+/// A card that folds away: its title with what it holds beside it, and the card under it only
+/// while it is open. Returns true when the title was clicked.
+fn fold(ui: &mut egui::Ui, title: &str, holds: &str, open: bool, body: &mut dyn FnMut(&mut egui::Ui)) -> bool {
+    let v = ui.visuals().clone();
+    let fill = v.faint_bg_color;
+    let (r, resp) = ui.allocate_exact_size(egui::Vec2::new(ui.available_width(), 38.0), egui::Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let p = ui.painter();
+    // Closed, the title is the whole card; open, it sits over the card like the other pages'.
+    if !open || resp.hovered() {
+        p.rect_filled(r, rivet_look::theme::r_md(), if resp.hovered() { rivet_look::palette::mix(fill, v.text_color(), 0.05) } else { fill });
+    }
+    let c = egui::Pos2::new(r.left() + 16.0, r.center().y);
+    let s = egui::Stroke::new(1.6, v.weak_text_color());
+    let arrow = if open { [c + egui::Vec2::new(-4.0, -2.0), c + egui::Vec2::new(0.0, 2.5), c + egui::Vec2::new(4.0, -2.0)] } else { [c + egui::Vec2::new(-2.0, -4.0), c + egui::Vec2::new(2.5, 0.0), c + egui::Vec2::new(-2.0, 4.0)] };
+    p.add(egui::Shape::line(arrow.to_vec(), s));
+    let g = p.layout_no_wrap(title.to_string(), egui::FontId::proportional(15.0), v.strong_text_color());
+    let after = r.left() + 32.0 + g.size().x + 12.0;
+    p.galley(egui::Pos2::new(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, v.strong_text_color());
+    p.text(egui::Pos2::new(after, r.center().y), egui::Align2::LEFT_CENTER, holds, egui::FontId::proportional(12.0), v.weak_text_color());
+    let mut whole = r;
+    if open {
+        ui.add_space(2.0);
+        let fr = egui::Frame::NONE.fill(fill).corner_radius(rivet_look::theme::r_md()).inner_margin(egui::Margin::symmetric(20, 18)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            on_card(ui.visuals_mut(), fill);
+            body(ui);
+        });
+        whole = whole.union(fr.response.rect);
+        ui.add_space(14.0);
+    }
+    search::mark(ui, title, whole);
+    ui.add_space(6.0);
+    resp.clicked()
+}
+
+fn count(n: usize, one: &str, many: &str) -> String {
+    if n == 1 { format!("1 {one}") } else { format!("{n} {many}") }
 }
 
 fn rgb(text: &str) -> Option<[u8; 3]> {
@@ -282,13 +328,40 @@ impl SettingsApp {
         let danger = rivet_look::theme::status(&ctx).danger;
         let mut changes: Vec<(String, Option<String>)> = Vec::new();
 
+        // What is on the page: each name opens its card and goes to it.
+        let mut names = state.groups();
+        names.retain(|g| state.settings.iter().any(|s| s.group == *g));
+        names.push("Key Bindings".to_string());
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::Vec2::new(6.0, 6.0);
+            for name in &names {
+                if ui.add(egui::Button::new(egui::RichText::new(name).size(12.5)).corner_radius(rivet_look::theme::r_sm())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    page.open.insert(name.clone());
+                    search::reveal(&ctx, name);
+                }
+            }
+            let all = names.iter().all(|n| page.open.contains(n));
+            if ui.add(egui::Button::new(egui::RichText::new(if all { "Close All" } else { "Open All" }).size(12.5).color(ui.visuals().weak_text_color())).frame(false)).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                if all {
+                    page.open.clear();
+                } else {
+                    page.open.extend(names.iter().cloned());
+                }
+            }
+        });
+        ui.add_space(14.0);
+        let mut toggled: Vec<String> = Vec::new();
+
         for group in state.groups() {
             let list: Vec<&Setting> = state.settings.iter().filter(|s| s.group == group && !theirs(&s.key)).collect();
             let hidden = state.settings.iter().any(|s| s.group == group && theirs(&s.key));
             if list.is_empty() && !hidden {
                 continue;
             }
-            section(ui, &group, &mut |ui| {
+            let open = page.open.contains(&group);
+            let changed = list.iter().filter(|s| state.values.get(&s.key).is_some_and(|n| n.in_file)).count();
+            let holds = if changed == 0 { count(list.len(), "setting", "settings") } else { format!("{} · {changed} changed", count(list.len(), "setting", "settings")) };
+            let clicked = fold(ui, &group, &holds, open, &mut |ui| {
                 if hidden {
                     hint(ui, "Gaps, borders, corners and shadows are set under Window Look on the Appearance page.");
                     if !list.is_empty() {
@@ -324,9 +397,13 @@ impl SettingsApp {
                     }
                 });
             });
+            if clicked {
+                toggled.push(group.clone());
+            }
         }
 
-        section(ui, "Key Bindings", &mut |ui| {
+        let open = page.open.contains("Key Bindings");
+        let clicked = fold(ui, "Key Bindings", &count(state.binds.len(), "of your own", "of your own"), open, &mut |ui| {
             hint(ui, "Softcore's own bindings stay as well, unless they are turned off under Keyboard. A binding with no action takes one of them away.");
             ui.add_space(6.0);
             for b in &state.binds {
@@ -375,6 +452,15 @@ impl SettingsApp {
                 _ => {}
             }
         });
+        if clicked {
+            toggled.push("Key Bindings".to_string());
+        }
+        for name in toggled {
+            if !page.open.remove(&name) {
+                page.open.insert(name);
+            }
+        }
+        ui.add_space(8.0);
         hint(ui, "Window rules, named workspaces and startup programs are in Softcore's settings file.");
 
         for change in changes {

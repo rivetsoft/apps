@@ -146,6 +146,8 @@ Location: `apps/rivet-shell/src/settings_app/softcore_page.rs`, the Softcore pag
 The page is only in the sidebar and in search when Softcore is the compositor; on niri,
 Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide should cover:
 
+- The cards start closed, each saying how many settings it holds and how many you have
+  changed. The names along the top open a card and go to it; Open All opens every one.
 - The controls are Softcore's own list of settings, so a newer Softcore's settings appear
   without a newer Rivet Shell. Their labels and notes are Softcore's words.
 - A change is one line of `~/.config/softcore/settings`, changed by `softcore settings set`.
