@@ -65,6 +65,36 @@ pub struct State {
     pub binds: Vec<Bind>,
 }
 
+/// What a setting is about, from its key: `shadow_size` and `shadows` are both `shadow`.
+fn about(key: &str) -> &str {
+    let word = key.split('_').next().unwrap_or(key);
+    word.strip_suffix('s').unwrap_or(word)
+}
+
+/// A card's settings in the parts they are drawn in: the ones about one thing together (the
+/// borders, the shadows, the blur), in the order Softcore first names each, and the ones
+/// that stand alone as one part. That part comes first when the card starts with one of
+/// them, and last otherwise. Softcore's order is kept inside each part.
+pub fn parts<'a>(list: &[&'a Setting]) -> Vec<Vec<&'a Setting>> {
+    let family = |s: &Setting| list.iter().filter(|x| about(&x.key) == about(&s.key)).count() > 1;
+    let mut out: Vec<Vec<&Setting>> = Vec::new();
+    let mut alone: Vec<&Setting> = Vec::new();
+    for s in list {
+        if !family(s) {
+            alone.push(s);
+        } else if let Some(part) = out.iter_mut().find(|p| about(&p[0].key) == about(&s.key)) {
+            part.push(s);
+        } else {
+            out.push(vec![s]);
+        }
+    }
+    if !alone.is_empty() {
+        let first = list.first().is_some_and(|s| !family(s));
+        out.insert(if first { 0 } else { out.len() }, alone);
+    }
+    out
+}
+
 impl State {
     /// The groups in the order Softcore lists them.
     pub fn groups(&self) -> Vec<String> {
@@ -241,6 +271,22 @@ const SAMPLE_LISTING: &str = "# /home/rivet/.config/softcore/settings
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cards_settings_fall_into_parts() {
+        let set = |key: &str| Setting { key: key.into(), group: String::new(), label: String::new(), help: String::new(), default: String::new(), kind: Kind::Text, optional: false };
+        let keys = |list: &[&str]| {
+            let all: Vec<Setting> = list.iter().map(|k| set(k)).collect();
+            parts(&all.iter().collect::<Vec<_>>()).iter().map(|p| p.iter().map(|s| s.key.clone()).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>()
+        };
+        assert_eq!(
+            keys(&["gaps", "gaps_out", "border", "radius", "border_active", "shadows", "shadow_size", "xwayland", "blur", "blur_strength"]),
+            ["gaps gaps_out", "border border_active", "shadows shadow_size", "blur blur_strength", "radius xwayland"]
+        );
+        // Starting with ones that stand alone: they stay first.
+        assert_eq!(keys(&["theme", "accent", "screenshot_dir", "background", "screenshot_edit"]), ["theme accent background", "screenshot_dir screenshot_edit"]);
+        assert_eq!(keys(&["scroll", "tab_bar"]), ["scroll tab_bar"]);
+    }
 
     #[test]
     fn reads_softcores_table_and_listing() {

@@ -488,7 +488,16 @@ impl SettingsApp {
                 let labels = (ui.available_width() * 0.36).clamp(150.0, 230.0);
                 let room = (ui.available_width() - labels - 24.0).max(170.0);
                 egui::Grid::new(format!("softcore-{group}")).num_columns(2).spacing([24.0, 14.0]).min_col_width(labels).max_col_width(room).show(ui, |ui| {
-                    for s in &list {
+                    let mut part = 0;
+                    for (at, s) in softcore::parts(&list).into_iter().enumerate().flat_map(|(at, p)| p.into_iter().map(move |s| (at, s))) {
+                        // Between two parts (borders, shadows, blur…), room and a faint line.
+                        if at != part {
+                            part = at;
+                            let (r, _) = ui.allocate_exact_size(egui::Vec2::new(labels, 9.0), egui::Sense::hover());
+                            let line = ui.visuals().widgets.noninteractive.bg_stroke.color.gamma_multiply(0.6);
+                            ui.painter().hline(r.left()..=r.left() + labels + 24.0 + room, r.center().y, egui::Stroke::new(1.0, line));
+                            ui.end_row();
+                        }
                         let now = state.values.get(&s.key).cloned().unwrap_or_default();
                         ui.scope(|ui| {
                             ui.set_max_width(labels);
