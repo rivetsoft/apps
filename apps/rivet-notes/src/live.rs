@@ -333,14 +333,16 @@ fn inline(text: &str, st: &mut [St], r: Range<usize>, editing: bool) {
         }
         p += 1;
     }
-    // [[wiki links]] and [label](url) (and ![images]).
+    // [[wiki links]] and [label](url) (and ![images]). `p` walks bytes, so it can stand inside
+    // a letter of more than one byte: marks are looked for in the bytes, and the text is only
+    // cut just after a mark, which is always between letters.
     let mut p = r.start;
     while p < r.end {
         if used[idx(p)] {
             p += 1;
             continue;
         }
-        if text[p..r.end].starts_with("[[")
+        if b[p..r.end].starts_with(b"[[")
             && let Some(off) = text[p + 2..r.end].find("]]")
             && off > 0
         {
@@ -371,7 +373,7 @@ fn inline(text: &str, st: &mut [St], r: Range<usize>, editing: bool) {
             continue;
         }
         // Bare web addresses.
-        if (text[p..r.end].starts_with("https://") || text[p..r.end].starts_with("http://")) && (p == r.start || !b[p - 1].is_ascii_alphanumeric()) {
+        if (b[p..r.end].starts_with(b"https://") || b[p..r.end].starts_with(b"http://")) && (p == r.start || !b[p - 1].is_ascii_alphanumeric()) {
             let end = text[p..r.end].find(char::is_whitespace).map(|o| p + o).unwrap_or(r.end);
             for k in p..end {
                 st[k].link = true;
@@ -388,7 +390,7 @@ fn inline(text: &str, st: &mut [St], r: Range<usize>, editing: bool) {
         let mut p = r.start;
         while p + n <= r.end {
             let free = |a: usize, used: &Vec<bool>| (a..a + n).all(|k| !used[idx(k)]);
-            if &text[p..p + n] == m && free(p, used) && p + n < r.end && !b[p + n].is_ascii_whitespace() {
+            if b[p..p + n] == *m.as_bytes() && free(p, used) && p + n < r.end && !b[p + n].is_ascii_whitespace() {
                 // `_` only at word edges (snake_case stays as it is).
                 if m.starts_with('_') && p > r.start && b[p - 1].is_ascii_alphanumeric() {
                     p += 1;
@@ -397,7 +399,7 @@ fn inline(text: &str, st: &mut [St], r: Range<usize>, editing: bool) {
                 let mut q = p + n + 1;
                 let mut found = None;
                 while q + n <= r.end {
-                    if &text[q..q + n] == m && free(q, used) && !b[q - 1].is_ascii_whitespace() && (n > 1 || q + 1 >= r.end || b[q + 1] != m.as_bytes()[0]) {
+                    if b[q..q + n] == *m.as_bytes() && free(q, used) && !b[q - 1].is_ascii_whitespace() && (n > 1 || q + 1 >= r.end || b[q + 1] != m.as_bytes()[0]) {
                         if m.starts_with('_') && q + n < r.end && b[q + n].is_ascii_alphanumeric() {
                             q += 1;
                             continue;
@@ -489,6 +491,13 @@ mod tests {
         assert!(l.st[t.find("bold").unwrap()].bold);
         assert!(l.st[t.find("it*").unwrap()].italic);
         assert!(l.st[t.find("code`").unwrap()].code);
+    }
+
+    #[test]
+    fn letters_of_more_than_one_byte() {
+        let t = "Wait… then **bóld**, ~~é~~, _ñ_ and [[Nöte]] at https://x.org/é…\n";
+        assert_eq!(shown(t, None), "Wait… then bóld, é, ñ and Nöte at https://x.org/é…\n");
+        assert_eq!(shown(t, Some((0, 0))), t);
     }
 
     #[test]

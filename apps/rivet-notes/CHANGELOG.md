@@ -4,6 +4,8 @@
 
 - **Return in a question presses the highlighted button**: Move to Trash and Keep Mine answer
   to Return. Tab moves between the buttons, and Return on Cancel cancels.
+- Rivet Notes no longer closes with a crash report when a note has an ellipsis (…), an
+  accented letter, an emoji or any other letter outside plain English.
 
 ## 0.4.0
 
