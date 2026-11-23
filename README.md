@@ -12,6 +12,8 @@
   <img src="apps/rivet-terminal/data/rivet-terminal.svg" width="88" alt="Rivet Terminal icon">
   &nbsp;
   <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="88" alt="Rivet Welcome icon">
+  &nbsp;
+  <img src="apps/rivet-snip/data/rivet-snip.svg" width="88" alt="Rivet Snip icon">
 </p>
 
 # Rivetsoft Apps
@@ -112,6 +114,16 @@ Ctrl+letters reach your programs.
 
 ![Rivet Terminal with three panes](docs/screenshots/rivet-terminal-wide.png)
 
+### <img src="apps/rivet-snip/data/rivet-snip.svg" width="32" alt=""> Rivet Snip
+
+Clips and marks up screenshots: crop, arrows, boxes, text, numbered steps, a highlighter and
+blur, then copy or save. A compositor that takes its own screenshots hands it the picture;
+anywhere else `rivet-snip capture` takes one first.
+**Just started:** not released yet; build it from source.
+[More about Rivet Snip](apps/rivet-snip/README.md)
+
+![Rivet Snip with a marked-up screenshot](docs/screenshots/rivet-snip-wide.png)
+
 > **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
@@ -136,7 +148,7 @@ app's README has the steps.
 
 [Rivet Welcome](apps/rivet-welcome/README.md) can install and update all of them for you. The
 apps that aren't released yet are built from source: you need Rust 1.88 or newer, then
-`cargo build --release -p rivet-shell` (or `rivet-edit`, `rivet-terminal`, `rivet-welcome`).
+`cargo build --release -p rivet-shell` (or `rivet-edit`, `rivet-terminal`, `rivet-welcome`, `rivet-snip`).
 
 ## Learn more
 

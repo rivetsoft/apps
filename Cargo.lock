@@ -2506,6 +2506,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivet-snip"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+ "libc",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-xdg",
+]
+
+[[package]]
 name = "rivet-term"
 version = "0.1.0"
 dependencies = [

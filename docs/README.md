@@ -38,7 +38,8 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 - [Rivet Edit](rivet-edit.md): workspaces, tree-sitter highlighting, Go to File and Commands
 - [README](../apps/rivet-edit/README.md): keys, build and run
 
-## Rivet Terminal and Rivet Welcome (just started)
+## Rivet Terminal, Rivet Welcome and Rivet Snip (just started)
 
 - [Rivet Terminal](../apps/rivet-terminal/README.md): keys, build and run
 - [Rivet Welcome](../apps/rivet-welcome/README.md): installing and updating the apps
+- [Rivet Snip](../apps/rivet-snip/README.md): clipping and marking up screenshots, and handing it a picture from a compositor

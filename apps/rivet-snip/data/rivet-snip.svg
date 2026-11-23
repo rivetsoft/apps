@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="front" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eb65a6"/>
+      <stop offset="1" stop-color="#d53f8c"/>
+    </linearGradient>
+    <linearGradient id="back" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a33a6e"/>
+      <stop offset="1" stop-color="#6e2448"/>
+    </linearGradient>
+  </defs>
+  <!-- the screen the picture is of -->
+  <rect x="10" y="16" width="108" height="96" rx="16" fill="url(#back)"/>
+  <!-- the part clipped out of it -->
+  <rect x="26" y="32" width="76" height="64" rx="8" fill="url(#front)"/>
+  <!-- crop marks at its corners -->
+  <path d="M20 44V26h18M90 26h18v18M108 84v18H90M38 102H20V84" fill="none" stroke="#ffffff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- an arrow drawn on it -->
+  <path d="M46 78 78 50M60 48h20v20" fill="none" stroke="#ffe066" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

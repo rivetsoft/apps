@@ -15,9 +15,10 @@ Rivet developer utilities
 
 Usage: utilities/rivet-dev <command> [APP] [options]
 
-APP is files (the default), ftp, notes, edit, terminal or welcome, for the commands marked [APP].
+APP is files (the default), ftp, notes, edit, terminal, welcome or snip, for the commands marked [APP].
 Each app has its own version, changelog and release tags: vX.Y.Z (Rivet Files), rivet-ftp-vX.Y.Z,
-rivet-notes-vX.Y.Z, rivet-edit-vX.Y.Z, rivet-terminal-vX.Y.Z, rivet-welcome-vX.Y.Z.
+rivet-notes-vX.Y.Z, rivet-edit-vX.Y.Z, rivet-terminal-vX.Y.Z, rivet-welcome-vX.Y.Z,
+rivet-snip-vX.Y.Z.
 
 Releasing
   apps                             Each app's version, last release tag and unreleased changes

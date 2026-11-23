@@ -1,0 +1,27 @@
+# Filled in by Rivet Snip's "Report on GitHub" button after a crash (rivet_xdg::crash).
+name: Rivet Snip crash
+description: Rivet Snip closed unexpectedly or ran into a problem.
+title: "Crash in Rivet Snip"
+labels: ["bug", "app: snip"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for sending this. Check the report below before you submit it, and remove anything you'd rather not share.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you doing when it happened?
+      description: Optional, but it often makes the difference.
+  - type: textarea
+    id: report
+    attributes:
+      label: Crash report
+      render: text
+    validations:
+      required: true

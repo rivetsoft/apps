@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Snip
+GenericName=Screenshot Editor
+Comment=Clip and mark up screenshots
+Exec=rivet-snip %f
+Icon=rivet-snip
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=rivet;screenshot;snip;clip;crop;annotate;arrow;blur;capture;
+MimeType=image/png;image/jpeg;image/webp;
+StartupWMClass=rivet-snip
+Actions=capture;
+
+[Desktop Action capture]
+Name=Take a Screenshot
+Exec=rivet-snip capture --delay 1

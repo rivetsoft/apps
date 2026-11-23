@@ -6,6 +6,7 @@
 #   apps/rivet-terminal  Rivet Terminal (tabs and split panes; the terminal is crates/rivet-term)
 #   apps/rivet-shell   Rivet Shell (panel, dock, widgets, wallpaper for Wayland)
 #   apps/rivet-welcome Rivet Welcome (installs and updates the apps; a tray icon)
+#   apps/rivet-snip    Rivet Snip (clips and marks up screenshots)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.

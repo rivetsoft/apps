@@ -19,6 +19,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-notes` | `rivet-notes` | Markdown notes in plain folders (vaults), with frontmatter, tags and tasks. |
 | `apps/rivet-ftp` | `rivet-ftp` | A two-pane file-transfer client. SFTP works; FTP and FTPS are not built yet. |
 | `apps/rivet-welcome` | `rivet-welcome` | Installs and updates the apps; a tray icon. |
+| `apps/rivet-snip` | `rivet-snip` | Clips and marks up screenshots. A compositor hands it the picture as a file or on standard input; `rivet-snip capture` takes one itself anywhere else. Unreleased; built from source. |
 
 | Crate | What it holds |
 | --- | --- |

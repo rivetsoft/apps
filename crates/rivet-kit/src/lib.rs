@@ -99,3 +99,12 @@ pub fn save_png(path: &std::path::Path, img: &egui::ColorImage) -> Result<(), St
     let buf: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
     image::save_buffer(path, &buf, w as u32, h as u32, image::ExtendedColorType::Rgba8).map_err(|e| e.to_string())
 }
+
+/// A picture held in memory as the bytes of a PNG file (for the clipboard, or to write out).
+pub fn png_bytes(img: &egui::ColorImage) -> Result<Vec<u8>, String> {
+    let [w, h] = img.size;
+    let buf: Vec<u8> = img.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+    let mut out = std::io::Cursor::new(Vec::new());
+    image::write_buffer_with_format(&mut out, &buf, w as u32, h as u32, image::ExtendedColorType::Rgba8, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+    Ok(out.into_inner())
+}

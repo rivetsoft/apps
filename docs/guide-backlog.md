@@ -161,3 +161,41 @@ Rivet Shell's lock screen checks the password through PAM, using the "rivet-shel
 `/etc/pam.d/rivet-shell` exists and the "login" service otherwise. With another
 locker, the command must keep running until the screen unlocks, so the shell knows the screen is
 locked. That is why swaylock's `-f` (which makes it return at once) has to be left out.
+
+## Rivet Snip
+
+### Getting a picture into it, and binding it to a key
+
+Location: `apps/rivet-snip/src/gui.rs`, the empty window ("No picture yet") and More › Take a
+Screenshot.
+
+The window says only that a screenshot can be taken, a picture opened or one pasted. The guide
+should cover:
+
+- How a compositor hands over its own screenshot: `rivet-snip FILE --replace` on the file it
+  saved, or the PNG piped to `rivet-snip -`. With Softcore this is what its screenshot keys
+  will do once it is told to; until then, run it on the saved file.
+- On other compositors, binding a key to `rivet-snip capture` (and `--delay SECONDS`). It
+  uses `grim` where programs may read the screen, else the desktop asks whether to allow it.
+- Take a Screenshot closes the window first so it isn't in the picture, then opens a new one
+  with what was taken. It is unavailable while there are marks that were never copied or saved.
+
+### Where Save writes
+
+Location: `apps/rivet-snip/src/gui.rs`, the Save button ("Saved as …" at the bottom).
+
+The three cases: over the file when opened with `--replace`; `NAME marked.png` beside a file
+opened without it, so the original is kept; `Screenshot from DATE TIME.png` in
+Pictures/Screenshots (or `save_dir`) when the picture didn't come from a file. A second Save
+writes to the same file again.
+
+### Blur
+
+Location: `apps/rivet-snip/src/gui.rs`, the Blur tool's tooltip ("Drag over what shouldn't be
+read.").
+
+Blur replaces the area with squares that each hold the average color of what they covered, in
+the saved picture itself. Nothing of the original is left under it in the file. The squares are
+at least 8 pixels across; very large text may still be guessed at from its shape, so cover
+generously.
+
