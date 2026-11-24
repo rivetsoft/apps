@@ -19,6 +19,8 @@ pub enum Pick {
     Picture,
     /// A picture or a drawing (SVG) for an icon.
     Icon,
+    /// An archive: a zip, a tar of any kind, a 7z and the like.
+    Archive,
 }
 
 /// Asks the picker; `Ok(None)` when it was cancelled.
@@ -36,6 +38,10 @@ pub fn choose(kind: Pick, title: &str, start: Option<&Path>) -> Result<Option<Pa
     opts.insert("modal", Value::from(true));
     if kind == Pick::Folder {
         opts.insert("directory", Value::from(true));
+    } else if kind == Pick::Archive {
+        const ENDS: [&str; 22] = ["zip", "jar", "7z", "rar", "tar", "tar.gz", "tgz", "tar.xz", "txz", "tar.bz2", "tbz2", "tar.zst", "tzst", "gz", "xz", "bz2", "zst", "iso", "cab", "deb", "rpm", "lz"];
+        let pats: Vec<(u32, String)> = ENDS.iter().flat_map(|e| [(0u32, format!("*.{e}")), (0u32, format!("*.{}", e.to_uppercase()))]).collect();
+        opts.insert("filters", Value::from(vec![Value::from(("Archives".to_string(), pats)), Value::from(("All files".to_string(), vec![(0u32, "*".to_string())]))]));
     } else {
         let mut pats: Vec<(u32, String)> = ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.JPG", "*.JPEG", "*.PNG", "*.WEBP"].iter().map(|g| (0u32, g.to_string())).collect();
         pats.extend(["image/jpeg", "image/png", "image/webp"].iter().map(|m| (1u32, m.to_string())));

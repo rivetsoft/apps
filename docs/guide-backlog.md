@@ -327,6 +327,40 @@ Rivet Shell's lock screen checks the password through PAM, using the "rivet-shel
 locker, the command must keep running until the screen unlocks, so the shell knows the screen is
 locked. That is why swaylock's `-f` (which makes it return at once) has to be left out.
 
+## Rivet Vice
+
+### Opening, extracting and making archives
+
+Location: `apps/rivet-vice/src/gui.rs`; the work is `crates/rivet-archive`.
+
+- What it opens depends on the archive tools installed: tar reads every tar; 7-Zip reads
+  zip, 7z, rar, iso, cab, deb and rpm; without 7-Zip, unzip reads zip and bsdtar the rest.
+  With none that fits, opening says so and names 7-Zip as the one to install.
+- The list shows the archive as folders. An archive whose top is one folder opens inside
+  it. A folder's Size column counts the files under it. Changed is the time the archive
+  tool prints, which is the time on the clock where the file was packed for zip, and this
+  computer's local time for tar.
+- Extract All asks for a folder. One thing at the archive's top comes out as itself;
+  several come out in a folder named after the archive. A name that is taken gets a number
+  ("Trip 2"), so nothing is written over. Extract Selected puts the selected rows in the
+  folder chosen, inside the folders they have in the archive, and does write over files of
+  the same name there, as the archive tools do.
+- Compress a Folder, or files dropped on the window, asks for a name and a kind. The archive
+  is made beside what it holds, and then opened. A kind whose tool isn't installed is
+  greyed out.
+- Stop, on the bottom line while work is under way, ends the tool and removes a half-made
+  archive.
+- Show in Files, after extracting or making, opens the folder in the file manager.
+- Not there yet: adding to or deleting from an archive, opening one file from an archive,
+  passwords, split archives.
+
+### Rivet Files: Open in Rivet Vice
+
+Location: `apps/rivet-files/src/app/views.rs`, the right-click menu, "Open in Rivet Vice".
+
+- Shown for one selected archive, when the `rivet-vice` program is beside Rivet Files'
+  own or on the path. Extract Here is still there for taking everything out at once.
+
 ## Rivet Snip
 
 ### Getting a picture into it, and binding it to a key

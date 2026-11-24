@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Open in Rivet Vice**: right-click an archive to look inside it before taking anything out. Shown when Rivet Vice, the archive manager, is installed.
 - **Return in a question presses the highlighted button**: Empty Trash, a message's OK and
   Replace in the file picker answer to Return, as Delete already did. Tab to Cancel and Return
   cancels; before, Return in the Delete and Open With questions went ahead even with Cancel

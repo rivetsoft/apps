@@ -644,7 +644,18 @@ impl RivetApp {
         ui.separator();
         let archives: Vec<PathBuf> = sel.iter().filter(|p| crate::archive::is_archive(p)).cloned().collect();
         if !archives.is_empty() && archives.len() == sel.len() && ui.button("Extract Here").clicked() {
-            self.pending.push(Action::ExtractHere(archives));
+            self.pending.push(Action::ExtractHere(archives.clone()));
+        }
+        // One archive, with Rivet Vice installed: look inside before taking anything out.
+        if let [one] = archives.as_slice()
+            && sel.len() == 1
+            && crate::archive::vice().is_some()
+            && ui.button("Open in Rivet Vice").clicked()
+        {
+            if let Err(e) = crate::archive::open_in_vice(one) {
+                eprintln!("rivet: {e}");
+            }
+            ui.close();
         }
         // Media tools (ffmpeg): only when every selected file is a picture, video or audio.
         if self.media_tools_on() {

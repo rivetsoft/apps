@@ -2372,6 +2372,7 @@ dependencies = [
  "png",
  "raw-window-handle",
  "resvg",
+ "rivet-archive",
  "rivet-kit",
  "rivet-look",
  "rivet-media",
@@ -2381,6 +2382,10 @@ dependencies = [
  "wayland-client",
  "zbus",
 ]
+
+[[package]]
+name = "rivet-archive"
+version = "0.1.0"
 
 [[package]]
 name = "rivet-connections"
@@ -2536,6 +2541,17 @@ dependencies = [
  "rivet-kit",
  "rivet-look",
  "rivet-term",
+ "rivet-xdg",
+]
+
+[[package]]
+name = "rivet-vice"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "rivet-archive",
+ "rivet-kit",
+ "rivet-look",
  "rivet-xdg",
 ]
 

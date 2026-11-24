@@ -1,0 +1,22 @@
+[package]
+name = "rivet-vice"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Open archives, take out all or some of what is in them, and make new ones"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rivetsoft/apps"
+publish = false
+
+[[bin]]
+name = "rivet-vice"
+path = "src/main.rs"
+
+[dependencies]
+# Listing, extracting and compressing: the same code Rivet Files' Compress and Extract use.
+rivet-archive = { path = "../../crates/rivet-archive" }
+rivet-kit = { path = "../../crates/rivet-kit" }
+rivet-look = { path = "../../crates/rivet-look" }
+# The file picker, for the archive to open and the folder to extract into.
+rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }

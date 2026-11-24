@@ -1,0 +1,10 @@
+[package]
+name = "rivet-archive"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Archives for Rivet apps, with no user interface: listing what is in one, compressing and extracting, by running the archive tools the system already has"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]

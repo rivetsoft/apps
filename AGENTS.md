@@ -20,6 +20,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-ftp` | `rivet-ftp` | A two-pane file-transfer client. SFTP works; FTP and FTPS are not built yet. |
 | `apps/rivet-welcome` | `rivet-welcome` | Installs and updates the apps; a tray icon. |
 | `apps/rivet-snip` | `rivet-snip` | Clips and marks up screenshots. A compositor hands it the picture as a file or on standard input; `rivet-snip capture` takes one itself anywhere else. Unreleased; built from source. |
+| `apps/rivet-vice` | `rivet-vice` | The archive manager: opens an archive, shows what is in it, extracts all or some of it and makes new ones. Rivet Files' right-click menu opens an archive in it. Unreleased; built from source. |
 
 | Crate | What it holds |
 | --- | --- |
@@ -30,6 +31,7 @@ app, or `--workspace` for everything.
 | `rivet-term` | The terminal: a shell in a pseudo-terminal, drawn as an egui widget. |
 | `rivet-connections` | Saved server connections, shared by Rivet FTP's window, its command line and plain `ssh`. |
 | `rivet-git` | Git with no interface, by running the `git` program. |
+| `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files and Vice. |
 
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
 Longer write-ups are in `docs/`. Rivet Shell's plugin API is in `apps/rivet-shell/PLUGINS.md`.
