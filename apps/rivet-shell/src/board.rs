@@ -301,6 +301,9 @@ struct Held {
     idx: usize,
     from: Rect,
     resize: bool,
+    /// Where the pointer pressed it: kept here, since by the frame the button is let go egui
+    /// no longer says, and the place to save is worked out on that frame.
+    origin: Pos2,
 }
 
 fn held_id() -> egui::Id {
@@ -343,7 +346,6 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
     let accent = kit.accent(m.s);
     let v = ui.visuals().clone();
     let pointer = ui.input(|i| i.pointer.latest_pos());
-    let origin = ui.input(|i| i.pointer.press_origin());
     let held: Option<Held> = if edit { ui.ctx().data(|d| d.get_temp(held_id())) } else { None };
     let mut picked: Option<usize> = if edit { ui.ctx().data(|d| d.get_temp(picked_id())) } else { None };
     let mut stack = area.top();
@@ -354,8 +356,8 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
         let mut r = rect_of(w, natural(w.kind, &p, m), area, m.s.widget_side, &mut stack);
         // Held: where the pointer has taken it, or the size it has been dragged to.
         let mine = held.filter(|h| h.idx == idx);
-        if let (Some(h), Some(now), Some(from)) = (mine, pointer, origin) {
-            let by = now - from;
+        if let (Some(h), Some(now)) = (mine, pointer) {
+            let by = now - h.origin;
             r = if h.resize {
                 let max = area.max - h.from.min;
                 Rect::from_min_size(h.from.min, (h.from.size() + by).max(small).min(max.max(small)))
@@ -376,8 +378,10 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
             if resp.drag_started() || resp.clicked() {
                 picked = Some(idx);
             }
-            if resp.drag_started() {
-                ui.ctx().data_mut(|d| d.insert_temp(held_id(), Held { idx, from: r, resize }));
+            if resp.drag_started()
+                && let Some(origin) = ui.input(|i| i.pointer.press_origin()).or(pointer)
+            {
+                ui.ctx().data_mut(|d| d.insert_temp(held_id(), Held { idx, from: r, resize, origin }));
             }
         }
         if mine.is_some() && (body.drag_stopped() || corner.drag_stopped()) {
@@ -566,6 +570,49 @@ pub fn hud(ui: &mut egui::Ui, edit: &mut bool, query: &mut String, m: &mut Model
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A widget pressed, dragged and let go in edit mode is saved where it was let go (the
+    /// frame the button comes up is the one that saves it).
+    #[test]
+    fn a_dragged_widget_stays_where_it_is_dropped() {
+        let s = crate::config::Settings { widgets: vec![Placed::new(WidgetKind::System, Board::Desktop)], panels: Vec::new(), ..Default::default() };
+        let (status, extra) = (crate::sys::Status::default(), crate::ui::Extra::default());
+        let full = Rect::from_min_size(Pos2::ZERO, Vec2::new(1200.0, 800.0));
+        let ctx = egui::Context::default();
+        let mut kit = Kit::new(false);
+        let mut time = 0.0;
+        let mut frame = |events: Vec<egui::Event>| {
+            let mut acts = Vec::new();
+            time += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(full), time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| {
+                kit.begin(ui.ctx(), &s);
+                let mut m = Model { s: &s, status: &status, extra: &extra, apps: &[], compositor: crate::sys::Compositor::Other, output: "", acts: &mut acts };
+                desktop_edit(ui, &mut m, &mut kit);
+            });
+            out.textures_delta.clear();
+            acts
+        };
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // The card starts at the top left of the room: pressed 50 points in, carried 300 by 200.
+        let (from, to) = (Pos2::new(78.0, 74.0), Pos2::new(378.0, 274.0));
+        frame(vec![egui::Event::PointerMoved(from)]);
+        frame(vec![button(from, true)]);
+        for k in 1..=5 {
+            assert!(frame(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / 5.0))]).is_empty());
+        }
+        let acts = frame(vec![button(to, false)]);
+        let [Act::WidgetPut(0, w)] = acts.as_slice() else { panic!("{acts:?}") };
+        let mut stack = 0.0;
+        let r = rect_of(w, Vec2::new(280.0, system_height(&Model { s: &s, status: &status, extra: &extra, apps: &[], compositor: crate::sys::Compositor::Other, output: "", acts: &mut Vec::new() })), area_of(full), Side::Left, &mut stack);
+        assert!((r.left() - 328.0).abs() < 1.0 && (r.top() - 224.0).abs() < 1.0, "{r:?}");
+        assert_eq!(w.size, None);
+    }
+
+    /// The room with no panels.
+    fn area_of(full: Rect) -> Rect {
+        Rect::from_min_max(full.min + Vec2::new(28.0, 24.0), full.max - Vec2::new(28.0, 24.0))
+    }
 
     #[test]
     fn a_place_and_size_come_back_as_they_were_kept() {
