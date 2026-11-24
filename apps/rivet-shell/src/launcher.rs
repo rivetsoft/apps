@@ -21,12 +21,18 @@ pub fn size(s: &Settings, full: Rect) -> Vec2 {
         (LaunchView::List, LaunchSize::Medium) => (480.0, 480.0),
         (LaunchView::List, LaunchSize::Large) => (580.0, 600.0),
     };
-    let h = f32::min(h, full.height() - 120.0);
+    // A grid as wide as the columns asked for take, each a tile (the icon over its name) with
+    // the room between, inside the card's padding.
+    let w = if s.launch_view == LaunchView::Grid && s.launch_cols > 0 { s.launch_cols as f32 * (s.launch_icon.clamp(24, 64) as f32 + 56.0 + 6.0) - 6.0 + 14.0 * 2.0 + 0.5 } else { w };
+    let tallest = full.height() - 120.0;
+    let h = f32::min(h, tallest);
     // As tall as whole rows take (no strip left under the last one): the card's padding, the
     // search field and the room under it, then the rows.
     const CHROME: f32 = 14.0 * 2.0 + 60.0;
     let (pitch, gap) = pitch(s);
-    let rows = ((h - CHROME + gap) / pitch).floor().max(1.0);
+    let fit = |h: f32| ((h - CHROME + gap) / pitch).floor().max(1.0);
+    // The rows asked for, as far as the screen has room; else as many as the size holds.
+    let rows = if s.launch_rows > 0 { (s.launch_rows as f32).min(fit(tallest)) } else { fit(h) };
     Vec2::new(f32::min(w, full.width() - 40.0), CHROME + rows * pitch - gap)
 }
 

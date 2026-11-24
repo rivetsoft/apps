@@ -271,6 +271,19 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Quick settings: a VPN block appears when there is at least one VPN that can be switched. It turns one on and off: the first there is, or the one chosen under Quick settings on the VPN page when there are several. Its arrow opens the VPN page. For a ZeroTier network, off means leaving it and on means joining it again.
 - The shell reads the VPNs every ten seconds with the rest of the slower status.
 
+### Launcher: rows and columns
+
+Location: `apps/rivet-shell/src/settings_app/launcher.rs`, Launcher, Layout, "Rows" and
+"Columns"; the size is worked out in `apps/rivet-shell/src/launcher.rs`.
+
+- Rows: how many rows of apps the launcher shows before it scrolls, 1 to 20, in the grid and
+  in the list. The launcher is exactly that tall. On a screen too short for them it shows as
+  many as fit.
+- Columns (grid only): how many apps across, 1 to 12. The launcher is exactly that wide, so
+  bigger icons make a wider launcher. On a screen too narrow it shows as many as fit.
+- "From the size" (the slider at its left end) leaves that direction to Size, as before.
+  The two are separate: Rows can be set with Columns left to Size, and the other way round.
+
 ### Login screen (greetd)
 
 From `greeter.rs` and `rivet-shell greeter --setup`.

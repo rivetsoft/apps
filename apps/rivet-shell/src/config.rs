@@ -684,6 +684,10 @@ pub struct Settings {
     pub launch_place: LaunchPlace,
     pub launch_size: LaunchSize,
     pub launch_icon: u32,
+    /// How many rows the launcher shows, and how many columns its grid has (0: as its size
+    /// makes them).
+    pub launch_rows: u32,
+    pub launch_cols: u32,
     pub launch_calc: bool,
     pub launch_dim: bool,
     /// Night light's warmth, in kelvin.
@@ -848,6 +852,8 @@ impl Default for Settings {
             launch_place: LaunchPlace::Center,
             launch_size: LaunchSize::Medium,
             launch_icon: 42,
+            launch_rows: 0,
+            launch_cols: 0,
             launch_calc: true,
             launch_dim: true,
             night_kelvin: 4000,
@@ -1151,6 +1157,8 @@ impl Settings {
                 "launch_place" => self.launch_place = LaunchPlace::from(v),
                 "launch_size" => self.launch_size = LaunchSize::from(v),
                 "launch_icon" => self.launch_icon = v.parse::<u32>().unwrap_or(42).clamp(24, 64),
+                "launch_rows" => self.launch_rows = v.parse::<u32>().unwrap_or(0).min(20),
+                "launch_cols" => self.launch_cols = v.parse::<u32>().unwrap_or(0).min(12),
                 "launch_calc" => self.launch_calc = b,
                 "launch_dim" => self.launch_dim = b,
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
@@ -1286,6 +1294,7 @@ impl Settings {
             "media_text={}\nmedia_width={}\nmedia_art={}\nmedia_controls={}\nmedia_viz={}\nmedia_click_plays={}\nmedia_scroll={}\nmedia_hide_paused={}\n",
             self.media_text.name(), self.media_width, self.media_art, self.media_controls, self.media_viz, self.media_click_plays, self.media_scroll, self.media_hide_paused
         ));
+        t.push_str(&format!("launch_rows={}\nlaunch_cols={}\n", self.launch_rows, self.launch_cols));
         t.push_str(&format!("launch_view={}\nlaunch_place={}\nlaunch_size={}\nlaunch_icon={}\nlaunch_calc={}\nlaunch_dim={}\n", self.launch_view.name(), self.launch_place.name(), self.launch_size.name(), self.launch_icon, self.launch_calc, self.launch_dim));
         t.push_str(&format!("plugins={}\n", self.plugins.join(",")));
         for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
@@ -1523,7 +1532,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], softcore_colors: vec![("border_active".into(), "accent".into()), ("border_active_to".into(), "tertiary".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], softcore_colors: vec![("border_active".into(), "accent".into()), ("border_active_to".into(), "tertiary".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_rows: 7, launch_cols: 5, launch_calc: false, launch_dim: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

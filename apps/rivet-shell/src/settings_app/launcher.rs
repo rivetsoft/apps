@@ -79,6 +79,16 @@ impl SettingsApp {
                 ui.label("Icons");
                 ui.add(egui::Slider::new(&mut s.launch_icon, 24..=64).step_by(2.0).suffix(" pt"));
                 ui.end_row();
+                // 0 leaves it to the size above.
+                let count = |v: f64, _: std::ops::RangeInclusive<usize>| if v < 1.0 { "From the size".to_string() } else { format!("{v:.0}") };
+                ui.label("Rows");
+                ui.add(egui::Slider::new(&mut s.launch_rows, 0..=20).custom_formatter(count)).on_hover_text("Fewer show when the screen is too short for them.");
+                ui.end_row();
+                if s.launch_view == LaunchView::Grid {
+                    ui.label("Columns");
+                    ui.add(egui::Slider::new(&mut s.launch_cols, 0..=12).custom_formatter(count));
+                    ui.end_row();
+                }
             });
             if s.launch_place == LaunchPlace::Panel {
                 hint(ui, "Opens from the panel you clicked. Opened with a key, it comes from the first panel.");

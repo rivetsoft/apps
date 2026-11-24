@@ -202,13 +202,16 @@ impl ShotApp {
             // RIVET_SHELL_FUSE=1: groups side by side join.
             s.panels[0].fuse = std::env::var("RIVET_SHELL_FUSE").is_ok();
         }
-        // RIVET_SHELL_LAUNCH=list:large:48:panel (view, size, icon size, place): the launcher's layout.
+        // RIVET_SHELL_LAUNCH=list:large:48:panel:6:4 (view, size, icon size, place, rows, columns):
+        // the launcher's layout.
         if let Ok(l) = std::env::var("RIVET_SHELL_LAUNCH") {
             let mut it = l.split(':');
             s.launch_view = crate::config::LaunchView::from(it.next().unwrap_or(""));
             s.launch_size = crate::config::LaunchSize::from(it.next().unwrap_or(""));
             s.launch_icon = it.next().and_then(|n| n.parse().ok()).unwrap_or(42);
             s.launch_place = crate::config::LaunchPlace::from(it.next().unwrap_or(""));
+            s.launch_rows = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
+            s.launch_cols = it.next().and_then(|n| n.parse().ok()).unwrap_or(0);
         }
         // RIVET_SHELL_MEDIA=viz,controls,artist-title,nocover: the Now Playing item's options
         // (on the first panel, added when it isn't there). RIVET_SHELL_COVER=file is its cover.

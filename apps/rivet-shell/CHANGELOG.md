@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Rows and columns for the launcher**: on the Launcher page, Rows sets how many rows the launcher shows, in the grid or the list, and Columns sets how many the grid has across. Left at "From the size", Size decides as before.
 - **Terminals and editors in the theme's colors**: on the Applications page, turn on kitty, Ghostty, Alacritty, foot, Zed or btop and it takes the theme's colors and changes with the wallpaper. Each one installed gets a switch. Rivet keeps a color file of its own beside the program's settings and never rewrites yours: where a line has to point at it, Add the Line adds that one line.
 - **An Applications page in Settings**, under Look, for other apps that take the theme's colors. Browser colors moved there from Appearance. With Accent as the browser's color, a new Shade slider makes the accent darker or lighter; with Windows, Darker at 100% now reaches almost black and keeps the accent on the browser's buttons.
 - **Browser colors can go darker**: under Browser colors on the Appearance page, Darker takes the browser's window from the color of the desktop's windows down to black.
