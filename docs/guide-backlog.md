@@ -145,16 +145,19 @@ Location: `apps/rivet-shell/src/settings_app/browser_colors.rs`, Appearance, "Br
 the work is `apps/rivet-shell/src/browser.rs`.
 
 - Chromium, Chrome, Brave (and Brave Origin) and Edge take one color from the theme and make
-  their whole look from it, with light or dark to match. Tabs, toolbar and menus stay the
-  browser's own; extensions, sign-ins and protected video are untouched.
-- Color: Accent or Surface. The browser derives its tones from that one color, so single parts
-  can't be set.
+  their whole look from it. Tabs, toolbar and menus stay the browser's own; extensions,
+  sign-ins and protected video are untouched.
+- Color: Windows or Accent. The browser paints its window in the color it is given and picks
+  light or dark text to suit, so the color itself decides light or dark; there is no separate
+  policy for that. Windows (the default) gives it the desktop's window color with a little of
+  the accent mixed in: dark under a dark theme, with the accent's hue on buttons and outlines.
+  A plain gray would leave the browser to pick a hue of its own. Accent gives it the accent
+  for the whole window, which is bright under most themes. Single parts can't be set.
 - It follows the theme: the shell writes the color again when the wallpaper's colors change
   and tells a running browser to read it, so open windows recolor with no restart.
 - How: these browsers read "managed policies" from a folder under `/etc`
   (`/etc/chromium/policies/managed`, `/etc/opt/chrome/…`, `/etc/brave/…`, `/etc/opt/edge/…`).
-  Rivet keeps one file there, `rivet-color.json`, with `BrowserThemeColor` and
-  `BrowserColorScheme`. The folders are root's, so Allow asks for the password once to make
+  Rivet keeps one file there, `rivet-color.json`, with `BrowserThemeColor`. The folders are root's, so Allow asks for the password once to make
   that file and give it to the person; afterwards nothing asks again.
 - Side effect: the browser's menu and `chrome://management` say it is managed by your
   organization. That is this file and nothing else.

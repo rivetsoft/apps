@@ -701,7 +701,7 @@ pub struct Settings {
     /// Chromium, Chrome, Brave and Edge take the theme's colour (see `crate::browser`), and
     /// whether that colour is the surface, not the accent.
     pub browser_colors: bool,
-    pub browser_surface: bool,
+    pub browser_accent: bool,
     // ---- idle and the lock screen (idle.rs, lock.rs); times in seconds, 0 for never
     /// The shell watches for idle (else another program, like hypridle or swayidle, does).
     /// The VPN the quick settings block switches (`vpn::Vpn::key`; empty: the first there is).
@@ -854,7 +854,7 @@ impl Default for Settings {
             comp_inactive_opacity: 1.0,
             comp_shadows: true,
             browser_colors: false,
-            browser_surface: false,
+            browser_accent: false,
             idle_on: true,
             idle_dim: 240,
             idle_lock: 300,
@@ -1115,7 +1115,7 @@ impl Settings {
                 "comp_inactive_opacity" => self.comp_inactive_opacity = v.parse::<f32>().unwrap_or(1.0).clamp(0.5, 1.0),
                 "comp_shadows" => self.comp_shadows = b,
                 "browser_colors" => self.browser_colors = b,
-                "browser_surface" => self.browser_surface = b,
+                "browser_accent" => self.browser_accent = b,
                 "idle_on" => self.idle_on = b,
                 "idle_dim" => self.idle_dim = v.parse::<u32>().unwrap_or(0).min(86_400),
                 "idle_lock" => self.idle_lock = v.parse::<u32>().unwrap_or(0).min(86_400),
@@ -1252,7 +1252,7 @@ impl Settings {
             "comp_on={}\ncomp_gaps_in={}\ncomp_gaps_out={}\ncomp_border={}\ncomp_radius={}\ncomp_accent_borders={}\ncomp_inactive_opacity={}\ncomp_shadows={}\n",
             self.comp_on, self.comp_gaps_in, self.comp_gaps_out, self.comp_border, self.comp_radius, self.comp_accent_borders, self.comp_inactive_opacity, self.comp_shadows
         ));
-        t.push_str(&format!("browser_colors={}\nbrowser_surface={}\nquick_vpn={}\nzerotier_networks={}\n", self.browser_colors, self.browser_surface, self.quick_vpn.replace('\n', ""), self.zerotier_networks.iter().map(|(id, name)| format!("{id}:{}", name.replace(['|', '\n'], " "))).collect::<Vec<_>>().join("|")));
+        t.push_str(&format!("browser_colors={}\nbrowser_accent={}\nquick_vpn={}\nzerotier_networks={}\n", self.browser_colors, self.browser_accent, self.quick_vpn.replace('\n', ""), self.zerotier_networks.iter().map(|(id, name)| format!("{id}:{}", name.replace(['|', '\n'], " "))).collect::<Vec<_>>().join("|")));
         t.push_str(&format!(
             "idle_on={}\nidle_dim={}\nidle_lock={}\nidle_screen_off={}\nidle_suspend={}\nidle_media={}\nlock_on_sleep={}\nlock_cmd={}\nlock_blur={}\nlock_power={}\n",
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
@@ -1503,7 +1503,7 @@ mod tests {
 
     #[test]
     fn comp_round_trips() {
-        let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, browser_colors: true, browser_surface: true, quick_vpn: "zerotier:8056c2e21c000001".into(), zerotier_networks: vec![("8056c2e21c000001".into(), "home: lab".into()), ("1d71939404000002".into(), String::new())], ..Settings::default() };
+        let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, browser_colors: true, browser_accent: true, quick_vpn: "zerotier:8056c2e21c000001".into(), zerotier_networks: vec![("8056c2e21c000001".into(), "home: lab".into()), ("1d71939404000002".into(), String::new())], ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

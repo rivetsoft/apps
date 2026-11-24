@@ -85,9 +85,10 @@ impl SettingsApp {
             }
             grid(ui, "shell-browser-colors", &mut |ui| {
                 ui.label("Color");
-                panel_editor::segmented(ui, &mut self.s.browser_surface, &[(false, "Accent"), (true, "Surface")]);
+                panel_editor::segmented(ui, &mut self.s.browser_accent, &[(false, "Windows"), (true, "Accent")]);
                 ui.end_row();
             });
+            hint(ui, if self.s.browser_accent { "The whole browser window takes the accent, which is bright under most themes." } else { "The browser takes the color of the desktop's windows, so it is dark when they are, with the accent on its buttons." });
         });
     }
 }

@@ -89,17 +89,22 @@ pub fn allow() -> Result<(), String> {
     }
 }
 
-/// The policy file: the colour the browser makes its theme from, and light or dark. With
-/// nothing to set, an empty one (the folder is root's, so the file can't be taken away).
-fn text(look: Option<([u8; 3], bool)>) -> String {
+/// The policy file: the colour the browser makes its theme from. The browser paints its
+/// window in that colour and picks light or dark text to suit, so a dark colour is what makes
+/// it dark: there is no policy for light or dark itself. With nothing to set, an empty file
+/// (the folder is root's, so the file can't be taken away).
+fn text(look: Option<[u8; 3]>) -> String {
     match look {
-        Some(([r, g, b], dark)) => format!("{{\"BrowserThemeColor\": \"#{r:02x}{g:02x}{b:02x}\", \"BrowserColorScheme\": \"{}\"}}\n", if dark { "dark" } else { "light" }),
+        Some([r, g, b]) => format!("{{\"BrowserThemeColor\": \"#{r:02x}{g:02x}{b:02x}\"}}\n"),
         None => "{}\n".to_string(),
     }
 }
 
-/// The colour and light or dark the browsers get, as the shell looks now (None: turned off).
-fn look(s: &Settings) -> Option<([u8; 3], bool)> {
+/// The colour the browsers get, as the shell looks now (None: turned off): the desktop's own
+/// window colour, which is dark under a dark theme, or the accent when that is chosen. The
+/// window colour carries a little of the accent, which is where the browser takes the hue of
+/// its buttons and outlines from; a plain grey gets a hue of the browser's own choosing.
+fn look(s: &Settings) -> Option<[u8; 3]> {
     if !s.browser_colors {
         return None;
     }
@@ -108,8 +113,8 @@ fn look(s: &Settings) -> Option<([u8; 3], bool)> {
     let dark = pal.map(|p| p.is_dark()).unwrap_or(s.theme != rivet_look::theme::Mode::Light);
     let accent = live.accent(&s.choice());
     let surface = pal.and_then(|p| p.window_bg).unwrap_or(if dark { eframe::egui::Color32::from_rgb(0x24, 0x24, 0x24) } else { eframe::egui::Color32::from_rgb(0xf6, 0xf5, 0xf4) });
-    let c = if s.browser_surface { surface } else { accent };
-    Some(([c.r(), c.g(), c.b()], dark))
+    let c = if s.browser_accent { accent } else { rivet_look::palette::mix(surface, accent, 0.06) };
+    Some([c.r(), c.g(), c.b()])
 }
 
 /// Bring each browser's file up to date with the settings and the theme, and have the ones
@@ -140,8 +145,7 @@ mod tests {
 
     #[test]
     fn the_policy_file() {
-        assert_eq!(text(Some(([0xe6, 0x61, 0x00], true))), "{\"BrowserThemeColor\": \"#e66100\", \"BrowserColorScheme\": \"dark\"}\n");
-        assert_eq!(text(Some(([1, 2, 3], false))), "{\"BrowserThemeColor\": \"#010203\", \"BrowserColorScheme\": \"light\"}\n");
+        assert_eq!(text(Some([0xe6, 0x61, 0x00])), "{\"BrowserThemeColor\": \"#e66100\"}\n");
         assert_eq!(text(None), "{}\n");
     }
 
