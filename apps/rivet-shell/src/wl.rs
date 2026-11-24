@@ -1818,7 +1818,7 @@ impl Shell {
         // What's see-through was drawn in these shapes: the compositor blurs behind them, and
         // nothing else of the surface (a panel's surface spans its edge, its bar may not).
         let glass = ui::take_glass(&surf.ctx);
-        let want: Vec<[i32; 4]> = if settings.blur && *blur_cap && kind != Kind::Background { glass.iter().flat_map(|(r, c)| ui::glass_rects(*r, *c)).collect() } else { Vec::new() };
+        let want: Vec<[i32; 4]> = if settings.blur && *blur_cap && kind != Kind::Background { glass.iter().flat_map(|(r, c, shown)| ui::glass_rects(*r, *c, *shown)).collect() } else { Vec::new() };
         if want != surf.blur_last
             && let Some(mgr) = blur_mgr.as_ref()
         {

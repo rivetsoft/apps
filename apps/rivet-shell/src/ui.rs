@@ -613,16 +613,20 @@ fn glass_id() -> egui::Id {
     egui::Id::unique("rivet-glass")
 }
 
-/// The see-through shapes drawn this frame (each a rectangle and its corners), taken for the
-/// compositor to blur behind. Taking them empties the list for the next frame.
-pub fn take_glass(ctx: &egui::Context) -> Vec<(Rect, egui::CornerRadius)> {
-    ctx.data_mut(|d| d.remove_temp::<Vec<(Rect, egui::CornerRadius)>>(glass_id())).unwrap_or_default()
+/// A see-through shape: the whole of it, its corners, and as much of it as shows.
+pub type Glass = (Rect, egui::CornerRadius, Rect);
+
+/// The see-through shapes drawn this frame, taken for the compositor to blur behind. Taking
+/// them empties the list for the next frame.
+pub fn take_glass(ctx: &egui::Context) -> Vec<Glass> {
+    ctx.data_mut(|d| d.remove_temp::<Vec<Glass>>(glass_id())).unwrap_or_default()
 }
 
 /// A rounded rectangle as whole-point rectangles (x, y, w, h) that follow its corners in steps,
 /// for a compositor that takes regions as rectangles: the middle, and bands across the top and
-/// bottom narrowing towards the corners.
-pub fn glass_rects(r: Rect, radius: egui::CornerRadius) -> Vec<[i32; 4]> {
+/// bottom narrowing towards the corners. Only what is inside `shown` is kept: a dock part of
+/// the way off its edge is cut straight there, and its corners stay where they are drawn.
+pub fn glass_rects(r: Rect, radius: egui::CornerRadius, shown: Rect) -> Vec<[i32; 4]> {
     let (l, t, rr, b) = (r.left().round() as i32, r.top().round() as i32, r.right().round() as i32, r.bottom().round() as i32);
     let top = radius.nw.max(radius.ne) as i32;
     let bottom = radius.sw.max(radius.se) as i32;
@@ -658,6 +662,11 @@ pub fn glass_rects(r: Rect, radius: egui::CornerRadius) -> Vec<[i32; 4]> {
         out.push([l + a, b - y - h, (rr - z) - (l + a), h]);
         y += h;
     }
+    let (sl, st, sr, sb) = (shown.left().round() as i32, shown.top().round() as i32, shown.right().round() as i32, shown.bottom().round() as i32);
+    for q in &mut out {
+        let (x0, y0, x1, y1) = (q[0].max(sl), q[1].max(st), (q[0] + q[2]).min(sr), (q[1] + q[3]).min(sb));
+        *q = [x0, y0, x1 - x0, y1 - y0];
+    }
     out.retain(|q| q[2] > 0 && q[3] > 0);
     out
 }
@@ -684,7 +693,7 @@ pub fn surface_open(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, r
     if alpha < 0.97 {
         let shown = r.intersect(p.clip_rect());
         if shown.is_positive() {
-            p.ctx().data_mut(|d| d.get_temp_mut_or_default::<Vec<(Rect, egui::CornerRadius)>>(glass_id()).push((shown, radius)));
+            p.ctx().data_mut(|d| d.get_temp_mut_or_default::<Vec<Glass>>(glass_id()).push((r, radius, shown)));
         }
     }
     let shadow = egui::Shadow { offset: [0, 2], blur: 14, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
@@ -1654,8 +1663,8 @@ mod tests {
     #[test]
     fn glass_follows_the_corners_inside_the_shape() {
         let r = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(200.0, 40.0));
-        assert_eq!(glass_rects(r, egui::CornerRadius::ZERO), vec![[10, 20, 200, 40]]);
-        let rects = glass_rects(r, egui::CornerRadius::same(12));
+        assert_eq!(glass_rects(r, egui::CornerRadius::ZERO, r), vec![[10, 20, 200, 40]]);
+        let rects = glass_rects(r, egui::CornerRadius::same(12), r);
         // Every row of the shape is covered once, and nothing reaches past it.
         let rows: i32 = rects.iter().map(|q| q[3]).sum();
         assert_eq!(rows, 40);
@@ -1663,6 +1672,13 @@ mod tests {
         // The top row is cut in at the corners; the middle isn't.
         assert!(rects.iter().find(|q| q[1] == 20).is_some_and(|q| q[0] > 10));
         assert!(rects.iter().any(|q| q[0] == 10 && q[2] == 200));
+        // Sliding off the bottom, with only its top five points showing: nothing is asked for
+        // outside those, and the cut edge isn't rounded.
+        let shown = Rect::from_min_max(r.min, egui::pos2(210.0, 25.0));
+        let rects = glass_rects(r, egui::CornerRadius::same(12), shown);
+        assert!(!rects.is_empty() && rects.iter().all(|q| q[1] >= 20 && q[1] + q[3] <= 25));
+        let half = Rect::from_min_max(r.min, egui::pos2(210.0, 45.0));
+        assert!(glass_rects(r, egui::CornerRadius::same(12), half).iter().any(|q| q[1] + q[3] == 45 && q[0] == 10 && q[2] == 200));
     }
 
     fn app(id: &str, name: &str) -> DesktopApp {
