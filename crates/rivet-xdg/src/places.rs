@@ -357,6 +357,25 @@ pub fn remove_demo_dir(home: &Path) {
     }
 }
 
+/// A file's name as its stem and its extension (`.tar.gz` and the like as one), for making
+/// a free name beside it: `photo.2.jpg`. A folder, or a name like `.bashrc`, is all stem.
+pub fn split_name(name: &str, is_dir: bool) -> (String, String) {
+    if is_dir || name.starts_with('.') && name.matches('.').count() == 1 {
+        return (name.to_string(), String::new());
+    }
+    let lower = name.to_lowercase();
+    for double in [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"] {
+        if lower.ends_with(double) && name.len() > double.len() {
+            let i = name.len() - double.len();
+            return (name[..i].to_string(), name[i..].to_string());
+        }
+    }
+    match name.rfind('.') {
+        Some(i) if i > 0 => (name[..i].to_string(), name[i..].to_string()),
+        _ => (name.to_string(), String::new()),
+    }
+}
+
 pub fn trash_dir() -> PathBuf {
     data_home().join("Trash")
 }

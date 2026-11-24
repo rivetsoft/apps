@@ -16,6 +16,44 @@ pub struct DesktopApp {
     pub terminal: bool,
 }
 
+/// Where an app came from, when it isn't the system's own package: a Flatpak, a Snap or an
+/// AppImage.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Flatpak,
+    Snap,
+    AppImage,
+}
+
+impl Source {
+    /// Its name, as each calls itself.
+    pub fn label(self) -> &'static str {
+        match self {
+            Source::Flatpak => "Flatpak",
+            Source::Snap => "Snap",
+            Source::AppImage => "AppImage",
+        }
+    }
+}
+
+impl DesktopApp {
+    /// Where it came from, from what its entry runs: `flatpak run`, a program in Snap's
+    /// `snap/bin` (`/snap/bin`, or `/var/lib/snapd/snap/bin` where `/snap` isn't used), or an
+    /// `.AppImage` file. None for the rest.
+    pub fn source(&self) -> Option<Source> {
+        let exec = self.exec.to_lowercase();
+        if exec.split_whitespace().take(2).any(|w| w.ends_with("flatpak")) && exec.contains(" run ") {
+            Some(Source::Flatpak)
+        } else if exec.contains("/snap/bin/") {
+            Some(Source::Snap)
+        } else if exec.contains(".appimage") {
+            Some(Source::AppImage)
+        } else {
+            None
+        }
+    }
+}
+
 fn app_dirs() -> Vec<PathBuf> {
     let mut v = vec![places::data_home().join("applications")];
     let dd = std::env::var("XDG_DATA_DIRS").ok().filter(|s| !s.is_empty())
@@ -320,4 +358,20 @@ pub fn open_terminal(dir: &Path) -> Result<(), String> {
 
 pub fn run_executable(path: &Path) -> Result<(), String> {
     spawn_detached(&[path.to_string_lossy().to_string()], path.parent())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_apps_source_is_read_from_what_it_runs() {
+        let app = |exec: &str| DesktopApp { id: String::new(), name: String::new(), exec: exec.into(), icon: String::new(), mimes: Vec::new(), terminal: false };
+        assert_eq!(app("/usr/bin/flatpak run --branch=stable --arch=x86_64 --command=run.sh dev.aunetx.deezer @@u %U @@").source(), Some(Source::Flatpak));
+        assert_eq!(app("/var/lib/snapd/snap/bin/telegram-desktop -- %U").source(), Some(Source::Snap));
+        assert_eq!(app("env BAMF_DESKTOP_FILE_HINT=x /snap/bin/moonlight %U").source(), Some(Source::Snap));
+        assert_eq!(app("\"/home/me/Applications/figcraft-0.18.1-linux-x86_64.AppImage\" %F").source(), Some(Source::AppImage));
+        assert_eq!(app("firefox %u").source(), None);
+        assert_eq!(app("rivet-edit --run flatpak").source(), None);
+    }
 }
