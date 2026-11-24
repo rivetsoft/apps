@@ -203,6 +203,17 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Window rules, layer rules, named workspaces, scratchpads, environment lines and startup
   programs are not on the page yet: edit them in the file.
 
+### Settings: the overview, and the Network, Bluetooth and Sound pages
+
+`settings_app/nav.rs` (the overview), `settings_app/connect.rs` (Network, Bluetooth), `settings_app/sound.rs`.
+
+- Settings opens on an overview: every page as a tile, in the sidebar's groups, with search above. Opening a page brings the sidebar; All Settings at its top goes back. Typing in the overview's search shows the results in the sidebar, and clearing it returns to the overview.
+- A page shows only when the computer can use it: Network needs NetworkManager (`nmcli`), Bluetooth needs BlueZ (`bluetoothctl`) and an adapter, Sound needs `pactl` (PipeWire or PulseAudio).
+- Network covers Wi-Fi only: the switch, the networks in range, Join (a new secured network asks for its password first), Disconnect, and Forget for a network the computer remembers. Wired connections, VPNs, and addresses are not on the page yet.
+- Bluetooth: the switch, My devices (paired: Connect, Disconnect, Forget) and Devices nearby (Pair). Pairing works for devices that need no code; a device that shows a code to confirm or type has to be paired another way for now.
+- Sound: Output and Input each list the devices, with Use to choose one; choosing an output moves the apps playing to it. Volume and Mute under each list act on the one in use. Apps lists what is playing, with a volume each and, when there is more than one output, which output it plays on.
+- The pages read only while they are showing, and use the same code as the panel's Network, Bluetooth and Sound popups.
+
 ### Login screen (greetd)
 
 From `greeter.rs` and `rivet-shell greeter --setup`.

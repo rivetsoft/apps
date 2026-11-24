@@ -582,13 +582,13 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn wifi_radio() -> Option<bool> {
+pub fn wifi_radio() -> Option<bool> {
     let t = output("nmcli", &["radio", "wifi"])?;
     Some(t.trim() == "enabled")
 }
 
 /// Bluetooth's power (`timeout`, as bluetoothctl waits forever when bluetoothd isn't running).
-fn bluetooth() -> Option<bool> {
+pub fn bluetooth() -> Option<bool> {
     let any = std::fs::read_dir("/sys/class/bluetooth").ok()?.flatten().next().is_some();
     if !any {
         return None;

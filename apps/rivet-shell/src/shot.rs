@@ -52,7 +52,7 @@ fn demo_ai() -> crate::ai::Quotas {
     }
 }
 
-fn demo_radios() -> crate::radio::Radios {
+pub fn demo_radios() -> crate::radio::Radios {
     use crate::radio::{BtDevice, Radios, WifiNet};
     let net = |ssid: &str, signal, secure, active, saved| WifiNet { ssid: ssid.into(), signal, secure, active, saved };
     let dev = |name: &str, paired, connected| BtDevice { mac: format!("00:11:22:33:44:{:02X}", name.len()), name: name.into(), paired, connected };

@@ -37,7 +37,7 @@ pub struct Browser {
     file: PathBuf,
 }
 
-fn on_path(command: &str) -> Option<PathBuf> {
+pub fn on_path(command: &str) -> Option<PathBuf> {
     std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(command)).find(|p| p.is_file())
 }
 

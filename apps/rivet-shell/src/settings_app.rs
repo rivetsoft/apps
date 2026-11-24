@@ -25,6 +25,8 @@ mod font_pick;
 mod wallpaper;
 mod idle_lock;
 mod colors;
+mod connect;
+mod sound;
 mod icon_pick;
 mod browser_colors;
 mod palette_pick;
@@ -43,6 +45,12 @@ enum Page {
     #[default]
     Wallpaper,
     Appearance,
+    /// Wi-Fi: only there with NetworkManager.
+    Network,
+    /// Only there with BlueZ and an adapter.
+    Bluetooth,
+    /// Only there with PipeWire's or PulseAudio's control program.
+    Sound,
     Panel,
     Dock,
     Widgets,
@@ -57,17 +65,35 @@ enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 12] = [Page::Wallpaper, Page::Appearance, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    const ALL: [Page; 15] = [Page::Wallpaper, Page::Appearance, Page::Network, Page::Bluetooth, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
     /// Whether the page is in the sidebar and in search: all but the ones for a compositor
-    /// that isn't running.
+    /// that isn't running or for programs that aren't installed. Screenshots show every one.
     fn shown(self) -> bool {
-        self != Page::Softcore || softcore_page::available()
+        use std::sync::OnceLock;
+        static HAS: OnceLock<[bool; 3]> = OnceLock::new();
+        let has = |i: usize| {
+            HAS.get_or_init(|| {
+                let shot = std::env::args().any(|a| a == "--screenshot");
+                let there = |cmd: &str| shot || crate::browser::on_path(cmd).is_some();
+                [there("nmcli"), there("bluetoothctl") && (shot || std::fs::read_dir("/sys/class/bluetooth").is_ok_and(|mut d| d.next().is_some())), there("pactl")]
+            })[i]
+        };
+        match self {
+            Page::Softcore => softcore_page::available(),
+            Page::Network => has(0),
+            Page::Bluetooth => has(1),
+            Page::Sound => has(2),
+            _ => true,
+        }
     }
 
     fn label(self) -> &'static str {
         match self {
             Page::Wallpaper => "Wallpaper",
             Page::Appearance => "Appearance",
+            Page::Network => "Network",
+            Page::Bluetooth => "Bluetooth",
+            Page::Sound => "Sound",
             Page::Panel => "Panels",
             Page::Dock => "Dock",
             Page::Widgets => "Widgets",
@@ -98,6 +124,9 @@ pub struct SettingsApp {
     page: Page,
     /// Showing the overview of every page, not one page with the sidebar.
     home: bool,
+    /// The Network and Bluetooth pages' lists, and the Sound page's devices.
+    conn: connect::State,
+    sound: sound::State,
     apps: Vec<DesktopApp>,
     /// The wallpaper folder's pictures and thumbnails.
     picker: crate::wall_pick::Picker,
@@ -300,6 +329,8 @@ impl SettingsApp {
             icon_key: String::new(),
             page,
             home,
+            conn: connect::State::new(shot_mode),
+            sound: sound::State::new(shot_mode),
             apps,
             picker: Default::default(),
             picking: None,
@@ -450,6 +481,13 @@ impl eframe::App for SettingsApp {
         // The overview takes the whole window; typing in its search brings the sidebar and its
         // results, and clearing the search brings the overview back.
         let overview = self.home && self.search.trim().is_empty();
+        // Networks, devices and sound are read only while their page shows.
+        self.conn.tend(&ctx, match self.page {
+            Page::Network if !overview => crate::radio::WIFI,
+            Page::Bluetooth if !overview => crate::radio::BT,
+            _ => crate::radio::NONE,
+        });
+        self.sound.tend(&ctx, self.page == Page::Sound && !overview);
         if overview {
             self.search_chosen = None;
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(v.panel_fill)).show(ui, |ui| {
@@ -477,37 +515,40 @@ impl eframe::App for SettingsApp {
                     return;
                 }
                 self.search_chosen = None;
-                if nav::all_settings(ui, side_fill) {
-                    self.home = true;
-                }
-                for (name, pages) in nav::GROUPS {
-                    // A small heading over each group; About sits apart.
-                    if name.is_empty() {
-                        ui.add_space(14.0);
-                    } else {
-                        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
-                        ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
+                // The pages scroll under the search field when the window is short.
+                egui::ScrollArea::vertical().id_salt("shell-pages").auto_shrink([false, false]).show(ui, |ui| {
+                    if nav::all_settings(ui, side_fill) {
+                        self.home = true;
                     }
-                    for p in pages.iter().filter(|p| p.shown()) {
-                        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
-                        let sel = *p == self.page && !self.home;
-                        if sel {
-                            let (fill, stroke) = selected_tile(&v, side_fill);
-                            ui.painter().rect_filled(r, r_md(), fill);
-                            ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
-                        } else if resp.hovered() {
-                            ui.painter().rect_filled(r, r_md(), palette::mix(side_fill, v.text_color(), 0.07));
+                    for (name, pages) in nav::GROUPS {
+                        // A small heading over each group; About sits apart.
+                        if name.is_empty() {
+                            ui.add_space(14.0);
+                        } else {
+                            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
+                            ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
                         }
-                        // The symbol in the accent colour; on the chosen page, in the text's.
-                        let fg = if sel { v.strong_text_color() } else { v.text_color() };
-                        nav::icon(ui.painter(), *p, Pos2::new(r.left() + 21.0, r.center().y), if sel { fg } else { accent });
-                        ui.painter().text(Pos2::new(r.left() + 42.0, r.center().y), egui::Align2::LEFT_CENTER, p.label(), fonts::ui_font(13.5), fg);
-                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                            self.page = *p;
-                            self.home = false;
+                        for p in pages.iter().filter(|p| p.shown()) {
+                            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+                            let sel = *p == self.page && !self.home;
+                            if sel {
+                                let (fill, stroke) = selected_tile(&v, side_fill);
+                                ui.painter().rect_filled(r, r_md(), fill);
+                                ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
+                            } else if resp.hovered() {
+                                ui.painter().rect_filled(r, r_md(), palette::mix(side_fill, v.text_color(), 0.07));
+                            }
+                            // The symbol in the accent colour; on the chosen page, in the text's.
+                            let fg = if sel { v.strong_text_color() } else { v.text_color() };
+                            nav::icon(ui.painter(), *p, Pos2::new(r.left() + 21.0, r.center().y), if sel { fg } else { accent });
+                            ui.painter().text(Pos2::new(r.left() + 42.0, r.center().y), egui::Align2::LEFT_CENTER, p.label(), fonts::ui_font(13.5), fg);
+                            if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                self.page = *p;
+                                self.home = false;
+                            }
                         }
                     }
-                }
+                });
             });
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(v.panel_fill)).show(ui, |ui| {
                 // Checks: RIVET_SHELL_SCROLL=600 shows the page scrolled that far down.
@@ -531,6 +572,9 @@ impl eframe::App for SettingsApp {
                         match self.page {
                             Page::Wallpaper => self.wallpaper_page(ui, accent),
                             Page::Appearance => self.appearance_page(ui),
+                        Page::Network => self.network_page(ui),
+                        Page::Bluetooth => self.bluetooth_page(ui),
+                        Page::Sound => self.sound_page(ui),
                             Page::Panel => self.panel_page(ui),
                             Page::Dock => self.dock_page(ui),
                             Page::Widgets => self.widgets_page(ui),

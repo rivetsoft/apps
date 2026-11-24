@@ -30,6 +30,14 @@ const fn item(id: &'static str, title: &'static str, words: &'static str) -> Ent
 }
 
 pub const INDEX: &[Entry] = &[
+    // Network, Bluetooth, Sound
+    e(Page::Network, "Wi-Fi", "Wi-Fi", "wifi wireless network internet join connect password ssid forget"),
+    e(Page::Bluetooth, "Bluetooth", "Bluetooth", "wireless turn on off adapter"),
+    e(Page::Bluetooth, "My devices", "Paired devices", "bluetooth headphones keyboard mouse connect disconnect forget"),
+    e(Page::Bluetooth, "Devices nearby", "Pair a device", "bluetooth new discover scan look"),
+    e(Page::Sound, "Output", "Sound output and volume", "speaker headphones audio loud mute device hdmi"),
+    e(Page::Sound, "Input", "Microphone", "sound input record audio mute level"),
+    e(Page::Sound, "Apps", "Volume of each app", "sound mixer audio per application move output"),
     // Wallpaper
     e(Page::Wallpaper, "Wallpaper", "Wallpaper", "background picture image photo desktop"),
     e(Page::Wallpaper, "Wallpaper", "Wallpaper folder", "directory pictures path choose picker browse recent"),
@@ -333,7 +341,7 @@ mod tests {
     #[test]
     fn sections_exist() {
         // Every card an entry points to is one a page draws (checked against the source).
-        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs"), include_str!("browser_colors.rs")].concat();
+        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs"), include_str!("browser_colors.rs"), include_str!("connect.rs"), include_str!("sound.rs")].concat();
         for en in INDEX.iter().filter(|e| !e.section.is_empty()) {
             assert!(src.contains(&format!("section(ui, \"{}\"", en.section)), "no card titled {}", en.section);
         }
