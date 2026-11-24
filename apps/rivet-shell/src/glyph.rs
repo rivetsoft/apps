@@ -163,6 +163,16 @@ pub fn bolt(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
     p.add(Shape::line(pts, Stroke::new(1.5, col)));
 }
 
+/// A shield (a VPN): filled when it is on.
+pub fn vpn(p: &egui::Painter, c: Pos2, col: Color32, on: bool) {
+    let pts = vec![c + Vec2::new(0.0, -7.5), c + Vec2::new(6.0, -5.0), c + Vec2::new(6.0, 0.5), c + Vec2::new(3.5, 5.0), c + Vec2::new(0.0, 7.5), c + Vec2::new(-3.5, 5.0), c + Vec2::new(-6.0, 0.5), c + Vec2::new(-6.0, -5.0)];
+    if on {
+        p.add(Shape::convex_polygon(pts, col, Stroke::NONE));
+    } else {
+        p.add(Shape::closed_line(pts, Stroke::new(1.5, col)));
+    }
+}
+
 pub fn mic(p: &egui::Painter, c: Pos2, col: Color32, muted: bool) {
     let s = Stroke::new(1.6, col);
     p.rect_stroke(Rect::from_center_size(c + Vec2::new(0.0, -2.5), Vec2::new(5.5, 10.0)), 2.75, s, egui::StrokeKind::Middle);

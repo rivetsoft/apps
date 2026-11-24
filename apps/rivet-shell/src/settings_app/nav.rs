@@ -10,7 +10,7 @@ use super::Page;
 use crate::glyph;
 
 /// The pages under a small heading each; About sits apart at the end.
-pub(super) const GROUPS: &[(&str, &[Page])] = &[("Connections", &[Page::Network, Page::Bluetooth]), ("Look", &[Page::Wallpaper, Page::Appearance]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
+pub(super) const GROUPS: &[(&str, &[Page])] = &[("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
 
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
@@ -19,6 +19,7 @@ pub(super) fn about(page: Page) -> &'static str {
         Page::Appearance => "Colors, text, and the look of panels and windows",
         Page::Network => "Wired connections, and Wi-Fi networks to join or forget",
         Page::Bluetooth => "Devices to pair, connect and forget",
+        Page::Vpn => "VPN connections, Tailscale and ZeroTier",
         Page::Sound => "Where sound plays and records, and how loud each app is",
         Page::Panel => "The bars along the screen's edges and the items on each",
         Page::Dock => "Pinned and open apps along the bottom",
@@ -48,6 +49,7 @@ pub(super) fn icon(p: &egui::Painter, page: Page, c: Pos2, col: Color32) {
         Page::Network => glyph::wifi(p, c - Vec2::new(0.0, 1.0), col),
         Page::Bluetooth => glyph::bluetooth(p, c, col, true),
         Page::Sound => glyph::speaker(p, c, false, col),
+        Page::Vpn => glyph::vpn(p, c, col, false),
         Page::Panel => {
             // A screen with a bar along its top.
             p.rect_stroke(screen, 2.5, s, egui::StrokeKind::Inside);

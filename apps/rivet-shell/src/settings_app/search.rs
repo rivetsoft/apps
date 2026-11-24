@@ -36,6 +36,10 @@ pub const INDEX: &[Entry] = &[
     e(Page::Bluetooth, "Bluetooth", "Bluetooth", "wireless turn on off adapter"),
     e(Page::Bluetooth, "My devices", "Paired devices", "bluetooth headphones keyboard mouse connect disconnect forget"),
     e(Page::Bluetooth, "Devices nearby", "Pair a device", "bluetooth new discover scan look"),
+    e(Page::Vpn, "Connections", "VPN connections", "wireguard openvpn networkmanager connect disconnect private tunnel"),
+    e(Page::Vpn, "Tailscale", "Tailscale", "vpn tailnet exit node connect"),
+    e(Page::Vpn, "ZeroTier", "ZeroTier networks", "vpn join leave network id"),
+    e(Page::Vpn, "Quick settings", "The VPN in quick settings", "block toggle tile switch which"),
     e(Page::Sound, "Output", "Sound output and volume", "speaker headphones audio loud mute device hdmi"),
     e(Page::Sound, "Input", "Microphone", "sound input record audio mute level"),
     e(Page::Sound, "Apps", "Volume of each app", "sound mixer audio per application move output"),
@@ -342,7 +346,7 @@ mod tests {
     #[test]
     fn sections_exist() {
         // Every card an entry points to is one a page draws (checked against the source).
-        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs"), include_str!("browser_colors.rs"), include_str!("connect.rs"), include_str!("sound.rs")].concat();
+        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs"), include_str!("browser_colors.rs"), include_str!("connect.rs"), include_str!("sound.rs"), include_str!("vpn_page.rs")].concat();
         for en in INDEX.iter().filter(|e| !e.section.is_empty()) {
             assert!(src.contains(&format!("section(ui, \"{}\"", en.section)), "no card titled {}", en.section);
         }

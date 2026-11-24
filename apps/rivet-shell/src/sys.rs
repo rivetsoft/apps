@@ -133,6 +133,8 @@ pub struct Status {
     pub wifi_on: Option<bool>,
     /// Bluetooth powered (when there's a controller).
     pub bluetooth: Option<bool>,
+    /// The VPNs there are, and which are on.
+    pub vpns: Vec<crate::vpn::Vpn>,
     /// power-profiles-daemon's profile (power-saver, balanced, performance).
     pub profile: Option<String>,
     /// Battery percent and charging.
@@ -365,6 +367,7 @@ pub fn start(compositor: Compositor, wake: impl Fn() + Send + 'static) -> Live {
                     next.net = network();
                     next.wifi_on = wifi_radio();
                     next.bluetooth = bluetooth();
+                    next.vpns = crate::vpn::read().list;
                     next.profile = output("powerprofilesctl", &["get"]).map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
                 }
                 publish(next, &mut s);

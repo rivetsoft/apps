@@ -219,6 +219,8 @@ pub enum Act {
     Media(&'static str),
     Wifi(bool),
     Bluetooth(bool),
+    /// Turn a VPN (`vpn::Vpn::key`) on or off.
+    Vpn(String, bool),
     /// Join, leave, pair, forget… (done on the radios' thread).
     Radio(crate::radio::Job),
     /// Read the AI plans' usage again now.
@@ -250,6 +252,8 @@ pub enum Act {
     Settings,
     /// Something for a tray icon's app (a click, its menu…).
     Tray(crate::tray::Job),
+    /// The Settings window, on the page of this name.
+    SettingsPage(&'static str),
     /// Something for a plugin: a click on its item, a row of its menu.
     Plugin(String, crate::plugins::Event),
     /// What was typed into the password dialog.

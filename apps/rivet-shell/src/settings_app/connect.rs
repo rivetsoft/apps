@@ -110,16 +110,20 @@ pub(super) fn row(ui: &mut egui::Ui, icon: &dyn Fn(&egui::Painter, Pos2, Color32
     ui.horizontal(|ui| {
         let (r, _) = ui.allocate_exact_size(Vec2::new(26.0, 38.0), Sense::hover());
         icon(ui.painter(), r.center(), if strong { v.selection.bg_fill } else { v.text_color() });
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
-            ui.add_space(if sub.is_empty() { 10.0 } else { 3.0 });
-            let name = egui::RichText::new(title).size(13.5);
-            ui.label(if strong { name.strong() } else { name });
-            if !sub.is_empty() {
-                ui.label(egui::RichText::new(sub).size(11.5).color(v.weak_text_color()));
-            }
+        // The buttons first, from the far end, so the words take what is left and are cut short
+        // with … when that isn't enough.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            buttons(ui);
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.add_space(if sub.is_empty() { 10.0 } else { 3.0 });
+                let name = egui::RichText::new(title).size(13.5);
+                ui.add(egui::Label::new(if strong { name.strong() } else { name }).truncate());
+                if !sub.is_empty() {
+                    ui.add(egui::Label::new(egui::RichText::new(sub).size(11.5).color(v.weak_text_color())).truncate()).on_hover_text(sub);
+                }
+            });
         });
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| buttons(ui));
     });
 }
 

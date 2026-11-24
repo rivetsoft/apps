@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **VPNs**: a VPN page in Settings lists the VPN connections NetworkManager keeps (WireGuard, OpenVPN and others), Tailscale with its exit node, and ZeroTier's networks, which you can join by ID, leave and join again. Quick settings gets a VPN block that turns one of them on and off; the page chooses which when there are several.
 - **Network, Bluetooth and Sound pages in Settings**: see each wired connection with its speed and address, and connect or disconnect it; join, leave and forget Wi-Fi networks; pair, connect and forget Bluetooth devices; choose where sound plays and records, set each one's volume, and set the volume and output of each app playing. Each page shows only when the computer has what it needs.
 - **Settings opens on an overview**: every page as a symbol and its name, group by group, with search above them. Open a page and the sidebar is there as before, with All Settings at its top to go back.
 - **Softcore**: under Softcore, Rivet's own compositor, the panel shows workspaces and the focused window's title, the dock shows what is open and can close it, and Log Out and turning the screens off work. Displays and the window look (gaps, borders, corners) can be set from Settings there too; Softcore applies them as you change them.

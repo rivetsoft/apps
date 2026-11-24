@@ -27,6 +27,7 @@ mod idle_lock;
 mod colors;
 mod connect;
 mod sound;
+mod vpn_page;
 mod icon_pick;
 mod browser_colors;
 mod palette_pick;
@@ -49,6 +50,8 @@ enum Page {
     Network,
     /// Only there with BlueZ and an adapter.
     Bluetooth,
+    /// Only there with NetworkManager, Tailscale or ZeroTier.
+    Vpn,
     /// Only there with PipeWire's or PulseAudio's control program.
     Sound,
     Panel,
@@ -65,17 +68,17 @@ enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 15] = [Page::Wallpaper, Page::Appearance, Page::Network, Page::Bluetooth, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    const ALL: [Page; 16] = [Page::Wallpaper, Page::Appearance, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
     /// Whether the page is in the sidebar and in search: all but the ones for a compositor
     /// that isn't running or for programs that aren't installed. Screenshots show every one.
     fn shown(self) -> bool {
         use std::sync::OnceLock;
-        static HAS: OnceLock<[bool; 3]> = OnceLock::new();
+        static HAS: OnceLock<[bool; 4]> = OnceLock::new();
         let has = |i: usize| {
             HAS.get_or_init(|| {
                 let shot = std::env::args().any(|a| a == "--screenshot");
                 let there = |cmd: &str| shot || crate::browser::on_path(cmd).is_some();
-                [there("nmcli"), there("bluetoothctl") && (shot || std::fs::read_dir("/sys/class/bluetooth").is_ok_and(|mut d| d.next().is_some())), there("pactl")]
+                [there("nmcli"), there("bluetoothctl") && (shot || std::fs::read_dir("/sys/class/bluetooth").is_ok_and(|mut d| d.next().is_some())), there("pactl"), shot || crate::vpn::any_installed()]
             })[i]
         };
         match self {
@@ -83,6 +86,7 @@ impl Page {
             Page::Network => has(0),
             Page::Bluetooth => has(1),
             Page::Sound => has(2),
+            Page::Vpn => has(3),
             _ => true,
         }
     }
@@ -93,6 +97,7 @@ impl Page {
             Page::Appearance => "Appearance",
             Page::Network => "Network",
             Page::Bluetooth => "Bluetooth",
+            Page::Vpn => "VPN",
             Page::Sound => "Sound",
             Page::Panel => "Panels",
             Page::Dock => "Dock",
@@ -127,6 +132,7 @@ pub struct SettingsApp {
     /// The Network and Bluetooth pages' lists, and the Sound page's devices.
     conn: connect::State,
     sound: sound::State,
+    vpn: vpn_page::State,
     apps: Vec<DesktopApp>,
     /// The wallpaper folder's pictures and thumbnails.
     picker: crate::wall_pick::Picker,
@@ -331,6 +337,7 @@ impl SettingsApp {
             home,
             conn: connect::State::new(shot_mode),
             sound: sound::State::new(shot_mode),
+            vpn: vpn_page::State::new(shot_mode),
             apps,
             picker: Default::default(),
             picking: None,
@@ -574,6 +581,7 @@ impl eframe::App for SettingsApp {
                             Page::Appearance => self.appearance_page(ui),
                         Page::Network => self.network_page(ui),
                         Page::Bluetooth => self.bluetooth_page(ui),
+                        Page::Vpn => self.vpn_page(ui),
                         Page::Sound => self.sound_page(ui),
                             Page::Panel => self.panel_page(ui),
                             Page::Dock => self.dock_page(ui),

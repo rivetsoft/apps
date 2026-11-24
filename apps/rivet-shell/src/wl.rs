@@ -1035,7 +1035,7 @@ impl Shell {
                     }
                     ("lock", _) => self.locker.lock(&self.s),
                     ("unlock", _) => self.locker.unlock(),
-                    ("settings", _) => open_settings(),
+                    ("settings", _) => open_settings(None),
                     ("reload", _) => self.reload_settings(true),
                     // The Settings window saved: take it now rather than at the next tick.
                     ("changed", _) => self.reload_settings(false),
@@ -1233,7 +1233,7 @@ impl Shell {
         // The dock item in a panel shows open apps too.
         let panel_changed = panel_changed || (dock_changed && self.s.panels.iter().any(|p| p.has("dock")));
         let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Network { .. } | PopupKind::Bluetooth));
-        let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.profile != prev.profile;
+        let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.vpns != prev.vpns || st.profile != prev.profile;
         for s in &mut self.surfs {
             let shows = match s.kind {
                 Kind::Panel => panel_changed,
@@ -1927,6 +1927,16 @@ impl Shell {
                     self.radio.run(crate::radio::Job::BtScan);
                 }
             }
+            Act::Vpn(key, on) => {
+                // Its program can take seconds: on a thread, and the status is read again after.
+                let live = self.live.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = crate::vpn::set(&key, on) {
+                        eprintln!("rivet-shell: VPN: {e}");
+                    }
+                    live.refresh(true);
+                });
+            }
             Act::AiRefresh => self.ai.refresh(true),
             Act::WeatherRefresh => self.weather.refresh(),
             Act::AiPin(key) => self.change_settings(|s| {
@@ -2053,7 +2063,8 @@ impl Shell {
                 self.close_popup();
                 sys::power(self.comp, p);
             }
-            Act::Settings => open_settings(),
+            Act::Settings => open_settings(None),
+            Act::SettingsPage(page) => open_settings(Some(page)),
             Act::Tray(job) => self.tray.run(job),
             Act::Plugin(id, ev) => self.plugins.send(&id, ev),
         }
@@ -2064,9 +2075,16 @@ impl Shell {
 }
 
 /// The Settings window (its own program, so the shell never waits on it).
-pub fn open_settings() {
-    if let Ok(exe) = std::env::current_exe()
-        && let Ok(child) = std::process::Command::new(exe).arg("settings").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()
+/// Open the Settings window, on `page` when one is named.
+pub fn open_settings(page: Option<&str>) {
+    let mut cmd = match std::env::current_exe() {
+        Ok(exe) => std::process::Command::new(exe),
+        Err(_) => return,
+    };
+    if let Some(p) = page {
+        cmd.env("RIVET_SHELL_PAGE", p);
+    }
+    if let Ok(child) = cmd.arg("settings").stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).spawn()
     {
         sys::reap(child);
     }

@@ -215,6 +215,17 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Sound: Output and Input each list the devices, with Use to choose one; choosing an output moves the apps playing to it. Volume and Mute under each list act on the one in use. Apps lists what is playing, with a volume each and, when there is more than one output, which output it plays on.
 - The pages read only while they are showing, and use the same code as the panel's Network, Bluetooth and Sound popups.
 
+### VPN: the page in Settings and the block in quick settings
+
+`vpn.rs`, `settings_app/vpn_page.rs`, `quick.rs` (the VPN toggle).
+
+- Three kinds in one page, each shown only when its program is installed: NetworkManager's VPN connections (`nmcli`), Tailscale (`tailscale`) and ZeroTier (`zerotier-cli`).
+- Connections: every WireGuard or other VPN connection NetworkManager keeps, with Connect or Disconnect. Rivet does not add or import connections yet: add them with NetworkManager's own tools. A tunnel another program brought up (wg-quick, for one) is listed as connected with no button, because NetworkManager only watches it.
+- Tailscale: Connect and Disconnect, the tailnet's name and this computer's address, and Exit node when the tailnet offers any. If Tailscale refuses because this user isn't its operator, the card shows Allow, which asks for the password once and makes this user the operator. Signing in is still done with `tailscale login` in a terminal.
+- ZeroTier: its networks can only be read with ZeroTier's key, which belongs to root. Allow asks for the password once and puts a copy of the key in the home folder, readable by this user only, which is the way ZeroTier documents. After that: each joined network with Leave, a field to join one by its 16-character ID, and the networks left earlier with Join and Forget. Rivet remembers those in its own settings, since ZeroTier forgets a network when it is left. A new network usually has to be approved by whoever runs it before it connects; the row says so.
+- Quick settings: a VPN block appears when there is at least one VPN that can be switched. It turns one on and off: the first there is, or the one chosen under Quick settings on the VPN page when there are several. Its arrow opens the VPN page. For a ZeroTier network, off means leaving it and on means joining it again.
+- The shell reads the VPNs every ten seconds with the rest of the slower status.
+
 ### Login screen (greetd)
 
 From `greeter.rs` and `rivet-shell greeter --setup`.

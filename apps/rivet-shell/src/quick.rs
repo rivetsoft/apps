@@ -48,6 +48,9 @@ fn toggles(m: &Model) -> Vec<Toggle> {
     if let Some(on) = st.bluetooth {
         t.push(Toggle { title: "Bluetooth", sub: if on { "On" } else { "Off" }.into(), on, glyph: glyph::bluetooth, act: Act::Bluetooth(!on) });
     }
+    if let Some((key, name, on)) = crate::vpn::chosen(&st.vpns, &m.s.quick_vpn) {
+        t.push(Toggle { title: "VPN", sub: if on && !name.is_empty() { name } else if on { "On".into() } else { "Off".into() }, on, glyph: glyph::vpn, act: Act::Vpn(key, !on) });
+    }
     if let Some(on) = ex.night {
         t.push(Toggle { title: "Night Light", sub: if on { format!("{} K", m.s.night_kelvin) } else { "Off".into() }, on, glyph: glyph::moon, act: Act::NightLight(!on) });
     }
@@ -279,10 +282,13 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                             "Bluetooth" => Some((PopupKind::Bluetooth, "Devices")),
                             _ => None,
                         };
-                        let room = if more.is_some() { 26.0 } else { 0.0 };
+                        // VPN: its › opens the VPN page in Settings.
+                        let page = (t.title == "VPN").then_some(("VPN", "VPN settings"));
+                        let room = if more.is_some() || page.is_some() { 26.0 } else { 0.0 };
                         let g = one_line(ui.painter(), &t.sub, ui_font(11.5), weak, r.width() - 52.0 - room);
                         ui.painter().galley(Pos2::new(r.left() + 44.0, r.center().y + 2.0), g, weak);
-                        if let Some((kind, tip)) = more {
+                        if more.is_some() || page.is_some() {
+                            let tip = more.as_ref().map(|m| m.1).or(page.map(|p| p.1)).unwrap_or_default();
                             let mr = Rect::from_min_max(Pos2::new(r.right() - room - 2.0, r.top() + 6.0), Pos2::new(r.right() - 6.0, r.bottom() - 6.0));
                             let mresp = ui.interact(mr, egui::Id::unique(("quick-more", t.title)), Sense::click());
                             if mresp.hovered() {
@@ -292,7 +298,11 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                             let col = if mresp.hovered() { v.strong_text_color() } else { weak };
                             ui.painter().add(egui::Shape::line(vec![c + Vec2::new(-2.0, -4.5), c + Vec2::new(2.5, 0.0), c + Vec2::new(-2.0, 4.5)], Stroke::new(1.6, col)));
                             if mresp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip).clicked() {
-                                acts.push(Act::Open(Popup::at(kind, mr.center().x, m.output)));
+                                match (more, page) {
+                                    (Some((kind, _)), _) => acts.push(Act::Open(Popup::at(kind, mr.center().x, m.output))),
+                                    (_, Some((page, _))) => acts.extend([Act::Close, Act::SettingsPage(page)]),
+                                    _ => {}
+                                }
                                 continue;
                             }
                         }

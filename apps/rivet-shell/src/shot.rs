@@ -80,6 +80,7 @@ pub fn demo_status() -> Status {
         net: Net::Wifi("Home".into()),
         wifi_on: Some(true),
         bluetooth: Some(false),
+        vpns: crate::vpn::demo().list,
         profile: Some("balanced".into()),
         battery: Some((76, false)),
         cpu: 23.0,

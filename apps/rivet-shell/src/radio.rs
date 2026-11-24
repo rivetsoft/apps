@@ -228,7 +228,7 @@ fn btctl(secs: u32, args: &[&str]) -> Result<String, String> {
 }
 
 /// nmcli's terse output splits on ':' with '\:' for a colon inside a field.
-fn split_terse(line: &str) -> Vec<String> {
+pub(crate) fn split_terse(line: &str) -> Vec<String> {
     let mut out = vec![String::new()];
     let mut esc = false;
     for c in line.chars() {
