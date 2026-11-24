@@ -21,6 +21,8 @@ app, or `--workspace` for everything.
 | `apps/rivet-welcome` | `rivet-welcome` | Installs and updates the apps; a tray icon. |
 | `apps/rivet-snip` | `rivet-snip` | Clips and marks up screenshots. A compositor hands it the picture as a file or on standard input; `rivet-snip capture` takes one itself anywhere else. Unreleased; built from source. |
 | `apps/rivet-vice` | `rivet-vice` | The archive manager: opens an archive, shows what is in it, extracts all or some of it and makes new ones. Rivet Files' right-click menu opens an archive in it. Unreleased; built from source. |
+| `apps/rivet-calendar` | `rivet-calendar` | A calendar kept in plain `.ics` folders (the vdir layout vdirsyncer and khal use): day, week, month and agenda views, an event editor, repeating events. Its shell plugin gives the panel calendar its events. Unreleased; built from source. |
+| `apps/rivet-fetch` | `rivetfetch` | A fastfetch-style summary of the computer in the terminal, beside the mascot drawn from his pixel art. No window, so it uses `rivet-xdg` but not `rivet-look` or `rivet-kit`. Unreleased; built from source. |
 
 | Crate | What it holds |
 | --- | --- |
@@ -31,6 +33,7 @@ app, or `--workspace` for everything.
 | `rivet-term` | The terminal: a shell in a pseudo-terminal, drawn as an egui widget. |
 | `rivet-connections` | Saved server connections, shared by Rivet FTP's window, its command line and plain `ssh`. |
 | `rivet-git` | Git with no interface, by running the `git` program. |
+| `rivet-cal` | Calendars with no interface: the `.ics` folders, reading and writing iCalendar without losing what isn't used, repeating events, the occurrences in a span of days. |
 | `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files and Vice. |
 
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
@@ -53,6 +56,7 @@ No app depends on another app; they only depend on crates. Who uses what:
 | `rivet-term` | Terminal (and meant for Edit's panel) |
 | `rivet-connections` | FTP |
 | `rivet-git` | Edit (and meant for a Git app of its own) |
+| `rivet-cal` | Calendar |
 
 What "the same in every app" means in practice is a module of `rivet-look`:
 
@@ -88,6 +92,11 @@ the crate. A piece that is still written as part of one app's window needs lifti
   program), `~/.config/rivet-NAME/settings` for the rest. An app may read another's file only
   through code that owns the format: the Notes plugin reads Notes' settings because it is
   Notes.
+- **Calendars.** `~/.local/share/rivet-calendar`, a folder per calendar with an `.ics` file per
+  event and its name and colour in `displayname` and `color`, owned by `rivet-cal`. It's the
+  layout vdirsyncer and khal use, so either can share the folders (vdirsyncer for a CalDAV
+  server). The shell never reads them: Rivet Calendar's plugin sends the panel calendar its
+  events.
 - **Saved connections.** `~/.config/rivet-ftp/connections.conf`, owned by `rivet-connections`,
   read by Rivet FTP's window and command line, and written out as an ssh config so plain
   `ssh`, `scp`, `rsync` and `git` reach them by name. Passwords are never in it.
@@ -102,7 +111,7 @@ the crate. A piece that is still written as part of one app's window needs lifti
   Other Rivet apps ask the portal, not Rivet Files; Rivet Shell's folder and picture choosers
   do the same (`src/portal.rs`).
 - **Shell plugins.** An app joins the shell through a plugin: a folder with a `plugin.conf`
-  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`, `rivet-edit shell-plugin`), kept
+  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`, `rivet-edit shell-plugin`, `rivet-calendar shell-plugin`), kept
   running and speaking JSON lines. The shell shows what it says (a panel item, a menu, launcher
   entries under `@notes`, `@ftp` or `@edit`) and tells it what was chosen; the app then opens its own
   window (`rivet-notes FOLDER --note PATH`, `rivet-ftp open NAME`). Read PLUGINS.md before
