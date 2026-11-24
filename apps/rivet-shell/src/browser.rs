@@ -113,8 +113,26 @@ fn look(s: &Settings) -> Option<[u8; 3]> {
     let dark = pal.map(|p| p.is_dark()).unwrap_or(s.theme != rivet_look::theme::Mode::Light);
     let accent = live.accent(&s.choice());
     let surface = pal.and_then(|p| p.window_bg).unwrap_or(if dark { eframe::egui::Color32::from_rgb(0x24, 0x24, 0x24) } else { eframe::egui::Color32::from_rgb(0xf6, 0xf5, 0xf4) });
-    let c = if s.browser_accent { accent } else { rivet_look::palette::mix(rivet_look::palette::mix(surface, accent, 0.06), eframe::egui::Color32::BLACK, s.browser_darker.min(100) as f32 / 100.0) };
-    Some([c.r(), c.g(), c.b()])
+    let c = if s.browser_accent { [accent.r(), accent.g(), accent.b()] } else { rivet_look::palette::mix(surface, accent, 0.06).to_array()[..3].try_into().unwrap_or_default() };
+    Some(shade(c, if s.browser_accent { s.browser_accent_shade } else { -(s.browser_darker.min(100) as i32) }))
+}
+
+/// A colour darker (`by` below 0, to -100) or lighter (above, to 100). Darker scales it down,
+/// which keeps its hue and how strong the hue is: the browser takes its buttons' colour from
+/// the hue, and a colour mixed toward black turns grey first and then strongly tinted. It stops
+/// just short of black, where there is no hue left to read. Lighter mixes toward white.
+fn shade(c: [u8; 3], by: i32) -> [u8; 3] {
+    let t = by.clamp(-100, 100) as f32 / 100.0;
+    if t < 0.0 {
+        // The brightest part ends no lower than this, so the others still stand apart from it.
+        const FLOOR: f32 = 14.0;
+        let top = c.iter().copied().max().unwrap_or(0) as f32;
+        let least = if top > FLOOR { FLOOR / top } else { 1.0 };
+        let k = 1.0 + t * (1.0 - least);
+        c.map(|v| (v as f32 * k).round() as u8)
+    } else {
+        c.map(|v| (v as f32 + (255.0 - v as f32) * t * 0.9).round() as u8)
+    }
 }
 
 /// Bring each browser's file up to date with the settings and the theme, and have the ones
@@ -147,6 +165,17 @@ mod tests {
     fn the_policy_file() {
         assert_eq!(text(Some([0xe6, 0x61, 0x00])), "{\"BrowserThemeColor\": \"#e66100\"}\n");
         assert_eq!(text(None), "{}\n");
+    }
+
+    #[test]
+    fn shades() {
+        assert_eq!(shade([44, 40, 37], 0), [44, 40, 37]);
+        // All the way down keeps the colour's proportions, just short of black.
+        assert_eq!(shade([44, 40, 37], -100), [14, 13, 12]);
+        assert_eq!(shade([200, 100, 50], -50), [107, 53, 27]);
+        assert_eq!(shade([200, 100, 50], 100), [250, 240, 235]);
+        // Already at the floor: left alone.
+        assert_eq!(shade([10, 8, 8], -100), [10, 8, 8]);
     }
 
     /// What is on this machine: `cargo test -p rivet-shell browsers_here -- --ignored --nocapture`.

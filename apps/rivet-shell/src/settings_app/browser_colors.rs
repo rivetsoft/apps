@@ -1,4 +1,4 @@
-//! Appearance, Browser colors: Chromium, Chrome, Brave and Edge take the theme's colour.
+//! Applications, Browser colors: Chromium, Chrome, Brave and Edge take the theme's colour.
 //! What it does and the one-time password step are `crate::browser`'s.
 
 use std::sync::Mutex;
@@ -87,11 +87,19 @@ impl SettingsApp {
                 ui.label("Color");
                 panel_editor::segmented(ui, &mut self.s.browser_accent, &[(false, "Windows"), (true, "Accent")]);
                 ui.end_row();
-                if !self.s.browser_accent {
+                if self.s.browser_accent {
+                    ui.label("Shade");
+                    let words = |v: f64, _: std::ops::RangeInclusive<usize>| match v as i32 {
+                        0 => "As it is".to_string(),
+                        v if v < 0 => format!("{}% darker", -v),
+                        v => format!("{v}% lighter"),
+                    };
+                    ui.add(egui::Slider::new(&mut self.s.browser_accent_shade, -100..=100).step_by(5.0).custom_formatter(words));
+                } else {
                     ui.label("Darker");
-                    ui.add(egui::Slider::new(&mut self.s.browser_darker, 0..=100).step_by(5.0).suffix("%")).on_hover_text("At 100% the browser's window is black.");
-                    ui.end_row();
+                    ui.add(egui::Slider::new(&mut self.s.browser_darker, 0..=100).step_by(5.0).suffix("%")).on_hover_text("The browser draws its toolbar a step lighter than its window, so the toolbar stays dark gray.");
                 }
+                ui.end_row();
             });
             hint(ui, if self.s.browser_accent { "The whole browser window takes the accent, which is bright under most themes." } else { "The browser takes the color of the desktop's windows, so it is dark when they are, with the accent on its buttons." });
         });

@@ -10,13 +10,14 @@ use super::Page;
 use crate::glyph;
 
 /// The pages under a small heading each; About sits apart at the end.
-pub(super) const GROUPS: &[(&str, &[Page])] = &[("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
+pub(super) const GROUPS: &[(&str, &[Page])] = &[("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance, Page::Applications]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
 
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
     match page {
         Page::Wallpaper => "The desktop picture and how a new one appears",
         Page::Appearance => "Colors, text, and the look of panels and windows",
+        Page::Applications => "Other apps that take the theme's colors",
         Page::Network => "Wired connections, and Wi-Fi networks to join or forget",
         Page::Bluetooth => "Devices to pair, connect and forget",
         Page::Vpn => "VPN connections, Tailscale and ZeroTier",
@@ -46,6 +47,12 @@ pub(super) fn icon(p: &egui::Painter, page: Page, c: Pos2, col: Color32) {
             p.add(egui::Shape::line(vec![c + Vec2::new(-5.5, 4.0), c + Vec2::new(-1.0, 0.5), c + Vec2::new(1.5, 2.5), c + Vec2::new(3.5, 0.5), c + Vec2::new(6.0, 3.5)], s));
         }
         Page::Appearance => glyph::contrast(p, c, col),
+        Page::Applications => {
+            // A window with a swatch of colour in it.
+            p.rect_stroke(screen, 2.5, s, egui::StrokeKind::Inside);
+            p.line_segment([Pos2::new(screen.left() + 1.0, screen.top() + 3.5), Pos2::new(screen.right() - 1.0, screen.top() + 3.5)], s);
+            p.circle_filled(c + Vec2::new(0.0, 2.0), 2.4, col);
+        }
         Page::Network => glyph::wifi(p, c - Vec2::new(0.0, 1.0), col),
         Page::Bluetooth => glyph::bluetooth(p, c, col, true),
         Page::Sound => glyph::speaker(p, c, false, col),

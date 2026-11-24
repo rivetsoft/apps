@@ -141,7 +141,8 @@ screens from Rivet Shell's file so the compositor's own config sets them again.
 
 ### Browser colors
 
-Location: `apps/rivet-shell/src/settings_app/browser_colors.rs`, Appearance, "Browser colors";
+Location: `apps/rivet-shell/src/settings_app/browser_colors.rs`, Applications (under Look),
+"Browser colors"; the Applications page is where other apps that take the theme's colors will go;
 the work is `apps/rivet-shell/src/browser.rs`.
 
 - Chromium, Chrome, Brave (and Brave Origin) and Edge take one color from the theme and make
@@ -153,8 +154,14 @@ the work is `apps/rivet-shell/src/browser.rs`.
   the accent mixed in: dark under a dark theme, with the accent's hue on buttons and outlines.
   A plain gray would leave the browser to pick a hue of its own. Accent gives it the accent
   for the whole window, which is bright under most themes. Single parts can't be set.
-- Darker (shown under Windows): mixes that color toward black, 0% to 100% in steps of 5, for a
-  browser darker than the desktop's windows. The accent's hue on buttons stays.
+- Darker (shown under Windows): takes that color down, 0% to 100% in steps of 5, for a browser
+  darker than the desktop's windows. It scales the color, which keeps the accent's hue in it,
+  and stops just short of black, so the buttons keep the accent. The limit is the browser's:
+  it paints its frame in exactly the color given and always draws the toolbar and tabs a
+  fixed step lighter, so at 100% the frame is almost black and the toolbar is dark gray
+  (about #3b3632 in Brave). Nothing in the one color can make the toolbar darker.
+- Shade (shown under Accent): the accent 100% darker to 100% lighter, in steps of 5. A darker
+  accent gives a dark, strongly colored browser; a lighter one a pale browser.
 - It follows the theme: the shell writes the color again when the wallpaper's colors change
   and tells a running browser to read it, so open windows recolor with no restart.
 - How: these browsers read "managed policies" from a folder under `/etc`

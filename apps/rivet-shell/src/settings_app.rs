@@ -46,6 +46,8 @@ enum Page {
     #[default]
     Wallpaper,
     Appearance,
+    /// Other programs that take the theme's colours.
+    Applications,
     /// Wi-Fi: only there with NetworkManager.
     Network,
     /// Only there with BlueZ and an adapter.
@@ -68,7 +70,7 @@ enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 16] = [Page::Wallpaper, Page::Appearance, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    const ALL: [Page; 17] = [Page::Wallpaper, Page::Appearance, Page::Applications, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
     /// Whether the page is in the sidebar and in search: all but the ones for a compositor
     /// that isn't running or for programs that aren't installed. Screenshots show every one.
     fn shown(self) -> bool {
@@ -95,6 +97,7 @@ impl Page {
         match self {
             Page::Wallpaper => "Wallpaper",
             Page::Appearance => "Appearance",
+            Page::Applications => "Applications",
             Page::Network => "Network",
             Page::Bluetooth => "Bluetooth",
             Page::Vpn => "VPN",
@@ -579,6 +582,7 @@ impl eframe::App for SettingsApp {
                         match self.page {
                             Page::Wallpaper => self.wallpaper_page(ui, accent),
                             Page::Appearance => self.appearance_page(ui),
+                        Page::Applications => self.browser_colors_section(ui),
                         Page::Network => self.network_page(ui),
                         Page::Bluetooth => self.bluetooth_page(ui),
                         Page::Vpn => self.vpn_page(ui),
@@ -748,7 +752,6 @@ impl SettingsApp {
         self.icons_section(ui);
         self.look_section(ui);
         self.window_look_section(ui);
-        self.browser_colors_section(ui);
     }
 
     fn panel_page(&mut self, ui: &mut egui::Ui) {

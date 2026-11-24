@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **An Applications page in Settings**, under Look, for other apps that take the theme's colors. Browser colors moved there from Appearance. With Accent as the browser's color, a new Shade slider makes the accent darker or lighter; with Windows, Darker at 100% now reaches almost black and keeps the accent on the browser's buttons.
 - **Browser colors can go darker**: under Browser colors on the Appearance page, Darker takes the browser's window from the color of the desktop's windows down to black.
 - **Browser colors follow dark and light**: the browser now takes the color of the desktop's windows, with the accent on its buttons, so it is dark under a dark theme. Before, it took the accent for its whole window, which made it bright. Accent is still there as a choice.
 - **VPNs**: a VPN page in Settings lists the VPN connections NetworkManager keeps (WireGuard, OpenVPN and others), Tailscale with its exit node, and ZeroTier's networks, which you can join by ID, leave and join again. Quick settings gets a VPN block that turns one of them on and off; the page chooses which when there are several.

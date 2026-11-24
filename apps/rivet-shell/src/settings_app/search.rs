@@ -63,7 +63,7 @@ pub const INDEX: &[Entry] = &[
     e(Page::Appearance, "Colors", "Color palette", "colours scheme theme preset built-in nord dracula gruvbox catppuccin solarized tokyo night one dark without matugen"),
     e(Page::Appearance, "Colors", "Surface color", "background colour surface black slate navy paper custom own tint base"),
     e(Page::Appearance, "Icons", "Icon theme", "icons apps tray papirus adwaita breeze system installed set"),
-    e(Page::Appearance, "Browser colors", "Browsers in the theme's color", "chromium chrome brave edge web browser theme colour match wallpaper"),
+    e(Page::Applications, "Browser colors", "Browsers in the theme's color", "applications apps chromium chrome brave edge web browser theme colour match wallpaper"),
     e(Page::Appearance, "Color use", "Secondary and tertiary colors", "other colourful colorful palette how much accent only some a lot"),
     e(Page::Appearance, "Text", "Font", "typeface family text lettering"),
     e(Page::Appearance, "Text", "Text size", "font scale bigger smaller large small zoom"),

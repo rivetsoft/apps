@@ -704,6 +704,8 @@ pub struct Settings {
     pub browser_accent: bool,
     /// How much darker than the desktop's windows the browsers are, 0 to 100 (100: black).
     pub browser_darker: u32,
+    /// The accent the browsers get, darker (below 0) or lighter (above), -100 to 100.
+    pub browser_accent_shade: i32,
     // ---- idle and the lock screen (idle.rs, lock.rs); times in seconds, 0 for never
     /// The shell watches for idle (else another program, like hypridle or swayidle, does).
     /// The VPN the quick settings block switches (`vpn::Vpn::key`; empty: the first there is).
@@ -858,6 +860,7 @@ impl Default for Settings {
             browser_colors: false,
             browser_accent: false,
             browser_darker: 0,
+            browser_accent_shade: 0,
             idle_on: true,
             idle_dim: 240,
             idle_lock: 300,
@@ -1120,6 +1123,7 @@ impl Settings {
                 "browser_colors" => self.browser_colors = b,
                 "browser_accent" => self.browser_accent = b,
                 "browser_darker" => self.browser_darker = v.parse::<u32>().unwrap_or(0).min(100),
+                "browser_accent_shade" => self.browser_accent_shade = v.parse::<i32>().unwrap_or(0).clamp(-100, 100),
                 "idle_on" => self.idle_on = b,
                 "idle_dim" => self.idle_dim = v.parse::<u32>().unwrap_or(0).min(86_400),
                 "idle_lock" => self.idle_lock = v.parse::<u32>().unwrap_or(0).min(86_400),
@@ -1256,7 +1260,7 @@ impl Settings {
             "comp_on={}\ncomp_gaps_in={}\ncomp_gaps_out={}\ncomp_border={}\ncomp_radius={}\ncomp_accent_borders={}\ncomp_inactive_opacity={}\ncomp_shadows={}\n",
             self.comp_on, self.comp_gaps_in, self.comp_gaps_out, self.comp_border, self.comp_radius, self.comp_accent_borders, self.comp_inactive_opacity, self.comp_shadows
         ));
-        t.push_str(&format!("browser_colors={}\nbrowser_accent={}\nbrowser_darker={}\nquick_vpn={}\nzerotier_networks={}\n", self.browser_colors, self.browser_accent, self.browser_darker, self.quick_vpn.replace('\n', ""), self.zerotier_networks.iter().map(|(id, name)| format!("{id}:{}", name.replace(['|', '\n'], " "))).collect::<Vec<_>>().join("|")));
+        t.push_str(&format!("browser_colors={}\nbrowser_accent={}\nbrowser_darker={}\nbrowser_accent_shade={}\nquick_vpn={}\nzerotier_networks={}\n", self.browser_colors, self.browser_accent, self.browser_darker, self.browser_accent_shade, self.quick_vpn.replace('\n', ""), self.zerotier_networks.iter().map(|(id, name)| format!("{id}:{}", name.replace(['|', '\n'], " "))).collect::<Vec<_>>().join("|")));
         t.push_str(&format!(
             "idle_on={}\nidle_dim={}\nidle_lock={}\nidle_screen_off={}\nidle_suspend={}\nidle_media={}\nlock_on_sleep={}\nlock_cmd={}\nlock_blur={}\nlock_power={}\n",
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
@@ -1507,7 +1511,7 @@ mod tests {
 
     #[test]
     fn comp_round_trips() {
-        let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, browser_colors: true, browser_accent: true, browser_darker: 40, quick_vpn: "zerotier:8056c2e21c000001".into(), zerotier_networks: vec![("8056c2e21c000001".into(), "home: lab".into()), ("1d71939404000002".into(), String::new())], ..Settings::default() };
+        let s = Settings { comp_on: true, comp_gaps_in: 3, comp_gaps_out: 20, comp_border: 0, comp_radius: 14, comp_accent_borders: false, comp_inactive_opacity: 0.85, comp_shadows: false, browser_colors: true, browser_accent: true, browser_darker: 40, browser_accent_shade: -25, quick_vpn: "zerotier:8056c2e21c000001".into(), zerotier_networks: vec![("8056c2e21c000001".into(), "home: lab".into()), ("1d71939404000002".into(), String::new())], ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);
