@@ -55,6 +55,8 @@ struct Page {
     follows: bool,
     follows_at: f64,
     channel: Option<(Sender<Answer>, Receiver<Answer>)>,
+    /// A surface's name being typed into the blur picker's menu.
+    surface_typed: String,
 }
 
 static PAGE: LazyLock<Mutex<Page>> = LazyLock::new(Mutex::default);
@@ -238,6 +240,75 @@ fn tidy(v: f64, step: f64) -> String {
     };
     let t = format!("{v:.places$}");
     if t.contains('.') { t.trim_end_matches('0').trim_end_matches('.').to_string() } else { t }
+}
+
+/// Rivet Shell's own surfaces that can sit over windows, by the names it gives them, and
+/// what Settings calls each.
+const SHELL_SURFACES: [(&str, &str); 5] = [("rivet-shell-panel", "Panels"), ("rivet-shell-dock", "Dock"), ("rivet-shell-popup", "Menus and pop-ups"), ("rivet-shell-notifications", "Notifications"), ("rivet-shell-osd", "Volume and brightness pop-up")];
+
+/// A surface's name as a person reads it: Rivet's own by what they are, others as named.
+fn surface_label(name: &str) -> &str {
+    SHELL_SURFACES.iter().find(|(n, _)| *n == name).map(|(_, l)| *l).unwrap_or(name)
+}
+
+/// The surfaces to blur behind, as tags: each picked one with a way to take it off, and a
+/// menu of Rivet's surfaces and the others on screen now, with a field for any other name.
+fn surface_tags(ui: &mut egui::Ui, now: &str, on_screen: &[String], typed: &mut String) -> Option<Option<String>> {
+    let picked: Vec<&str> = now.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+    let mut next: Option<Vec<String>> = None;
+    let with = |name: &str| picked.iter().map(|n| n.to_string()).chain(std::iter::once(name.to_string())).collect::<Vec<_>>();
+    ui.horizontal_wrapped(|ui| {
+        ui.set_max_width(380.0);
+        ui.spacing_mut().item_spacing = egui::Vec2::new(6.0, 6.0);
+        let v = ui.visuals().clone();
+        for name in &picked {
+            egui::Frame::NONE.fill(rivet_look::palette::mix(v.panel_fill, v.text_color(), 0.1)).corner_radius(14.0).inner_margin(egui::Margin { left: 11, right: 4, top: 2, bottom: 2 }).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 2.0;
+                let label = surface_label(name);
+                let r = ui.label(egui::RichText::new(label).size(13.0));
+                if label != *name {
+                    r.on_hover_text(*name);
+                }
+                if ui.add(egui::Button::new(egui::RichText::new("×").size(14.0).color(v.weak_text_color())).frame(false).min_size(egui::Vec2::splat(20.0))).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Remove").clicked() {
+                    next = Some(picked.iter().filter(|n| *n != name).map(|n| n.to_string()).collect());
+                }
+            });
+        }
+        let add = controls::button(ui, Icon::Plus, "Add");
+        egui::Popup::menu(&add).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
+            ui.set_width(260.0);
+            // The rest on screen now, each that isn't picked yet. Not Rivet's own: the shell asks
+            // for blur behind them itself, in their shapes.
+            let mut offers: Vec<&str> = on_screen.iter().map(String::as_str).filter(|n| !n.starts_with("rivet-shell-")).collect();
+            offers.retain(|n| !picked.contains(n));
+            for &name in &offers {
+                let shown = surface_label(name);
+                let mut text = egui::text::LayoutJob::default();
+                text.append(shown, 0.0, egui::TextFormat { font_id: rivet_look::fonts::ui_font(13.5), color: ui.visuals().text_color(), ..Default::default() });
+                if shown != name {
+                    text.append(name, 8.0, egui::TextFormat { font_id: rivet_look::fonts::ui_font(11.5), color: ui.visuals().weak_text_color(), ..Default::default() });
+                }
+                if ui.selectable_label(false, text).clicked() {
+                    next = Some(with(name));
+                    ui.close();
+                }
+            }
+            if offers.is_empty() {
+                ui.label(egui::RichText::new("No other bars or docks are open. Type one's name.").size(12.5).color(ui.visuals().weak_text_color()));
+            }
+            ui.separator();
+            let r = ui.add(egui::TextEdit::singleline(typed).hint_text("A surface's name, then Enter").desired_width(ui.available_width()));
+            let name = typed.trim().to_string();
+            if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !name.is_empty() && !name.contains(',') {
+                if !picked.contains(&name.as_str()) {
+                    next = Some(with(&name));
+                }
+                typed.clear();
+                ui.close();
+            }
+        });
+    });
+    next.map(|list| (!list.is_empty()).then(|| list.join(",")))
 }
 
 /// One setting's control. Returns the change to make, if any: `Some(text)` to set it,
@@ -553,13 +624,20 @@ impl SettingsApp {
                                 }
                                 return;
                             }
-                            if let Some(c) = control(ui, s, page, &now, accent, &theme) {
+                            // The surfaces to blur behind are picked as tags, from what is on screen.
+                            let c = if s.key == "blur_layers" { surface_tags(ui, &now.text, &state.layers, &mut page.surface_typed) } else { control(ui, s, page, &now, accent, &theme) };
+                            if let Some(c) = c {
                                 changes.push((s.key.clone(), c));
                             }
                             match page.refused.get(&s.key) {
                                 Some(why) => {
                                     ui.add(egui::Label::new(egui::RichText::new(format!("Softcore didn't take that: {why}.")).size(12.0).color(danger)).wrap());
                                 }
+                                // Softcore's words are for typing the names; these are for picking them.
+                                // A Rivet surface named here is blurred all over its rectangle, which for a
+                // panel is its whole edge: the shell blurs them in their shapes instead.
+                None if s.key == "blur_layers" && now.text.contains("rivet-shell-") => hint(ui, "Take Rivet's surfaces off: Rivet Shell blurs behind them in their own shapes. Turn it on in Appearance."),
+                None if s.key == "blur_layers" => hint(ui, "For other bars and docks. All of a surface's rectangle is blurred, so pick ones that fill theirs."),
                                 None => {
                                     hint(ui, &s.help);
                                 }

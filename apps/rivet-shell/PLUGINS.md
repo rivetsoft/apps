@@ -52,6 +52,7 @@ A JSON object; every key is optional.
 | `launcher` | Entries in the launcher: `[{"id":"…","label":"…","icon":"…","query":true}]` (more below) |
 | `notify` | A notification: `{"summary":"…","body":"…"}` |
 | `run` | A `rivet-shell msg` command for the shell: `"launcher"`, `"volume up"`, `"lock"`… |
+| `events` | Events for the panel's calendar (more below) |
 
 ### Menu rows
 
@@ -79,6 +80,22 @@ An entry has a `sub` (shown after its name in a list) and an `icon` too.
 takes it off. `@` alone lists the words there are; choosing one puts in its badge. An entry with
 `"scoped": true` shows only under the plugin's word, never in an ordinary search: for long
 lists (every note, every bookmark) that shouldn't crowd the apps.
+
+### Calendar events
+
+A plugin that lists `month` in `events=` is told which days the panel's calendar shows each time
+it opens or moves to another month: `{"event":"month","from":"2026-10-26","to":"2026-12-07"}`
+(`to` is the day after the last). It answers with `events`, its events on those days:
+
+```json
+{"hidden":true,"events":[{"id":"…","day":"2026-11-24","title":"Lunch","time":"12:00","color":"#e0573f"}]}
+```
+
+An event over several days comes once for each day. `time` is empty for a whole day (and for the
+days after the first of one that runs over midnight). The calendar puts a dot under each day
+with events, one for each colour, and lists the chosen day's under the month; clicking one tells
+the plugin `open` with its `id`. Each list replaces the one before. `hidden` keeps a plugin that
+only gives events off the panel. Rivet Calendar's plugin is one (`rivet-calendar shell-plugin`).
 
 ## Settings of its own
 
@@ -127,6 +144,7 @@ Its own item's events, always:
 | `scroll` | `direction`: `up`, `down` |
 | `menu` | `id`: the row clicked |
 | `launch` | `id`: its launcher entry chosen; `query`: the words typed, or empty |
+| `open` | `id`: one of its `events` clicked in the calendar |
 
 The shell's events, when listed in `events=` (and for hooks):
 
@@ -143,6 +161,7 @@ The shell's events, when listed in `events=` (and for hooks):
 | `dnd` | Do Not Disturb turned on or off | `on` |
 | `workspace` | Another workspace is in front | `key`, `name` |
 | `media` | What's playing changed | `title`, `artist`, `player`, `playing` |
+| `month` | The calendar shows a month (not for hooks) | `from`, `to` |
 
 In the environment (poll plugins, hooks) each comes as `RIVET_` and its name in capitals:
 `RIVET_EVENT=idle RIVET_STAGE=screen-off`. Every plugin also gets `RIVET_PLUGIN` (its id) and

@@ -148,6 +148,7 @@ pub(super) fn overview(ui: &mut egui::Ui, query: &mut String, accent: Color32) -
                 _ => groups.push((name, shown.collect())),
             }
         }
+        let mut tiles: Vec<(Page, Rect, egui::Id)> = Vec::new();
         for (name, pages) in groups {
             let (head, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
             ui.painter().text(Pos2::new(left + 14.0, head.bottom() - 10.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
@@ -155,7 +156,9 @@ pub(super) fn overview(ui: &mut egui::Ui, query: &mut String, accent: Color32) -
                 let (line, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), TILE.y), Sense::hover());
                 for (i, page) in row.iter().enumerate() {
                     let r = Rect::from_min_size(Pos2::new(left + i as f32 * TILE.x, line.top()), TILE).shrink(3.0);
-                    let resp = ui.interact(r, ui.scope_id().with(("overview", *page as u8)), Sense::click());
+                    let id = ui.scope_id().with(("overview", *page as u8));
+                    let resp = ui.interact(r, id, Sense::click());
+                    tiles.push((*page, r, id));
                     if resp.hovered() || resp.has_focus() {
                         ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.07));
                     }
@@ -171,14 +174,60 @@ pub(super) fn overview(ui: &mut egui::Ui, query: &mut String, accent: Color32) -
             }
         }
         ui.add_space(24.0);
+        // The arrow keys go from tile to tile, to the nearest one that way; up from the top
+        // row, the search field; down from the field (with nothing typed), the first tile.
+        let focused = ui.memory(|m| m.focused());
+        let dir = ui.input_mut(|i| {
+            let k = |i: &mut egui::InputState, key| i.consume_key(egui::Modifiers::NONE, key);
+            if k(i, egui::Key::ArrowLeft) { Some(Vec2::new(-1.0, 0.0)) } else if k(i, egui::Key::ArrowRight) { Some(Vec2::new(1.0, 0.0)) } else if k(i, egui::Key::ArrowUp) { Some(Vec2::new(0.0, -1.0)) } else if k(i, egui::Key::ArrowDown) { Some(Vec2::new(0.0, 1.0)) } else { None }
+        });
+        match (focused.and_then(|f| tiles.iter().find(|t| t.2 == f)), dir) {
+            (Some(&(_, from, _)), Some(d)) => {
+                let best = tiles
+                    .iter()
+                    .filter(|t| (t.1.center() - from.center()).dot(d) > 1.0)
+                    // Straight that way first: what's off to the side counts for more.
+                    .min_by_key(|t| {
+                        let off = t.1.center() - from.center();
+                        let along = off.dot(d).abs();
+                        let across = (off - d * off.dot(d)).length();
+                        (along + across * 3.0) as i32
+                    });
+                match best {
+                    Some(t) => {
+                        ui.memory_mut(|m| m.request_focus(t.2));
+                        ui.scroll_to_rect(t.1, None);
+                    }
+                    None if d.y < 0.0 => ui.memory_mut(|m| m.request_focus(search::field_id())),
+                    None => {}
+                }
+            }
+            (None, Some(d)) if d.y > 0.0 && focused == Some(search::field_id()) && query.trim().is_empty() => {
+                if let Some(t) = tiles.first() {
+                    ui.memory_mut(|m| m.request_focus(t.2));
+                }
+            }
+            _ => {}
+        }
     });
     picked
 }
 
-/// The sidebar's way back to the overview. True when pressed.
-pub(super) fn all_settings(ui: &mut egui::Ui, side: Color32) -> bool {
+/// A page's place in the sidebar, for the keyboard to be put on it.
+pub(super) fn page_id(page: Page) -> egui::Id {
+    egui::Id::unique(("settings-side-page", page as u8))
+}
+
+/// The sidebar's All Settings, for the keyboard to be put on it.
+pub(super) fn all_id() -> egui::Id {
+    egui::Id::unique("settings-side-all")
+}
+
+/// The sidebar's way back to the overview.
+pub(super) fn all_settings(ui: &mut egui::Ui, side: Color32) -> egui::Response {
     let v = ui.visuals().clone();
-    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
+    let resp = ui.interact(r, all_id(), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r, r_md(), palette::mix(side, v.text_color(), 0.07));
     }
@@ -186,5 +235,5 @@ pub(super) fn all_settings(ui: &mut egui::Ui, side: Color32) -> bool {
     let s = Stroke::new(1.5, v.weak_text_color());
     ui.painter().add(egui::Shape::line(vec![c + Vec2::new(2.0, -4.5), c + Vec2::new(-2.5, 0.0), c + Vec2::new(2.0, 4.5)], s));
     ui.painter().text(Pos2::new(r.left() + 42.0, r.center().y), egui::Align2::LEFT_CENTER, "All Settings", fonts::ui_font(13.5), v.text_color());
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked()
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }

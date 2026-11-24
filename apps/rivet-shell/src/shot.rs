@@ -2,7 +2,7 @@
 //! widgets, the panel, the dock, a popup when asked), drawn by the same code as the real shell,
 //! with made-up status, so checks never show the person's wallpaper or machine.
 //!
-//! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|notifications|dock-menu|auth (the password dialog), RIVET_SHELL_THEME=light|dark,
+//! Hooks: RIVET_SHELL_POPUP=launcher|calendar|power|control|notifications|dock-menu|downloads|trash|auth (the password dialog), RIVET_SHELL_THEME=light|dark,
 //! RIVET_SHELL_EDGE=bottom, RIVET_SHELL_ACCENT=rrggbb, RIVET_SHELL_CARDS=1 (notification cards),
 //! RIVET_SHELL_OSD=1|caps (the volume or Caps Lock display), RIVET_SHELL_POPUP=sound, RIVET_SHELL_QUERY=text (typed into the launcher),
 //! RIVET_SHELL_WS=pills|dots|numbers (the workspaces item's style), RIVET_SHELL_LEVELS=both|icon|text
@@ -310,6 +310,15 @@ impl ShotApp {
             // Real apps' tray icons: the tray at the start of the right zone, to see them.
             s.panels[0].zones[2].insert(0, "tray".into());
         }
+        // RIVET_SHELL_FAVS=1: the launcher's favourites row, with a few apps in it (=empty: none).
+        match std::env::var("RIVET_SHELL_FAVS").as_deref() {
+            Ok("1") => {
+                s.launch_favorites = true;
+                s.launch_favorite_apps = vec!["firefox".into(), "rivet-files".into(), "rivet-terminal".into(), "rivet-notes".into()];
+            }
+            Ok("empty") => s.launch_favorites = true,
+            _ => {}
+        }
         if std::env::var("RIVET_SHELL_PANEL_DOCK").as_deref() == Ok("1") {
             // The dock as a panel item, in the left zone, and no dock of its own.
             s.panels[0].zones[0].push("dock".into());
@@ -327,7 +336,7 @@ impl ShotApp {
         let attached = s.look.attach == Some(true);
         let popup = match std::env::var("RIVET_SHELL_POPUP").as_deref() {
             Ok("launcher") => Some(Popup { kind: PopupKind::Launcher { query, sel: 0 }, anchor_x: 0.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
-            Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0 }, anchor_x: 550.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("calendar") => Some(Popup { kind: PopupKind::Calendar { month: 0, day: None }, anchor_x: 550.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("power") => Some(Popup { kind: PopupKind::Power { confirm: None }, anchor_x: 1080.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
@@ -341,6 +350,8 @@ impl ShotApp {
             Ok("plugin") => Some(Popup { kind: PopupKind::Plugin { id: "disk".into() }, anchor_x: 640.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("tray") => Some(Popup { kind: PopupKind::TrayMenu { key: ":1.chat/StatusNotifierItem".into(), path: Vec::new() }, anchor_x: 760.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("panel-dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-files".into(), pinned: true }, anchor_x: 330.0, output: String::new(), focus: false, from: Some((Edge::Top, if attached { 40.0 } else { 44.0 })), attach: attached.then_some(0), panel: Some(0), join: None }),
+            Ok("downloads") => Some(Popup { kind: PopupKind::Downloads, anchor_x: 200.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("trash") => Some(Popup { kind: PopupKind::TrashMenu { confirm: std::env::var("RIVET_SHELL_CONFIRM").is_ok() }, anchor_x: 240.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             _ => None,
         };
@@ -386,6 +397,7 @@ impl ShotApp {
             join: None,
             auth: Some(crate::polkit::demo()),
             viz: Some(crate::viz::demo()),
+            drop: None,
             // RIVET_SHELL_PLUGIN=1: a plugin's item on the first panel (RIVET_SHELL_POPUP=plugin: its menu).
             // RIVET_SHELL_PLUGIN_SAYS=file: the "disk" item is what that file's lines say (a real
             // plugin's output, to see how the shell shows it).
@@ -395,6 +407,14 @@ impl ShotApp {
                     crate::plugins::take(&mut it, line, false);
                 }
                 vec![("disk".to_string(), it)]
+            } else if std::env::var("RIVET_SHELL_PLUGIN").as_deref() == Ok("calendar") {
+                // RIVET_SHELL_PLUGIN=calendar: a calendar plugin's events around today (with
+                // RIVET_SHELL_POPUP=calendar, the days marked and today's listed).
+                let today = Local::now().date_naive();
+                let ev = |d: i64, title: &str, time: &str, color: [u8; 3]| crate::plugins::DayEvent { id: title.into(), day: Some(today + chrono::Duration::days(d)), title: title.into(), time: time.into(), color: Some(color) };
+                let (work, home, fam) = ([0x72, 0x87, 0xfd], [0xe0, 0x57, 0x3f], [0x40, 0xa0, 0x2b]);
+                let events = vec![ev(0, "Standup", "09:30", work), ev(0, "Lunch with Sam", "12:00", home), ev(0, "Design review", "13:00", work), ev(1, "Gym", "18:00", home), ev(2, "Release planning", "10:00", work), ev(3, "Bins out", "", fam), ev(5, "Dentist", "08:30", home), ev(8, "Trip to the coast", "", fam), ev(9, "Trip to the coast", "", fam), ev(-3, "Mum's birthday", "", fam), ev(-1, "Standup", "09:30", work)];
+                vec![("calendar".to_string(), crate::plugins::Item { name: "Calendar".into(), hidden: true, calendar: true, events, ..Default::default() })]
             } else if on("RIVET_SHELL_PLUGIN") {
                 let row = |id: &str, label: &str, sub: &str| crate::plugins::MenuRow { id: id.into(), label: label.into(), sub: sub.into(), ..Default::default() };
                 vec![("disk".to_string(), crate::plugins::Item { name: "Disk Space".into(), text: "212 GB".into(), icon: "drive-harddisk".into(), tooltip: "212 GB free on /".into(), menu: vec![row("/", "/", "212 GB free of 476 GB"), row("/home", "/home", "640 GB free of 1.8 TB"), row("/boot", "/boot", "410 MB free of 1 GB")], ..Default::default() })]
@@ -446,6 +466,15 @@ impl eframe::App for ShotApp {
             }
         }
         self.extra.join = self.popup.as_ref().and_then(|p| Some((p.attach?, p.join?.0, p.join?.1)));
+        // RIVET_SHELL_DROP=image/png: files of that type dragged over the dock, on its third slot.
+        if let Ok(mime) = std::env::var("RIVET_SHELL_DROP") {
+            let bottom = full.bottom() - crate::panels::room(&self.s.panels, "", Edge::Bottom);
+            let (dsize, _) = ui::dock_size(&self.s, &ui::dock_items(&self.s, &self.apps, &self.status.running));
+            let dock = Rect::from_min_size(Pos2::new(full.center().x - dsize.x / 2.0, bottom - dsize.y), dsize);
+            let (_, slots, _) = ui::dock_layout(&self.s, &self.apps, &self.status.running, dock);
+            let pos = slots.get(2).map(|(_, r)| r.center()).unwrap_or_default();
+            self.extra.drop = Some(ui::DockDrop { pos, mimes: Some(vec![mime]) });
+        }
         let mut acts: Vec<Act> = Vec::new();
         let s = self.s.clone();
         let mut m = Model { s: &s, status: &self.status, extra: &self.extra, apps: &self.apps, compositor: Compositor::Niri, output: "", acts: &mut acts };

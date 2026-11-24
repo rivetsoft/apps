@@ -690,6 +690,11 @@ pub struct Settings {
     pub launch_cols: u32,
     pub launch_calc: bool,
     pub launch_dim: bool,
+    /// A row of favourite apps above the rest, and the apps in it (desktop ids).
+    pub launch_favorites: bool,
+    pub launch_favorite_apps: Vec<String>,
+    /// Flatpak, Snap and AppImage apps marked as such.
+    pub launch_source: bool,
     /// Night light's warmth, in kelvin.
     pub night_kelvin: u32,
     // ---- the compositor's window look (comp.rs): set by an included overrides file
@@ -705,6 +710,11 @@ pub struct Settings {
     /// Chromium, Chrome, Brave and Edge take the theme's colour (see `crate::browser`), and
     /// whether that colour is the surface, not the accent.
     pub browser_colors: bool,
+    /// The VPN the quick settings block switches (`vpn::Vpn::key`; empty: the first there is).
+    pub quick_vpn: String,
+    /// ZeroTier networks this computer has joined (ID, name), kept so one that was left can
+    /// be joined again from Settings.
+    pub zerotier_networks: Vec<(String, String)>,
     pub browser_accent: bool,
     /// How much darker than the desktop's windows the browsers are, 0 to 100 (100: black).
     pub browser_darker: u32,
@@ -714,11 +724,6 @@ pub struct Settings {
     pub themed_apps: Vec<String>,
     // ---- idle and the lock screen (idle.rs, lock.rs); times in seconds, 0 for never
     /// The shell watches for idle (else another program, like hypridle or swayidle, does).
-    /// The VPN the quick settings block switches (`vpn::Vpn::key`; empty: the first there is).
-    pub quick_vpn: String,
-    /// ZeroTier networks this computer has joined (ID, name), kept so one that was left can
-    /// be joined again from Settings.
-    pub zerotier_networks: Vec<(String, String)>,
     pub idle_on: bool,
     pub idle_dim: u32,
     pub idle_lock: u32,
@@ -747,6 +752,10 @@ pub struct Settings {
     pub dock_open_apps: bool,
     /// Whether and when the dock slides out of the way.
     pub dock_hide: DockHide,
+    /// Downloads and the Trash at the dock's end.
+    pub dock_places: bool,
+    /// What is behind see-through panels, the dock and popups blurred, where the compositor can.
+    pub blur: bool,
     /// The dock's own look, over Appearance's.
     pub dock_look: crate::style::Style,
     // ---- desktop widgets
@@ -856,6 +865,9 @@ impl Default for Settings {
             launch_cols: 0,
             launch_calc: true,
             launch_dim: true,
+            launch_favorites: false,
+            launch_favorite_apps: Vec::new(),
+            launch_source: true,
             night_kelvin: 4000,
             comp_on: false,
             comp_gaps_in: 6,
@@ -866,6 +878,8 @@ impl Default for Settings {
             comp_inactive_opacity: 1.0,
             comp_shadows: true,
             browser_colors: false,
+            quick_vpn: String::new(),
+            zerotier_networks: Vec::new(),
             browser_accent: false,
             browser_darker: 0,
             browser_accent_shade: 0,
@@ -874,8 +888,6 @@ impl Default for Settings {
             idle_dim: 240,
             idle_lock: 300,
             idle_screen_off: 600,
-            quick_vpn: String::new(),
-            zerotier_networks: Vec::new(),
             idle_suspend: 0,
             idle_media: true,
             lock_on_sleep: true,
@@ -889,6 +901,8 @@ impl Default for Settings {
             dock_running: true,
             dock_open_apps: true,
             dock_hide: DockHide::Never,
+            dock_places: true,
+            blur: true,
             dock_look: crate::style::Style::default(),
             widget_clock: true,
             widget_system: true,
@@ -1130,6 +1144,8 @@ impl Settings {
                 "comp_inactive_opacity" => self.comp_inactive_opacity = v.parse::<f32>().unwrap_or(1.0).clamp(0.5, 1.0),
                 "comp_shadows" => self.comp_shadows = b,
                 "browser_colors" => self.browser_colors = b,
+                "quick_vpn" => self.quick_vpn = v.to_string(),
+                "zerotier_networks" => self.zerotier_networks = v.split('|').filter_map(|n| n.split_once(':')).map(|(id, name)| (id.to_string(), name.to_string())).collect(),
                 "browser_accent" => self.browser_accent = b,
                 "browser_darker" => self.browser_darker = v.parse::<u32>().unwrap_or(0).min(100),
                 "browser_accent_shade" => self.browser_accent_shade = v.parse::<i32>().unwrap_or(0).clamp(-100, 100),
@@ -1138,8 +1154,6 @@ impl Settings {
                 "idle_dim" => self.idle_dim = v.parse::<u32>().unwrap_or(0).min(86_400),
                 "idle_lock" => self.idle_lock = v.parse::<u32>().unwrap_or(0).min(86_400),
                 "idle_screen_off" => self.idle_screen_off = v.parse::<u32>().unwrap_or(0).min(86_400),
-                "quick_vpn" => self.quick_vpn = v.to_string(),
-                "zerotier_networks" => self.zerotier_networks = v.split('|').filter_map(|n| n.split_once(':')).map(|(id, name)| (id.to_string(), name.to_string())).collect(),
                 "idle_suspend" => self.idle_suspend = v.parse::<u32>().unwrap_or(0).min(86_400),
                 "idle_media" => self.idle_media = b,
                 "lock_on_sleep" => self.lock_on_sleep = b,
@@ -1161,8 +1175,13 @@ impl Settings {
                 "launch_cols" => self.launch_cols = v.parse::<u32>().unwrap_or(0).min(12),
                 "launch_calc" => self.launch_calc = b,
                 "launch_dim" => self.launch_dim = b,
+                "launch_favorites" => self.launch_favorites = b,
+                "launch_source" => self.launch_source = b,
+                "launch_favorite_apps" => self.launch_favorite_apps = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
                 "night_kelvin" => self.night_kelvin = v.parse::<u32>().unwrap_or(4000).clamp(2500, 6000),
                 "dock_open_apps" => self.dock_open_apps = b,
+                "dock_places" => self.dock_places = b,
+                "blur" => self.blur = b,
                 "dock_hide" => {
                     self.dock_hide = match v {
                         "auto" => DockHide::Auto,
@@ -1294,8 +1313,9 @@ impl Settings {
             "media_text={}\nmedia_width={}\nmedia_art={}\nmedia_controls={}\nmedia_viz={}\nmedia_click_plays={}\nmedia_scroll={}\nmedia_hide_paused={}\n",
             self.media_text.name(), self.media_width, self.media_art, self.media_controls, self.media_viz, self.media_click_plays, self.media_scroll, self.media_hide_paused
         ));
+        t.push_str(&format!("dock_places={}\nblur={}\n", self.dock_places, self.blur));
         t.push_str(&format!("launch_rows={}\nlaunch_cols={}\n", self.launch_rows, self.launch_cols));
-        t.push_str(&format!("launch_view={}\nlaunch_place={}\nlaunch_size={}\nlaunch_icon={}\nlaunch_calc={}\nlaunch_dim={}\n", self.launch_view.name(), self.launch_place.name(), self.launch_size.name(), self.launch_icon, self.launch_calc, self.launch_dim));
+        t.push_str(&format!("launch_view={}\nlaunch_place={}\nlaunch_size={}\nlaunch_icon={}\nlaunch_calc={}\nlaunch_dim={}\nlaunch_favorites={}\nlaunch_favorite_apps={}\nlaunch_source={}\n", self.launch_view.name(), self.launch_place.name(), self.launch_size.name(), self.launch_icon, self.launch_calc, self.launch_dim, self.launch_favorites, self.launch_favorite_apps.join(","), self.launch_source));
         t.push_str(&format!("plugins={}\n", self.plugins.join(",")));
         for (ev, cmd) in self.hooks.iter().filter(|(e, c)| !e.is_empty() && !c.trim().is_empty()) {
             t.push_str(&format!("hook.{ev}={}\n", one(cmd)));
@@ -1486,7 +1506,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, dock_places: false, blur: false, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.widget_system_at = Some((0.25, 0.5));
         (s.widget_weather, s.widget_weather_at, s.weather_place, s.weather_at, s.weather_units) = (true, Some((1.0, 0.0)), "Portland, Oregon".into(), Some((45.5234, -122.6762)), crate::weather::Units::Imperial);
@@ -1532,7 +1552,7 @@ mod tests {
 
     #[test]
     fn idle_round_trips() {
-        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], softcore_colors: vec![("border_active".into(), "accent".into()), ("border_active_to".into(), "tertiary".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_rows: 7, launch_cols: 5, launch_calc: false, launch_dim: false, ..Settings::default() };
+        let s = Settings { idle_on: false, idle_dim: 0, idle_lock: 120, idle_screen_off: 900, idle_suspend: 1800, idle_media: false, lock_on_sleep: false, lock_cmd: "swaylock -f".into(), lock_blur: false, lock_power: false, osd_keys: false, osd_place: OsdPlace::Top, osd_size: LaunchSize::Large, osd_secs: 2.5, osd_color: Some(crate::style::Role::Tertiary), note_place: NotePlace::BottomLeft, note_width: LaunchSize::Large, note_secs: 12, note_max: 2, note_look: crate::style::Style { radius: Some(4.0), opacity: Some(0.8), ..Default::default() }, ask_passwords: false, media_text: MediaText::ArtistTitle, media_width: 300, media_art: false, media_controls: true, media_viz: true, media_click_plays: true, media_scroll: false, media_hide_paused: true, plugins: vec!["disk".into()], plugin_set: vec![("notes".into(), "vault".into(), "/home/me/My Notes".into())], hooks: vec![("lock".into(), "playerctl pause".into()), ("wallpaper".into(), "echo $RIVET_PATH >> /tmp/w".into())], softcore_colors: vec![("border_active".into(), "accent".into()), ("border_active_to".into(), "tertiary".into())], launch_view: LaunchView::List, launch_place: LaunchPlace::Panel, launch_size: LaunchSize::Large, launch_icon: 56, launch_rows: 7, launch_cols: 5, launch_calc: false, launch_dim: false, launch_favorites: true, launch_favorite_apps: vec!["firefox".into(), "rivet-files".into()], launch_source: false, ..Settings::default() };
         let mut t = Settings::default();
         t.parse(&s.text());
         assert_eq!(s, t);

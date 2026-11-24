@@ -75,6 +75,11 @@ enum Page {
 
 impl Page {
     const ALL: [Page; 18] = [Page::User, Page::Wallpaper, Page::Appearance, Page::Applications, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    /// The pages in the sidebar's order, as shown there.
+    fn in_order() -> Vec<Page> {
+        nav::GROUPS.iter().flat_map(|(_, pages)| pages.iter().copied()).filter(|p| p.shown()).collect()
+    }
+
     /// Whether the page is in the sidebar and in search: all but the ones for a compositor
     /// that isn't running or for programs that aren't installed. Screenshots show every one.
     fn shown(self) -> bool {
@@ -137,6 +142,13 @@ pub struct SettingsApp {
     page: Page,
     /// Showing the overview of every page, not one page with the sidebar.
     home: bool,
+    /// The keyboard is what's being used (Tab or an arrow since the last click): the focused
+    /// control shows a ring, and is scrolled to.
+    kb: bool,
+    /// The control focused at the last look, to scroll to a new one once.
+    kb_focus_was: Option<egui::Id>,
+    /// A page in the sidebar to put the keyboard on next frame (moved to by a key).
+    focus_page: Option<Page>,
     /// The Network and Bluetooth pages' lists, and the Sound page's devices.
     conn: connect::State,
     sound: sound::State,
@@ -370,6 +382,11 @@ impl SettingsApp {
             search: std::env::var("RIVET_SHELL_SEARCH").ok().filter(|_| shot_mode).unwrap_or_default(),
             search_sel: 0,
             search_chosen: None,
+            // Checks: RIVET_SHELL_KB=1 starts with the keyboard on the page's place in the
+            // sidebar, to see the focus ring.
+            kb: shot_mode && std::env::var_os("RIVET_SHELL_KB").is_some(),
+            kb_focus_was: None,
+            focus_page: if shot_mode && std::env::var_os("RIVET_SHELL_KB").is_some() { Some(page) } else { None },
             open_item: None,
             note_panel: None,
             disp: Default::default(),
@@ -502,6 +519,8 @@ impl eframe::App for SettingsApp {
         // The overview takes the whole window; typing in its search brings the sidebar and its
         // results, and clearing the search brings the overview back.
         let overview = self.home && self.search.trim().is_empty();
+        self.keys(&ctx, overview);
+        let overview = self.home && self.search.trim().is_empty();
         // Networks, devices and sound are read only while their page shows.
         self.conn.tend(&ctx, match self.page {
             Page::Network if !overview => crate::radio::WIFI,
@@ -538,8 +557,13 @@ impl eframe::App for SettingsApp {
                 self.search_chosen = None;
                 // The pages scroll under the search field when the window is short.
                 egui::ScrollArea::vertical().id_salt("shell-pages").auto_shrink([false, false]).show(ui, |ui| {
-                    if nav::all_settings(ui, side_fill) {
+                    let all = nav::all_settings(ui, side_fill);
+                    if all.clicked() {
                         self.home = true;
+                    }
+                    // Down from All Settings: the first page.
+                    if all.has_focus() && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)) {
+                        self.focus_page = Page::in_order().first().copied();
                     }
                     for (name, pages) in nav::GROUPS {
                         // A small heading over each group; About sits apart.
@@ -550,7 +574,28 @@ impl eframe::App for SettingsApp {
                             ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
                         }
                         for p in pages.iter().filter(|p| p.shown()) {
-                            let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+                            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
+                            let resp = ui.interact(r, nav::page_id(*p), Sense::click());
+                            if self.focus_page == Some(*p) {
+                                self.focus_page = None;
+                                resp.request_focus();
+                                resp.scroll_to_me(None);
+                            }
+                            // Up and Down go through the pages, each opening as it's reached; up
+                            // from the first, All Settings.
+                            if resp.has_focus() {
+                                let (up, down) = ui.input_mut(|i| (i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp), i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown)));
+                                let order = Page::in_order();
+                                let at = order.iter().position(|x| x == p).unwrap_or(0);
+                                let to = if down { order.get(at + 1).copied() } else if up && at > 0 { order.get(at - 1).copied() } else { None };
+                                if let Some(t) = to {
+                                    self.page = t;
+                                    self.home = false;
+                                    self.focus_page = Some(t);
+                                } else if up {
+                                    ui.memory_mut(|m| m.request_focus(nav::all_id()));
+                                }
+                            }
                             let sel = *p == self.page && !self.home;
                             if sel {
                                 let (fill, stroke) = selected_tile(&v, side_fill);
@@ -628,8 +673,82 @@ impl eframe::App for SettingsApp {
                 let _ = crate::ipc::send("changed");
             }
         }
+        self.focus_ring(&ctx, accent);
         if let Some(shot) = self.shot.as_mut() {
             shot.step(&ctx);
+        }
+    }
+}
+
+impl SettingsApp {
+    /// The keys that work anywhere in the window: the next or previous page (Ctrl+Page Down
+    /// and Up, or Alt+Down and Up), and back to All Settings (Alt+Left, or Esc when nothing is
+    /// being typed and no menu is open). Also notes whether the keyboard is in use.
+    fn keys(&mut self, ctx: &egui::Context, overview: bool) {
+        ctx.input(|i| {
+            if i.pointer.any_pressed() {
+                self.kb = false;
+            }
+            let moving = |k: &egui::Key| matches!(k, egui::Key::Tab | egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight);
+            if i.events.iter().any(|e| matches!(e, egui::Event::Key { key, pressed: true, .. } if moving(key))) {
+                self.kb = true;
+            }
+        });
+        let typing = ctx.text_edit_focused();
+        let menu = egui::Popup::is_any_open(ctx) || self.store.open;
+        let (next, prev, back) = ctx.input_mut(|i| {
+            let next = i.consume_key(egui::Modifiers::COMMAND, egui::Key::PageDown) || i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowDown);
+            let prev = i.consume_key(egui::Modifiers::COMMAND, egui::Key::PageUp) || i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowUp);
+            let back = i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowLeft) || (!typing && !menu && !overview && i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            (next, prev, back)
+        });
+        if back {
+            self.home = true;
+            self.search.clear();
+            return;
+        }
+        if next || prev {
+            let order = Page::in_order();
+            let at = order.iter().position(|x| *x == self.page).unwrap_or(0);
+            let to = match (overview, next) {
+                (true, true) => order.first(),
+                (true, false) => order.last(),
+                (false, true) => order.get(at + 1),
+                (false, false) => at.checked_sub(1).and_then(|a| order.get(a)),
+            };
+            if let Some(&t) = to {
+                self.page = t;
+                self.home = false;
+                // The keyboard follows in the sidebar, when it was there.
+                if ctx.memory(|m| m.focused()).is_some_and(|id| order.iter().any(|p| nav::page_id(*p) == id)) {
+                    self.focus_page = Some(t);
+                }
+            }
+        }
+    }
+
+    /// A ring around what the keyboard is on, while the keyboard is in use, and the page
+    /// scrolled to it when it's new.
+    fn focus_ring(&mut self, ctx: &egui::Context, accent: egui::Color32) {
+        let focused = ctx.memory(|m| m.focused());
+        if !self.kb {
+            self.kb_focus_was = focused;
+            return;
+        }
+        let Some(id) = focused else { return };
+        let Some(r) = ctx.read_response(id) else { return };
+        if self.kb_focus_was != Some(id) {
+            self.kb_focus_was = Some(id);
+            r.scroll_to_me(None);
+            ctx.request_repaint();
+        }
+        // The search field shows its own focus.
+        if id == search::field_id() {
+            return;
+        }
+        let shown = r.interact_rect;
+        if shown.is_positive() {
+            ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("settings-focus-ring"))).rect_stroke(shown.expand(2.0), 7.0, egui::Stroke::new(2.0, accent), egui::StrokeKind::Outside);
         }
     }
 }
@@ -898,6 +1017,7 @@ impl SettingsApp {
                 if knows_windows {
                     controls::switch(ui, &mut self.s.dock_running, "A dot under apps with windows open");
                     controls::switch(ui, &mut self.s.dock_open_apps, "Show open apps that aren't pinned");
+                    controls::switch(ui, &mut self.s.dock_places, "Downloads and Trash at the end");
                 }
             });
         });

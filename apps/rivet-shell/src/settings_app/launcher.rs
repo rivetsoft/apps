@@ -90,6 +90,7 @@ impl SettingsApp {
                     ui.end_row();
                 }
             });
+            super::controls::switch(ui, &mut s.launch_source, "Mark Flatpak, Snap and AppImage apps");
             if s.launch_place == LaunchPlace::Panel {
                 hint(ui, "Opens from the panel you clicked. Opened with a key, it comes from the first panel.");
             }
@@ -108,6 +109,10 @@ impl SettingsApp {
                 ui.end_row();
             });
             hint(ui, "The rest of the shell uses the font set in Appearance.");
+        });
+        section(ui, "Favorites", &mut |ui| {
+            super::controls::switch(ui, &mut self.s.launch_favorites, "Show favorites above the apps");
+            hint(ui, "In the launcher, press Ctrl+D on an app, right-click it or click its star to add it.");
         });
         section(ui, "As you type", &mut |ui| {
             let s = &mut self.s;

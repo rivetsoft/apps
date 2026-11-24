@@ -9,7 +9,7 @@ use rivet_look::theme::r_md;
 use rivet_xdg::launch::DesktopApp;
 
 use crate::config::{LaunchSize, LaunchView, Settings};
-use crate::ui::{Act, Kit, Model, calc, calc_text, hover_fill, ui_font};
+use crate::ui::{Act, Kit, Model, calc, calc_text, find_app, hover_fill, ui_font};
 
 /// The launcher's size on a screen.
 pub fn size(s: &Settings, full: Rect) -> Vec2 {
@@ -30,10 +30,12 @@ pub fn size(s: &Settings, full: Rect) -> Vec2 {
     // search field and the room under it, then the rows.
     const CHROME: f32 = 14.0 * 2.0 + 60.0;
     let (pitch, gap) = pitch(s);
-    let fit = |h: f32| ((h - CHROME + gap) / pitch).floor().max(1.0);
+    // The favourites' row with the line under it, and the directions.
+    let extra = if s.launch_favorites { s.launch_icon.clamp(24, 64) as f32 + 50.0 + FAV_GAP + 4.0 + FOOT + 8.0 } else { 0.0 };
+    let fit = |h: f32| ((h - CHROME - extra + gap) / pitch).floor().max(1.0);
     // The rows asked for, as far as the screen has room; else as many as the size holds.
     let rows = if s.launch_rows > 0 { (s.launch_rows as f32).min(fit(tallest)) } else { fit(h) };
-    Vec2::new(f32::min(w, full.width() - 40.0), CHROME + rows * pitch - gap)
+    Vec2::new(f32::min(w, full.width() - 40.0), CHROME + extra + rows * pitch - gap)
 }
 
 /// How far apart rows start, and the room between them.
@@ -240,32 +242,73 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     // A grid's tile holds the icon over two lines of name.
     let tile = Vec2::new(icon + 56.0, icon + 50.0);
     let cols = if list { 1 } else { ((ui.available_width() + 6.0) / (tile.x + 6.0)).floor().max(1.0) as usize };
+    // Favourites: a row of their own above the rest while nothing is typed, which Left and
+    // Right move along. Selection counts them first, then the entries below.
+    let faving = m.s.launch_favorites;
+    let all_favs: Vec<&DesktopApp> = if faving { m.s.launch_favorite_apps.iter().filter_map(|id| find_app(m.apps, id)).collect() } else { Vec::new() };
+    let fav_row = faving && command.is_none() && typed.is_empty();
+    let favs: &[&DesktopApp] = if fav_row { &all_favs } else { &[] };
+    let nf = favs.len();
+    let is_fav = |a: &DesktopApp| all_favs.iter().any(|f| f.id == a.id);
+    let n = ranked.len();
+    *sel = (*sel).min((nf + n).saturating_sub(1));
+    let in_favs = *sel < nf;
     let (up, down, left, right) = ui.input_mut(|i| {
+        let grab = in_favs || !list;
+        let side = in_favs || query.is_empty();
         (
             i.consume_key(egui::Modifiers::NONE, Key::ArrowUp),
             i.consume_key(egui::Modifiers::NONE, Key::ArrowDown),
-            !list && i.consume_key(egui::Modifiers::NONE, Key::ArrowLeft) && query.is_empty(),
-            !list && i.consume_key(egui::Modifiers::NONE, Key::ArrowRight) && query.is_empty(),
+            grab && i.consume_key(egui::Modifiers::NONE, Key::ArrowLeft) && side,
+            grab && i.consume_key(egui::Modifiers::NONE, Key::ArrowRight) && side,
         )
     });
-    let n = ranked.len();
-    if n > 0 {
-        if down {
-            *sel = (*sel + cols).min(n - 1);
-        }
-        if up {
-            *sel = sel.saturating_sub(cols);
-        }
+    if in_favs {
         if right {
-            *sel = (*sel + 1).min(n - 1);
+            *sel = (*sel + 1).min(nf - 1);
         }
         if left {
             *sel = sel.saturating_sub(1);
         }
-        *sel = (*sel).min(n - 1);
+        // Down to the entry under it, as near as the first row goes.
+        if down && n > 0 {
+            *sel = nf + (*sel).min(cols.min(n) - 1);
+        }
+    } else if n > 0 {
+        let mut k = (*sel - nf).min(n - 1);
+        if up && k < cols && nf > 0 {
+            *sel = k.min(nf - 1);
+        } else {
+            if down {
+                k = (k + cols).min(n - 1);
+            }
+            if up {
+                k = k.saturating_sub(cols);
+            }
+            if right {
+                k = (k + 1).min(n - 1);
+            }
+            if left {
+                k = k.saturating_sub(1);
+            }
+            *sel = nf + k;
+        }
     }
-    if enter && *sel < ranked.len() {
+    if enter && *sel < nf + n {
         picked = Some(*sel);
+    }
+    // Ctrl+D adds the selected app to the favourites or takes it off, as a browser's bookmark key.
+    let mut toggle: Option<String> = None;
+    if faving && ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, Key::D)) {
+        let app = if *sel < nf {
+            Some(favs[*sel])
+        } else {
+            match ranked.get(*sel - nf) {
+                Some((_, Entry::App(a))) => Some(*a),
+                _ => None,
+            }
+        };
+        toggle = app.map(|a| a.id.trim_end_matches(".desktop").to_string());
     }
     let moved = up || down || left || right;
     let mark = |p: &egui::Painter, r: Rect, chosen: bool, hovered: bool| {
@@ -276,26 +319,78 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
             hover_fill(p, r, &v);
         }
     };
+    // The directions along the bottom, kept clear of the rows.
+    let foot = faving.then(|| {
+        let r = ui.max_rect();
+        Rect::from_min_max(Pos2::new(r.left(), r.bottom() - FOOT), r.max)
+    });
+    if fav_row {
+        // The row and the line under it, in a block exactly as tall as size() leaves for it.
+        let (block, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), tile.y + FAV_GAP), Sense::hover());
+        ui.painter().hline(block.x_range(), block.bottom() - FAV_GAP / 2.0, Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.1)));
+        let mut ui = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(block.min, Vec2::new(block.width(), tile.y))));
+        let ui = &mut ui;
+        if favs.is_empty() {
+            let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), tile.y), Sense::hover());
+            ui.painter().rect_stroke(r.shrink(1.0), r_md(), Stroke::new(1.0, v.weak_text_color().gamma_multiply(0.35)), egui::StrokeKind::Inside);
+            ui.painter().text(r.center(), Align2::CENTER_CENTER, "Favorites go here: right-click an app below to add it.", ui_font(13.0), v.weak_text_color());
+        } else {
+            egui::ScrollArea::horizontal().id_salt("launcher-favs").auto_shrink([false, true]).scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    for (j, a) in favs.iter().enumerate() {
+                        let (r, resp) = ui.allocate_exact_size(tile, Sense::click());
+                        mark(ui.painter(), r, j == *sel, resp.hovered());
+                        let tex = kit.app_icon(ui.ctx(), a, icon);
+                        if let (Some(at), Some(label)) = (draw_tile(ui.painter(), r, &a.name, tex, icon, &v, source_of(m.s, a)), source_of(m.s, a)) {
+                            package_tip(ui, at, &format!("fav-{}", a.id), label);
+                        }
+                        if ui.rect_contains_pointer(r) && star_button(ui, Pos2::new(r.right() - 13.0, r.top() + 13.0), true, accent, &v, egui::Id::unique(("launcher-fav-star", &a.id))) {
+                            toggle = Some(a.id.trim_end_matches(".desktop").to_string());
+                        }
+                        fav_menu(&resp, a, true, &mut toggle);
+                        if j == *sel && moved {
+                            ui.scroll_to_rect(r, None);
+                        }
+                        if resp.clicked() {
+                            picked = Some(j);
+                        }
+                    }
+                });
+            });
+        }
+    }
     // Whole rows only: the list is as tall as the rows that fit, and while it scrolls a row
     // that's partly out of it isn't drawn (rather than cut through).
     let (pitch, gap) = if list { (list_icon(icon) + 14.0 + 2.0, 2.0) } else { pitch(m.s) };
-    let rows = ((ui.available_height() + gap) / pitch).floor().max(1.0);
+    let room = ui.available_height() - if foot.is_some() { FOOT + 8.0 } else { 0.0 };
+    let rows = ((room + gap) / pitch).floor().max(1.0);
     let whole = |ui: &egui::Ui, r: Rect| ui.clip_rect().expand(0.5).contains_rect(r);
     egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(rows * pitch - gap).show(ui, |ui| {
         if list {
             let li = list_icon(icon);
             ui.spacing_mut().item_spacing.y = 2.0;
             for (k, (_, a)) in ranked.iter().enumerate() {
+                let chosen = nf + k == *sel;
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), li + 14.0), Sense::click());
                 // Only what's in view is drawn (and only its icons made).
                 let shown = whole(ui, r);
+                // An app's star, at the end of its row: always on a favourite, else under the pointer.
+                let star = match a {
+                    Entry::App(app) if faving && shown => {
+                        let on = is_fav(app);
+                        (on || ui.rect_contains_pointer(r)).then_some((*app, on))
+                    }
+                    _ => None,
+                };
                 if shown {
-                    mark(ui.painter(), r, k == *sel, resp.hovered());
+                    mark(ui.painter(), r, chosen, resp.hovered());
                     let ir = Rect::from_center_size(Pos2::new(r.left() + 10.0 + li / 2.0, r.center().y), Vec2::splat(li));
                     if let Some(t) = a.icon(ui.ctx(), kit, li) {
                         ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                     }
-                    let room = r.right() - ir.right() - 24.0 - if k == *sel { 44.0 } else { 0.0 };
+                    let end = r.right() - if star.is_some() { 30.0 } else { 0.0 };
+                    let room = end - ir.right() - 24.0 - if chosen { 44.0 } else { 0.0 };
                     let g = crate::ui::one_line(ui.painter(), a.name(), ui_font(14.0), v.text_color(), room);
                     let after = ir.right() + 12.0 + g.size().x + 12.0;
                     ui.painter().galley(Pos2::new(ir.right() + 12.0, r.center().y - g.size().y / 2.0), g, v.text_color());
@@ -305,15 +400,34 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                         let g = crate::ui::one_line(ui.painter(), a.sub(), ui_font(12.0), v.weak_text_color(), sub_room);
                         ui.painter().galley(Pos2::new(after, r.center().y - g.size().y / 2.0 + 0.5), g, v.weak_text_color());
                     }
-                    if k == *sel {
-                        ui.painter().text(Pos2::new(r.right() - 12.0, r.center().y), Align2::RIGHT_CENTER, "Enter", ui_font(11.5), v.weak_text_color());
+                    // An app from a Flatpak, Snap or AppImage: a package after its name.
+                    if let Entry::App(app) = a
+                        && let Some(label) = source_of(m.s, app)
+                        && sub_room > 20.0
+                    {
+                        let at = Rect::from_center_size(Pos2::new(after + 4.0, r.center().y), Vec2::splat(16.0));
+                        crate::glyph::package(ui.painter(), at.center(), 6.0, v.weak_text_color());
+                        package_tip(ui, at, &app.id, label);
+                    }
+                    if chosen {
+                        ui.painter().text(Pos2::new(end - 12.0, r.center().y), Align2::RIGHT_CENTER, "Enter", ui_font(11.5), v.weak_text_color());
                     }
                 }
-                if k == *sel && moved {
+                if let Some((app, on)) = star
+                    && star_button(ui, Pos2::new(r.right() - 18.0, r.center().y), on, accent, &v, egui::Id::unique(("launcher-star", &app.id)))
+                {
+                    toggle = Some(app.id.trim_end_matches(".desktop").to_string());
+                }
+                if let Entry::App(app) = a
+                    && faving
+                {
+                    fav_menu(&resp, app, is_fav(app), &mut toggle);
+                }
+                if chosen && moved {
                     ui.scroll_to_rect(r, None);
                 }
                 if shown && resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                    picked = Some(k);
+                    picked = Some(nf + k);
                 }
             }
         } else {
@@ -322,22 +436,28 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     let (r, resp) = ui.allocate_exact_size(tile, Sense::click());
                     let shown = whole(ui, r);
                     if shown {
-                        mark(ui.painter(), r, k == *sel, resp.hovered());
-                        let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 9.0 + icon / 2.0), Vec2::splat(icon));
-                        if let Some(t) = a.icon(ui.ctx(), kit, icon) {
-                            ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                        mark(ui.painter(), r, nf + k == *sel, resp.hovered());
+                        let tex = a.icon(ui.ctx(), kit, icon);
+                        let source = if let Entry::App(app) = a { source_of(m.s, app) } else { None };
+                        if let (Some(at), Some(label), Entry::App(app)) = (draw_tile(ui.painter(), r, a.name(), tex, icon, &v, source), source, a) {
+                            package_tip(ui, at, &app.id, label);
                         }
-                        let mut job = egui::text::LayoutJob::single_section(a.name().to_string(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
-                        job.wrap = egui::text::TextWrapping { max_width: r.width() - 8.0, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
-                        job.halign = egui::Align::Center;
-                        let g = ui.painter().layout_job(job);
-                        ui.painter().galley(Pos2::new(r.center().x, r.top() + icon + 16.0), g, v.text_color());
+                        // An app's star, in its corner: always on a favourite, else under the pointer.
+                        if let Entry::App(app) = a
+                            && faving
+                        {
+                            let on = is_fav(app);
+                            if (on || ui.rect_contains_pointer(r)) && star_button(ui, Pos2::new(r.right() - 13.0, r.top() + 13.0), on, accent, &v, egui::Id::unique(("launcher-star", &app.id))) {
+                                toggle = Some(app.id.trim_end_matches(".desktop").to_string());
+                            }
+                            fav_menu(&resp, app, on, &mut toggle);
+                        }
                     }
-                    if k == *sel && moved {
+                    if nf + k == *sel && moved {
                         ui.scroll_to_rect(r, None);
                     }
                     if shown && resp.clicked() {
-                        picked = Some(k);
+                        picked = Some(nf + k);
                     }
                     if (k + 1) % cols == 0 {
                         ui.end_row();
@@ -355,12 +475,31 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
             ui.label(egui::RichText::new(text).color(v.weak_text_color()));
         }
     });
+    if let Some(r) = foot {
+        // Each with how much it matters: what doesn't fit goes from the least, so the
+        // favourite key stays when the launcher is narrow.
+        let keys: &[(&str, &str, u8)] = if in_favs {
+            &[("← →", "Favorites", 2), ("↓", "All apps", 1), ("Enter", "Open", 0), ("Ctrl+D or right-click", "Remove", 3)]
+        } else if nf > 0 {
+            &[("↑", "Favorites", 2), ("Arrows", "Move", 1), ("Enter", "Open", 0), ("Ctrl+D or right-click", "Add to favorites", 3)]
+        } else {
+            &[("Arrows", "Move", 1), ("Enter", "Open", 0), ("Ctrl+D or right-click", "Add to favorites", 3)]
+        };
+        directions(ui.painter(), r, keys, &v);
+    }
+    if let Some(id) = toggle {
+        m.acts.push(Act::Favorite(id));
+    }
     // What was chosen: an app or a plugin's entry is told; a command's word is typed in, for
     // its entries to show.
     let mut fill = None;
-    match picked.and_then(|k| ranked.get(k)).map(|(_, e)| e) {
-        Some(Entry::Keyword { word, .. }) => fill = Some(format!("@{word} ")),
-        Some(e) => m.acts.extend(e.acts()),
+    match picked {
+        Some(k) if k < nf => m.acts.push(Act::Launch(favs[k].id.clone())),
+        Some(k) => match ranked.get(k - nf).map(|(_, e)| e) {
+            Some(Entry::Keyword { word, .. }) => fill = Some(format!("@{word} ")),
+            Some(e) => m.acts.extend(e.acts()),
+            None => {}
+        },
         None => {}
     }
     if let Some(text) = fill {
@@ -368,6 +507,106 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         *query = text;
         *sel = 0;
         cursor_to_end(ui.ctx(), id, 0);
+    }
+}
+
+/// The height of the directions along the launcher's bottom.
+const FOOT: f32 = 22.0;
+
+/// The room under the favourites' row, with a line across its middle.
+const FAV_GAP: f32 = 12.0;
+
+/// Where an app came from, to mark it by, when the launcher marks them.
+fn source_of(s: &Settings, app: &DesktopApp) -> Option<&'static str> {
+    s.launch_source.then(|| app.source()).flatten().map(|x| x.label())
+}
+
+/// A grid tile's icon over two lines of its name, and, for an app from a Flatpak, Snap or
+/// AppImage, a package on the icon's corner. Gives where that package is, to say which on hover.
+fn draw_tile(p: &egui::Painter, r: Rect, name: &str, tex: Option<egui::TextureHandle>, icon: f32, v: &egui::Visuals, source: Option<&str>) -> Option<Rect> {
+    let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 9.0 + icon / 2.0), Vec2::splat(icon));
+    if let Some(t) = tex {
+        p.image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+    }
+    let badge = source.map(|_| {
+        // Over the icon's lower right corner, kept inside the tile.
+        let d = (icon * 0.42).clamp(15.0, 22.0);
+        let c = Pos2::new((ir.right() + 2.0).min(r.right() - 3.0 - d / 2.0), ir.bottom() - 1.0);
+        p.circle_filled(c, d / 2.0, v.panel_fill);
+        p.circle_stroke(c, d / 2.0, Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.25)));
+        crate::glyph::package(p, c, d * 0.3, v.text_color());
+        Rect::from_center_size(c, Vec2::splat(d))
+    });
+    let mut job = egui::text::LayoutJob::single_section(name.to_string(), egui::TextFormat { font_id: ui_font(12.0), color: v.text_color(), ..Default::default() });
+    job.wrap = egui::text::TextWrapping { max_width: r.width() - 8.0, max_rows: 2, break_anywhere: false, overflow_character: Some('…') };
+    job.halign = egui::Align::Center;
+    let g = p.layout_job(job);
+    p.galley(Pos2::new(r.center().x, r.top() + icon + 16.0), g, v.text_color());
+    badge
+}
+
+/// Which of Flatpak, Snap and AppImage a package mark is, said when the pointer is on it.
+fn package_tip(ui: &egui::Ui, at: Rect, id: &str, label: &str) {
+    ui.interact(at, egui::Id::unique(("launcher-source", id)), Sense::hover()).on_hover_text(label);
+}
+
+/// The star that adds an app to the favourites or takes it off: filled on a favourite. True
+/// when it's clicked.
+fn star_button(ui: &mut egui::Ui, at: Pos2, on: bool, accent: Color32, v: &egui::Visuals, id: egui::Id) -> bool {
+    let r = Rect::from_center_size(at, Vec2::splat(22.0));
+    let resp = ui.interact(r, id, Sense::click());
+    if resp.hovered() {
+        hover_fill(ui.painter(), r, v);
+    }
+    star(ui.painter(), r.center(), 7.0, on, if on { accent } else { v.text_color() });
+    resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if on { "Remove from favorites (Ctrl+D)" } else { "Add to favorites (Ctrl+D)" }).clicked()
+}
+
+/// A five-pointed star, filled or outlined.
+fn star(p: &egui::Painter, c: Pos2, r: f32, filled: bool, color: Color32) {
+    use std::f32::consts::{FRAC_PI_2, PI};
+    let pts: Vec<Pos2> = (0..10).map(|i| c + Vec2::angled(-FRAC_PI_2 + i as f32 * PI / 5.0) * if i % 2 == 0 { r } else { r * 0.45 }).collect();
+    if filled {
+        // A star isn't convex: its middle, then each point on it.
+        p.add(egui::Shape::convex_polygon(pts.iter().skip(1).step_by(2).copied().collect(), color, Stroke::NONE));
+        for i in (0..10).step_by(2) {
+            p.add(egui::Shape::convex_polygon(vec![pts[(i + 9) % 10], pts[i], pts[i + 1]], color, Stroke::NONE));
+        }
+    }
+    p.add(egui::Shape::closed_line(pts, Stroke::new(1.3, color)));
+}
+
+/// An app's right-click menu in the launcher: add it to the favourites or take it off.
+fn fav_menu(resp: &egui::Response, app: &DesktopApp, on: bool, toggle: &mut Option<String>) {
+    resp.context_menu(|ui| {
+        if ui.button(if on { "Remove from Favorites" } else { "Add to Favorites" }).clicked() {
+            *toggle = Some(app.id.trim_end_matches(".desktop").to_string());
+            ui.close();
+        }
+    });
+}
+
+/// How to get around, along the bottom: each key in a chip, then what it does, centred. When
+/// they don't all fit, the ones that matter least are left out.
+fn directions(p: &egui::Painter, r: Rect, keys: &[(&str, &str, u8)], v: &egui::Visuals) {
+    let chip = mix(v.panel_fill, v.text_color(), 0.1);
+    let mut pieces: Vec<_> = keys.iter().map(|(k, what, rank)| (p.layout_no_wrap(k.to_string(), ui_font(11.0), v.text_color()), p.layout_no_wrap(what.to_string(), ui_font(11.5), v.weak_text_color()), *rank)).collect();
+    let width = |(k, w, _): &(std::sync::Arc<egui::Galley>, std::sync::Arc<egui::Galley>, u8)| k.size().x + 10.0 + 5.0 + w.size().x;
+    let total = |pieces: &[(std::sync::Arc<egui::Galley>, std::sync::Arc<egui::Galley>, u8)]| pieces.iter().map(width).sum::<f32>() + 16.0 * pieces.len().saturating_sub(1) as f32;
+    while pieces.len() > 1 && total(&pieces) > r.width() {
+        let least = pieces.iter().enumerate().min_by_key(|(_, (.., rank))| *rank).map(|(i, _)| i).unwrap_or(0);
+        pieces.remove(least);
+    }
+    let mut x = r.center().x - total(&pieces) / 2.0;
+    let y = r.center().y;
+    for (k, w, _) in pieces {
+        let cr = Rect::from_min_size(Pos2::new(x, y - 9.0), Vec2::new(k.size().x + 10.0, 18.0));
+        p.rect_filled(cr, 4.0, chip);
+        p.galley(Pos2::new(cr.left() + 5.0, y - k.size().y / 2.0), k, v.text_color());
+        x = cr.right() + 5.0;
+        let ww = w.size().x;
+        p.galley(Pos2::new(x, y - w.size().y / 2.0), w, v.weak_text_color());
+        x += ww + 16.0;
     }
 }
 

@@ -25,7 +25,7 @@ pub(super) struct Store {
     /// The plugin Remove was clicked on, until it's confirmed or kept.
     removing: Option<String>,
     /// The Get Plugins window: whether it's open, where it is, and which plugins it lists.
-    open: bool,
+    pub(super) open: bool,
     win: Option<rivet_look::windows::WinState>,
     show: Show,
 }
@@ -443,7 +443,8 @@ impl SettingsApp {
             ui.add_space(8.0);
             let hooks = &mut self.s.hooks;
             grid(ui, "shell-hooks", &mut |ui| {
-                for (name, what, with) in EVENTS {
+                // The calendar's month is for plugins that give it events, not a thing to run a command on.
+                for (name, what, with) in EVENTS.iter().filter(|(n, ..)| *n != "month") {
                     let label = ui.label(*what);
                     // What the command can read: each detail is a RIVET_ variable, then its values if they're fixed.
                     if !with.is_empty() {

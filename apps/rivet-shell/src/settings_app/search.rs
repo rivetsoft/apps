@@ -236,10 +236,15 @@ pub fn mark(ui: &mut egui::Ui, title: &str, r: Rect) {
     ctx.request_repaint();
 }
 
+/// The search field's id, for the keyboard to be put on it.
+pub fn field_id() -> egui::Id {
+    egui::Id::unique("shell-settings-search")
+}
+
 /// The sidebar's search field. Ctrl+F focuses it; Escape clears it.
 pub fn field(ui: &mut egui::Ui, query: &mut String) -> egui::Response {
     let v = ui.visuals().clone();
-    let id = egui::Id::unique("shell-settings-search");
+    let id = field_id();
     if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::F)) {
         ui.memory_mut(|m| m.request_focus(id));
     }

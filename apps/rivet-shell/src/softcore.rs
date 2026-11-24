@@ -63,6 +63,9 @@ pub struct State {
     pub settings: Vec<Setting>,
     pub values: HashMap<String, Now>,
     pub binds: Vec<Bind>,
+    /// The names of the shell surfaces on screen now (panels, docks, bars), less the ones
+    /// under the windows, for picking which to blur behind.
+    pub layers: Vec<String>,
 }
 
 /// What a setting is about, from its key: `shadow_size` and `shadows` are both `shadow`.
@@ -181,8 +184,26 @@ pub fn read() -> Result<State, String> {
     let (values, binds) = parse_listing(&ask(&["settings"])?, &settings);
     // The window-look file sits beside the settings and is included by them.
     let files = file.into_iter().flat_map(|f| [f.with_file_name("rivet-shell.settings"), f]).collect();
-    Ok(State { files, settings, values, binds })
+    // What is on screen is only for suggestions: an older Softcore that can't say is no error.
+    let layers = ask(&["msg", "-j", "layers"]).map(|j| parse_layers(&j)).unwrap_or_default();
+    Ok(State { files, settings, values, binds, layers })
 }
+
+/// The names in `softcore msg -j layers`, each once, leaving out the background's (the
+/// wallpaper), which has nothing under it to blur.
+pub fn parse_layers(json: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let list: Vec<Value> = serde_json::from_str(json).unwrap_or_default();
+    for l in &list {
+        let (Some(name), layer) = (l.get("namespace").and_then(Value::as_str), l.get("layer").and_then(Value::as_str)) else { continue };
+        if !name.is_empty() && layer != Some("background") && !out.iter().any(|n| n == name) {
+            out.push(name.to_string());
+        }
+    }
+    out
+}
+
+const SAMPLE_LAYERS: &str = r#"[{"layer":"background","namespace":"rivet-shell-wallpaper"},{"layer":"top","namespace":"rivet-shell-panel"},{"layer":"top","namespace":"rivet-shell-panel"},{"layer":"top","namespace":"rivet-shell-dock"},{"layer":"top","namespace":"waybar"}]"#;
 
 /// Change one setting or binding (`bind.Mod+T`). Softcore checks the value first and says
 /// why when it won't do.
@@ -199,7 +220,7 @@ pub fn unset(key: &str) -> Result<(), String> {
 pub fn sample() -> State {
     let (settings, _) = parse_table(SAMPLE_TABLE).unwrap_or_default();
     let (values, binds) = parse_listing(SAMPLE_LISTING, &settings);
-    State { files: Vec::new(), settings, values, binds }
+    State { files: Vec::new(), settings, values, binds, layers: parse_layers(SAMPLE_LAYERS) }
 }
 
 const SAMPLE_TABLE: &str = r##"{"file":"/home/rivet/.config/softcore/settings","keyed":[],"lists":["spawn"],"settings":[
@@ -213,6 +234,7 @@ const SAMPLE_TABLE: &str = r##"{"file":"/home/rivet/.config/softcore/settings","
 {"default":"#000000","group":"Windows","help":"","key":"shadow_color","kind":{"type":"color"},"label":"Shadow colour"},
 {"default":"true","group":"Windows","help":"","key":"blur","kind":{"type":"bool"},"label":"Blur behind see-through windows"},
 {"default":"5","group":"Windows","help":"","key":"blur_strength","kind":{"max":10,"min":1,"type":"int"},"label":"Blur strength"},
+{"default":"","group":"Windows","help":"Their names, with commas between.","key":"blur_layers","kind":{"type":"text"},"label":"Shell surfaces to blur behind"},
 {"default":"horizontal","group":"Columns","help":"horizontal: columns side by side, scrolling left and right. vertical: rows one under the other, scrolling up and down. auto: vertical on a display taller than it is wide.","key":"scroll","kind":{"choices":["horizontal","vertical","auto"],"type":"choice"},"label":"Windows scroll"},
 {"default":"0.3333,0.5,0.6667","group":"Columns","help":"The widths the next-width key steps through, as parts of the screen.","key":"column_widths","kind":{"type":"widths"},"label":"Column widths"},
 {"default":"0.5","group":"Columns","help":"","key":"default_width","kind":{"max":1.0,"min":0.1,"step":0.05,"type":"float"},"label":"A new column's width"},
@@ -240,6 +262,7 @@ const SAMPLE_LISTING: &str = "# /home/rivet/.config/softcore/settings
 *shadow_color=#1a1030                     # Shadow colour
  blur=true                                # Blur behind see-through windows
  blur_strength=5                          # Blur strength
+*blur_layers=rivet-shell-panel,waybar     # Shell surfaces to blur behind
 
 # Columns
 *scroll=auto                              # Windows scroll
@@ -321,6 +344,12 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].key, "b");
         assert!(file.is_none());
+    }
+
+    #[test]
+    fn layers_are_named_once_without_the_wallpaper() {
+        assert_eq!(parse_layers(SAMPLE_LAYERS), vec!["rivet-shell-panel", "rivet-shell-dock", "waybar"]);
+        assert!(parse_layers("not json").is_empty());
     }
 
     /// With Softcore installed: its real table and listing are read without loss.

@@ -1,5 +1,5 @@
-//! Quick settings, in the Rivet apps' own look rather than a phone's: a title row with
-//! toolbar-style buttons, sections under small folding headings like Rivet Files' sidebar,
+//! Quick settings, in the Rivet apps' own look rather than a phone's: a row with the person's picture and name
+//! and toolbar-style buttons, sections under small folding headings like Rivet Files' sidebar,
 //! thin sliders, toggles that light up the way a selected item does in the apps (a soft
 //! accent tint with an accent edge, never a solid block), and what's playing as a plain row
 //! with toolbar buttons. (The notifications have their own panel: notes_pop.rs.)
@@ -13,6 +13,8 @@ use crate::sys::Net;
 use crate::ui::{Act, Kit, Model, Popup, PopupKind, one_line, ui_font};
 
 const HEAD: f32 = 56.0;
+/// The person's picture in the title row, across.
+const AVATAR: f32 = 38.0;
 const FOLD: f32 = 30.0;
 const SLIDER: f32 = 40.0;
 const TOGGLE: f32 = 52.0;
@@ -218,15 +220,30 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
     let w = ui.available_width();
     let mut acts: Vec<Act> = Vec::new();
     ui.spacing_mut().item_spacing.y = 0.0;
-    // ---- the title row: who, how long up; settings and power as toolbar buttons
+    // ---- the title row: who (their picture and name), how long up; settings and power as
+    // toolbar buttons
     let (r, _) = ui.allocate_exact_size(Vec2::new(w, HEAD), Sense::hover());
     let p = ui.painter().clone();
-    p.text(Pos2::new(r.left() + 2.0, r.top() + 14.0), Align2::LEFT_CENTER, "Quick Settings", ui_font(15.0), v.strong_text_color());
+    let ar = Rect::from_center_size(Pos2::new(r.left() + 2.0 + AVATAR / 2.0, r.top() + 21.0), Vec2::splat(AVATAR));
+    let name = if m.extra.user.is_empty() { crate::auth::login_name() } else { m.extra.user.clone() };
+    match kit.avatar(ui.ctx()) {
+        Some(t) => {
+            egui::Image::from_texture(&t).corner_radius(AVATAR / 2.0).paint_at(ui, ar);
+        }
+        // No picture: their initial on the accent.
+        None => {
+            p.circle_filled(ar.center(), AVATAR / 2.0, accent);
+            let initial = name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default();
+            p.text(ar.center(), Align2::CENTER_CENTER, initial, ui_font(17.0), v.selection.stroke.color);
+        }
+    }
+    let x = ar.right() + 10.0;
+    let g = one_line(&p, &name, ui_font(15.0), v.strong_text_color(), w - (x - r.left()) - 84.0);
+    p.galley(Pos2::new(x, r.top() + 13.0 - g.size().y / 2.0 + 1.0), g, v.strong_text_color());
     let up = crate::sys::uptime();
-    let up_text = if up >= 86400 { format!("up {} d {} h", up / 86400, up / 3600 % 24) } else { format!("up {} h {} min", up / 3600, up / 60 % 60) };
-    let who = if m.extra.user.is_empty() { up_text } else { format!("{} · {up_text}", m.extra.user) };
-    let g = one_line(&p, &who, ui_font(12.0), weak, w - 90.0);
-    p.galley(Pos2::new(r.left() + 2.0, r.top() + 29.0), g, weak);
+    let up_text = if up >= 86400 { format!("Up {} d {} h", up / 86400, up / 3600 % 24) } else { format!("Up {} h {} min", up / 3600, up / 60 % 60) };
+    let g = one_line(&p, &up_text, ui_font(12.0), weak, w - (x - r.left()) - 84.0);
+    p.galley(Pos2::new(x, r.top() + 29.0), g, weak);
     let pr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.top() + 21.0), Vec2::new(32.0, 32.0));
     if tool_button(ui, pr, "power", "Lock, suspend, restart, shut down", &|p, c, col| glyph::power(p, c, col)) {
         acts.push(Act::Open(Popup::at(PopupKind::Power { confirm: None }, pr.center().x, m.output)));

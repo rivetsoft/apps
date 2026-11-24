@@ -387,3 +387,17 @@ pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32,
         _ => plugin(p, c, col),
     }
 }
+
+/// A package: a box seen from above a corner, `r` from its middle to a point.
+pub fn package(p: &egui::Painter, c: Pos2, r: f32, col: Color32) {
+    let s = Stroke::new((r * 0.22).clamp(1.0, 1.5), col);
+    let (w, h) = (r * 0.87, r * 0.5);
+    let top = c + Vec2::new(0.0, -r);
+    let (ur, lr, bot) = (c + Vec2::new(w, -h), c + Vec2::new(w, h), c + Vec2::new(0.0, r));
+    let (ll, ul) = (c + Vec2::new(-w, h), c + Vec2::new(-w, -h));
+    p.add(Shape::closed_line(vec![top, ur, lr, bot, ll, ul], s));
+    // The edges that meet at the near corner.
+    p.line_segment([ul, c], s);
+    p.line_segment([ur, c], s);
+    p.line_segment([c, bot], s);
+}

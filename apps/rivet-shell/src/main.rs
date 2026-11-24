@@ -29,6 +29,7 @@ mod media_pop;
 mod notes;
 mod notes_pop;
 mod panels;
+mod places_pop;
 mod plugin_store;
 mod plugins;
 mod polkit;

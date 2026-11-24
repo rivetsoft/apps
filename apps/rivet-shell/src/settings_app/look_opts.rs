@@ -157,6 +157,9 @@ impl SettingsApp {
             hint(ui, "Every panel and the dock use this look unless you give one its own on its page.");
             ui.add_space(10.0);
             editor(ui, "shell-look-base", &mut self.s.look, BASE, "Default", &colors, true);
+            super::controls::rule(ui);
+            super::controls::switch(ui, &mut self.s.blur, "Blur what's behind them");
+            hint(ui, "When they're see-through, on compositors that can blur, such as Softcore.");
         });
     }
 

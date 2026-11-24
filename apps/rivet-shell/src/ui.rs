@@ -65,8 +65,9 @@ pub fn dock_items(s: &Settings, apps: &[DesktopApp], running: &[String]) -> Vec<
 
 /// The dock surface's size, and the room it keeps from windows.
 pub fn dock_size(s: &Settings, items: &[(DesktopApp, bool)]) -> (Vec2, f32) {
-    let n = items.len().max(1) as f32;
-    let sep = if items.iter().any(|i| i.1) && items.iter().any(|i| !i.1) { DOCK_SEP } else { 0.0 };
+    let places = if s.dock_places { 2 } else { 0 };
+    let n = (items.len() + places).max(1) as f32;
+    let sep = if items.iter().any(|i| i.1) && items.iter().any(|i| !i.1) { DOCK_SEP } else { 0.0 } + if places > 0 && !items.is_empty() { DOCK_SEP } else { 0.0 };
     let w = DOCK_PAD * 2.0 + n * s.dock_icon + (n - 1.0) * DOCK_GAP + sep + MARGIN * 2.0;
     let body = s.dock_icon + DOCK_PAD * 2.0 + MARGIN;
     (Vec2::new(w, body + DOCK_LABEL), body)
@@ -75,12 +76,17 @@ pub fn dock_size(s: &Settings, items: &[(DesktopApp, bool)]) -> (Vec2, f32) {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PopupKind {
     Launcher { query: String, sel: usize },
-    Calendar { month: i32 },
+    /// The month shown (from this one), and the day picked to list its events (None: today).
+    Calendar { month: i32, day: Option<NaiveDate> },
     Power { confirm: Option<Power> },
     /// Quick settings, sliders, what's playing and the notifications (`drag`: a slider held).
     Control { drag: Option<(u8, u32)> },
     /// Right-click on a dock icon.
     DockMenu { app: String, pinned: bool },
+    /// The newest downloads, from the dock's Downloads.
+    Downloads,
+    /// The Trash's menu on the dock (`confirm`: asking before emptying it).
+    TrashMenu { confirm: bool },
     /// Wi-Fi networks (`ask`: the network a password is being typed for, and the password).
     Network { ask: Option<(String, String)> },
     /// Bluetooth devices.
@@ -192,6 +198,75 @@ pub struct Extra {
     pub viz: Option<Vec<f32>>,
     /// The password being asked for (while its dialog is open).
     pub auth: Option<crate::polkit::View>,
+    /// Files being dragged over the dock.
+    pub drop: Option<DockDrop>,
+}
+
+/// Files being dragged over the dock: where the pointer is on it, and the files' types once
+/// they're known (until then every slot looks as if it takes them).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DockDrop {
+    pub pos: Pos2,
+    pub mimes: Option<Vec<String>>,
+}
+
+/// A place on the dock.
+#[derive(Clone, Debug)]
+pub enum DockSlot {
+    /// An app, and whether it's pinned (else it's only open).
+    App(DesktopApp, bool),
+    Downloads,
+    Trash,
+}
+
+/// The dock's slots and where each is on its surface (`full`), and where the lines between
+/// its groups go: the pinned apps, the open ones, then Downloads and the Trash.
+pub fn dock_layout(s: &Settings, apps: &[DesktopApp], running: &[String], full: Rect) -> (Rect, Vec<(DockSlot, Rect)>, Vec<f32>) {
+    let items = dock_items(s, apps, running);
+    let size = s.dock_icon;
+    let body_h = size + DOCK_PAD * 2.0;
+    let body = Rect::from_min_size(Pos2::new(full.left() + MARGIN, full.bottom() - MARGIN - body_h), Vec2::new(full.width() - MARGIN * 2.0, body_h));
+    let mut slots: Vec<DockSlot> = items.iter().map(|(a, pinned)| DockSlot::App(a.clone(), *pinned)).collect();
+    if s.dock_places {
+        slots.extend([DockSlot::Downloads, DockSlot::Trash]);
+    }
+    let mut x = body.left() + DOCK_PAD;
+    let mut out = Vec::new();
+    let mut lines = Vec::new();
+    for (k, slot) in slots.into_iter().enumerate() {
+        // A line where the pinned apps end and the open ones start, and before the places.
+        let before = match (&slot, k) {
+            (_, 0) => false,
+            (DockSlot::App(_, false), _) => matches!(out.last(), Some((DockSlot::App(_, true), _))),
+            (DockSlot::Downloads, _) => true,
+            _ => false,
+        };
+        if before {
+            lines.push(x + DOCK_SEP / 2.0 - DOCK_GAP / 2.0);
+            x += DOCK_SEP;
+        }
+        out.push((slot, Rect::from_min_size(Pos2::new(x, body.top() + DOCK_PAD), Vec2::splat(size))));
+        x += size + DOCK_GAP;
+    }
+    (body, out, lines)
+}
+
+/// The slot under `pos` on the dock's surface, if any (the room between icons counts as theirs).
+pub fn dock_slot_at(s: &Settings, apps: &[DesktopApp], running: &[String], full: Rect, pos: Pos2) -> Option<DockSlot> {
+    let (_, slots, _) = dock_layout(s, apps, running, full);
+    slots.into_iter().find(|(_, r)| r.expand2(Vec2::new(DOCK_GAP / 2.0 + 0.5, DOCK_PAD)).contains(pos)).map(|(slot, _)| slot)
+}
+
+/// Whether a slot takes files of these types when they're dropped on it: an app that says it
+/// opens every one of them, or the Trash. Types not known yet: anything might.
+pub fn dock_takes(slot: &DockSlot, mimes: Option<&[String]>) -> bool {
+    match (slot, mimes) {
+        // Something to throw away: not a drag of only web addresses.
+        (DockSlot::Trash, m) => m.is_none_or(|m| !m.is_empty()),
+        (DockSlot::Downloads, _) => false,
+        (DockSlot::App(..), None) => true,
+        (DockSlot::App(a, _), Some(ms)) => !ms.is_empty() && ms.iter().all(|m| !rivet_xdg::launch::apps_for(std::slice::from_ref(a), m).is_empty()),
+    }
 }
 
 /// What the person asked for, done by whoever runs the shell.
@@ -237,6 +312,18 @@ pub enum Act {
     Pin(String),
     Unpin(String),
     MovePin(String, i32),
+    /// The calendar shows the days from one to the other: plugins that give events are told.
+    CalendarSpan(NaiveDate, NaiveDate),
+    /// Open the Trash in the file manager.
+    OpenTrash,
+    /// Delete what's in the Trash for good.
+    EmptyTrash,
+    /// Open a file (of this type) with its app.
+    OpenFile(std::path::PathBuf, String),
+    /// Start dragging a file out of the shell, to drop in another app.
+    DragOut(std::path::PathBuf),
+    /// Add an app to the launcher's favourites, or take it off.
+    Favorite(String),
     /// Close every window with one of these app ids.
     CloseWindows(Vec<String>),
     /// A notification's card clicked (its default action).
@@ -250,10 +337,10 @@ pub enum Act {
     Copy(String),
     Power(Power),
     Settings,
-    /// Something for a tray icon's app (a click, its menu…).
-    Tray(crate::tray::Job),
     /// The Settings window, on the page of this name.
     SettingsPage(&'static str),
+    /// Something for a tray icon's app (a click, its menu…).
+    Tray(crate::tray::Job),
     /// Something for a plugin: a click on its item, a row of its menu.
     Plugin(String, crate::plugins::Event),
     /// What was typed into the password dialog.
@@ -311,11 +398,25 @@ pub struct Kit {
     /// Tray icons made from apps' pixels (by item, icon and recolouring).
     pub tray_tex: std::collections::HashMap<(String, u64, bool), egui::TextureHandle>,
     live: bool,
+    /// The person's picture, once looked for (None inside: they have none).
+    avatar: Option<Option<egui::TextureHandle>>,
 }
 
 impl Kit {
     pub fn new(live: bool) -> Kit {
-        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), face: Face::Base, live }
+        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), face: Face::Base, live, avatar: None }
+    }
+
+    /// The person's picture (as on the lock screen), read the first time it's asked for.
+    /// Screenshots and checks never show it.
+    pub fn avatar(&mut self, ctx: &egui::Context) -> Option<egui::TextureHandle> {
+        let live = self.live;
+        self.avatar
+            .get_or_insert_with(|| {
+                let img = if live { crate::lock::avatar(&crate::auth::login_name()) } else { None };
+                img.map(|i| ctx.load_texture("rivet-avatar", i, egui::TextureOptions::LINEAR))
+            })
+            .clone()
     }
 
     /// Call first in every frame of the surface.
@@ -508,6 +609,59 @@ pub fn surface(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius
     surface_open(p, r, v, alpha, radius, border, None);
 }
 
+fn glass_id() -> egui::Id {
+    egui::Id::unique("rivet-glass")
+}
+
+/// The see-through shapes drawn this frame (each a rectangle and its corners), taken for the
+/// compositor to blur behind. Taking them empties the list for the next frame.
+pub fn take_glass(ctx: &egui::Context) -> Vec<(Rect, egui::CornerRadius)> {
+    ctx.data_mut(|d| d.remove_temp::<Vec<(Rect, egui::CornerRadius)>>(glass_id())).unwrap_or_default()
+}
+
+/// A rounded rectangle as whole-point rectangles (x, y, w, h) that follow its corners in steps,
+/// for a compositor that takes regions as rectangles: the middle, and bands across the top and
+/// bottom narrowing towards the corners.
+pub fn glass_rects(r: Rect, radius: egui::CornerRadius) -> Vec<[i32; 4]> {
+    let (l, t, rr, b) = (r.left().round() as i32, r.top().round() as i32, r.right().round() as i32, r.bottom().round() as i32);
+    let top = radius.nw.max(radius.ne) as i32;
+    let bottom = radius.sw.max(radius.se) as i32;
+    let mut out = Vec::new();
+    let mid = (t + top, b - bottom);
+    if mid.1 > mid.0 {
+        out.push([l, mid.0, rr - l, mid.1 - mid.0]);
+    }
+    // How far in a corner of radius `c` is, `k` points from its straight edge.
+    let inset = |c: i32, k: f32| -> i32 {
+        if c == 0 {
+            return 0;
+        }
+        let c = c as f32;
+        let dy = c - k;
+        (c - (c * c - dy * dy).max(0.0).sqrt()).ceil() as i32
+    };
+    // Bands two points tall: fine enough that the steps don't show through the blur.
+    let mut y = 0;
+    while y < top {
+        let h = 2.min(top - y);
+        // Measured at the band's outer side, so each band stays inside the curve.
+        let k = y as f32 + 0.5;
+        let (a, z) = (inset(radius.nw as i32, k.min(radius.nw as f32)), inset(radius.ne as i32, k.min(radius.ne as f32)));
+        out.push([l + a, t + y, (rr - z) - (l + a), h]);
+        y += h;
+    }
+    let mut y = 0;
+    while y < bottom {
+        let h = 2.min(bottom - y);
+        let k = y as f32 + 0.5;
+        let (a, z) = (inset(radius.sw as i32, k.min(radius.sw as f32)), inset(radius.se as i32, k.min(radius.se as f32)));
+        out.push([l + a, b - y - h, (rr - z) - (l + a), h]);
+        y += h;
+    }
+    out.retain(|q| q[2] > 0 && q[3] > 0);
+    out
+}
+
 /// The clips that leave out a stretch (`lo` to `hi` along it) of `r`'s `side`, and all beyond it.
 fn around(clip: Rect, r: Rect, side: Edge, lo: f32, hi: f32) -> [Rect; 3] {
     let (mut a, mut b, mut mid) = (clip, clip, clip);
@@ -526,6 +680,13 @@ fn around(clip: Rect, r: Rect, side: Edge, lo: f32, hi: f32) -> [Rect; 3] {
 /// shadow stays beside the flares), where a popup joins it.
 pub fn surface_open(p: &egui::Painter, r: Rect, v: &egui::Visuals, alpha: f32, radius: impl Into<egui::CornerRadius>, border: bool, open: Option<(Edge, f32, f32, f32)>) {
     let radius: egui::CornerRadius = radius.into();
+    // See-through: what's behind it is blurred, in its shape (and only as much of it as shows).
+    if alpha < 0.97 {
+        let shown = r.intersect(p.clip_rect());
+        if shown.is_positive() {
+            p.ctx().data_mut(|d| d.get_temp_mut_or_default::<Vec<(Rect, egui::CornerRadius)>>(glass_id()).push((shown, radius)));
+        }
+    }
     let shadow = egui::Shadow { offset: [0, 2], blur: 14, spread: 0, color: Color32::from_black_alpha(if v.dark_mode { 70 } else { 30 }) };
     let stroke = Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08).gamma_multiply(alpha));
     match open {
@@ -694,54 +855,87 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     *ui.visuals_mut() = v.clone();
     let hover_r = crate::style::inner_radius(&look, DOCK_PAD - 3.0);
     let full = ui.max_rect();
-    let items = dock_items(m.s, m.apps, &m.status.running);
     let size = m.s.dock_icon;
-    let body_h = size + DOCK_PAD * 2.0;
-    let body = Rect::from_min_size(Pos2::new(full.left() + MARGIN, full.bottom() - MARGIN - body_h), Vec2::new(full.width() - MARGIN * 2.0, body_h));
+    let (body, slots, lines) = dock_layout(m.s, m.apps, &m.status.running, full);
     surface(ui.painter(), body, &v, look.opacity, crate::style::radius(&look), look.border);
     let p = ui.painter().clone();
-    let mut x = body.left() + DOCK_PAD;
+    for sx in lines {
+        p.line_segment([Pos2::new(sx, body.top() + 12.0), Pos2::new(sx, body.bottom() - 12.0)], Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.2)));
+    }
     let mut label: Option<(String, f32)> = None;
-    let mut after_pinned = false;
-    for (a, pinned) in &items {
-        if !pinned && !after_pinned {
-            after_pinned = true;
-            if items.iter().any(|i| i.1) {
-                // Between the pinned apps and the open ones.
-                let sx = x + DOCK_SEP / 2.0 - DOCK_GAP / 2.0;
-                p.line_segment([Pos2::new(sx, body.top() + 12.0), Pos2::new(sx, body.bottom() - 12.0)], Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.2)));
-                x += DOCK_SEP;
+    // Files dragged over it: the slots that can't take them fade, and the one under the
+    // pointer that can is lit as if hovered.
+    let drop = m.extra.drop.clone();
+    let mimes = drop.as_ref().and_then(|d| d.mimes.clone());
+    let trash_full = crate::places_pop::trash_full();
+    for (slot, r) in &slots {
+        let id = match slot {
+            DockSlot::App(a, _) => a.id.clone(),
+            DockSlot::Downloads => "@downloads".into(),
+            DockSlot::Trash => "@trash".into(),
+        };
+        let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &id)), Sense::click());
+        let (lit, faded) = match &drop {
+            Some(d) => {
+                let takes = dock_takes(slot, mimes.as_deref());
+                (takes && r.expand2(Vec2::new(DOCK_GAP / 2.0 + 0.5, DOCK_PAD)).contains(d.pos), !takes)
             }
-        }
-        let r = Rect::from_min_size(Pos2::new(x, body.top() + DOCK_PAD), Vec2::splat(size));
-        let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &a.id)), Sense::click());
-        let lift = if resp.hovered() { -4.0 } else { 0.0 };
+            None => (resp.hovered(), false),
+        };
+        let lift = if lit { -4.0 } else { 0.0 };
         let r2 = r.translate(Vec2::new(0.0, lift));
-        if resp.hovered() {
+        let name = match slot {
+            DockSlot::App(a, _) => a.name.clone(),
+            DockSlot::Downloads => "Downloads".into(),
+            DockSlot::Trash => "Trash".into(),
+        };
+        if lit {
             p.rect_filled(r.expand(3.0), hover_r, mix(v.panel_fill, v.text_color(), 0.08));
-            label = Some((a.name.clone(), r.center().x));
+            label = Some((name.clone(), r.center().x));
         }
-        match kit.app_icon(ui.ctx(), a, size) {
+        let tint = if faded { Color32::from_white_alpha(80) } else { Color32::WHITE };
+        let tex = match slot {
+            DockSlot::App(a, _) => kit.app_icon(ui.ctx(), a, size),
+            DockSlot::Downloads => kit.named_icon(ui.ctx(), "folder-download", size).or_else(|| kit.named_icon(ui.ctx(), "folder", size)),
+            DockSlot::Trash => kit.named_icon(ui.ctx(), if trash_full { "user-trash-full" } else { "user-trash" }, size),
+        };
+        match tex {
             Some(t) => {
-                p.image(t.id(), r2, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                p.image(t.id(), r2, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), tint);
             }
             None => {
-                p.rect_filled(r2.shrink(4.0), r_md(), mix(accent, v.panel_fill, 0.3));
-                p.text(r2.center(), Align2::CENTER_CENTER, a.name.chars().next().unwrap_or('?').to_uppercase().to_string(), ui_font(size * 0.45), Color32::WHITE);
+                p.rect_filled(r2.shrink(4.0), r_md(), mix(accent, v.panel_fill, 0.3).gamma_multiply(if faded { 0.3 } else { 1.0 }));
+                p.text(r2.center(), Align2::CENTER_CENTER, name.chars().next().unwrap_or('?').to_uppercase().to_string(), ui_font(size * 0.45), tint);
             }
         }
-        // Open: a dot under it.
-        if m.s.dock_running && (!pinned || is_running(a, &m.status.running)) {
-            p.circle_filled(Pos2::new(r.center().x, body.bottom() - 4.0), 2.5, dot);
-        }
+        // The dock is centred on its screen: a menu's place is the icon's from the middle.
+        let at = r.center().x - full.center().x;
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
-        if resp.secondary_clicked() {
-            // The dock is centred on its screen: the menu's place is the icon's from the middle.
-            m.acts.push(Act::Open(Popup::at(PopupKind::DockMenu { app: a.id.trim_end_matches(".desktop").to_string(), pinned: *pinned }, r.center().x - full.center().x, m.output)));
-        } else if resp.clicked() {
-            m.acts.push(Act::Launch(a.id.clone()));
+        match slot {
+            DockSlot::App(a, pinned) => {
+                // Open: a dot under it.
+                if m.s.dock_running && (!pinned || is_running(a, &m.status.running)) {
+                    p.circle_filled(Pos2::new(r.center().x, body.bottom() - 4.0), 2.5, dot);
+                }
+                if resp.secondary_clicked() {
+                    m.acts.push(Act::Open(Popup::at(PopupKind::DockMenu { app: a.id.trim_end_matches(".desktop").to_string(), pinned: *pinned }, at, m.output)));
+                } else if resp.clicked() {
+                    m.acts.push(Act::Launch(a.id.clone()));
+                }
+            }
+            DockSlot::Downloads => {
+                if resp.clicked() || resp.secondary_clicked() {
+                    m.acts.push(Act::Open(Popup::at(PopupKind::Downloads, at, m.output)));
+                }
+            }
+            DockSlot::Trash => {
+                if resp.secondary_clicked() {
+                    m.acts.push(Act::Open(Popup::at(PopupKind::TrashMenu { confirm: false }, at, m.output)));
+                } else if resp.clicked() {
+                    m.acts.push(Act::OpenTrash);
+                }
+            }
         }
-        x += size + DOCK_GAP;
     }
     // The name above the icon under the pointer.
     if let Some((name, cx)) = label {
@@ -1020,9 +1214,11 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
             let size = crate::launcher::size(m.s, full);
             if centred_launcher { size } else { Vec2::new(size.x, size.y.min(full.height() - inset - MARGIN - 8.0)) }
         }
-        PopupKind::Calendar { .. } => Vec2::new(300.0, 300.0),
+        PopupKind::Calendar { month, day } => Vec2::new(300.0, calendar_height(m, *month, *day)),
         PopupKind::Power { .. } => crate::power_ui::size(m.s),
         PopupKind::Control { .. } => Vec2::new(408.0, crate::quick::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Downloads => Vec2::new(crate::places_pop::WIDTH, crate::places_pop::height(crate::places_pop::newest().len()) + 12.0),
+        PopupKind::TrashMenu { confirm } => Vec2::new(if *confirm { 280.0 } else { 220.0 }, crate::places_pop::trash_height(*confirm)),
         PopupKind::DockMenu { app, pinned } => Vec2::new(220.0, if *pinned { 190.0 } else { 116.0 } + if closable(m, app).is_empty() { 0.0 } else { 34.0 }),
         PopupKind::Network { .. } | PopupKind::Bluetooth => Vec2::new(340.0, crate::conn::height(&pop.kind, m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
@@ -1062,7 +1258,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
             ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(110));
             Rect::from_center_size(full.center(), size)
         }
-        PopupKind::DockMenu { .. } if pop.from.is_none() => {
+        PopupKind::DockMenu { .. } | PopupKind::Downloads | PopupKind::TrashMenu { .. } if pop.from.is_none() => {
             // Above the dock, over the icon.
             let items = dock_items(m.s, m.apps, &m.status.running);
             let (_, room) = dock_size(m.s, &items);
@@ -1113,7 +1309,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         }
     }
     let pad = match pop.kind {
-        PopupKind::DockMenu { .. } | PopupKind::TrayMenu { .. } => 6.0,
+        PopupKind::DockMenu { .. } | PopupKind::TrayMenu { .. } | PopupKind::Downloads | PopupKind::TrashMenu { .. } => 6.0,
         PopupKind::Control { .. } => crate::quick::PAD,
         PopupKind::Notifications => crate::notes_pop::PAD,
         PopupKind::Auth { .. } => crate::auth_pop::PAD,
@@ -1124,10 +1320,12 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
     let focus = std::mem::take(&mut pop.focus);
     match &mut pop.kind {
         PopupKind::Launcher { query, sel } => crate::launcher::launcher(&mut child, query, sel, focus, m, kit),
-        PopupKind::Calendar { month } => calendar(&mut child, month, kit.accent(m.s)),
+        PopupKind::Calendar { month, day } => calendar(&mut child, month, day, kit.accent(m.s), m),
         PopupKind::Power { confirm } => crate::power_ui::menu(&mut child, confirm, m),
         PopupKind::Control { drag } => crate::quick::quick_settings(&mut child, drag, m, kit),
         PopupKind::DockMenu { app, pinned } => dock_menu(&mut child, app, *pinned, m),
+        PopupKind::Downloads => crate::places_pop::downloads(&mut child, m, kit),
+        PopupKind::TrashMenu { confirm } => crate::places_pop::trash_menu(&mut child, confirm, m),
         PopupKind::Network { ask } => crate::conn::network(&mut child, ask, m, kit),
         PopupKind::Bluetooth => crate::conn::bluetooth(&mut child, m, kit),
         PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
@@ -1237,14 +1435,68 @@ pub fn calc_text(v: f64) -> String {
     }
 }
 
-fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
-    let v = ui.visuals().clone();
+/// The first day of the month `month` months from this one.
+fn calendar_month(month: i32) -> NaiveDate {
     let today = Local::now().date_naive();
     let base = today.with_day(1).unwrap_or(today);
-    let total = base.year() * 12 + base.month0() as i32 + *month;
-    let (y, mo) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
-    let first = NaiveDate::from_ymd_opt(y, mo, 1).unwrap_or(base);
-    ui.horizontal(|ui| {
+    let total = base.year() * 12 + base.month0() as i32 + month;
+    NaiveDate::from_ymd_opt(total.div_euclid(12), total.rem_euclid(12) as u32 + 1, 1).unwrap_or(base)
+}
+
+/// The days a month's grid shows: from the Monday on or before its first, six weeks.
+pub fn calendar_span(month: i32) -> (NaiveDate, NaiveDate) {
+    let first = calendar_month(month);
+    let start = first - chrono::Duration::days(first.weekday().num_days_from_monday() as i64);
+    (start, start + chrono::Duration::days(42))
+}
+
+/// The events plugins gave for a day, with the plugin each came from.
+fn day_events<'a>(m: &'a Model, day: NaiveDate) -> Vec<(&'a str, &'a crate::plugins::DayEvent)> {
+    let mut out: Vec<(&str, &crate::plugins::DayEvent)> = m.extra.plugins.iter().flat_map(|(id, it)| it.events.iter().filter(move |e| e.day == Some(day)).map(move |e| (id.as_str(), e))).collect();
+    // Whole days first, then by time.
+    out.sort_by(|a, b| (!a.1.time.is_empty(), &a.1.time).cmp(&(!b.1.time.is_empty(), &b.1.time)));
+    out
+}
+
+/// Some plugin gives the calendar events (else there's no list of a day's).
+fn has_calendar(m: &Model) -> bool {
+    m.extra.plugins.iter().any(|(_, it)| it.calendar)
+}
+
+/// A day's list shows this many events, then how many more.
+const DAY_ROWS: usize = 5;
+
+/// The calendar popup's height: the month, and the picked day's events under it.
+fn calendar_height(m: &Model, month: i32, day: Option<NaiveDate>) -> f32 {
+    let first = calendar_month(month);
+    let weeks = ((first.weekday().num_days_from_monday() as i64 + days_in_month(first)) as f32 / 7.0).ceil();
+    // The popup's padding, the month's name and the room under it, the days' names, the weeks.
+    let grid = 14.0 * 2.0 + 24.0 + 8.0 + 24.0 + weeks * 30.0;
+    if !has_calendar(m) {
+        return 300.0;
+    }
+    let today = Local::now().date_naive();
+    let n = day_events(m, day.unwrap_or(today)).len();
+    let rows = n.clamp(1, DAY_ROWS) as f32 + if n > DAY_ROWS { 1.0 } else { 0.0 };
+    grid + 16.0 + 26.0 + rows * 30.0 + 4.0
+}
+
+fn days_in_month(first: NaiveDate) -> i64 {
+    let (y, mo) = (first.year(), first.month());
+    NaiveDate::from_ymd_opt(if mo == 12 { y + 1 } else { y }, if mo == 12 { 1 } else { mo + 1 }, 1).map(|n| (n - first).num_days()).unwrap_or(30)
+}
+
+/// The month, with a dot under each day that has events (in their calendars' colours), and the
+/// picked day's events under it, from the plugins that give them. Clicking one opens it in its
+/// app; a day picks it.
+fn calendar(ui: &mut egui::Ui, month: &mut i32, picked: &mut Option<NaiveDate>, accent: Color32, m: &mut Model) {
+    let v = ui.visuals().clone();
+    // Rows as tall as they're made, so calendar_height adds up.
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let today = Local::now().date_naive();
+    let was = *month;
+    let first = calendar_month(*month);
+    ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
         if ui.small_button("‹").clicked() {
             *month -= 1;
         }
@@ -1256,6 +1508,7 @@ fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
                 let t = first.format("%B %Y").to_string();
                 if ui.add(egui::Label::new(egui::RichText::new(t).strong().size(15.0)).sense(Sense::click())).on_hover_text("Back to this month").clicked() {
                     *month = 0;
+                    *picked = None;
                 }
             });
         });
@@ -1264,25 +1517,98 @@ fn calendar(ui: &mut egui::Ui, month: &mut i32, accent: Color32) {
     let r = ui.available_rect_before_wrap();
     let cw = r.width() / 7.0;
     let ch = 30.0;
-    let p = ui.painter();
     for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].iter().enumerate() {
-        p.text(Pos2::new(r.left() + cw * (i as f32 + 0.5), r.top() + 10.0), Align2::CENTER_CENTER, *d, ui_font(11.5), v.weak_text_color());
+        ui.painter().text(Pos2::new(r.left() + cw * (i as f32 + 0.5), r.top() + 10.0), Align2::CENTER_CENTER, *d, ui_font(11.5), v.weak_text_color());
     }
-    let offset = first.weekday().num_days_from_monday() as i32;
-    let days = NaiveDate::from_ymd_opt(if mo == 12 { y + 1 } else { y }, if mo == 12 { 1 } else { mo + 1 }, 1).map(|n| (n - first).num_days()).unwrap_or(30) as i32;
+    let calendar = has_calendar(m);
+    let shown = picked.unwrap_or(today);
+    let offset = first.weekday().num_days_from_monday() as i64;
+    let days = days_in_month(first);
     for d in 0..days {
         let cell = d + offset;
         let c = Pos2::new(r.left() + cw * ((cell % 7) as f32 + 0.5), r.top() + 34.0 + ch * (cell / 7) as f32);
-        let date = first + chrono::Duration::days(d as i64);
+        let date = first + chrono::Duration::days(d);
+        let hit = Rect::from_center_size(c, Vec2::new(cw.min(34.0), ch - 2.0));
+        let resp = ui.interact(hit, egui::Id::unique(("calendar-day", date)), if calendar { Sense::click() } else { Sense::hover() });
+        let p = ui.painter();
         let col = if date == today {
             p.circle_filled(c, 13.0, accent);
             on(accent)
-        } else if cell % 7 >= 5 {
-            v.weak_text_color()
         } else {
-            v.text_color()
+            if calendar && date == shown {
+                p.circle_filled(c, 13.0, mix(v.panel_fill, v.text_color(), 0.14));
+            } else if resp.hovered() {
+                p.circle_filled(c, 13.0, mix(v.panel_fill, v.text_color(), 0.07));
+            }
+            if (cell % 7) >= 5 { v.weak_text_color() } else { v.text_color() }
         };
         p.text(c, Align2::CENTER_CENTER, (d + 1).to_string(), ui_font(13.0), col);
+        // Its events: a dot for each calendar they're in, up to three.
+        if calendar {
+            let mut colors: Vec<Color32> = Vec::new();
+            for (_, e) in day_events(m, date) {
+                let c = e.color.map(|[r, g, b]| Color32::from_rgb(r, g, b)).unwrap_or(accent);
+                if !colors.contains(&c) {
+                    colors.push(c);
+                }
+            }
+            let n = colors.len().min(3);
+            for (k, dc) in colors.iter().take(3).enumerate() {
+                let x = c.x + (k as f32 - (n as f32 - 1.0) / 2.0) * 5.0;
+                p.circle_filled(Pos2::new(x, c.y + 15.5), 1.8, *dc);
+            }
+        }
+        if resp.on_hover_cursor(if calendar { egui::CursorIcon::PointingHand } else { egui::CursorIcon::Default }).clicked() {
+            *picked = Some(date);
+        }
+    }
+    let weeks = ((offset + days) as f32 / 7.0).ceil();
+    // A month further on or back: plugins are told which days it shows, and nothing is picked.
+    if *month != was {
+        *picked = None;
+        let (a, b) = calendar_span(*month);
+        m.acts.push(Act::CalendarSpan(a, b));
+    }
+    if !calendar {
+        return;
+    }
+    // ---- the picked day's events
+    ui.allocate_exact_size(Vec2::new(r.width(), 24.0 + ch * weeks), Sense::hover());
+    let (line, _) = ui.allocate_exact_size(Vec2::new(r.width(), 16.0), Sense::hover());
+    ui.painter().hline(line.x_range(), line.center().y, Stroke::new(1.0, mix(v.panel_fill, v.text_color(), 0.08)));
+    let head = if shown == today { "Today".to_string() } else { shown.format("%A %-d %B").to_string() };
+    let (hr, _) = ui.allocate_exact_size(Vec2::new(r.width(), 26.0), Sense::hover());
+    ui.painter().text(Pos2::new(hr.left() + 2.0, hr.center().y), Align2::LEFT_CENTER, head, ui_font(12.5), v.weak_text_color());
+    let list = day_events(m, shown);
+    if list.is_empty() {
+        let (er, _) = ui.allocate_exact_size(Vec2::new(r.width(), 30.0), Sense::hover());
+        ui.painter().text(Pos2::new(er.left() + 2.0, er.center().y), Align2::LEFT_CENTER, "Nothing on this day", ui_font(13.0), v.weak_text_color());
+        return;
+    }
+    let mut open: Option<(String, String)> = None;
+    for (pid, e) in list.iter().take(DAY_ROWS) {
+        let (row, resp) = ui.allocate_exact_size(Vec2::new(r.width(), 30.0), Sense::click());
+        if resp.hovered() {
+            hover_fill(ui.painter(), row, &v);
+        }
+        let c = e.color.map(|[r, g, b]| Color32::from_rgb(r, g, b)).unwrap_or(accent);
+        ui.painter().rect_filled(Rect::from_min_size(Pos2::new(row.left() + 4.0, row.top() + 7.0), Vec2::new(3.0, row.height() - 14.0)), 1.5, c);
+        let time = if e.time.is_empty() { "All day" } else { e.time.as_str() };
+        let tg = ui.painter().layout_no_wrap(time.to_string(), ui_font(11.5), v.weak_text_color());
+        ui.painter().galley(Pos2::new(row.left() + 14.0, row.center().y - tg.size().y / 2.0), tg, v.weak_text_color());
+        let g = one_line(ui.painter(), &e.title, ui_font(13.0), v.text_color(), row.width() - 84.0);
+        ui.painter().galley(Pos2::new(row.left() + 72.0, row.center().y - g.size().y / 2.0), g, v.text_color());
+        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+            open = Some((pid.to_string(), e.id.clone()));
+        }
+    }
+    if list.len() > DAY_ROWS {
+        let (mr, _) = ui.allocate_exact_size(Vec2::new(r.width(), 30.0), Sense::hover());
+        ui.painter().text(Pos2::new(mr.left() + 14.0, mr.center().y), Align2::LEFT_CENTER, format!("{} more", list.len() - DAY_ROWS), ui_font(12.5), v.weak_text_color());
+    }
+    if let Some((pid, id)) = open {
+        m.acts.push(Act::Close);
+        m.acts.push(Act::Plugin(pid, crate::plugins::Event::new("open", &[("id", &id)])));
     }
 }
 
@@ -1324,6 +1650,20 @@ fn dock_menu(ui: &mut egui::Ui, app: &str, pinned: bool, m: &mut Model) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glass_follows_the_corners_inside_the_shape() {
+        let r = Rect::from_min_size(Pos2::new(10.0, 20.0), Vec2::new(200.0, 40.0));
+        assert_eq!(glass_rects(r, egui::CornerRadius::ZERO), vec![[10, 20, 200, 40]]);
+        let rects = glass_rects(r, egui::CornerRadius::same(12));
+        // Every row of the shape is covered once, and nothing reaches past it.
+        let rows: i32 = rects.iter().map(|q| q[3]).sum();
+        assert_eq!(rows, 40);
+        assert!(rects.iter().all(|q| q[0] >= 10 && q[0] + q[2] <= 210 && q[1] >= 20 && q[1] + q[3] <= 60));
+        // The top row is cut in at the corners; the middle isn't.
+        assert!(rects.iter().find(|q| q[1] == 20).is_some_and(|q| q[0] > 10));
+        assert!(rects.iter().any(|q| q[0] == 10 && q[2] == 200));
+    }
 
     fn app(id: &str, name: &str) -> DesktopApp {
         DesktopApp { id: id.into(), name: name.into(), exec: String::new(), icon: String::new(), mimes: Vec::new(), terminal: false }

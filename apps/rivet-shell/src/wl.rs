@@ -26,7 +26,11 @@ use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
-use smithay_client_toolkit::{delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_shm, registry_handlers};
+use smithay_client_toolkit::data_device_manager::DataDeviceManagerState;
+use smithay_client_toolkit::data_device_manager::data_device::DataDevice;
+use smithay_client_toolkit::data_device_manager::data_offer::DragOffer;
+use smithay_client_toolkit::data_device_manager::data_source::DragSource;
+use smithay_client_toolkit::{delegate_data_device, delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_shm, registry_handlers};
 use wayland_client::globals::registry_queue_init;
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
 use wayland_client::{Connection, Dispatch, QueueHandle};
@@ -34,7 +38,12 @@ use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v
 use wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1;
 use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::{self, ExtIdleNotificationV1};
 use wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1;
+use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::{self, ExtBackgroundEffectManagerV1};
+use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 use crate::idle::{self, Stage};
+
+#[path = "dnd.rs"]
+mod dnd;
 
 use crate::config::{DockHide, Edge, Settings};
 
@@ -52,6 +61,10 @@ use crate::ui::{self, Act, Extra, Kit, Model, OsdKind, Popup, PopupKind};
 
 /// Messages from other threads (status, IPC, wallpaper loading, matugen).
 pub enum Msg {
+    /// A drag's files, read: for the drop (true), or to know their types.
+    DragFiles(Vec<PathBuf>, bool),
+    /// Downloads or the Trash changed (from the dock's own doing).
+    PlacesChanged,
     Wake,
     Ipc(String),
     Wall { path: PathBuf, size: (u32, u32), pixels: Option<Vec<u8>> },
@@ -84,6 +97,9 @@ struct Surf {
     kind: Kind,
     /// Which panel (for panels).
     idx: usize,
+    /// Its blur behind, made the first time it's needed (one per surface). Before `layer`, so
+    /// it goes before the surface does.
+    effect: Option<Blur>,
     layer: LayerSurface,
     output: Option<wl_output::WlOutput>,
     output_name: String,
@@ -130,6 +146,17 @@ struct Surf {
     wall_at: Instant,
     /// The picture last sent whole or in part, and the rows its widgets were drawn on.
     wall_rows: Option<(Arc<Vec<u8>>, Rows)>,
+    /// The region last asked to be blurred, as rectangles.
+    blur_last: Vec<[i32; 4]>,
+}
+
+/// A surface's blur, asked of the compositor: let go of when the surface is.
+struct Blur(ExtBackgroundEffectSurfaceV1);
+
+impl Drop for Blur {
+    fn drop(&mut self) {
+        self.0.destroy();
+    }
 }
 
 /// The first and last row of a run of rows (none: no rows).
@@ -229,6 +256,21 @@ pub struct Shell {
     /// The launcher was drawn once unseen at the start, so its first opening is quick too.
     prewarmed: bool,
     pub exit: bool,
+    // ---- drag and drop (dnd.rs)
+    ddm: Option<DataDeviceManagerState>,
+    data_device: Option<DataDevice>,
+    /// Files dragged over the dock.
+    drag_in: Option<dnd::DragIn>,
+    /// Files dropped on the dock, being read, and the slot they were dropped on.
+    dropping: Option<(ui::DockSlot, DragOffer)>,
+    /// A file being dragged out of the Downloads list.
+    drag_source: Option<(DragSource, PathBuf)>,
+    /// The last press of a pointer button, which a drag out starts from.
+    press_serial: u32,
+    /// Blur behind see-through surfaces (`ext-background-effect`), and whether the
+    /// compositor says it can blur now.
+    blur_mgr: Option<ExtBackgroundEffectManagerV1>,
+    blur_cap: bool,
 }
 
 fn mtime(p: &Path) -> Option<SystemTime> {
@@ -253,6 +295,10 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
     let comp = Compositor::detect();
     let inhibit_mgr = globals.bind::<ZwpIdleInhibitManagerV1, _, _>(&qh, 1..=1, ()).ok();
     let idle_notifier = globals.bind::<ExtIdleNotifierV1, _, _>(&qh, 1..=1, ()).ok();
+    // Drag and drop (the dock takes files; Downloads gives them): left out where it's missing.
+    let ddm = DataDeviceManagerState::bind(&globals, &qh).ok();
+    // Blur behind the shell's see-through parts, in their own shapes: left out where it's missing.
+    let blur_mgr = globals.bind::<ExtBackgroundEffectManagerV1, _, _>(&qh, 1..=1, ()).ok();
     idle::clear_stale_marker();
     let lock_on_sleep = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(settings.lock_on_sleep));
     let own_locker = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(settings.lock_cmd.trim().is_empty()));
@@ -376,6 +422,14 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         spare: None,
         prewarmed: false,
         exit: false,
+        ddm,
+        data_device: None,
+        drag_in: None,
+        dropping: None,
+        drag_source: None,
+        press_serial: 0,
+        blur_mgr,
+        blur_cap: false,
     };
     shell.set_notifications();
     shell.set_polkit();
@@ -517,6 +571,8 @@ impl Shell {
             wall_from: None,
             wall_at: Instant::now(),
             wall_rows: None,
+            effect: None,
+            blur_last: Vec::new(),
             ctx,
             kit,
             tex,
@@ -851,6 +907,11 @@ impl Shell {
             return;
         }
         self.close_popup();
+        // The calendar: plugins that give events are told the days it shows, for theirs.
+        if let PopupKind::Calendar { month, .. } = &p.kind {
+            let (from, to) = ui::calendar_span(*month);
+            self.plugins.emit(&crate::plugins::Event::new("month", &[("from", &from.format("%Y-%m-%d").to_string()), ("to", &to.format("%Y-%m-%d").to_string())]));
+        }
         let output = self.output_state.outputs().find(|o| self.output_state.info(o).and_then(|i| i.name).is_some_and(|n| !p.output.is_empty() && n == p.output));
         if matches!(p.kind, PopupKind::Launcher { .. }) {
             // Opens with the list it has; a fresh one (new installs) follows in a moment.
@@ -935,6 +996,8 @@ impl Shell {
     fn on_msg(&mut self, m: Msg) {
         match m {
             Msg::Wake => self.status_changed(),
+            Msg::DragFiles(files, dropped) => self.drag_files(files, dropped),
+            Msg::PlacesChanged => self.redraw_kinds(&[Kind::Dock, Kind::Popup]),
             Msg::LockKey { caps, on } => {
                 if self.s.osd_keys {
                     self.show_osd(if caps { OsdKind::CapsLock } else { OsdKind::NumLock }, on as u32, false);
@@ -993,7 +1056,7 @@ impl Shell {
                     ("launcher", _) => self.open_popup(Popup::launcher("")),
                     ("control-center" | "control" | "quick-settings", _) => self.open_popup(Popup::at(PopupKind::Control { drag: None }, right, "")),
                     ("notifications" | "notification-center", _) => self.open_popup(Popup::at(PopupKind::Notifications, right, "")),
-                    ("calendar", _) => self.open_popup(Popup::at(PopupKind::Calendar { month: 0 }, f32::NAN, "")),
+                    ("calendar", _) => self.open_popup(Popup::at(PopupKind::Calendar { month: 0, day: None }, f32::NAN, "")),
                     ("power", _) => self.open_popup(Popup::at(PopupKind::Power { confirm: None }, right, "")),
                     ("network" | "wifi", _) => self.open_popup(Popup::at(PopupKind::Network { ask: None }, right, "")),
                     ("bluetooth", _) => self.open_popup(Popup::at(PopupKind::Bluetooth, right, "")),
@@ -1473,7 +1536,7 @@ impl Shell {
     /// surface and takes the pointer only along such a strip.
     fn update_docks(&mut self) {
         let now = Instant::now();
-        let menu = matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. }));
+        let menu = matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. } | PopupKind::Downloads | PopupKind::TrashMenu { .. }));
         // A panel stays while a popup is open on its screen.
         let popup_on = self.popup.as_ref().filter(|_| !menu).map(|p| p.output.clone());
         let (s, apps, running) = (&self.s, &self.apps, &self.prev_status.running);
@@ -1638,9 +1701,10 @@ impl Shell {
             join: if kind == Kind::Panel { self.popup.as_ref().filter(|p| p.output.is_empty() || p.output == self.surfs[i].output_name).and_then(|p| Some((p.attach?, p.join?.0, p.join?.1))) } else { None },
             auth: if kind == Kind::Popup { self.polkit.as_ref().and_then(|a| a.view()) } else { None },
             viz: self.viz.able().then(|| if matches!(kind, Kind::Panel | Kind::Popup) { self.viz.get() } else { Vec::new() }),
+            drop: if kind == Kind::Dock { self.drag_in.as_ref().map(|d| ui::DockDrop { pos: d.pos, mimes: d.mimes.clone() }) } else { None },
         };
         let join_was = self.popup.as_ref().and_then(|p| p.join);
-        let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, .. } = self;
+        let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, blur_mgr, blur_cap, qh, .. } = self;
         let surf = &mut surfs[i];
         surf.dirty = false;
         if kind == Kind::Panel {
@@ -1751,6 +1815,27 @@ impl Shell {
         // Take in the frame's texture changes (fonts, icons) and mark them handled: egui
         // insists on that before the changes are dropped.
         let t_ui = t_u0.elapsed();
+        // What's see-through was drawn in these shapes: the compositor blurs behind them, and
+        // nothing else of the surface (a panel's surface spans its edge, its bar may not).
+        let glass = ui::take_glass(&surf.ctx);
+        let want: Vec<[i32; 4]> = if settings.blur && *blur_cap && kind != Kind::Background { glass.iter().flat_map(|(r, c)| ui::glass_rects(*r, *c)).collect() } else { Vec::new() };
+        if want != surf.blur_last
+            && let Some(mgr) = blur_mgr.as_ref()
+        {
+            let effect = &surf.effect.get_or_insert_with(|| Blur(mgr.get_background_effect(surf.layer.wl_surface(), qh, ()))).0;
+            match smithay_client_toolkit::compositor::Region::new(&*compositor).ok().filter(|_| !want.is_empty()) {
+                Some(region) => {
+                    for q in &want {
+                        region.add(q[0], q[1], q[2], q[3]);
+                    }
+                    effect.set_blur_region(Some(region.wl_region()));
+                }
+                None => effect.set_blur_region(None),
+            }
+            surf.blur_last = want;
+            // Applied on the surface's next commit, which an unchanged frame might not make.
+            surf.layer.commit();
+        }
         let mut out = out;
         let mut delta = std::mem::take(&mut out.textures_delta);
         surf.tex.update(&delta);
@@ -2014,6 +2099,38 @@ impl Shell {
                     }
                 });
             }
+            Act::OpenTrash => {
+                // In the desktop's file manager, at the address they all take for it.
+                let trash = [PathBuf::from("trash:///")];
+                let opened = rivet_xdg::launch::default_app(&self.apps, "inode/directory").map(|a| rivet_xdg::launch::launch_app(a, &trash));
+                if !matches!(opened, Some(Ok(()))) {
+                    let _ = rivet_xdg::launch::open_url("trash:///");
+                }
+            }
+            Act::EmptyTrash => {
+                let tx = self.tx.clone();
+                std::thread::spawn(move || {
+                    let _ = rivet_xdg::trash::empty();
+                    let _ = tx.send(Msg::PlacesChanged);
+                });
+            }
+            Act::OpenFile(path, mime) => {
+                if let Err(e) = rivet_xdg::launch::open_default(&self.apps, &mime, &path) {
+                    eprintln!("rivet-shell: {e}");
+                }
+            }
+            Act::DragOut(path) => self.drag_out(path),
+            Act::Favorite(id) => {
+                let apps = self.apps.clone();
+                self.change_settings(|s| {
+                    let same = |d: &String| d == &id || ui::find_app(&apps, d).is_some_and(|a| a.id.trim_end_matches(".desktop") == id);
+                    if s.launch_favorite_apps.iter().any(same) {
+                        s.launch_favorite_apps.retain(|d| !same(d));
+                    } else {
+                        s.launch_favorite_apps.push(id);
+                    }
+                });
+            }
             Act::NoteClick(id) => {
                 let default = self.notes.get(id).is_some_and(|n| n.actions.iter().any(|(k, _)| k == "default"));
                 if default {
@@ -2071,6 +2188,7 @@ impl Shell {
             Act::SettingsPage(page) => open_settings(Some(page)),
             Act::Tray(job) => self.tray.run(job),
             Act::Plugin(id, ev) => self.plugins.send(&id, ev),
+            Act::CalendarSpan(from, to) => self.plugins.emit(&crate::plugins::Event::new("month", &[("from", &from.format("%Y-%m-%d").to_string()), ("to", &to.format("%Y-%m-%d").to_string())])),
         }
         // What the shell keeps (notifications, toggles) shows in the panel and the popup; the
         // rest follows the status when it arrives.
@@ -2169,6 +2287,11 @@ impl SeatHandler for Shell {
             self.seat = Some(seat.clone());
             self.set_idle();
         }
+        if self.data_device.is_none()
+            && let Some(ddm) = &self.ddm
+        {
+            self.data_device = Some(ddm.get_data_device(qh, &seat));
+        }
         if cap == Capability::Pointer && self.pointer.is_none() {
             let surface = self.compositor.create_surface(qh);
             self.pointer = self.seat_state.get_pointer_with_theme(qh, &seat, self.shm.wl_shm(), surface, ThemeSpec::default()).ok();
@@ -2196,6 +2319,9 @@ impl PointerHandler for Shell {
     fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
         for e in events {
             let Some(i) = self.index_of(&e.surface) else { continue };
+            if let PointerEventKind::Press { serial, .. } = e.kind {
+                self.press_serial = serial;
+            }
             let pos = Pos2::new(e.position.0 as f32, e.position.1 as f32);
             let mods = self.kb_mods;
             let s = &mut self.surfs[i];
@@ -2268,8 +2394,12 @@ fn key_of(k: Keysym) -> Option<egui::Key> {
         Keysym::Down => egui::Key::ArrowDown,
         Keysym::Home => egui::Key::Home,
         Keysym::End => egui::Key::End,
-        Keysym::a | Keysym::A => egui::Key::A,
-        _ => return None,
+        // Letters and digits, for shortcuts with Ctrl (Ctrl+A, the launcher's Ctrl+D); what
+        // they type comes as text.
+        _ => {
+            let c = char::from_u32(k.raw()).filter(char::is_ascii_alphanumeric)?;
+            return egui::Key::from_name(&c.to_ascii_uppercase().to_string());
+        }
     })
 }
 
@@ -2336,6 +2466,7 @@ delegate_keyboard!(Shell);
 delegate_pointer!(Shell);
 delegate_layer!(Shell);
 delegate_registry!(Shell);
+delegate_data_device!(Shell);
 
 /// The panel's place and size: spanning its edge (a shorter one draws on part of that, and
 /// takes the pointer only there), keeping windows clear of it unless it hides.
@@ -2404,6 +2535,23 @@ fn shape_cards(layer: &LayerSurface, s: &Settings, cards: &[crate::notes::Note])
 }
 
 // The idle-inhibit protocol has no events the shell needs.
+// Blur: the compositor says whether it can blur (and again if that changes); the shapes are
+// asked for again at the next drawing.
+impl Dispatch<ExtBackgroundEffectManagerV1, ()> for Shell {
+    fn event(shell: &mut Self, _: &ExtBackgroundEffectManagerV1, ev: ext_background_effect_manager_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if let ext_background_effect_manager_v1::Event::Capabilities { flags } = ev {
+            shell.blur_cap = matches!(flags, wayland_client::WEnum::Value(f) if f.contains(ext_background_effect_manager_v1::Capability::Blur));
+            for s in &mut shell.surfs {
+                s.dirty = true;
+            }
+        }
+    }
+}
+
+impl Dispatch<ExtBackgroundEffectSurfaceV1, ()> for Shell {
+    fn event(_: &mut Self, _: &ExtBackgroundEffectSurfaceV1, _: <ExtBackgroundEffectSurfaceV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+}
+
 impl Dispatch<ZwpIdleInhibitManagerV1, ()> for Shell {
     fn event(_: &mut Self, _: &ZwpIdleInhibitManagerV1, _: <ZwpIdleInhibitManagerV1 as wayland_client::Proxy>::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
 }

@@ -361,6 +361,33 @@ Location: `apps/rivet-files/src/app/views.rs`, the right-click menu, "Open in Ri
 - Shown for one selected archive, when the `rivet-vice` program is beside Rivet Files'
   own or on the path. Extract Here is still there for taking everything out at once.
 
+### Panel calendar: events
+
+`ui.rs` (`calendar`), `plugins.rs` (`DayEvent`), PLUGINS.md (Calendar events).
+
+- With a plugin that gives events turned on (Rivet Calendar's is Calendar, in Settings, Plugins), the panel's calendar puts a dot under each day that has events, one for each calendar's colour, up to three.
+- Under the month, the chosen day's events are listed: today's when it opens. Click another day to list its; the month's name goes back to this month.
+- Each shows its time (or All day) and title, five at most and then how many more. Clicking one closes the calendar and opens the event in its app.
+- With no such plugin, the calendar is the month alone, as before.
+
+## Rivet Calendar
+
+### Where the calendars are, and sharing them
+
+`rivet-cal/src/store.rs`.
+
+- Each calendar is a folder in `~/.local/share/rivet-calendar`: one `.ics` file per event, and the calendar's name and colour in the files `displayname` and `color`. A folder with a file called `.read-only` in it can't be changed from Rivet.
+- That's the layout vdirsyncer and khal use. Point vdirsyncer's local storage at a calendar's folder to keep it in step with a CalDAV server (Nextcloud, Fastmail, iCloud); khal reads and writes the same folders in a terminal.
+- Changes made to the folders by another program show within a few seconds, in the window and on the panel.
+
+### Repeating events
+
+`app.rs` (the editor), `rivet-cal/src/expand.rs`.
+
+- The editor offers every day, every weekday, every week, every month and every year. A rule made in another program (every second Tuesday, the last Friday of the month) shows as Custom and is kept as it is unless another is chosen.
+- Opening one occurrence of a repeating event offers Change: This One or Every One. This One changes only that date (the others stay as they were); Every One moves the whole series by as much as this occurrence was moved.
+- Delete does the same: this occurrence only, or the event and every occurrence.
+
 ## Rivet Snip
 
 ### Getting a picture into it, and binding it to a key

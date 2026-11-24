@@ -65,6 +65,7 @@ pub const EVENTS: &[(&str, &str, &str)] = &[
     ("dnd", "Do Not Disturb turned on or off", "on: true, false"),
     ("workspace", "The active workspace changed", "key, name"),
     ("media", "What's playing changed", "title, artist, player, playing"),
+    ("month", "The calendar shows a month (it opened, or moved to another)", "from, to: the first day it shows and the day after the last"),
 ];
 
 /// Something that happened: its name and what comes with it.
@@ -318,6 +319,18 @@ pub struct LaunchRow {
     pub scoped: bool,
 }
 
+/// An event a plugin gives the shell's calendar: on a day (an event over several days comes
+/// once for each), with its time on that day (empty: all day, or carried over from the day
+/// before) and its calendar's colour.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct DayEvent {
+    pub id: String,
+    pub day: Option<chrono::NaiveDate>,
+    pub title: String,
+    pub time: String,
+    pub color: Option<[u8; 3]>,
+}
+
 /// What a plugin shows on the panel, and in its menu.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Item {
@@ -335,6 +348,10 @@ pub struct Item {
     pub badge: bool,
     pub menu: Vec<MenuRow>,
     pub launcher: Vec<LaunchRow>,
+    /// Events for the shell's calendar, for the month it shows (it's told which: `month`).
+    pub events: Vec<DayEvent>,
+    /// It has said `events` at least once: it's a calendar, even in a month with none.
+    pub calendar: bool,
     /// It stopped and couldn't be started again.
     pub failed: bool,
 }
@@ -407,6 +424,16 @@ pub fn take(item: &mut Item, text: &str, fresh: bool) -> Asks {
         let b = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_bool()).unwrap_or(false);
         item.launcher = rows.iter().take(400).map(|r| LaunchRow { id: f(r, "id"), label: f(r, "label"), sub: f(r, "sub"), icon: f(r, "icon"), query: b(r, "query"), scoped: b(r, "scoped") }).filter(|r| !r.label.is_empty() && !r.id.is_empty()).collect();
     }
+    if let Some(rows) = v.get("events").and_then(|x| x.as_array()) {
+        let f = |r: &serde_json::Value, k: &str| r.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
+        item.calendar = true;
+        item.events = rows
+            .iter()
+            .take(3000)
+            .map(|r| DayEvent { id: f(r, "id"), day: chrono::NaiveDate::parse_from_str(&f(r, "day"), "%Y-%m-%d").ok(), title: f(r, "title"), time: f(r, "time"), color: hex(&f(r, "color")) })
+            .filter(|e| e.day.is_some() && !e.title.is_empty())
+            .collect();
+    }
     if let Some(n) = v.get("notify") {
         let f = |k: &str| n.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
         let summary = n.as_str().map(String::from).unwrap_or_else(|| f("summary"));
@@ -416,6 +443,13 @@ pub fn take(item: &mut Item, text: &str, fresh: bool) -> Asks {
     }
     asks.run = s("run").filter(|r| !r.trim().is_empty());
     asks
+}
+
+/// `#rrggbb`.
+fn hex(s: &str) -> Option<[u8; 3]> {
+    let h = s.trim().strip_prefix('#')?;
+    let n = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok();
+    Some([n(0)?, n(2)?, n(4)?])
 }
 
 fn state(v: &str) -> State {
@@ -721,6 +755,20 @@ mod tests {
         // Left out later: kept.
         take(&mut it, r#"{"text":"2"}"#, false);
         assert!(it.badge && it.launcher.len() == 1);
+    }
+
+    #[test]
+    fn takes_events_for_the_calendar() {
+        let mut it = Item::default();
+        assert!(!it.calendar);
+        take(&mut it, r##"{"hidden":true,"events":[{"id":"a","day":"2026-11-24","title":"Lunch","time":"12:00","color":"#e0573f"},{"id":"b","day":"not a day","title":"x"},{"id":"c","day":"2026-11-25","title":""}]}"##, false);
+        assert!(it.calendar && it.hidden);
+        assert_eq!(it.events.len(), 1);
+        assert_eq!(it.events[0].color, Some([0xe0, 0x57, 0x3f]));
+        assert_eq!(it.events[0].day, chrono::NaiveDate::from_ymd_opt(2026, 11, 24));
+        // A month with none: still a calendar.
+        take(&mut it, r#"{"events":[]}"#, false);
+        assert!(it.calendar && it.events.is_empty());
     }
 
     #[test]

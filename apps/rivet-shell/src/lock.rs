@@ -153,7 +153,7 @@ fn wipe(s: &mut String) {
 }
 
 /// The person's picture: ~/.face, else AccountsService's.
-fn avatar(login: &str) -> Option<egui::ColorImage> {
+pub(crate) fn avatar(login: &str) -> Option<egui::ColorImage> {
     let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
     avatar_from(&[home.join(".face"), home.join(".face.icon"), PathBuf::from(format!("/var/lib/AccountsService/icons/{login}"))])
 }

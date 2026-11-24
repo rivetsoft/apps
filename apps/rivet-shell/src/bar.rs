@@ -1128,7 +1128,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let g = p.layout_no_wrap(now.format(&b.m.s.clock_format).to_string(), ui_font(13.5), fg);
             p.galley(r.center() - g.size() / 2.0, g, fg);
             if resp.on_hover_text(now.format("%A, %B %-d, %Y").to_string()).clicked() {
-                let a = b.popup(PopupKind::Calendar { month: 0 }, b.at(r));
+                let a = b.popup(PopupKind::Calendar { month: 0, day: None }, b.at(r));
                 b.acts.push(a);
             }
         }
@@ -1405,7 +1405,7 @@ fn draw_down(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) -> bool {
                 small(&p, Pos2::new(c.x, top + (k as f32 + 0.5) * CLOCK_LINE), line, 13.0, fg);
             }
             if resp.on_hover_text(now.format("%A, %B %-d, %Y").to_string()).clicked() {
-                let a = b.popup(PopupKind::Calendar { month: 0 }, b.at(r));
+                let a = b.popup(PopupKind::Calendar { month: 0, day: None }, b.at(r));
                 b.acts.push(a);
             }
         }
