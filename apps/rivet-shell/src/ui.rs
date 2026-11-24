@@ -904,12 +904,31 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     // taken): it follows the pointer, and the other pins make room where it would land.
     let drag_id = egui::Id::unique("dock-drag");
     let pins: Vec<(String, f32)> = slots.iter().filter_map(|(slot, r)| if let DockSlot::App(a, true) = slot { Some((a.id.clone(), r.left())) } else { None }).collect();
-    let held: Option<(String, f32)> = ui.ctx().data(|d| d.get_temp::<(String, f32)>(drag_id)).filter(|(id, _)| pins.iter().any(|(p, _)| p == id));
-    let held = held.zip(ui.input(|i| i.pointer.latest_pos())).map(|((id, grab), pos)| {
-        let cx = pos.x - grab;
-        let to = pins.iter().filter(|(p, x)| *p != id && x + size / 2.0 < cx).count();
-        (id, cx, to)
-    });
+    // With it is kept the place it would land, so it can still be put down once the pointer
+    // has left the dock.
+    type Carry = (String, f32, usize);
+    let kept: Option<Carry> = ui.ctx().data(|d| d.get_temp::<Carry>(drag_id));
+    let (down, at) = ui.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
+    let mut held = None;
+    if let Some((id, grab, mut to)) = kept {
+        let known = pins.iter().any(|(p, _)| *p == id);
+        if let Some(pos) = at.filter(|_| known) {
+            let cx = pos.x - grab;
+            to = pins.iter().filter(|(p, x)| *p != id && x + size / 2.0 < cx).count();
+            held = Some((id.clone(), cx, to));
+        }
+        // It is put down when the button comes up, and also when the pointer is gone: past the
+        // dock's end the compositor may send the release elsewhere, and a pin that never heard
+        // of it would stay in the hand.
+        if !down || at.is_none() || !known {
+            if known {
+                m.acts.push(Act::PlacePin(id, to));
+            }
+            ui.ctx().data_mut(|d| d.remove::<Carry>(drag_id));
+        } else {
+            ui.ctx().data_mut(|d| d.insert_temp::<Carry>(drag_id, (id, grab, to)));
+        }
+    }
     for (slot, r) in &slots {
         let id = match slot {
             DockSlot::App(a, _) => a.id.clone(),
@@ -921,19 +940,16 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         if can_move && resp.drag_started() {
             // Where it was pressed, not where the pointer had got to when it counted as a drag.
             let grab = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos()).map_or(0.0, |p| p.x - r.center().x);
-            ui.ctx().data_mut(|d| d.insert_temp(drag_id, (id.clone(), grab)));
+            let from = pins.iter().position(|(p, _)| *p == id).unwrap_or(0);
+            ui.ctx().data_mut(|d| d.insert_temp::<Carry>(drag_id, (id.clone(), grab, from)));
         }
         // Where it is drawn: its slot, or while a pin is being dragged, under the pointer (the
         // one held) or in the slot it would have were the pin dropped now (the others, moving
         // over to it).
         let mut carried = false;
         let r = &match (slot, &held) {
-            (DockSlot::App(_, true), Some((h, cx, to))) if *h == id => {
+            (DockSlot::App(_, true), Some((h, cx, _))) if *h == id => {
                 carried = true;
-                if resp.drag_stopped() {
-                    m.acts.push(Act::PlacePin(id.clone(), *to));
-                    ui.ctx().data_mut(|d| d.remove::<(String, f32)>(drag_id));
-                }
                 ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
                 let x = (cx - size / 2.0).clamp(pins[0].1, pins[pins.len() - 1].1);
                 Rect::from_min_size(Pos2::new(x, r.top()), r.size())
@@ -1681,6 +1697,17 @@ mod tests {
         frame(vec![button(first, true)]);
         let acts = frame(vec![button(first, false)]);
         assert!(matches!(acts.as_slice(), [Act::Launch(id)] if id == "a.desktop"));
+        // Carried off the end of the dock, where the release never arrives: it is put down in
+        // the place it had reached, not left in the hand.
+        frame(vec![egui::Event::PointerMoved(last)]);
+        frame(vec![button(last, true)]);
+        for k in 1..=6 {
+            frame(vec![egui::Event::PointerMoved(last + (first - last) * (k as f32 / 6.0) - Vec2::new(if k == 6 { 4.0 } else { 0.0 }, 0.0))]);
+        }
+        let acts = frame(vec![egui::Event::PointerGone]);
+        assert!(matches!(acts.as_slice(), [Act::PlacePin(id, 0)] if id == "c.desktop"), "{acts:?}");
+        assert!(frame(vec![egui::Event::PointerMoved(first)]).is_empty());
+        assert!(frame(vec![egui::Event::PointerMoved(last)]).is_empty());
     }
 
     fn app(id: &str, name: &str) -> DesktopApp {
