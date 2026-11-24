@@ -8,6 +8,7 @@ mod auth_pop;
 mod auth;
 mod bar;
 mod browser;
+mod themed;
 mod vpn;
 mod cc;
 mod comp;

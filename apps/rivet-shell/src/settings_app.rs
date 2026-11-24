@@ -30,6 +30,7 @@ mod sound;
 mod vpn_page;
 mod icon_pick;
 mod browser_colors;
+mod themed_apps;
 mod palette_pick;
 mod notes_preview;
 mod panel_editor;
@@ -313,6 +314,10 @@ impl SettingsApp {
             if let Ok(l) = std::env::var("RIVET_SHELL_NOTE_LOOK") {
                 s.note_look = crate::style::Style::parse(&l, '=', ';');
             }
+            // Checks: programs turned on under Applications (RIVET_SHELL_THEMED=kitty,zed).
+            if let Ok(l) = std::env::var("RIVET_SHELL_THEMED") {
+                s.themed_apps = l.split(',').map(String::from).collect();
+            }
             // Checks: the dock's own look, so its Reset buttons show (RIVET_SHELL_DOCK_LOOK=radius=4).
             if let Ok(l) = std::env::var("RIVET_SHELL_DOCK_LOOK") {
                 s.dock_look = crate::style::Style::parse(&l, '=', ';');
@@ -582,7 +587,10 @@ impl eframe::App for SettingsApp {
                         match self.page {
                             Page::Wallpaper => self.wallpaper_page(ui, accent),
                             Page::Appearance => self.appearance_page(ui),
-                        Page::Applications => self.browser_colors_section(ui),
+                        Page::Applications => {
+                            self.themed_apps_section(ui);
+                            self.browser_colors_section(ui);
+                        }
                         Page::Network => self.network_page(ui),
                         Page::Bluetooth => self.bluetooth_page(ui),
                         Page::Vpn => self.vpn_page(ui),

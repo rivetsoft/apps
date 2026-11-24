@@ -139,6 +139,39 @@ settings take effect; Settings adds it on request and first saves the original a
 `NAME.rivet-backup`. Niri needs version 25.11 or later. "Leave the Screens to …" removes the
 screens from Rivet Shell's file so the compositor's own config sets them again.
 
+### Applications: terminals and editors in the theme's colors
+
+Location: `apps/rivet-shell/src/settings_app/themed_apps.rs`, Applications, "Terminals and
+editors"; the work is `apps/rivet-shell/src/themed.rs`.
+
+- kitty, Ghostty, Alacritty, foot, Zed and btop. Each one installed has a switch; the rest are
+  left out.
+- Turned on, Rivet writes one file of its own in that program's settings folder, in the
+  program's own format, and writes it again whenever the theme's colors change. The colors
+  are Rivet's: the windows' background and text, the accent, secondary and tertiary, and
+  sixteen terminal colors made the way Rivet Terminal makes its own, so red stays reddish
+  while leaning toward the theme. This works with a palette chosen in Rivet too, with or
+  without matugen.
+- Rivet never rewrites a program's settings file. What points the program at Rivet's file:
+  - kitty: the line `include rivet-colors.conf` in `kitty.conf`. Add the Line adds it at the end.
+  - Ghostty: the line `theme = rivet` in its `config`. Add the Line adds it at the end.
+  - foot: the line `include=~/.config/foot/rivet-colors.ini` at the top of `foot.ini`, before
+    the first section, which is the only place foot reads it. Add the Line puts it there.
+  - Alacritty: `import = ["rivet-colors.toml"]` under `[general]` in `alacritty.toml`, added by
+    hand, because where it goes depends on what the file already has.
+  - Zed: choose the theme named Rivet in Zed's theme selector.
+  - btop: Esc, Options, Color theme, rivet.
+  Add the Line keeps everything already in the file, follows a link to where the file really
+  is, and puts a comment above the line saying where it came from.
+- When an open program picks the change up: kitty and Ghostty are sent a signal and reread
+  at once; Alacritty and Zed watch the file themselves; foot and btop show it in windows
+  opened afterwards.
+- Turned off, Rivet takes its file away. The line added to the program's settings stays and
+  is harmless; remove it by hand to be tidy.
+- Colors set later in a program's own settings file win over Rivet's in kitty (the include
+  comes last when Rivet adds it, so Rivet's win there unless more is added below).
+- Not covered yet: GTK and Qt apps, VS Code, Neovim, Helix, Firefox and Discord.
+
 ### Browser colors
 
 Location: `apps/rivet-shell/src/settings_app/browser_colors.rs`, Applications (under Look),

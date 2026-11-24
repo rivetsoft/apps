@@ -885,8 +885,12 @@ impl Shell {
         }
         // The browsers follow the same colours. Off the event loop: it looks through the
         // running programs for them.
+        // So do the terminals and editors chosen on the Applications page.
         let s = self.s.clone();
-        std::thread::spawn(move || crate::browser::apply(&s));
+        std::thread::spawn(move || {
+            crate::browser::apply(&s);
+            crate::themed::apply(&s);
+        });
     }
 
     /// The AI item's readings run while a panel shows it.

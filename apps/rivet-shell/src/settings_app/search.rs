@@ -63,6 +63,7 @@ pub const INDEX: &[Entry] = &[
     e(Page::Appearance, "Colors", "Color palette", "colours scheme theme preset built-in nord dracula gruvbox catppuccin solarized tokyo night one dark without matugen"),
     e(Page::Appearance, "Colors", "Surface color", "background colour surface black slate navy paper custom own tint base"),
     e(Page::Appearance, "Icons", "Icon theme", "icons apps tray papirus adwaita breeze system installed set"),
+    e(Page::Applications, "Terminals and editors", "Terminals and editors in the theme's colors", "applications apps kitty ghostty alacritty foot zed btop terminal editor colour scheme match wallpaper"),
     e(Page::Applications, "Browser colors", "Browsers in the theme's color", "applications apps chromium chrome brave edge web browser theme colour match wallpaper"),
     e(Page::Appearance, "Color use", "Secondary and tertiary colors", "other colourful colorful palette how much accent only some a lot"),
     e(Page::Appearance, "Text", "Font", "typeface family text lettering"),
@@ -346,7 +347,7 @@ mod tests {
     #[test]
     fn sections_exist() {
         // Every card an entry points to is one a page draws (checked against the source).
-        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs"), include_str!("browser_colors.rs"), include_str!("connect.rs"), include_str!("sound.rs"), include_str!("vpn_page.rs")].concat();
+        let src = [include_str!("../settings_app.rs"), include_str!("wallpaper.rs"), include_str!("look_opts.rs"), include_str!("launcher.rs"), include_str!("plugins.rs"), include_str!("colors.rs"), include_str!("icon_pick.rs"), include_str!("idle_lock.rs"), include_str!("browser_colors.rs"), include_str!("themed_apps.rs"), include_str!("connect.rs"), include_str!("sound.rs"), include_str!("vpn_page.rs")].concat();
         for en in INDEX.iter().filter(|e| !e.section.is_empty()) {
             assert!(src.contains(&format!("section(ui, \"{}\"", en.section)), "no card titled {}", en.section);
         }
