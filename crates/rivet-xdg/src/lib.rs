@@ -3,6 +3,7 @@
 //! applications, Open With and terminals (`launch`).
 
 pub mod crash;
+pub mod keyring;
 pub mod launch;
 pub mod mime;
 pub mod places;
