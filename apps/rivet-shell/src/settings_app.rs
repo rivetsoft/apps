@@ -96,6 +96,8 @@ pub struct SettingsApp {
     /// The icon theme setting `icons` was made for.
     icon_key: String,
     page: Page,
+    /// Showing the overview of every page, not one page with the sidebar.
+    home: bool,
     apps: Vec<DesktopApp>,
     /// The wallpaper folder's pictures and thumbnails.
     picker: crate::wall_pick::Picker,
@@ -279,6 +281,9 @@ impl SettingsApp {
             }
         }
         let shot_mode = shot.is_some();
+        // Checks: RIVET_SHELL_PAGE=Dock opens on that page; without it the window opens on the
+        // overview of every page, as it does for a person.
+        let home = std::env::var("RIVET_SHELL_PAGE").is_err();
         let page = match std::env::var("RIVET_SHELL_PAGE").as_deref() {
             Ok(p) => Page::ALL.into_iter().find(|x| x.label().eq_ignore_ascii_case(p) && x.shown()).unwrap_or_default(),
             _ => Page::default(),
@@ -294,6 +299,7 @@ impl SettingsApp {
             icons: IconTheme::new(&rivet_look::icons::detect_system_theme()),
             icon_key: String::new(),
             page,
+            home,
             apps,
             picker: Default::default(),
             picking: None,
@@ -441,88 +447,106 @@ impl eframe::App for SettingsApp {
         }
         let before = self.s.clone();
         let side_fill = palette::mix(v.window_fill, v.panel_fill, 0.6);
-        egui::Panel::left("shell-settings-pages").show_separator_line(false).resizable(false).exact_size(230.0).frame(egui::Frame::NONE.fill(side_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 14, bottom: 8 })).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            let field = search::field(ui, &mut self.search);
-            ui.add_space(10.0);
-            if !self.search.trim().is_empty() {
-                if field.changed() {
-                    self.search_sel = 0;
-                }
-                let hits = search::find(&self.search);
-                egui::ScrollArea::vertical().id_salt("shell-search-results").auto_shrink([false, false]).show(ui, |ui| {
-                    if let Some(en) = search::results(ui, &hits, &mut self.search_sel, field.has_focus() || field.lost_focus(), self.search_chosen) {
-                        self.go(ui.ctx(), en);
-                    }
-                });
-                return;
-            }
+        // The overview takes the whole window; typing in its search brings the sidebar and its
+        // results, and clearing the search brings the overview back.
+        let overview = self.home && self.search.trim().is_empty();
+        if overview {
             self.search_chosen = None;
-            for (name, pages) in nav::GROUPS {
-                // A small heading over each group; About sits apart.
-                if name.is_empty() {
-                    ui.add_space(14.0);
-                } else {
-                    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
-                    ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(v.panel_fill)).show(ui, |ui| {
+                if let Some(p) = nav::overview(ui, &mut self.search, accent) {
+                    self.page = p;
+                    self.home = false;
                 }
-                for p in pages.iter().filter(|p| p.shown()) {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
-                    let sel = *p == self.page;
-                    if sel {
-                        let (fill, stroke) = selected_tile(&v, side_fill);
-                        ui.painter().rect_filled(r, r_md(), fill);
-                        ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
-                    } else if resp.hovered() {
-                        ui.painter().rect_filled(r, r_md(), palette::mix(side_fill, v.text_color(), 0.07));
+            });
+        }
+        if !overview {
+            egui::Panel::left("shell-settings-pages").show_separator_line(false).resizable(false).exact_size(230.0).frame(egui::Frame::NONE.fill(side_fill).inner_margin(egui::Margin { left: 12, right: 12, top: 14, bottom: 8 })).show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                let field = search::field(ui, &mut self.search);
+                ui.add_space(10.0);
+                if !self.search.trim().is_empty() {
+                    if field.changed() {
+                        self.search_sel = 0;
                     }
-                    // The symbol in the accent colour; on the chosen page, in the text's.
-                    let fg = if sel { v.strong_text_color() } else { v.text_color() };
-                    nav::icon(ui.painter(), *p, Pos2::new(r.left() + 21.0, r.center().y), if sel { fg } else { accent });
-                    ui.painter().text(Pos2::new(r.left() + 42.0, r.center().y), egui::Align2::LEFT_CENTER, p.label(), fonts::ui_font(13.5), fg);
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                        self.page = *p;
+                    let hits = search::find(&self.search);
+                    egui::ScrollArea::vertical().id_salt("shell-search-results").auto_shrink([false, false]).show(ui, |ui| {
+                        if let Some(en) = search::results(ui, &hits, &mut self.search_sel, field.has_focus() || field.lost_focus(), self.search_chosen) {
+                            self.go(ui.ctx(), en);
+                        }
+                    });
+                    return;
+                }
+                self.search_chosen = None;
+                if nav::all_settings(ui, side_fill) {
+                    self.home = true;
+                }
+                for (name, pages) in nav::GROUPS {
+                    // A small heading over each group; About sits apart.
+                    if name.is_empty() {
+                        ui.add_space(14.0);
+                    } else {
+                        let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::hover());
+                        ui.painter().text(Pos2::new(r.left() + 12.0, r.bottom() - 9.0), egui::Align2::LEFT_CENTER, name.to_uppercase(), fonts::ui_font(10.5), v.weak_text_color().gamma_multiply(0.8));
+                    }
+                    for p in pages.iter().filter(|p| p.shown()) {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+                        let sel = *p == self.page && !self.home;
+                        if sel {
+                            let (fill, stroke) = selected_tile(&v, side_fill);
+                            ui.painter().rect_filled(r, r_md(), fill);
+                            ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
+                        } else if resp.hovered() {
+                            ui.painter().rect_filled(r, r_md(), palette::mix(side_fill, v.text_color(), 0.07));
+                        }
+                        // The symbol in the accent colour; on the chosen page, in the text's.
+                        let fg = if sel { v.strong_text_color() } else { v.text_color() };
+                        nav::icon(ui.painter(), *p, Pos2::new(r.left() + 21.0, r.center().y), if sel { fg } else { accent });
+                        ui.painter().text(Pos2::new(r.left() + 42.0, r.center().y), egui::Align2::LEFT_CENTER, p.label(), fonts::ui_font(13.5), fg);
+                        if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            self.page = *p;
+                            self.home = false;
+                        }
                     }
                 }
-            }
-        });
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(v.panel_fill)).show(ui, |ui| {
-            // Checks: RIVET_SHELL_SCROLL=600 shows the page scrolled that far down.
-            let mut area = egui::ScrollArea::vertical().id_salt(("shell-page", self.page as u8)).auto_shrink([false, false]);
-            if let Some(y) = self.shot.as_ref().and_then(|_| std::env::var("RIVET_SHELL_SCROLL").ok()).and_then(|y| y.parse::<f32>().ok()) {
-                area = area.vertical_scroll_offset(y);
-            }
-            area.show(ui, |ui| {
-                egui::Frame::NONE.inner_margin(egui::Margin { left: 26, right: 22, top: 18, bottom: 22 }).show(ui, |ui| {
-                    ui.set_width(ui.available_width().max(380.0));
-                    ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
-                    ui.spacing_mut().button_padding = Vec2::new(10.0, 4.0);
-                    if self.page != Page::About {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing.y = 3.0;
-                            ui.label(egui::RichText::new(self.page.label()).size(21.0).strong());
-                            ui.label(egui::RichText::new(nav::about(self.page)).size(12.5).color(v.weak_text_color()));
-                        });
-                        ui.add_space(18.0);
-                    }
-                    match self.page {
-                        Page::Wallpaper => self.wallpaper_page(ui, accent),
-                        Page::Appearance => self.appearance_page(ui),
-                        Page::Panel => self.panel_page(ui),
-                        Page::Dock => self.dock_page(ui),
-                        Page::Widgets => self.widgets_page(ui),
-                        Page::Launcher => self.launcher_page(ui),
-                        Page::Notifications => self.notifications_page(ui),
-                        Page::Displays => self.displays_page(ui, accent),
-                        Page::Idle => self.idle_page(ui),
-                        Page::Plugins => self.plugins_page(ui),
-                        Page::Softcore => self.softcore_page(ui, accent),
-                        Page::About => self.about_page(ui),
-                    }
+            });
+            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(v.panel_fill)).show(ui, |ui| {
+                // Checks: RIVET_SHELL_SCROLL=600 shows the page scrolled that far down.
+                let mut area = egui::ScrollArea::vertical().id_salt(("shell-page", self.page as u8)).auto_shrink([false, false]);
+                if let Some(y) = self.shot.as_ref().and_then(|_| std::env::var("RIVET_SHELL_SCROLL").ok()).and_then(|y| y.parse::<f32>().ok()) {
+                    area = area.vertical_scroll_offset(y);
+                }
+                area.show(ui, |ui| {
+                    egui::Frame::NONE.inner_margin(egui::Margin { left: 26, right: 22, top: 18, bottom: 22 }).show(ui, |ui| {
+                        ui.set_width(ui.available_width().max(380.0));
+                        ui.spacing_mut().item_spacing = Vec2::new(10.0, 8.0);
+                        ui.spacing_mut().button_padding = Vec2::new(10.0, 4.0);
+                        if self.page != Page::About {
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = 3.0;
+                                ui.label(egui::RichText::new(self.page.label()).size(21.0).strong());
+                                ui.label(egui::RichText::new(nav::about(self.page)).size(12.5).color(v.weak_text_color()));
+                            });
+                            ui.add_space(18.0);
+                        }
+                        match self.page {
+                            Page::Wallpaper => self.wallpaper_page(ui, accent),
+                            Page::Appearance => self.appearance_page(ui),
+                            Page::Panel => self.panel_page(ui),
+                            Page::Dock => self.dock_page(ui),
+                            Page::Widgets => self.widgets_page(ui),
+                            Page::Launcher => self.launcher_page(ui),
+                            Page::Notifications => self.notifications_page(ui),
+                            Page::Displays => self.displays_page(ui, accent),
+                            Page::Idle => self.idle_page(ui),
+                            Page::Plugins => self.plugins_page(ui),
+                            Page::Softcore => self.softcore_page(ui, accent),
+                            Page::About => self.about_page(ui),
+                        }
+                    });
                 });
             });
-        });
-        if self.page == Page::Plugins {
+        }
+        if self.page == Page::Plugins && !overview {
             self.plugin_overlay(&ctx);
         }
         if self.s != before {
@@ -543,6 +567,7 @@ impl SettingsApp {
     /// Open a search result: its page, its card (outlined a moment), or its panel item's options.
     fn go(&mut self, ctx: &egui::Context, en: &'static search::Entry) {
         self.page = en.page;
+        self.home = false;
         self.search_chosen = Some(en.title);
         self.note_panel = None;
         if let Some(id) = en.item {

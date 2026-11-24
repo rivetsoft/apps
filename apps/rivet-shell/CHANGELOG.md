@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Settings opens on an overview**: every page as a symbol and its name, group by group, with search above them. Open a page and the sidebar is there as before, with All Settings at its top to go back.
 - **Softcore**: under Softcore, Rivet's own compositor, the panel shows workspaces and the focused window's title, the dock shows what is open and can close it, and Log Out and turning the screens off work. Displays and the window look (gaps, borders, corners) can be set from Settings there too; Softcore applies them as you change them.
 - **A Softcore page in Settings**, shown only under Softcore: its windows, columns, motion, keyboard and pointer settings, and your key bindings. Each change is one line of Softcore's settings file, so what you wrote there by hand stays, and a change made by hand shows in the window.
 - **Border colors on the Softcore page**: the focused window's border and the other windows' border each take One Color or Two Colors (a gradient). Pick each color from the theme (Accent, Secondary, Tertiary), and it changes with the theme when the wallpaper does. Or choose Custom for one of your own, or leave the first on Automatic. Under Softcore, Window Look on Appearance no longer sets border colors.
