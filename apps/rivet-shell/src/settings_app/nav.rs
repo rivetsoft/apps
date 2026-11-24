@@ -139,8 +139,9 @@ pub(super) fn overview(ui: &mut egui::Ui, query: &mut String, accent: Color32) -
                         ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.07));
                     }
                     let c = Pos2::new(r.center().x, r.top() + 36.0);
-                    ui.painter().rect_filled(Rect::from_center_size(c, Vec2::splat(46.0)), 12.0, palette::mix(v.panel_fill, accent, 0.18));
-                    big_icon(ui.painter(), *page, c, accent, 1.6);
+                    // A tile of the accent, its symbol in the colour that reads on it.
+                    ui.painter().rect_filled(Rect::from_center_size(c, Vec2::splat(46.0)), 12.0, accent);
+                    big_icon(ui.painter(), *page, c, v.selection.stroke.color, 1.6);
                     ui.painter().text(Pos2::new(r.center().x, r.bottom() - 16.0), egui::Align2::CENTER_CENTER, page.label(), fonts::ui_font(12.5), v.text_color());
                     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         picked = Some(*page);
