@@ -45,13 +45,15 @@ use crate::idle::{self, Stage};
 #[path = "dnd.rs"]
 mod dnd;
 
-use crate::config::{DockHide, Edge, Settings};
+use crate::config::{Board, DockHide, Edge, Settings, WidgetKind};
 
 /// A hidden dock's strip along the edge, in points.
 const DOCK_STRIP: u32 = 4;
 /// How long the dock stays after the pointer leaves, and how long it takes to slide.
 const DOCK_LINGER: Duration = Duration::from_millis(700);
 const DOCK_SLIDE: f32 = 0.18;
+/// The square in a screen's corner that opens the HUD, in points.
+const HUD_CORNER: u32 = 2;
 /// How long the pointer rests along a rolled-up sub panel's edge before it opens: passing over
 /// on the way to the panel doesn't open it.
 const SUB_DWELL: Duration = Duration::from_millis(220);
@@ -91,6 +93,8 @@ enum Kind {
     Osd,
     /// The screen dimming before it locks or goes off (idle).
     Dim,
+    /// A screen's corner the pointer opens the HUD from: nothing to see.
+    Corner,
 }
 
 struct Surf {
@@ -475,7 +479,7 @@ impl Shell {
         let layer = match kind {
             Kind::Background => Layer::Background,
             Kind::Panel | Kind::Dock => Layer::Top,
-            Kind::Popup | Kind::Cards | Kind::Osd | Kind::Dim => Layer::Overlay,
+            Kind::Popup | Kind::Cards | Kind::Osd | Kind::Dim | Kind::Corner => Layer::Overlay,
         };
         let ns = match kind {
             Kind::Background => "rivet-shell-wallpaper",
@@ -485,6 +489,7 @@ impl Shell {
             Kind::Cards => "rivet-shell-notifications",
             Kind::Osd => "rivet-shell-osd",
             Kind::Dim => "rivet-shell-dim",
+            Kind::Corner => "rivet-shell-corner",
         };
         let layer = self.layer_shell.create_layer_surface(&self.qh, surface, layer, Some(ns), output);
         let name = output.and_then(|o| self.output_state.info(o)).and_then(|i| i.name).unwrap_or_default();
@@ -536,6 +541,19 @@ impl Shell {
                 if let Ok(region) = smithay_client_toolkit::compositor::Region::new(&self.compositor) {
                     layer.wl_surface().set_input_region(Some(region.wl_region()));
                 }
+            }
+            Kind::Corner => {
+                use crate::config::Corner;
+                layer.set_anchor(match s.hud_corner {
+                    Corner::TopRight => Anchor::TOP | Anchor::RIGHT,
+                    Corner::BottomLeft => Anchor::BOTTOM | Anchor::LEFT,
+                    Corner::BottomRight => Anchor::BOTTOM | Anchor::RIGHT,
+                    _ => Anchor::TOP | Anchor::LEFT,
+                });
+                layer.set_size(HUD_CORNER, HUD_CORNER);
+                // In the very corner, over the panels' room too.
+                layer.set_exclusive_zone(-1);
+                layer.set_keyboard_interactivity(KeyboardInteractivity::None);
             }
             Kind::Popup => {
                 layer.set_anchor(Anchor::all());
@@ -827,6 +845,33 @@ impl Shell {
             let d = self.new_surf(Kind::Dock, Some(output), 0);
             self.surfs.push(d);
         }
+        if self.s.hud_corner != crate::config::Corner::Off {
+            let c = self.new_surf(Kind::Corner, Some(output), 0);
+            self.surfs.push(c);
+        }
+    }
+
+    /// The HUD's corner on every screen, where the settings say (made again when it moves).
+    fn sync_corners(&mut self) {
+        self.surfs.retain(|s| s.kind != Kind::Corner);
+        if self.s.hud_corner != crate::config::Corner::Off {
+            for o in self.output_state.outputs().collect::<Vec<_>>() {
+                let c = self.new_surf(Kind::Corner, Some(&o), 0);
+                self.surfs.push(c);
+            }
+        }
+    }
+
+    /// Open the HUD (`edit`: to arrange it), or close it when it's open as asked.
+    fn hud(&mut self, edit: bool, output: &str) {
+        match self.popup.as_mut().map(|p| &mut p.kind) {
+            // Open, and asked to be arranged (or the other way round): the same HUD, changed.
+            Some(PopupKind::Hud { edit: was, .. }) if *was != edit => {
+                *was = edit;
+                self.redraw_kinds(&[Kind::Popup]);
+            }
+            _ => self.open_popup(Popup::at(PopupKind::Hud { edit, query: String::new() }, f32::NAN, output)),
+        }
     }
 
     /// The panels follow their settings: a panel no longer on a screen goes, a new one comes,
@@ -922,6 +967,12 @@ impl Shell {
         }
         if p.kind == PopupKind::Ai {
             self.ai.refresh(false);
+        }
+        if matches!(p.kind, PopupKind::Hud { .. }) {
+            // Its apps as they are now, and this month's events for its calendar and its list.
+            self.reload_apps();
+            let (from, to) = ui::calendar_span(0);
+            self.plugins.emit(&crate::plugins::Event::new("month", &[("from", &from.format("%Y-%m-%d").to_string()), ("to", &to.format("%Y-%m-%d").to_string())]));
         }
         // An hour-old reading is read again as its popup opens.
         if p.kind == PopupKind::Weather && chrono::Utc::now().timestamp() - self.weather.get().at > 3600 {
@@ -1054,6 +1105,16 @@ impl Shell {
                 let right = f32::MAX;
                 match (cmd, arg) {
                     ("launcher", _) => self.open_popup(Popup::launcher("")),
+                    ("hud", "" | "toggle") => {
+                        let edit = matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::Hud { edit: true, .. }));
+                        self.hud(edit, "")
+                    }
+                    ("hud", "edit") => self.hud(true, ""),
+                    ("widgets", "edit") => {
+                        if !self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::WidgetEdit) {
+                            self.open_popup(Popup::at(PopupKind::WidgetEdit, f32::NAN, ""));
+                        }
+                    }
                     ("control-center" | "control" | "quick-settings", _) => self.open_popup(Popup::at(PopupKind::Control { drag: None }, right, "")),
                     ("notifications" | "notification-center", _) => self.open_popup(Popup::at(PopupKind::Notifications, right, "")),
                     ("calendar", _) => self.open_popup(Popup::at(PopupKind::Calendar { month: 0, day: None }, f32::NAN, "")),
@@ -1213,7 +1274,7 @@ impl Shell {
         self.last_minute = minute;
         for s in &mut self.surfs {
             // The clock, and the cards' "5 min ago".
-            let clocked = matches!(s.kind, Kind::Panel | Kind::Cards) || (s.kind == Kind::Background && self.s.widget_clock) || (s.kind == Kind::Popup && self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Notifications)));
+            let clocked = matches!(s.kind, Kind::Panel | Kind::Cards) || (s.kind == Kind::Background && self.s.widgets.iter().any(|w| w.board == Board::Desktop && matches!(w.kind, WidgetKind::Clock | WidgetKind::Events | WidgetKind::Calendar))) || (s.kind == Kind::Popup && self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Notifications | PopupKind::Hud { .. } | PopupKind::WidgetEdit)));
             if recolor || (new_minute && clocked) || s.repaint_at.is_some_and(|t| now >= t) {
                 s.dirty = true;
             }
@@ -1301,13 +1362,22 @@ impl Shell {
         let panel_changed = panel_changed || (dock_changed && self.s.panels.iter().any(|p| p.has("dock")));
         let control_open = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Control { .. } | PopupKind::Network { .. } | PopupKind::Bluetooth));
         let control_changed = st.volume != prev.volume || st.mic != prev.mic || st.brightness != prev.brightness || st.media != prev.media || st.net != prev.net || st.wifi_on != prev.wifi_on || st.bluetooth != prev.bluetooth || st.vpns != prev.vpns || st.profile != prev.profile;
+        // What the widgets show: the system's readings, and what's playing.
+        let media_changed = st.media != prev.media || st.media_pos != prev.media_pos;
+        let board_changed = |board: Board| self.s.widgets.iter().any(|w| w.board == board && ((w.kind == WidgetKind::System && bg_changed) || (w.kind == WidgetKind::Media && media_changed)));
+        let (desktop_changed, hud_changed) = (board_changed(Board::Desktop), board_changed(Board::Hud));
+        let board_open = match self.popup.as_ref().map(|p| &p.kind) {
+            Some(PopupKind::Hud { .. }) => hud_changed,
+            Some(PopupKind::WidgetEdit) => desktop_changed,
+            _ => false,
+        };
         for s in &mut self.surfs {
             let shows = match s.kind {
                 Kind::Panel => panel_changed,
                 Kind::Dock => dock_changed,
-                Kind::Background => self.s.widget_system && bg_changed,
-                Kind::Popup => (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed || (self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Media) && (st.media != prev.media || st.media_pos != prev.media_pos)),
-                Kind::Cards | Kind::Osd | Kind::Dim => false,
+                Kind::Background => desktop_changed,
+                Kind::Popup => board_open || (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed || (self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Media) && (st.media != prev.media || st.media_pos != prev.media_pos)),
+                Kind::Cards | Kind::Osd | Kind::Dim | Kind::Corner => false,
             };
             s.dirty |= shows;
         }
@@ -1399,7 +1469,14 @@ impl Shell {
             // The control center's Dark Style tile.
             self.redraw_kinds(&[Kind::Popup]);
         }
-        let widgets = old.widget_clock != s.widget_clock || old.widget_system != s.widget_system || old.widget_side != s.widget_side || old.widget_clock_at != s.widget_clock_at || old.widget_system_at != s.widget_system_at;
+        let widgets = old.widgets != s.widgets || old.widget_side != s.widget_side;
+        if old.hud_corner != s.hud_corner {
+            self.sync_corners();
+        }
+        if old.shows_weather() != s.shows_weather() {
+            // A weather widget put on a board (or the last one taken away).
+            self.set_ai();
+        }
         if old.dock_apps != s.dock_apps && s.dock_apps.iter().any(|id| ui::find_app(&self.apps, id).is_none()) {
             // A newly pinned app this list doesn't know yet.
             self.apps = load_apps();
@@ -1426,7 +1503,7 @@ impl Shell {
         }
         // The wallpaper's widgets sit below the panel: they move with it.
         if widgets || panels_changed {
-            self.redraw_kinds(&[Kind::Background]);
+            self.redraw_kinds(&[Kind::Background, Kind::Popup]);
         }
         if pictures || colours {
             self.wallpaper_changed(colours);
@@ -1713,6 +1790,16 @@ impl Shell {
         };
         let join_was = self.popup.as_ref().and_then(|p| p.join);
         let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, blur_mgr, blur_cap, qh, .. } = self;
+        // The desktop's widgets are arranged on the wallpaper, over the windows: its screen's
+        // picture as the wallpaper surface has it now.
+        let edit_wall: Option<Arc<Vec<u8>>> = if kind == Kind::Popup && popup.as_ref().is_some_and(|p| p.kind == PopupKind::WidgetEdit) {
+            let name = &surfs[i].output_name;
+            surfs.iter().find(|b| b.kind == Kind::Background && !name.is_empty() && b.output_name == *name).and_then(|b| b.wall_now.as_ref().map(|(_, px)| px.clone()))
+        } else {
+            None
+        };
+        // With no picture, the desktop it is arranged on is the plain one the wallpaper surface draws.
+        let editing = kind == Kind::Popup && popup.as_ref().is_some_and(|p| p.kind == PopupKind::WidgetEdit);
         let surf = &mut surfs[i];
         surf.dirty = false;
         if kind == Kind::Panel {
@@ -1747,7 +1834,7 @@ impl Shell {
                 surf.wall_now = Some((wc.path.clone(), wc.pixels.clone()));
             }
         }
-        let wall: Option<Arc<Vec<u8>>> = surf.wall_now.as_ref().map(|(_, px)| px.clone());
+        let wall: Option<Arc<Vec<u8>>> = if kind == Kind::Popup { edit_wall } else { surf.wall_now.as_ref().map(|(_, px)| px.clone()) };
         let mut wall_moving = false;
         let mut raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(w as f32, h as f32))),
@@ -1775,7 +1862,7 @@ impl Shell {
             plain = ui.visuals().extreme_bg_color;
             let mut m = Model { s: settings, status: &status, extra: &extra, apps, compositor: *comp, output: &output_name, acts: &mut acts };
             match kind {
-                Kind::Background => ui::widgets(ui, &mut m, &mut surf.kit),
+                Kind::Background => crate::board::desktop(ui, &mut m, &mut surf.kit),
                 Kind::Panel => {
                     // Slid part of the way off its edge (a hidden one shows nothing, but a
                     // sub panel's handle: where to pause the pointer to open it).
@@ -1818,6 +1905,7 @@ impl Shell {
                 Kind::Dim => {
                     ui.painter().rect_filled(ui.max_rect(), 0.0, egui::Color32::from_black_alpha((dim * 150.0) as u8));
                 }
+                Kind::Corner => {}
             }
         });
         // Take in the frame's texture changes (fonts, icons) and mark them handled: egui
@@ -1869,7 +1957,8 @@ impl Shell {
                     }
                 }
             }
-            (Kind::Background, _) => {
+            (Kind::Popup, Some(px)) if px.len() == canvas.len() => canvas.copy_from_slice(px),
+            (Kind::Background, _) | (Kind::Popup, _) if kind == Kind::Background || editing => {
                 // No picture (yet): the theme's background, a little lighter at the top.
                 let (top, bottom) = (rivet_look::palette::mix(plain, egui::Color32::WHITE, 0.06), plain);
                 for y in 0..ph as usize {
@@ -2081,11 +2170,24 @@ impl Shell {
                     }
                 });
             }
-            Act::MoveWidget(which, at) => self.change_settings(|s| match which {
-                ui::Widget::Clock => s.widget_clock_at = at,
-                ui::Widget::System => s.widget_system_at = at,
-                ui::Widget::Weather => s.widget_weather_at = at,
+            Act::WidgetPut(i, w) => self.change_settings(|s| {
+                if let Some(at) = s.widgets.get_mut(i) {
+                    *at = w;
+                }
             }),
+            Act::WidgetAdd(w) => self.change_settings(|s| s.widgets.push(w)),
+            Act::WidgetRemove(i) => self.change_settings(|s| {
+                if i < s.widgets.len() {
+                    s.widgets.remove(i);
+                }
+            }),
+            Act::BoardDone => match self.popup.as_mut().map(|p| &mut p.kind) {
+                Some(PopupKind::Hud { edit, .. }) if *edit => {
+                    *edit = false;
+                    self.redraw_kinds(&[Kind::Popup]);
+                }
+                _ => self.close_popup(),
+            },
             Act::Pin(id) => {
                 let apps = self.apps.clone();
                 self.change_settings(|s| {
@@ -2241,7 +2343,15 @@ impl CompositorHandler for Shell {
             self.surfs[i].waiting_frame = false;
         }
     }
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &wl_surface::WlSurface, output: &wl_output::WlOutput) {
+        // A popup the compositor chose the screen for learns which it is on: a board shows
+        // that screen's widgets, with that screen's wallpaper behind the desktop's editor.
+        let name = self.output_state.info(output).and_then(|i| i.name).unwrap_or_default();
+        if let Some(s) = self.surfs.iter_mut().find(|s| s.layer.wl_surface() == surface && s.kind == Kind::Popup && s.output_name.is_empty() && !name.is_empty()) {
+            s.output_name = name;
+            s.dirty = true;
+        }
+    }
     fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
 }
 
@@ -2338,6 +2448,14 @@ impl PointerHandler for Shell {
             let mods = self.kb_mods;
             let s = &mut self.surfs[i];
             match &e.kind {
+                PointerEventKind::Enter { .. } if s.kind == Kind::Corner => {
+                    // Open only: leaving through the corner again doesn't close it.
+                    let output = s.output_name.clone();
+                    if !self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Hud { .. } | PopupKind::WidgetEdit | PopupKind::Auth { .. })) {
+                        self.hud(false, &output);
+                    }
+                    continue;
+                }
                 PointerEventKind::Enter { .. } => {
                     s.hovered = true;
                     s.left_at = None;

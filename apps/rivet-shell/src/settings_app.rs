@@ -12,7 +12,7 @@ use rivet_look::theme::{Mode, r_md, r_xs, selected_tile};
 use rivet_look::{fonts, palette};
 use rivet_xdg::launch::DesktopApp;
 
-use crate::config::{DockHide, Settings, Side, Transition};
+use crate::config::{Board, DockHide, Placed, Settings, Side, Transition, WidgetKind};
 use crate::ui::find_app;
 
 mod displays;
@@ -136,6 +136,8 @@ pub struct SettingsApp {
     /// not written over.
     s_mtime: Option<std::time::SystemTime>,
     s_checked: f64,
+    /// A board the shell is to be asked to open for editing, once this frame's changes are saved.
+    board_ask: Option<&'static str>,
     icons: IconTheme,
     /// The icon theme setting `icons` was made for.
     icon_key: String,
@@ -199,7 +201,9 @@ impl SettingsApp {
             // RIVET_SHELL_WEATHER=1: the weather widget on, with a place chosen (none: with no
             // place yet). RIVET_SHELL_WEATHER_FIND: see weather_opts.
             if let Ok(w) = std::env::var("RIVET_SHELL_WEATHER") {
-                s.widget_weather = true;
+                if !s.widgets.iter().any(|w| w.board == Board::Desktop && w.kind == WidgetKind::Weather) {
+                    s.widgets.push(Placed::new(WidgetKind::Weather, Board::Desktop));
+                }
                 s.weather_units = crate::weather::Units::Metric;
                 if w != "none" {
                     (s.weather_place, s.weather_at) = ("Portland, Oregon, United States".into(), Some((45.52, -122.68)));
@@ -356,6 +360,7 @@ impl SettingsApp {
             look: LiveLook::new(),
             s_mtime: crate::config::mtime(),
             s_checked: 0.0,
+            board_ask: None,
             icons: IconTheme::new(&rivet_look::icons::detect_system_theme()),
             icon_key: String::new(),
             page,
@@ -672,6 +677,12 @@ impl eframe::App for SettingsApp {
             if self.shot.is_none() {
                 let _ = crate::ipc::send("changed");
             }
+        }
+        // Asked to arrange a board: the shell opens it, over this window.
+        if let Some(ask) = self.board_ask.take()
+            && self.shot.is_none()
+        {
+            let _ = crate::ipc::send(ask);
         }
         self.focus_ring(&ctx, accent);
         if let Some(shot) = self.shot.as_mut() {
@@ -1080,24 +1091,67 @@ impl SettingsApp {
     }
 
     fn widgets_page(&mut self, ui: &mut egui::Ui) {
+        let names = |s: &Settings, board: Board| {
+            let mut out: Vec<&str> = Vec::new();
+            for w in s.widgets.iter().filter(|w| w.board == board) {
+                if !out.contains(&w.kind.label()) {
+                    out.push(w.kind.label());
+                }
+            }
+            if out.is_empty() { "None yet".to_string() } else { out.join(", ") }
+        };
         section(ui, "On the desktop", &mut |ui| {
-            controls::switch(ui, &mut self.s.widget_clock, "A large clock and the date");
-            controls::switch(ui, &mut self.s.widget_system, "Processor, memory and battery");
-            controls::switch(ui, &mut self.s.widget_weather, "The weather for a place you choose");
-            controls::rule(ui);
             grid(ui, "shell-widgets", &mut |ui| {
+                ui.label("Widgets");
+                ui.label(names(&self.s, Board::Desktop));
+                ui.end_row();
                 ui.label("Side");
                 panel_editor::segmented(ui, &mut self.s.widget_side, &[(Side::Left, "Left"), (Side::Right, "Right")]);
                 ui.end_row();
             });
             ui.add_space(8.0);
-            hint(ui, "Drag a widget on the desktop to move it, or double-click it to put it back.");
-            if self.s.widget_clock_at.is_some() || self.s.widget_system_at.is_some() || self.s.widget_weather_at.is_some() {
-                ui.add_space(6.0);
-                if controls::button(ui, controls::Icon::Reset, "Reset Positions").on_hover_text("Puts the widgets back on the side chosen above").clicked() {
-                    (self.s.widget_clock_at, self.s.widget_system_at, self.s.widget_weather_at) = (None, None, None);
+            hint(ui, "Editing shows the desktop over your windows. Drag a widget to move it and its corner to resize it.");
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if controls::button(ui, controls::Icon::Out, "Edit Widgets").clicked() {
+                    self.board_ask = Some("widgets edit");
                 }
-            }
+                let moved = self.s.widgets.iter().any(|w| w.board == Board::Desktop && (w.at.is_some() || w.size.is_some()));
+                if moved && controls::button(ui, controls::Icon::Reset, "Reset Positions").on_hover_text("Puts the widgets back at their own sizes, on the side chosen above").clicked() {
+                    for w in self.s.widgets.iter_mut().filter(|w| w.board == Board::Desktop) {
+                        (w.at, w.size) = (None, None);
+                    }
+                }
+            });
+        });
+        section(ui, "HUD", &mut |ui| {
+            hint(ui, "A screen of widgets that opens over your windows: apps, the calendar, what's playing and more.");
+            ui.add_space(8.0);
+            grid(ui, "shell-hud", &mut |ui| {
+                ui.label("Widgets");
+                ui.label(names(&self.s, Board::Hud));
+                ui.end_row();
+                ui.label("Open from a corner");
+                use crate::config::Corner;
+                panel_editor::segmented(ui, &mut self.s.hud_corner, &[(Corner::Off, "Off"), (Corner::TopLeft, "Top Left"), (Corner::TopRight, "Top Right"), (Corner::BottomLeft, "Bottom Left"), (Corner::BottomRight, "Bottom Right")]);
+                ui.end_row();
+            });
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if controls::button(ui, controls::Icon::Out, "Edit the HUD").clicked() {
+                    self.board_ask = Some("hud edit");
+                }
+                if self.s.widgets.iter().filter(|w| w.board == Board::Hud).ne(crate::config::default_widgets().iter().filter(|w| w.board == Board::Hud))
+                    && controls::button(ui, controls::Icon::Reset, "Reset the HUD").on_hover_text("Puts back the widgets a new setup has, where it has them").clicked()
+                {
+                    self.s.widgets.retain(|w| w.board != Board::Hud);
+                    self.s.widgets.extend(crate::config::default_widgets().into_iter().filter(|w| w.board == Board::Hud));
+                }
+            });
+            ui.add_space(10.0);
+            hint(ui, "To open it with a key, bind this in your compositor's settings.");
+            ui.add_space(6.0);
+            controls::command(ui, "Open the HUD", "rivet-shell msg hud");
         });
         // The weather's place and units are the person's, on the User page.
         if self.s.shows_weather() {

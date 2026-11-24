@@ -524,6 +524,149 @@ impl Show {
     }
 }
 
+/// What a widget shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum WidgetKind {
+    Clock,
+    System,
+    Weather,
+    /// What is playing, with its controls.
+    Media,
+    /// A month.
+    Calendar,
+    /// The events coming up, from the plugins that give the calendar its events.
+    Events,
+    /// A grid of apps to open.
+    Apps,
+}
+
+impl WidgetKind {
+    pub const ALL: [WidgetKind; 7] = [WidgetKind::Clock, WidgetKind::Calendar, WidgetKind::Events, WidgetKind::Apps, WidgetKind::Media, WidgetKind::Weather, WidgetKind::System];
+    pub fn name(self) -> &'static str {
+        match self {
+            WidgetKind::Clock => "clock",
+            WidgetKind::System => "system",
+            WidgetKind::Weather => "weather",
+            WidgetKind::Media => "media",
+            WidgetKind::Calendar => "calendar",
+            WidgetKind::Events => "events",
+            WidgetKind::Apps => "apps",
+        }
+    }
+    pub fn from(v: &str) -> Option<WidgetKind> {
+        WidgetKind::ALL.into_iter().find(|k| k.name() == v)
+    }
+    /// Its name as a person reads it.
+    pub fn label(self) -> &'static str {
+        match self {
+            WidgetKind::Clock => "Clock",
+            WidgetKind::System => "System",
+            WidgetKind::Weather => "Weather",
+            WidgetKind::Media => "Now Playing",
+            WidgetKind::Calendar => "Calendar",
+            WidgetKind::Events => "Events",
+            WidgetKind::Apps => "Apps",
+        }
+    }
+}
+
+/// Where a widget is: on the desktop, under the windows, or on the HUD, which opens over them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Board {
+    Desktop,
+    Hud,
+}
+
+/// A widget placed on the desktop or the HUD.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Placed {
+    pub kind: WidgetKind,
+    pub board: Board,
+    /// The display it's on, by name (empty: every display).
+    pub output: String,
+    /// Where it is, as a fraction of the room it can move in (0,0 the top left, 1,1 the
+    /// bottom right), so it keeps its place on screens of any size. None: its usual place, in
+    /// the stack on `widget_side`.
+    pub at: Option<(f32, f32)>,
+    /// Its size, as a fraction of the room widgets have on the screen. None: its own size.
+    pub size: Option<(f32, f32)>,
+}
+
+impl Placed {
+    pub fn new(kind: WidgetKind, board: Board) -> Placed {
+        Placed { kind, board, output: String::new(), at: None, size: None }
+    }
+    /// On the HUD, with its left and top edges and its size given as fractions of the room.
+    fn hud(kind: WidgetKind, x: f32, y: f32, w: f32, h: f32) -> Placed {
+        // To the four places the file keeps, so a setup read back is the one written.
+        let room = |at: f32, size: f32| if size < 1.0 { ((at / (1.0 - size)).clamp(0.0, 1.0) * 1e4).round() / 1e4 } else { 0.0 };
+        Placed { kind, board: Board::Hud, output: String::new(), at: Some((room(x, w), room(y, h))), size: Some((w, h)) }
+    }
+    /// Whether it shows on this display (a display with no name shows them all).
+    pub fn on(&self, output: &str) -> bool {
+        self.output.is_empty() || output.is_empty() || self.output == output
+    }
+    /// "kind|board|display|x,y|w,h", with nothing where a place or size isn't set.
+    fn text(&self) -> String {
+        let pair = |p: Option<(f32, f32)>| p.map(|(x, y)| format!("{x:.4},{y:.4}")).unwrap_or_default();
+        format!("{}|{}|{}|{}|{}", self.kind.name(), if self.board == Board::Hud { "hud" } else { "desktop" }, self.output.replace(['|', '\n'], " "), pair(self.at), pair(self.size))
+    }
+    fn parse(v: &str) -> Option<Placed> {
+        let mut it = v.split('|');
+        let kind = WidgetKind::from(it.next()?.trim())?;
+        let board = if it.next()?.trim() == "hud" { Board::Hud } else { Board::Desktop };
+        let output = it.next().unwrap_or("").trim().to_string();
+        let at = it.next().and_then(fraction_pair);
+        // A size too small to hold anything is no size.
+        let size = it.next().and_then(fraction_pair).filter(|(w, h)| *w >= 0.02 && *h >= 0.02);
+        Some(Placed { kind, board, output, at, size })
+    }
+}
+
+/// The widgets a new setup has: a clock and the system's readings on the desktop, and a HUD
+/// with the clock, the month and what's coming up on the left, apps in the middle, and what's
+/// playing, the weather and the system on the right.
+pub fn default_widgets() -> Vec<Placed> {
+    use WidgetKind::*;
+    vec![
+        Placed::new(Clock, Board::Desktop),
+        Placed::new(System, Board::Desktop),
+        Placed::hud(Clock, 0.0, 0.0, 0.25, 0.17),
+        Placed::hud(Calendar, 0.0, 0.2, 0.25, 0.4),
+        Placed::hud(Events, 0.0, 0.63, 0.25, 0.37),
+        Placed::hud(Apps, 0.27, 0.0, 0.46, 1.0),
+        Placed::hud(Media, 0.75, 0.0, 0.25, 0.36),
+        Placed::hud(Weather, 0.75, 0.38, 0.25, 0.32),
+        Placed::hud(System, 0.75, 0.72, 0.25, 0.28),
+    ]
+}
+
+/// A screen corner the pointer opens the HUD from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Corner {
+    #[default]
+    Off,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl Corner {
+    pub fn name(self) -> &'static str {
+        match self {
+            Corner::Off => "off",
+            Corner::TopLeft => "top-left",
+            Corner::TopRight => "top-right",
+            Corner::BottomLeft => "bottom-left",
+            Corner::BottomRight => "bottom-right",
+        }
+    }
+    pub fn from(v: &str) -> Corner {
+        [Corner::TopLeft, Corner::TopRight, Corner::BottomLeft, Corner::BottomRight].into_iter().find(|c| c.name() == v).unwrap_or(Corner::Off)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Side {
     #[default]
@@ -758,19 +901,13 @@ pub struct Settings {
     pub blur: bool,
     /// The dock's own look, over Appearance's.
     pub dock_look: crate::style::Style,
-    // ---- desktop widgets
-    pub widget_clock: bool,
-    pub widget_system: bool,
+    // ---- widgets
+    /// The widgets on the desktop and on the HUD, in the order they're drawn.
+    pub widgets: Vec<Placed>,
+    /// The side of the desktop widgets that haven't been moved stack on.
     pub widget_side: Side,
-    /// Where each widget was dragged to, as a fraction of the room it can move in (0,0 the top
-    /// left, 1,1 the bottom right), so it keeps its place on screens of any size. None: its
-    /// usual place, on `widget_side`.
-    pub widget_clock_at: Option<(f32, f32)>,
-    pub widget_system_at: Option<(f32, f32)>,
-    /// The weather widget (off until a person turns it on: it needs a place, and asks a
-    /// service on the internet).
-    pub widget_weather: bool,
-    pub widget_weather_at: Option<(f32, f32)>,
+    /// The corner the pointer opens the HUD from.
+    pub hud_corner: Corner,
     /// The weather, for the widget and the panel item: the place chosen (its name as shown,
     /// and its latitude and longitude; None: no place yet), and the units it shows in.
     pub weather_place: String,
@@ -904,13 +1041,9 @@ impl Default for Settings {
             dock_places: true,
             blur: true,
             dock_look: crate::style::Style::default(),
-            widget_clock: true,
-            widget_system: true,
+            widgets: default_widgets(),
             widget_side: Side::Left,
-            widget_clock_at: None,
-            widget_system_at: None,
-            widget_weather: false,
-            widget_weather_at: None,
+            hud_corner: Corner::Off,
             weather_place: String::new(),
             weather_at: None,
             weather_units: crate::weather::Units::local(),
@@ -977,9 +1110,9 @@ struct OldPanel {
 }
 
 impl Settings {
-    /// Whether anything shows the weather: the desktop widget, or the item on a panel.
+    /// Whether anything shows the weather: a widget, or the item on a panel.
     pub fn shows_weather(&self) -> bool {
-        self.widget_weather || self.panels.iter().any(|p| p.has("weather"))
+        self.widgets.iter().any(|w| w.kind == WidgetKind::Weather) || self.panels.iter().any(|p| p.has("weather"))
     }
 
     pub fn load() -> Settings {
@@ -1000,6 +1133,16 @@ impl Settings {
         let mut old = OldPanel::default();
         let mut panels: Vec<(usize, PanelCfg)> = Vec::new();
         let mut count: Option<usize> = None;
+        let mut placed: Vec<(usize, Placed)> = Vec::new();
+        let mut widget_count: Option<usize> = None;
+        // Each old desktop widget: whether it was on (None: not said), and where.
+        #[derive(Default)]
+        struct Was {
+            clock: (Option<bool>, Option<(f32, f32)>),
+            system: (Option<bool>, Option<(f32, f32)>),
+            weather: (Option<bool>, Option<(f32, f32)>),
+        }
+        let mut was = Was::default();
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else { continue };
             let v = v.trim();
@@ -1036,6 +1179,12 @@ impl Settings {
             }
             if let Some(n) = k.strip_prefix("panel.").and_then(|n| n.parse::<usize>().ok()) {
                 panels.push((n, PanelCfg::parse(v)));
+                continue;
+            }
+            if let Some(n) = k.strip_prefix("widget.").and_then(|n| n.parse::<usize>().ok()) {
+                if let Some(w) = Placed::parse(v) {
+                    placed.push((n, w));
+                }
                 continue;
             }
             // The old single panel's settings.
@@ -1196,18 +1345,32 @@ impl Settings {
                 "dock_icon" => self.dock_icon = v.parse::<f32>().unwrap_or(44.0).clamp(24.0, 96.0),
                 "dock_reserve" => self.dock_reserve = b,
                 "dock_running" => self.dock_running = b,
-                "widget_clock" => self.widget_clock = b,
-                "widget_system" => self.widget_system = b,
+                "widget_count" => widget_count = v.parse().ok(),
+                "hud_corner" => self.hud_corner = Corner::from(v),
                 "widget_side" => self.widget_side = if v == "right" { Side::Right } else { Side::Left },
-                "widget_clock_at" => self.widget_clock_at = fraction_pair(v),
-                "widget_system_at" => self.widget_system_at = fraction_pair(v),
-                "widget_weather" => self.widget_weather = b,
-                "widget_weather_at" => self.widget_weather_at = fraction_pair(v),
+                // The three desktop widgets as they were kept before there was a list.
+                "widget_clock" => was.clock.0 = Some(b),
+                "widget_system" => was.system.0 = Some(b),
+                "widget_weather" => was.weather.0 = Some(b),
+                "widget_clock_at" => was.clock.1 = fraction_pair(v),
+                "widget_system_at" => was.system.1 = fraction_pair(v),
+                "widget_weather_at" => was.weather.1 = fraction_pair(v),
                 "weather_place" => self.weather_place = v.to_string(),
                 "weather_at" => self.weather_at = lat_lon(v),
                 "weather_units" => self.weather_units = crate::weather::Units::parse(v).unwrap_or(self.weather_units),
                 _ => {}
             }
+        }
+        if widget_count.is_some() || !placed.is_empty() {
+            placed.sort_by_key(|p| p.0);
+            self.widgets = placed.into_iter().map(|p| p.1).take(widget_count.unwrap_or(usize::MAX)).collect();
+        } else if was.clock.0.is_some() || was.system.0.is_some() || was.weather.0.is_some() {
+            // A file from before the list: its desktop widgets where they were, on (or off)
+            // as they were, and the HUD as a new setup has it.
+            let desktop = [(WidgetKind::Clock, was.clock, true), (WidgetKind::System, was.system, true), (WidgetKind::Weather, was.weather, false)];
+            let mut list: Vec<Placed> = desktop.into_iter().filter(|(_, (on, _), usual)| on.unwrap_or(*usual)).map(|(kind, (_, at), _)| Placed { at, ..Placed::new(kind, Board::Desktop) }).collect();
+            list.extend(default_widgets().into_iter().filter(|w| w.board == Board::Hud));
+            self.widgets = list;
         }
         if count.is_some() || !panels.is_empty() {
             panels.sort_by_key(|p| p.0);
@@ -1230,7 +1393,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\nvol_show={}\nvol_scroll={}\nbright_show={}\nbright_scroll={}\nbatt_show={}\nbatt_hide_full={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_clock={}\nwidget_system={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\nvol_show={}\nvol_scroll={}\nbright_show={}\nbright_scroll={}\nbatt_show={}\nbatt_hide_full={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -1259,8 +1422,6 @@ impl Settings {
             self.dock_icon,
             self.dock_reserve,
             self.dock_running,
-            self.widget_clock,
-            self.widget_system,
             if self.widget_side == Side::Right { "right" } else { "left" },
             self.notifications,
             self.osd,
@@ -1280,8 +1441,11 @@ impl Settings {
         t.push_str(&format!("tray_color={}\ntray_passive={}\n", self.tray_color.name(), self.tray_passive));
         t.push_str(&format!("color_use={}\nsecondary={}\ntertiary={}\n", self.color_use, rgb_text(self.secondary), rgb_text(self.tertiary)));
         let at = |p: Option<(f32, f32)>| p.map(|(x, y)| format!("{x:.4},{y:.4}")).unwrap_or_default();
-        t.push_str(&format!("widget_clock_at={}\nwidget_system_at={}\n", at(self.widget_clock_at), at(self.widget_system_at)));
-        t.push_str(&format!("widget_weather={}\nwidget_weather_at={}\nweather_place={}\nweather_at={}\nweather_units={}\n", self.widget_weather, at(self.widget_weather_at), one(&self.weather_place), at(self.weather_at), self.weather_units.name()));
+        t.push_str(&format!("weather_place={}\nweather_at={}\nweather_units={}\n", one(&self.weather_place), at(self.weather_at), self.weather_units.name()));
+        t.push_str(&format!("hud_corner={}\nwidget_count={}\n", self.hud_corner.name(), self.widgets.len()));
+        for (i, w) in self.widgets.iter().enumerate() {
+            t.push_str(&format!("widget.{i}={}\n", w.text()));
+        }
         t.push_str(&format!("font={}\nlauncher_font={}\n", font_name(&self.font), font_name(&self.launcher_font)));
         t.push_str(&format!("quick_icon={}\n", self.quick_icon.name()));
         t.push_str(&format!("launcher_icon={}\nlauncher_custom={}\n", self.launcher_icon.name(), self.launcher_custom.replace('\n', "")));
@@ -1504,12 +1668,32 @@ fn fraction_pair(v: &str) -> Option<(f32, f32)> {
 mod tests {
     use super::*;
 
+    /// The three desktop widgets a file from before the list had come over as they were, and
+    /// taking every widget away stays that way.
+    #[test]
+    fn widgets_come_over_from_the_old_keys() {
+        let mut s = Settings::default();
+        s.parse("widget_clock=false\nwidget_system=true\nwidget_system_at=0.5,0.25\nwidget_weather=true\n");
+        let desktop: Vec<_> = s.widgets.iter().filter(|w| w.board == Board::Desktop).map(|w| (w.kind, w.at)).collect();
+        assert_eq!(desktop, [(WidgetKind::System, Some((0.5, 0.25))), (WidgetKind::Weather, None)]);
+        assert!(s.widgets.iter().any(|w| w.board == Board::Hud && w.kind == WidgetKind::Apps));
+        assert!(s.shows_weather());
+        s.widgets.clear();
+        let mut t = Settings::default();
+        t.parse(&s.text());
+        assert!(t.widgets.is_empty());
+        // The HUD a new setup has fits in its room, each widget clear of the next.
+        let hud: Vec<Placed> = default_widgets().into_iter().filter(|w| w.board == Board::Hud).collect();
+        assert!(hud.iter().all(|w| w.at.is_some() && w.size.is_some_and(|(w, h)| w <= 1.0 && h <= 1.0)));
+    }
+
     #[test]
     fn round_trips() {
         let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, dock_places: false, blur: false, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
-        s.widget_system_at = Some((0.25, 0.5));
-        (s.widget_weather, s.widget_weather_at, s.weather_place, s.weather_at, s.weather_units) = (true, Some((1.0, 0.0)), "Portland, Oregon".into(), Some((45.5234, -122.6762)), crate::weather::Units::Imperial);
+        s.widgets = vec![Placed { at: Some((0.25, 0.5)), ..Placed::new(WidgetKind::System, Board::Desktop) }, Placed { output: "DP-2".into(), at: Some((1.0, 0.0)), size: Some((0.25, 0.5)), ..Placed::new(WidgetKind::Weather, Board::Hud) }];
+        s.hud_corner = Corner::BottomRight;
+        (s.weather_place, s.weather_at, s.weather_units) = ("Portland, Oregon".into(), Some((45.5234, -122.6762)), crate::weather::Units::Imperial);
         s.secondary = Some([0x35, 0x84, 0xe4]);
         (s.wallpaper_screens, s.wall_transition, s.wall_transition_ms, s.matugen_screen, s.matugen_contrast) = (vec![("DP-2".into(), "/p/two.png".into())], Transition::Grow, 900, "DP-2".into(), 0.5);
         assert_eq!((s.wallpaper_on("DP-2"), s.wallpaper_on("DP-1"), s.matugen_picture()), ("/p/two.png", "/p/a b.jpg", "/p/two.png"));

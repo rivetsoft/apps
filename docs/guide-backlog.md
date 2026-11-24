@@ -272,6 +272,37 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Quick settings: a VPN block appears when there is at least one VPN that can be switched. It turns one on and off: the first there is, or the one chosen under Quick settings on the VPN page when there are several. Its arrow opens the VPN page. For a ZeroTier network, off means leaving it and on means joining it again.
 - The shell reads the VPNs every ten seconds with the rest of the slower status.
 
+### Widgets: placing them, and the HUD
+
+Location: `apps/rivet-shell/src/settings_app.rs`, Widgets, "On the desktop" and "HUD"; the boards
+themselves are `apps/rivet-shell/src/board.rs`.
+
+- There are two boards of widgets. The desktop's sit on the wallpaper, under the windows. The
+  HUD's open over the windows, on a dark backdrop that is blurred where the compositor can blur.
+- The widgets: Clock, Calendar, Events (what's coming up, from a calendar plugin such as Rivet
+  Calendar's), Apps (a grid, the launcher's favorites first), Now Playing, Weather and System. A
+  display shows one of each kind per board.
+- Edit Widgets and Edit the HUD open the board over the windows. Drag a widget to move it. Drag
+  the lines at its lower right corner to resize it; the Clock grows and shrinks with its room.
+  Click a widget for its own buttons: "On Every Display" or "Only on NAME" (the display being
+  edited), "Its Own Size" (after a resize) and "Remove". The bar at the top adds the kinds not
+  on this display yet. Done or Esc ends editing. Changes save as they are made.
+- Places and sizes are kept as fractions of the screen's room (the screen less its panels), so a
+  layout holds on a display of another size. A desktop widget that has never been moved stacks
+  on the side chosen by "Side"; Reset Positions puts them all back there at their own sizes.
+- Outside editing, desktop widgets don't move, so the buttons in Now Playing, the calendar's
+  days and the apps can be clicked.
+- The HUD opens with `rivet-shell msg hud` (bind it to a key in the compositor's settings) and
+  closes with the same, Esc, or a click on the backdrop. "Open from a corner" opens it when the
+  pointer reaches that corner of any display; the corner opens it and never closes it. Typing
+  narrows the Apps widget, Enter opens the first app found, and Esc clears what was typed before
+  it closes the HUD. `rivet-shell msg hud edit` and `rivet-shell msg widgets edit` open the two
+  editors directly.
+- Reset the HUD puts back the layout a new setup has: the clock, calendar and events on the left,
+  apps in the middle, and what's playing, the weather and the system on the right.
+- Settings files from before this keep their desktop clock, system and weather widgets where
+  they were.
+
 ### Dock: moving the pinned apps
 
 Press a pinned app's icon and drag it along the dock: the other pins move over to show where it

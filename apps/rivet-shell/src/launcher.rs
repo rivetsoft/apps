@@ -523,7 +523,7 @@ fn source_of(s: &Settings, app: &DesktopApp) -> Option<&'static str> {
 
 /// A grid tile's icon over two lines of its name, and, for an app from a Flatpak, Snap or
 /// AppImage, a package on the icon's corner. Gives where that package is, to say which on hover.
-fn draw_tile(p: &egui::Painter, r: Rect, name: &str, tex: Option<egui::TextureHandle>, icon: f32, v: &egui::Visuals, source: Option<&str>) -> Option<Rect> {
+pub(crate) fn draw_tile(p: &egui::Painter, r: Rect, name: &str, tex: Option<egui::TextureHandle>, icon: f32, v: &egui::Visuals, source: Option<&str>) -> Option<Rect> {
     let ir = Rect::from_center_size(Pos2::new(r.center().x, r.top() + 9.0 + icon / 2.0), Vec2::splat(icon));
     if let Some(t) = tex {
         p.image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);

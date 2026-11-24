@@ -16,7 +16,7 @@ use chrono::Local;
 use eframe::egui::{self, Color32, Pos2, Rect, Vec2};
 use rivet_look::theme::Mode;
 
-use crate::config::{Edge, Settings};
+use crate::config::{Board, Edge, Placed, Settings, WidgetKind};
 use crate::notes::Note;
 use crate::sys::{Compositor, Media, Net, Status, Workspace};
 use crate::ui::{self, Act, Extra, Kit, Model, OsdKind, Popup, PopupKind};
@@ -165,7 +165,9 @@ impl ShotApp {
         // reading (none: no place chosen; failed: the service can't be reached; night: a clear
         // night). RIVET_SHELL_POPUP=weather opens the item's popup. RIVET_SHELL_UNITS=imperial.
         if std::env::var("RIVET_SHELL_WEATHER").is_ok() || std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("weather") {
-            s.widget_weather = true;
+            if !s.widgets.iter().any(|w| w.board == Board::Desktop && w.kind == WidgetKind::Weather) {
+                s.widgets.push(Placed::new(WidgetKind::Weather, Board::Desktop));
+            }
             (s.weather_place, s.weather_at) = ("Portland, Oregon, United States".into(), Some((45.52, -122.68)));
             s.weather_units = std::env::var("RIVET_SHELL_UNITS").ok().and_then(|u| crate::weather::Units::parse(&u)).unwrap_or(crate::weather::Units::Metric);
             let right = &mut s.panels[0].zones[2];
@@ -239,7 +241,12 @@ impl ShotApp {
         if let Ok(w) = std::env::var("RIVET_SHELL_WIDGETS") {
             let mut it = w.split(':');
             let pair = |p: Option<&str>| p.and_then(|p| p.split_once(',')).and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)));
-            (s.widget_clock_at, s.widget_system_at) = (pair(it.next()), pair(it.next()));
+            for kind in [WidgetKind::Clock, WidgetKind::System] {
+                let at = pair(it.next());
+                if let Some(w) = s.widgets.iter_mut().find(|w| w.board == Board::Desktop && w.kind == kind) {
+                    w.at = at;
+                }
+            }
         }
         // RIVET_SHELL_FONTS=base:panel:launcher sets the three fonts (a part left empty follows).
         if let Ok(f) = std::env::var("RIVET_SHELL_FONTS") {
@@ -352,6 +359,11 @@ impl ShotApp {
             Ok("panel-dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-files".into(), pinned: true }, anchor_x: 330.0, output: String::new(), focus: false, from: Some((Edge::Top, if attached { 40.0 } else { 44.0 })), attach: attached.then_some(0), panel: Some(0), join: None }),
             Ok("downloads") => Some(Popup { kind: PopupKind::Downloads, anchor_x: 200.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("trash") => Some(Popup { kind: PopupKind::TrashMenu { confirm: std::env::var("RIVET_SHELL_CONFIRM").is_ok() }, anchor_x: 240.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            // RIVET_SHELL_POPUP=hud: the HUD; hud-edit: being arranged; widgets-edit: the
+            // desktop's widgets being arranged (RIVET_SHELL_QUERY: typed on the HUD).
+            Ok("hud") => Some(Popup::at(PopupKind::Hud { edit: false, query: std::env::var("RIVET_SHELL_QUERY").unwrap_or_default() }, 0.0, "")),
+            Ok("hud-edit") => Some(Popup::at(PopupKind::Hud { edit: true, query: String::new() }, 0.0, "")),
+            Ok("widgets-edit") => Some(Popup::at(PopupKind::WidgetEdit, 0.0, "")),
             Ok("dock-menu") => Some(Popup { kind: PopupKind::DockMenu { app: "rivet-terminal".into(), pinned: true }, anchor_x: -50.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             _ => None,
         };
@@ -482,7 +494,7 @@ impl eframe::App for ShotApp {
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
             f(&mut child, &mut m, &mut self.kit);
         };
-        at(full, &mut |ui, m, k| ui::widgets(ui, m, k));
+        at(full, &mut |ui, m, k| crate::board::desktop(ui, m, k));
         // Each panel against its edge, after the ones before it on that edge.
         let rolled_out = std::env::var("RIVET_SHELL_SUB").as_deref() == Ok("open");
         // RIVET_SHELL_SUB_SLIDE=0.4: a sub panel that's rolled out, caught part of the way (0 out,

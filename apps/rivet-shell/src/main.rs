@@ -7,6 +7,7 @@ mod audio;
 mod auth_pop;
 mod auth;
 mod bar;
+mod board;
 mod browser;
 mod themed;
 mod user;
@@ -89,7 +90,7 @@ Usage:
 Start it from your compositor (niri: spawn-at-startup \"rivet-shell\"; Hyprland: exec-once =
 rivet-shell; Sway: exec rivet-shell), or as a service with --install-service where the
 compositor starts systemd's graphical session (niri-session, uwsm). Bind a key to
-`rivet-shell msg launcher`. It needs the
+`rivet-shell msg launcher`, and one to `rivet-shell msg hud` for the HUD. It needs the
 layer-shell protocol (niri, Hyprland, Sway, river, labwc, Wayfire, COSMIC; not GNOME), and
 matugen for colors from the wallpaper.";
 

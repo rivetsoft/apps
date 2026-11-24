@@ -34,8 +34,11 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
   reaches the bottom edge) or smart-hide (shown while the workspace has no windows).
 - **Launcher**: every installed app, searched as you type; arrows and Enter, or click. Type a sum
   (`12*(3+4)`) for its answer; Enter copies it.
-- **Widgets** on the desktop: a large clock and the date, processor, memory and battery, and the
-  weather for a place you choose (also a panel item, with the forecast in its popup).
+- **Widgets** on the desktop: a clock, the system's readings, the weather, a calendar, the events
+  coming up, what's playing and a grid of apps. Edit them from Settings: drag one to move it, drag
+  its corner to resize it, and put it on every display or only one.
+- **HUD**: a screen of the same widgets that opens over your windows, from a key or a corner of
+  the screen. Type to narrow its apps.
 - **Wallpaper and colors**: choose a picture in Settings; the shell shows it on every screen and
   runs [matugen](https://github.com/InioX/matugen) on it, so the desktop's colors (and every
   Rivet app's, which follow matugen live) come from the picture.
@@ -52,6 +55,7 @@ cargo build --release -p rivet-shell
 ./target/release/rivet-shell settings              # the settings window
 ./target/release/rivet-shell msg launcher          # open (or close) the launcher
 ./target/release/rivet-shell msg control-center    # quick settings
+./target/release/rivet-shell msg hud               # open (or close) the HUD; hud edit arranges it
 ./target/release/rivet-shell msg volume up         # also down, mute; brightness up|down; media next…
 ./target/release/rivet-shell msg wallpaper random  # also next, previous, or a picture's path
 ./target/release/rivet-shell msg subpanel Shortcuts # open (or close) the sub panel with that name
