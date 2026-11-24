@@ -3,6 +3,11 @@
 ## Unreleased
 
 - **Open in Rivet Vice**: right-click an archive to look inside it before taking anything out. Shown when Rivet Vice, the archive manager, is installed.
+- The Empty Trash question is roomier and easier to read: the Trash's icon beside it, how many items are in it, and the buttons on the right, as in the Delete question.
+- `rivet trash:///` opens straight on the Trash, as other file managers do, so a dock or launcher can open it there.
+- **Settings changed in one window stay changed**: with several windows open, closing one no
+  longer puts back the toolbar, view and other settings as they were when it opened. Each
+  window saves only what was changed in it.
 - **Return in a question presses the highlighted button**: Empty Trash, a message's OK and
   Replace in the file picker answer to Return, as Delete already did. Tab to Cancel and Return
   cancels; before, Return in the Delete and Open With questions went ahead even with Cancel

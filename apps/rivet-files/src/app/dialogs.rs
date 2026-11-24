@@ -451,13 +451,35 @@ impl RivetApp {
             }
             Dialog::ConfirmEmptyTrash => {
                 let enter = rivet_look::widgets::return_default(ctx);
-                let r = egui::Modal::new(Id::unique("emptytrash")).show(ctx, |ui| {
-                    ui.set_width(380.0);
-                    ui.heading("Empty all items from Trash?");
-                    ui.add_space(4.0);
-                    ui.label("All items in the Trash will be permanently deleted.");
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| (danger_button(ui, "Empty Trash"), ui.button("Cancel").clicked())).inner
+                let icon = self.icon(ctx, &["user-trash-full", "user-trash"], 48.0);
+                let n = std::fs::read_dir(places::trash_dir().join("files")).map(|r| r.count()).unwrap_or(0);
+                let count = if n == 1 { "1 item".to_string() } else { format!("{n} items") };
+                // As roomy as the Delete dialog: the Trash's icon by the question, the buttons on the right.
+                let frame = egui::Frame::popup(&ctx.global_style()).inner_margin(egui::Margin::same(22)).corner_radius(super::r_lg());
+                let r = egui::Modal::new(Id::unique("emptytrash")).frame(frame).show(ctx, |ui| {
+                    ui.set_width(400.0);
+                    let v = ui.visuals().clone();
+                    ui.horizontal(|ui| {
+                        if let Some(t) = &icon {
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(52.0), Sense::hover());
+                            super::paint_tex(ui.painter(), t, r.shrink(2.0), Color32::WHITE);
+                            ui.add_space(8.0);
+                        }
+                        ui.vertical(|ui| {
+                            ui.label(egui::RichText::new("Empty the Trash?").heading());
+                            ui.label(egui::RichText::new(count).color(v.weak_text_color()));
+                        });
+                    });
+                    ui.add_space(12.0);
+                    ui.label(egui::RichText::new("Everything in it is deleted for good. This can’t be undone.").color(v.weak_text_color()));
+                    ui.add_space(16.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        ui.spacing_mut().button_padding = Vec2::new(12.0, 5.0);
+                        // Rightmost = the default (Enter).
+                        (danger_button(ui, "Empty Trash"), ui.button("Cancel").clicked())
+                    })
+                    .inner
                 });
                 if r.inner.0 || (enter && !r.inner.1) {
                     self.ops.push(fsops::spawn_op(OpKind::EmptyTrash, vec![], None));

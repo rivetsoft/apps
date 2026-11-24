@@ -221,24 +221,70 @@ impl Settings {
         s
     }
 
-    pub fn save(&self) {
+    /// Write the settings this window changed since `base` (what it loaded or last saved) into
+    /// the file, keeping everything else as it is on disk. Each window is its own process with
+    /// its own copy, so writing the whole copy would undo what another window changed since.
+    pub fn save(&self, base: &Settings) {
+        let mine = self.text();
+        let before = base.text();
+        let before: std::collections::HashMap<&str, &str> = key_values(&before).collect();
+        let changed: Vec<(&str, &str)> = key_values(&mine).filter(|(k, v)| before.get(k) != Some(v)).collect();
+        if changed.is_empty() {
+            return;
+        }
+        let p = path();
+        let disk = std::fs::read_to_string(&p).unwrap_or_default();
+        if let Some(d) = p.parent() {
+            let _ = std::fs::create_dir_all(d);
+        }
+        let _ = std::fs::write(p, merge(&disk, &changed));
+    }
+
+    /// Every saved setting as `key=value` lines.
+    fn text(&self) -> String {
         let view = match self.view { ViewMode::Icons => "icons", ViewMode::List => "list", ViewMode::Compact => "compact", ViewMode::Columns => "columns" };
         let sort = match self.sort { SortKey::Name => "name", SortKey::Size => "size", SortKey::Type => "type", SortKey::Modified => "modified" };
         let theme = match self.theme { ThemeChoice::System => "system", ThemeChoice::Light => "light", ThemeChoice::Dark => "dark" };
-        let text = format!(
+        format!(
             "view={view}\nsort={sort}\nsort_desc={}\nfolders_first={}\nshow_hidden={}\nzoom={}\nlist_zoom={}\ndecorations={}\nicon_theme={}\nbuiltin_icons={}\nui_font={}\nui_font_size={}\nicon_color={}\ntheme={theme}\nshow_sidebar={}\nsidebar_icon={}\nsidebar_tree={}\nshow_statusbar={}\nshow_menubar={}\nshow_thumbnails={}\nsingle_click={}\nconfirm_trash={}\nfollow_desktop_colors={}\naccent=#{:02x}{:02x}{:02x}\nwindow_w={}\nwindow_h={}\nsidebar_width={}\ntoolbar={}\ncompress_format={}\nsidebar_right={}\nshow_peek={}\npeek_left={}\npeek_width={}\npeek_preview_h={}\ntoolbar_bottom={}\nstatusbar_top={}\nmedia_tools={}\nbulk_rename={}\nzen={}\nterminal={}\nmono_font={}\nvim_keys={}\ncustom_actions={}\n",
             self.sort_desc, self.folders_first, self.show_hidden, self.zoom, self.list_zoom, self.decorations,
             self.icon_theme, self.builtin_icons, self.ui_font, self.ui_font_size, self.icon_color.id(), self.show_sidebar, self.sidebar_icon, self.sidebar_tree, self.show_statusbar, self.show_menubar, self.show_thumbnails,
             self.single_click, self.confirm_trash, self.follow_desktop_colors, self.accent[0], self.accent[1], self.accent[2],
             self.window_w, self.window_h, self.sidebar_width, toolbar_string(&self.toolbar), self.compress_format,
             self.sidebar_right, self.show_peek, self.peek_left, self.peek_width, self.peek_preview_h, self.toolbar_bottom, self.statusbar_top, self.media_tools, self.bulk_rename, self.zen, self.terminal, self.mono_font, self.vim_keys, self.custom_actions
-        );
-        let p = path();
-        if let Some(d) = p.parent() {
-            let _ = std::fs::create_dir_all(d);
-        }
-        let _ = std::fs::write(p, text);
+        )
     }
+}
+
+fn key_values(text: &str) -> impl Iterator<Item = (&str, &str)> {
+    text.lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.trim(), v.trim()))
+}
+
+/// The file's text with `changed` written over it: those keys get the new values, missing ones
+/// are added at the end, and every other line (another window's change, a key from a newer
+/// version) stays.
+fn merge(disk: &str, changed: &[(&str, &str)]) -> String {
+    let mut out = String::new();
+    let mut written: Vec<&str> = Vec::new();
+    for line in disk.lines() {
+        let key = line.split_once('=').map(|(k, _)| k.trim());
+        match key.and_then(|k| changed.iter().find(|(c, _)| *c == k)) {
+            Some((k, v)) => {
+                out.push_str(&format!("{k}={v}\n"));
+                written.push(k);
+            }
+            None => {
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+    }
+    for (k, v) in changed {
+        if !written.contains(k) {
+            out.push_str(&format!("{k}={v}\n"));
+        }
+    }
+    out
 }
 
 /// Something that can be placed on the toolbar.
@@ -467,5 +513,32 @@ impl IconColor {
             "tertiary" => IconColor::Tertiary,
             _ => IconColor::Primary,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_save_keeps_other_windows_changes() {
+        // Two windows load the same file; the first changes the toolbar and saves.
+        let base = Settings::default();
+        let mut first = base.clone();
+        first.toolbar = parse_toolbar("back,forward");
+        let changed_by_first: Vec<(String, String)> = {
+            let (a, b) = (first.text(), base.text());
+            let b: std::collections::HashMap<&str, &str> = key_values(&b).collect();
+            key_values(&a).filter(|(k, v)| b.get(k) != Some(v)).map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        };
+        assert_eq!(changed_by_first.len(), 1);
+        let pairs: Vec<(&str, &str)> = changed_by_first.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let disk = merge(&base.text(), &pairs);
+        // The second, still holding the old toolbar, changes only the zoom.
+        let disk = merge(&disk, &[("zoom", "96")]);
+        let back = key_values(&disk).collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(back["toolbar"], toolbar_string(&first.toolbar));
+        assert_eq!(back["zoom"], "96");
+        assert_eq!(merge("future_key=1\n", &[("zoom", "96")]), "future_key=1\nzoom=96\n");
     }
 }

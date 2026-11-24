@@ -194,22 +194,7 @@ pub fn unique_new_name(dir: &Path, base: &str) -> PathBuf {
 }
 
 /// Split "archive.tar.gz" into ("archive", ".tar.gz"); folders have no extension.
-pub fn split_name(name: &str, is_dir: bool) -> (String, String) {
-    if is_dir || name.starts_with('.') && name.matches('.').count() == 1 {
-        return (name.to_string(), String::new());
-    }
-    let lower = name.to_lowercase();
-    for double in [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"] {
-        if lower.ends_with(double) && name.len() > double.len() {
-            let i = name.len() - double.len();
-            return (name[..i].to_string(), name[i..].to_string());
-        }
-    }
-    match name.rfind('.') {
-        Some(i) if i > 0 => (name[..i].to_string(), name[i..].to_string()),
-        _ => (name.to_string(), String::new()),
-    }
-}
+pub use rivet_xdg::places::split_name;
 
 fn copy_recursive(src: &Path, dst: &Path, p: &Progress) -> std::io::Result<()> {
     if p.cancel.load(Ordering::Relaxed) {
@@ -256,33 +241,7 @@ pub fn remove_recursive(p: &Path) -> std::io::Result<()> {
 /// Move to ~/.local/share/Trash following the freedesktop trash spec so the
 /// desktop's own trash (and other file managers) can see and restore it.
 pub fn trash(src: &Path) -> std::io::Result<PathBuf> {
-    let tdir = places::trash_dir();
-    let files = tdir.join("files");
-    let info = tdir.join("info");
-    std::fs::create_dir_all(&files)?;
-    std::fs::create_dir_all(&info)?;
-    let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "file".into());
-    let (stem, ext) = split_name(&name, src.is_dir());
-    let mut tname = name.clone();
-    let mut i = 2;
-    while files.join(&tname).symlink_metadata().is_ok() || info.join(format!("{tname}.trashinfo")).exists() {
-        tname = format!("{stem}.{i}{ext}");
-        i += 1;
-    }
-    let abs = std::fs::canonicalize(src.parent().unwrap_or(Path::new("/")))
-        .unwrap_or_else(|_| src.parent().unwrap_or(Path::new("/")).to_path_buf())
-        .join(&name);
-    let date = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S");
-    let content = format!("[Trash Info]\nPath={}\nDeletionDate={}\n", places::percent_encode_path(&abs), date);
-    let info_path = info.join(format!("{tname}.trashinfo"));
-    std::fs::write(&info_path, content)?;
-    let dummy = Progress::blank(OpKind::Trash, 1, 0);
-    let trashed = files.join(&tname);
-    if let Err(e) = move_path(src, &trashed, &dummy) {
-        let _ = std::fs::remove_file(&info_path);
-        return Err(e);
-    }
-    Ok(trashed)
+    rivet_xdg::trash::trash_with(src, |from, to| move_path(from, to, &Progress::blank(OpKind::Trash, 1, 0)))
 }
 
 /// Where a trashed item originally lived, and when it was deleted.
@@ -316,15 +275,7 @@ pub fn restore_from_trash(trashed: &Path) -> std::io::Result<PathBuf> {
 }
 
 pub fn empty_trash() -> std::io::Result<()> {
-    let t = places::trash_dir();
-    for sub in ["files", "info"] {
-        if let Ok(rd) = std::fs::read_dir(t.join(sub)) {
-            for e in rd.flatten() {
-                let _ = remove_recursive(&e.path());
-            }
-        }
-    }
-    Ok(())
+    rivet_xdg::trash::empty()
 }
 
 /// Total size and number of files below a folder (stops after a time limit).

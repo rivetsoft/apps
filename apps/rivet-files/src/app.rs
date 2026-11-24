@@ -182,6 +182,9 @@ struct PropsState {
 pub struct RivetApp {
     s: Settings,
     dirty_settings: bool,
+    /// The settings as this window loaded or last saved them, so a save writes only what this
+    /// window changed and leaves other windows' changes alone.
+    saved_settings: Settings,
     icons: IconTheme,
     system_icon_theme: String,
     installed_themes: Vec<String>,
@@ -483,6 +486,8 @@ impl RivetApp {
         let mime = Arc::new(MimeDb::load());
         let start_loc = match start {
             Some(p) if p.to_string_lossy().starts_with("network:") => Location::Network,
+            // `rivet trash:///`, as other file managers take it (Rivet Shell's dock opens it so).
+            Some(p) if p.to_string_lossy().starts_with("trash:") || p == places::trash_dir().join("files") => Location::Trash,
             Some(p) if p.is_dir() => Location::Dir(std::fs::canonicalize(&p).unwrap_or(p)),
             Some(p) if p.is_file() => Location::Dir(p.parent().map(|x| x.to_path_buf()).unwrap_or_else(places::home)),
             _ => Location::Dir(places::home()),
@@ -612,6 +617,7 @@ impl RivetApp {
             tree_expanded: [places::home()].into_iter().collect(),
             tree_children: Default::default(),
             mime,
+            saved_settings: settings.clone(),
             s: settings,
             dirty_settings: false,
         };
@@ -696,6 +702,7 @@ impl RivetApp {
                 let sel = app.tab().selected_paths();
                 app.pending.push(Action::BulkRename(sel));
             }
+            Ok("emptytrash") => app.dialog = Dialog::ConfirmEmptyTrash,
             Ok("newfolder") => app.pending.push(Action::NewFolder),
             Ok("newfile") => app.pending.push(Action::NewFile(None)),
             Ok("rename") => {
@@ -2466,7 +2473,8 @@ impl eframe::App for RivetApp {
                 self.s.window_w = r.width();
                 self.s.window_h = r.height();
             }
-            self.s.save();
+            self.s.save(&self.saved_settings);
+            self.saved_settings = self.s.clone();
             self.dirty_settings = false;
         }
         if self.screenshot.is_some() {
@@ -2608,7 +2616,7 @@ impl eframe::App for RivetApp {
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if self.screenshot.is_none() && !crate::measuring() {
-            self.s.save();
+            self.s.save(&self.saved_settings);
         }
         if let Some(d) = self.demo_dir.take() {
             places::remove_demo_dir(&d);
