@@ -22,6 +22,15 @@ Usage:
   rivet-calendar subscribe URL [NAME]
                                     Subscribe to a calendar feed (webcal:// or https://)
   rivet-calendar refresh            Read every subscribed feed again now
+  rivet-calendar account add URL USER [NAME]
+                                    Add a CalDAV account (the password is read from input)
+  rivet-calendar account add google|microsoft [NAME] [--client-id ID]
+                                    Add a Google or Microsoft account, signing in in the
+                                    browser; with your own client ID (a Google client
+                                    secret is then read from input)
+  rivet-calendar account [list]     The accounts
+  rivet-calendar account remove ID  Remove one (its calendars here go to the Trash)
+  rivet-calendar sync               Sync every calendar on a server now
   rivet-calendar shell-plugin       Run as Rivet Shell's Calendar plugin (the shell starts this)
   rivet-calendar --install-desktop-entry
                                     Add Rivet Calendar to the app launcher (for this user)
@@ -67,6 +76,22 @@ fn list(days: i64) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Bring a new account's calendars down, saying how each went.
+fn first_sync(dirs: &[PathBuf]) -> ExitCode {
+    let mut failed = false;
+    for d in dirs {
+        let name = std::fs::read_to_string(d.join("displayname")).unwrap_or_default();
+        match rivet_cal::caldav::sync(d) {
+            Ok(s) => println!("{}: {} events", name.trim(), s.down),
+            Err(e) => {
+                failed = true;
+                eprintln!("{}: {e}", name.trim());
+            }
+        }
+    }
+    if failed { ExitCode::FAILURE } else { ExitCode::SUCCESS }
+}
+
 /// Where crash reports go, and the issue form they're shared on.
 pub const CRASH: rivet_xdg::crash::App = rivet_xdg::crash::App { name: "Rivet Calendar", id: "calendar", state: "rivet-calendar", version: env!("CARGO_PKG_VERSION"), repo: env!("CARGO_PKG_REPOSITORY") };
 
@@ -81,6 +106,7 @@ fn main() -> ExitCode {
     let screenshot = take("--screenshot").map(PathBuf::from);
     let date = take("--date").and_then(|d| NaiveDate::parse_from_str(&d, "%Y-%m-%d").ok());
     let event = take("--event");
+    let client_id = take("--client-id");
     match args.first().map(String::as_str) {
         Some("shell-plugin") => return shell::run(),
         Some("list") => return list(args.get(1).and_then(|n| n.parse().ok()).unwrap_or(7)),
@@ -120,6 +146,84 @@ fn main() -> ExitCode {
                     ExitCode::FAILURE
                 }
             };
+        }
+        Some("account") if args.get(1).map(String::as_str) == Some("add") && args.get(2).and_then(|k| rivet_cal::oauth::Provider::from_key(k)).is_some() => {
+            let Some(p) = args.get(2).and_then(|k| rivet_cal::oauth::Provider::from_key(k)) else { return ExitCode::FAILURE };
+            let own = client_id.map(|id| {
+                let mut secret = String::new();
+                if p.wants_secret() {
+                    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                        eprint!("Client secret: ");
+                    }
+                    let _ = std::io::stdin().read_line(&mut secret);
+                }
+                rivet_cal::oauth::Client { id, secret: secret.trim().to_string() }
+            });
+            eprintln!("Sign in to {} in the browser that opens.", p.name());
+            let stop = std::sync::atomic::AtomicBool::new(false);
+            return match rivet_cal::caldav::add_signed_in(&settings::Settings::load().root(), p, own, &args[3..].join(" "), &stop) {
+                Ok(dirs) => {
+                    println!("Added {} calendar{}", dirs.len(), if dirs.len() == 1 { "" } else { "s" });
+                    first_sync(&dirs)
+                }
+                Err(e) => {
+                    eprintln!("rivet-calendar: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        Some("account") if args.get(1).map(String::as_str) == Some("add") => {
+            let (Some(url), Some(user)) = (args.get(2), args.get(3)) else {
+                eprintln!("rivet-calendar: account add URL USER [NAME] (the password is read from input)");
+                return ExitCode::FAILURE;
+            };
+            // The password from input (a line typed, or piped in): never on the command line.
+            let mut pass = String::new();
+            if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                eprint!("Password for {user}: ");
+            }
+            let _ = std::io::stdin().read_line(&mut pass);
+            let root = settings::Settings::load().root();
+            return match rivet_cal::caldav::add_account(&root, url, user, pass.trim_end_matches(['\r', '\n']), &args[4..].join(" ")) {
+                Ok(dirs) => {
+                    println!("Added {} calendar{}", dirs.len(), if dirs.len() == 1 { "" } else { "s" });
+                    first_sync(&dirs)
+                }
+                Err(e) => {
+                    eprintln!("rivet-calendar: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        Some("account") if args.get(1).map(String::as_str) == Some("remove") => {
+            let Some(id) = args.get(2) else {
+                eprintln!("rivet-calendar: account remove ID (rivet-calendar account list)");
+                return ExitCode::FAILURE;
+            };
+            return match rivet_cal::caldav::remove_account(&settings::Settings::load().root(), id) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => {
+                    eprintln!("rivet-calendar: {e}");
+                    ExitCode::FAILURE
+                }
+            };
+        }
+        Some("account") => {
+            for a in rivet_cal::caldav::accounts() {
+                match a.provider {
+                    Some(p) => println!("{}  {} ({} at {}{})", a.id, a.name, a.user, p.name(), if a.client.is_empty() { "" } else { ", own client ID" }),
+                    None => println!("{}  {} ({} at {})", a.id, a.name, a.user, a.url),
+                }
+            }
+            return ExitCode::SUCCESS;
+        }
+        Some("sync") => {
+            let (done, problems) = rivet_cal::caldav::sync_all(&settings::Settings::load().root());
+            println!("{} down, {} up, {} removed", done.down, done.up, done.removed);
+            for p in &problems {
+                eprintln!("{p}");
+            }
+            return if problems.is_empty() { ExitCode::SUCCESS } else { ExitCode::FAILURE };
         }
         Some("refresh") => {
             let root = settings::Settings::load().root();

@@ -389,6 +389,50 @@ Location: `apps/rivet-files/src/app/views.rs`, the right-click menu, "Open in Ri
 - That's the layout vdirsyncer and khal use. Point vdirsyncer's local storage at a calendar's folder to keep it in step with a CalDAV server (Nextcloud, Fastmail, iCloud); khal reads and writes the same folders in a terminal.
 - Changes made to the folders by another program show within a few seconds, in the window and on the panel.
 
+### Subscriptions and .ics files
+
+`rivet-cal/src/feed.rs`, `app.rs`.
+
+- + beside Calendars, then Subscribe to a Feed: paste a `webcal://` or `https://` address. Left empty, the name is the feed's own. Opening a `webcal://` link with Rivet Calendar (it's set to open them) does the same.
+- A subscription is a calendar folder like the others, marked read-only, with its address in `.rivet-feed`. Its events can't be changed or deleted here.
+- It's read again every 6 hours while Rivet Calendar or the panel's Calendar plugin is running. Right-click it for Refresh Now; hover it to see when it was last read. An address that doesn't answer is tried again at the next 6 hours, not sooner.
+- Unsubscribe (right-click) moves the folder to the Trash, as Move to Trash does for one's own calendars: put it back from the Trash to have it again.
+- Opening an `.ics` file asks which calendar to add its events to. An event with the same UID as one already there replaces it.
+- From a terminal: `rivet-calendar subscribe URL [NAME]`, `rivet-calendar refresh`. Feeds are downloaded with curl.
+
+### CalDAV accounts
+
+`rivet-cal/src/caldav.rs`, `app.rs`.
+
+- + beside Calendars, then Add a CalDAV Account: the server's address (the host alone is often enough: Rivet looks for `/.well-known/caldav`), the user name and password. iCloud and Fastmail need an app password made on their website; iCloud's server is `caldav.icloud.com`.
+- Every calendar of events on the server becomes a calendar here. Task lists are left out.
+- They sync both ways: every 5 minutes while Rivet Calendar is open, every 10 while the panel's Calendar plugin runs, and a few seconds after an event is saved or deleted here. Right-click one of its calendars for Sync Now.
+- When the same event changed here and on the server since the last sync, the server's version is kept and the change here is lost. An event deleted on the server but changed here goes back up.
+- The password is kept in the desktop's keyring (GNOME Keyring, KWallet, KeePassXC), which needs `secret-tool` (libsecret). Requests are made with curl, which is given the password on its input, never on a command line.
+- Remove Account (right-click) moves its calendars here to the Trash and forgets the password; the calendars on the server stay as they are.
+- From a terminal: `rivet-calendar account add URL USER [NAME]` (the password is read from input), `rivet-calendar account`, `rivet-calendar account remove ID`, `rivet-calendar sync`.
+
+### Google and Microsoft accounts
+
+`rivet-cal/src/oauth.rs`, `caldav.rs`, `graph.rs`, `app.rs` (`account_window`).
+
+- + beside Calendars, then Add a Google Account or Add a Microsoft Account. Sign In opens the browser on Google's or Microsoft's own sign-in page; Rivet never sees the password. The browser comes back to Rivet Calendar on this computer, and the dialog closes once the calendars are added. Stop gives up waiting (after 5 minutes it gives up by itself).
+- Google calendars sync over Google's CalDAV, Microsoft's (Outlook.com, Microsoft 365) over Microsoft Graph. Both follow the same rules as a CalDAV account: both ways, every 5 minutes, soon after a change, Microsoft's or Google's version kept when both changed.
+- Calendars shared with the account to look at, not change, are read-only here.
+- What stays signed in is a token in the keyring, never the password. Removing the account forgets it; to cut Rivet off on the provider's side too, remove its access in the Google or Microsoft account's security settings.
+- Microsoft: Rivet keeps an event's title, times, place, notes and how it repeats. Attendees, reminders and categories stay as they are in Outlook and aren't shown here. Outlook can't repeat every hour, or on more than one day of the month; such a rule made here can't go up, and the sync says so. Changed and deleted occurrences of a repeating event are read for two months back and a little over a year ahead.
+- "Sign in with my own client ID": for someone who'd rather sign in as an app they registered themselves (their own Google Cloud project or Microsoft Entra app). Google also needs the client secret it gives with the ID. The ID is kept with the account and the secret in the keyring. A copy of Rivet Calendar built without client IDs of its own only offers this. How to register one: `docs/calendar-accounts.md`.
+- From a terminal: `rivet-calendar account add google [NAME]`, `rivet-calendar account add microsoft [NAME]`, each with `--client-id ID` for one's own (Google's client secret is then read from input).
+
+### Events in more than one calendar
+
+`rivet-cal/src/store.rs` (`roll_up`), `app.rs` (`also_stripes`, `in_calendars`).
+
+- When the same event is in several calendars at the same time (an invitation in your calendar and colleagues' shared ones, which keep the same event ID), it shows once. Its other calendars' colours show as extra dots (month view), stripes down its right edge (day and week, whole-day events) or a split bar (agenda). Pointing at it names the calendars.
+- Opening it opens the copy in a calendar you can change, if one of them can be changed; otherwise the first in the sidebar.
+- The same event at a different time in one calendar (someone moved their copy) shows separately.
+- Hiding a calendar hides only its copy: the event still shows from the others.
+
 ### Repeating events
 
 `app.rs` (the editor), `rivet-cal/src/expand.rs`.

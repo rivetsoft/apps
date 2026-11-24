@@ -17,9 +17,13 @@ use crate::ics::{self, Component, Prop};
 pub struct Item {
     pub path: PathBuf,
     pub mtime: Option<SystemTime>,
-    /// The `VCALENDAR` around the events (its time zones and the like), kept for writing back.
+    /// The `VCALENDAR` around the events (its time zones and the like) without them, kept for
+    /// writing back.
     pub wrapper: Component,
     pub events: Vec<Event>,
+    /// Each event's start and end on this computer's clock, worked out once when it's read: a
+    /// span of days then passes over thousands of events comparing times, not converting zones.
+    pub spans: Vec<(NaiveDateTime, NaiveDateTime)>,
 }
 
 #[derive(Clone, Debug)]
@@ -33,7 +37,10 @@ pub struct Calendar {
     pub read_only: bool,
     /// The address it's subscribed to, when it's a subscription.
     pub feed: Option<String>,
-    pub items: Vec<Item>,
+    /// The account it syncs with, when it's on a server.
+    pub account: Option<String>,
+    /// Shared, so a copy of the calendars (as one thread hands another) copies no events.
+    pub items: Vec<std::sync::Arc<Item>>,
 }
 
 /// An occurrence on the calendar, with where its event is.
@@ -48,6 +55,9 @@ pub struct Occurrence {
     /// Its start in the event's own terms, which names it among a repeating event's.
     pub original: When,
     pub repeats: bool,
+    /// The other calendars the same event is in at the same time (an invitation in several
+    /// people's calendars), shown as this one.
+    pub also: Vec<usize>,
 }
 
 impl Occurrence {
@@ -87,14 +97,19 @@ pub fn parse_color(s: &str) -> Option<[u8; 3]> {
 
 fn read_item(path: &Path) -> Option<Item> {
     let text = std::fs::read_to_string(path).ok()?;
-    let wrapper = ics::parse(&text).into_iter().find(|c| c.name == "VCALENDAR")?;
-    let events = wrapper.subs("VEVENT").filter_map(Event::from_component).collect();
-    Some(Item { path: path.to_path_buf(), mtime: mtime(path), wrapper, events })
+    let mut wrapper = ics::parse(&text).into_iter().find(|c| c.name == "VCALENDAR")?;
+    let events: Vec<Event> = wrapper.subs("VEVENT").filter_map(Event::from_component).collect();
+    // Each event keeps its own component, so the wrapper keeps only the rest (time zones and the
+    // like): every write puts the events back in from the events. Held twice, a big calendar
+    // took twice the memory.
+    wrapper.subs.retain(|c| c.name != "VEVENT");
+    let spans = events.iter().map(|e| (e.start.local(), e.end.local())).collect();
+    Some(Item { path: path.to_path_buf(), mtime: mtime(path), wrapper, events, spans })
 }
 
 fn read_calendar(dir: &Path) -> Calendar {
     let mut c = read_calendar_shell(dir);
-    c.items = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("ics"))).filter_map(|p| read_item(&p)).collect();
+    c.items = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("ics"))).filter_map(|p| read_item(&p)).map(std::sync::Arc::new).collect();
     c.items.sort_by(|a, b| a.path.cmp(&b.path));
     c
 }
@@ -168,17 +183,56 @@ impl Store {
                     if ev.cancelled() {
                         continue;
                     }
+                    // Most events are single ones, nowhere near the span: passed over on their times.
+                    if let Some(&(s, e)) = item.spans.get(ei) {
+                        let single = ev.rrule.is_none() && ev.rdates.is_empty();
+                        let near = if e > s { e > lo && s < hi } else { s >= lo && s < hi };
+                        if (single && !near) || (ev.rdates.is_empty() && s >= hi) {
+                            continue;
+                        }
+                    }
                     let repeats = ev.rrule.is_some() || ev.recurrence_id.is_some();
                     for Hit { start, end, original } in hits(ev, lo, hi) {
                         if ev.recurrence_id.is_none() && ev.rrule.is_some() && moved.contains(&original.local()) {
                             continue;
                         }
-                        out.push(Occurrence { cal: ci, item: ii, ev: ei, start, end, all_day: ev.all_day(), original, repeats });
+                        out.push(Occurrence { cal: ci, item: ii, ev: ei, start, end, all_day: ev.all_day(), original, repeats, also: Vec::new() });
                     }
                 }
             }
         }
         out.sort_by_key(|o| (o.start.date(), !o.all_day, o.start, o.end));
+        self.roll_up(out)
+    }
+
+    /// The same event at the same time in more than one calendar, as one occurrence: the one in
+    /// a calendar that can be changed when there is one, else the first, with the others in
+    /// `also`. Events are the same by UID (an invitation keeps its UID in every calendar it's in).
+    fn roll_up(&self, list: Vec<Occurrence>) -> Vec<Occurrence> {
+        let mut out: Vec<Occurrence> = Vec::with_capacity(list.len());
+        let mut seen: std::collections::HashMap<(&str, NaiveDateTime, NaiveDateTime), usize> = std::collections::HashMap::new();
+        for o in list {
+            let uid = self.event(&o).map(|e| e.uid.as_str()).unwrap_or("");
+            let key = (uid, o.start, o.end);
+            match seen.get(&key) {
+                Some(&k) if !uid.is_empty() && out[k].cal != o.cal && !out[k].also.contains(&o.cal) => {
+                    let kept = &mut out[k];
+                    if self.calendars[kept.cal].read_only && !self.calendars[o.cal].read_only {
+                        // The one that can be changed is the one shown; the other joins the rest.
+                        let was = kept.cal;
+                        let also = std::mem::take(&mut kept.also);
+                        *kept = Occurrence { also, ..o };
+                        kept.also.push(was);
+                    } else {
+                        kept.also.push(o.cal);
+                    }
+                }
+                _ => {
+                    seen.insert(key, out.len());
+                    out.push(o);
+                }
+            }
+        }
         out
     }
 
@@ -293,11 +347,12 @@ impl Store {
 /// A calendar read again, reusing the files that haven't changed since `prev` was read.
 fn read_calendar_meta(dir: &Path, prev: &Calendar) -> Calendar {
     let fresh_list: Vec<PathBuf> = std::fs::read_dir(dir).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("ics"))).collect();
+    let before: std::collections::HashMap<&Path, &std::sync::Arc<Item>> = prev.items.iter().map(|i| (i.path.as_path(), i)).collect();
     let items = fresh_list
         .into_iter()
-        .filter_map(|p| match prev.items.iter().find(|i| i.path == p) {
-            Some(i) if i.mtime.is_some() && i.mtime == mtime(&p) => Some(i.clone()),
-            _ => read_item(&p),
+        .filter_map(|p| match before.get(p.as_path()) {
+            Some(i) if i.mtime.is_some() && i.mtime == mtime(&p) => Some(std::sync::Arc::clone(i)),
+            _ => read_item(&p).map(std::sync::Arc::new),
         })
         .collect();
     let mut c = read_calendar_shell(dir);
@@ -311,10 +366,11 @@ fn read_calendar_shell(dir: &Path) -> Calendar {
     let meta = |f: &str| std::fs::read_to_string(dir.join(f)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     let read_only = dir.join(".read-only").exists() || std::fs::metadata(dir).is_ok_and(|m| m.permissions().readonly());
     let feed = crate::feed::of(dir).map(|f| f.url);
-    Calendar { name: meta("displayname").unwrap_or_else(|| id.clone()), color: meta("color").as_deref().and_then(parse_color), id, dir: dir.to_path_buf(), read_only, feed, items: Vec::new() }
+    let account = crate::caldav::link(dir).map(|l| l.account);
+    Calendar { name: meta("displayname").unwrap_or_else(|| id.clone()), color: meta("color").as_deref().and_then(parse_color), id, dir: dir.to_path_buf(), read_only, feed, account, items: Vec::new() }
 }
 
-fn new_wrapper() -> Component {
+pub(crate) fn new_wrapper() -> Component {
     let mut c = Component::new("VCALENDAR");
     c.set(Prop::new("VERSION", "2.0"));
     c.set(Prop::new("PRODID", "-//Rivet//Rivet Calendar//EN"));
@@ -363,6 +419,38 @@ mod tests {
     }
 
     #[test]
+    fn the_same_event_in_several_calendars_shows_once() {
+        let root = tmp("rollup");
+        let mut s = Store::open(&root);
+        let (a, b, c) = (s.create_calendar("Alice", [1, 1, 1]).unwrap(), s.create_calendar("Bob", [2, 2, 2]).unwrap(), s.create_calendar("Carol", [3, 3, 3]).unwrap());
+        let at = |h: u32| When::Floating(day(24).and_hms_opt(h, 0, 0).unwrap());
+        // Copies of one invitation, as a server puts them in each calendar (saving here would move
+        // it from one calendar to another).
+        let file = |ev: &Event| {
+            let mut cal = new_wrapper();
+            cal.subs.push(ev.to_component());
+            cal.write()
+        };
+        let meeting = Event::new("Planning", at(9), at(10));
+        std::fs::write(a.join("p.ics"), file(&meeting)).unwrap();
+        std::fs::write(b.join("p.ics"), file(&meeting)).unwrap();
+        // Alice's copy can only be looked at: one that can be changed is the one shown.
+        std::fs::write(a.join(".read-only"), "").unwrap();
+        // The same event at another time in Carol's calendar is a different occurrence.
+        let mut moved = meeting.clone();
+        (moved.start, moved.end) = (at(11), at(12));
+        std::fs::write(c.join("p.ics"), file(&moved)).unwrap();
+        std::fs::write(a.join("q.ics"), file(&Event::new("Alone", at(9), at(10)))).unwrap();
+        s.reload();
+        let found = s.occurrences(day(24), day(25), &[]);
+        let name = |i: usize| s.calendars[i].name.as_str();
+        let planning: Vec<(&str, Vec<&str>)> = found.iter().filter(|o| s.event(o).unwrap().summary == "Planning").map(|o| (name(o.cal), o.also.iter().map(|&i| name(i)).collect())).collect();
+        assert_eq!(planning, vec![("Bob", vec!["Alice"]), ("Carol", vec![])]);
+        assert_eq!(found.len(), 3);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn one_occurrence_can_be_moved_or_taken_away() {
         let root = tmp("repeat");
         let mut s = Store::open(&root);
@@ -392,7 +480,7 @@ mod tests {
 
     #[test]
     fn an_overnight_event_covers_both_days() {
-        let o = Occurrence { cal: 0, item: 0, ev: 0, start: day(24).and_hms_opt(22, 0, 0).unwrap(), end: day(25).and_hms_opt(2, 0, 0).unwrap(), all_day: false, original: When::Date(day(24)), repeats: false };
+        let o = Occurrence { cal: 0, item: 0, ev: 0, start: day(24).and_hms_opt(22, 0, 0).unwrap(), end: day(25).and_hms_opt(2, 0, 0).unwrap(), all_day: false, original: When::Date(day(24)), repeats: false, also: Vec::new() };
         assert_eq!(o.days().collect::<Vec<_>>(), vec![day(24), day(25)]);
         let whole = Occurrence { start: day(24).and_time(NaiveTime::MIN), end: day(25).and_time(NaiveTime::MIN), all_day: true, ..o };
         assert_eq!(whole.days().collect::<Vec<_>>(), vec![day(24)]);

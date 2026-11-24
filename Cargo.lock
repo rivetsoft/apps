@@ -2423,6 +2423,7 @@ dependencies = [
  "chrono-tz",
  "rivet-xdg",
  "rrule",
+ "serde_json",
 ]
 
 [[package]]

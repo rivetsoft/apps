@@ -24,5 +24,9 @@ opt-level = 2
 [profile.dev.package.rivet-kit]
 opt-level = 3
 
+# Calendars of thousands of events (a work Google account) take seconds to read unoptimised.
+[profile.dev.package.rivet-cal]
+opt-level = 3
+
 [profile.release]
 opt-level = 3

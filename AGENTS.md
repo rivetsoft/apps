@@ -28,12 +28,12 @@ app, or `--workspace` for everything.
 | --- | --- |
 | `rivet-look` | The shared look: live desktop colours, fonts, icon themes, Rivet's own icons, code colours, the egui theme, in-app windows. |
 | `rivet-kit` | Checks and screenshots: the software renderer that draws a window in memory. Built optimised even in debug builds, so put pixel-heavy code here. |
-| `rivet-xdg` | Desktop plumbing with no interface: XDG folders, bookmarks, drives, file types, default apps, launching. |
+| `rivet-xdg` | Desktop plumbing with no interface: XDG folders, bookmarks, drives, file types, default apps, launching, the trash, secrets in the keyring. |
 | `rivet-media` | Previews: pictures, video frames, audio, text, thumbnails, the light box. |
 | `rivet-term` | The terminal: a shell in a pseudo-terminal, drawn as an egui widget. |
 | `rivet-connections` | Saved server connections, shared by Rivet FTP's window, its command line and plain `ssh`. |
 | `rivet-git` | Git with no interface, by running the `git` program. |
-| `rivet-cal` | Calendars with no interface: the `.ics` folders, reading and writing iCalendar without losing what isn't used, repeating events, the occurrences in a span of days. |
+| `rivet-cal` | Calendars with no interface: the `.ics` folders, reading and writing iCalendar without losing what isn't used, repeating events, the occurrences in a span of days, subscribed feeds, and CalDAV, Google (CalDAV with a browser sign-in) and Microsoft (Graph) accounts synced both ways, all through `curl`. |
 | `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files and Vice. |
 
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
@@ -94,9 +94,14 @@ the crate. A piece that is still written as part of one app's window needs lifti
   Notes.
 - **Calendars.** `~/.local/share/rivet-calendar`, a folder per calendar with an `.ics` file per
   event and its name and colour in `displayname` and `color`, owned by `rivet-cal`. It's the
-  layout vdirsyncer and khal use, so either can share the folders (vdirsyncer for a CalDAV
-  server). The shell never reads them: Rivet Calendar's plugin sends the panel calendar its
-  events.
+  layout vdirsyncer and khal use, so either can share the folders. A subscription's folder has
+  `.rivet-feed`, a server calendar's (CalDAV, Google, Microsoft) `.rivet-caldav` (where it is on
+  the server, and each file's state at the last sync); accounts are in
+  `~/.config/rivet-calendar/accounts`, their passwords and sign-in tokens in the keyring. Rivet's
+  own OAuth client IDs are compiled in from `RIVET_GOOGLE_CLIENT_ID`,
+  `RIVET_GOOGLE_CLIENT_SECRET` and `RIVET_MICROSOFT_CLIENT_ID`, or from `keys.env` at the top
+  of the workspace, which must never be committed (`docs/calendar-accounts.md`). The shell never reads any of it: Rivet Calendar's plugin sends the panel
+  calendar its events.
 - **Saved connections.** `~/.config/rivet-ftp/connections.conf`, owned by `rivet-connections`,
   read by Rivet FTP's window and command line, and written out as an ssh config so plain
   `ssh`, `scp`, `rsync` and `git` reach them by name. Passwords are never in it.

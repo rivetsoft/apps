@@ -6,7 +6,8 @@
 //! The shell tells it which month it shows (`month`, with `from` and `to`), and it answers with
 //! `events`: one entry a day an event covers, so a three-day event marks all three. The folder
 //! is read again when anything in it changes, so an event saved anywhere shows within seconds;
-//! subscriptions are read again from their addresses when they're due.
+//! subscriptions are read again from their addresses when they're due, and calendars on servers
+//! synced every ten minutes.
 
 use std::io::BufRead;
 use std::process::ExitCode;
@@ -117,6 +118,10 @@ pub fn run() -> ExitCode {
                     let (root, reading) = (root.clone(), reading.clone());
                     std::thread::spawn(move || {
                         rivet_cal::feed::refresh_due(&root);
+                        // Calendars on servers too, so a change made on a phone shows here.
+                        if !rivet_cal::caldav::accounts().is_empty() {
+                            rivet_cal::caldav::sync_all(&root);
+                        }
                         reading.store(false, std::sync::atomic::Ordering::SeqCst);
                     });
                 }

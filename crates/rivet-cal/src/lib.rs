@@ -3,11 +3,15 @@
 //! span of days, repeating events included. Rivet Calendar edits them; Rivet Shell's calendar
 //! shows them through Rivet Calendar's plugin.
 
+pub mod caldav;
 pub mod event;
 pub mod expand;
 pub mod feed;
+pub mod graph;
 pub mod ics;
+pub mod oauth;
 pub mod store;
+pub mod xml;
 
 pub use event::{Event, When};
 pub use store::{Calendar, Occurrence, Store, default_root};

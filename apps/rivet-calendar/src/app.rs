@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_cal::oauth::{Client, Provider};
 use rivet_cal::{Event, Occurrence, Store, When};
 use rivet_look::fonts::ui_font;
 use rivet_look::live::{Choice, LiveLook};
@@ -162,6 +163,29 @@ struct CalEdit {
     feed: Option<String>,
 }
 
+/// An account being added: a CalDAV server and a password, or Google or Microsoft, signed in to
+/// in the browser.
+#[derive(Default)]
+struct AccountEdit {
+    provider: Option<Provider>,
+    url: String,
+    user: String,
+    pass: String,
+    name: String,
+    /// Signing in as one's own registered app instead of Rivet's.
+    own: bool,
+    client_id: String,
+    client_secret: String,
+}
+
+impl AccountEdit {
+    fn new(provider: Option<Provider>) -> AccountEdit {
+        // With no client ID of Rivet's in this build, one's own is the only way.
+        let own = provider.is_some_and(|p| p.builtin().is_none());
+        AccountEdit { provider, own, ..Default::default() }
+    }
+}
+
 /// An `.ics` file being put in a calendar.
 struct Import {
     file: String,
@@ -170,15 +194,72 @@ struct Import {
     cal: PathBuf,
 }
 
+/// A span's occurrences, as worked out for one version of the calendars and the ones hidden.
+type OccKey = ((NaiveDate, NaiveDate, u64, Vec<String>), Vec<Occurrence>);
+
 /// Something running on a thread (a feed being read), and what it'll say.
 type Job = std::sync::mpsc::Receiver<Result<String, String>>;
+
+/// The calendars, read on a thread so the window never waits on a folder of thousands of events.
+/// It's asked to look again every few seconds and after each change made here; it answers with
+/// the calendars read again, only when something changed, tagged with the change it was asked
+/// after (an answer older than a change made here since is dropped, and the next one has it).
+struct Loader {
+    ask: std::sync::mpsc::Sender<u64>,
+    got: std::sync::mpsc::Receiver<(u64, Store)>,
+}
+
+impl Loader {
+    fn start(root: PathBuf, ctx: egui::Context) -> Loader {
+        let (ask, asks) = std::sync::mpsc::channel::<u64>();
+        let (send, got) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut store = Store::open(&root);
+            // The first time: a calendar to put things in.
+            if store.calendars.is_empty() && store.create_calendar("Personal", COLORS[0]).is_err() {
+                store = Store::open(&root);
+            }
+            let mut stamp = Store::stamp(&root);
+            if send.send((0, store.clone())).is_err() {
+                return;
+            }
+            ctx.request_repaint();
+            while let Ok(mut generation) = asks.recv() {
+                // Several asks waiting are one look.
+                while let Ok(g) = asks.try_recv() {
+                    generation = generation.max(g);
+                }
+                let now = Store::stamp(&root);
+                if now == stamp {
+                    continue;
+                }
+                stamp = now;
+                store.reload();
+                if send.send((generation, store.clone())).is_err() {
+                    return;
+                }
+                ctx.request_repaint();
+            }
+        });
+        Loader { ask, got }
+    }
+}
 
 pub struct CalendarApp {
     s: Settings,
     look: LiveLook,
     store: Store,
     root: PathBuf,
-    stamp: u64,
+    /// Reading the calendars (None in checks, which read their sample at once).
+    loader: Option<Loader>,
+    /// Whether the calendars have been read the first time.
+    loaded: bool,
+    /// Changes made here, counted, so an answer from the loader from before one is dropped.
+    generation: u64,
+    /// Bumped whenever the calendars may differ, so the occurrences worked out are worked out again.
+    version: u64,
+    /// Occurrences already worked out: by span, version and the calendars hidden.
+    occ_cache: std::cell::RefCell<Vec<OccKey>>,
     checked: f64,
     /// The day the views are around (the one picked).
     day: NaiveDate,
@@ -197,6 +278,14 @@ pub struct CalendarApp {
     feeds_checked: f64,
     /// A word from the last thing done ("Holidays: 24 events").
     note: Option<String>,
+    account_edit: Option<AccountEdit>,
+    /// Waiting for a sign-in in the browser: set to stop waiting.
+    signing_in: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    /// Asking before an account is removed: its id and name.
+    account_ask: Option<(String, String)>,
+    /// When the calendars on servers were last synced, and a sync asked for soon (a change here).
+    synced_at: f64,
+    sync_soon: Option<f64>,
     /// An event to open once the window is up (`--event`).
     open_uid: Option<String>,
     /// The week and day views scrolled to the morning once.
@@ -229,6 +318,12 @@ fn sample_root() -> PathBuf {
         add(&home, "Trip to the coast", day(8), day(11), None, "");
         add(&home, "Mum's birthday", day(-3), day(-2), Some("FREQ=YEARLY"), "");
         add(&home, "Bins out", day(3), day(4), Some("FREQ=WEEKLY"), "");
+        // One invitation in two calendars, as a server puts it in each: shown once.
+        let t = |h: u32| (today + Duration::days(1)).and_hms_opt(h, 0, 0).unwrap().format("%Y%m%dT%H%M%S").to_string();
+        let shared = format!("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:offsite@example.org\r\nSUMMARY:Team offsite\r\nDTSTART:{}\r\nDTEND:{}\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", t(11), t(13));
+        for dir in [&work, &home] {
+            let _ = std::fs::write(dir.join("offsite.ics"), &shared);
+        }
     }
     // A subscription, made from text (checks never download).
     if let Ok(dir) = store.create_calendar("Holidays", COLORS[3]) {
@@ -254,16 +349,17 @@ impl CalendarApp {
             s.view = View::from(&v);
         }
         let root = if checking { sample_root() } else { s.root() };
-        let mut store = Store::open(&root);
-        // The first time: a calendar to put things in.
-        if store.calendars.is_empty() && !checking && store.create_calendar("Personal", COLORS[0]).is_err() {
-            store = Store::open(&root);
-        }
+        // Checks read their sample now; a window reads the calendars on a thread.
+        let (store, loader) = if checking { (Store::open(&root), None) } else { (Store { root: root.clone(), calendars: Vec::new() }, Some(Loader::start(root.clone(), _cc.egui_ctx.clone()))) };
         let day = date.unwrap_or_else(|| Local::now().date_naive());
         // Checks: RIVET_CALENDAR_EDIT=1 opens the editor on the first event today.
         let open_uid = event.or_else(|| std::env::var_os("RIVET_CALENDAR_EDIT").filter(|_| checking).map(|_| String::new()));
         let mut app = CalendarApp {
-            stamp: Store::stamp(&root),
+            loaded: loader.is_none(),
+            loader,
+            generation: 0,
+            version: 0,
+            occ_cache: Default::default(),
             s,
             look: LiveLook::new(),
             store,
@@ -281,6 +377,11 @@ impl CalendarApp {
             // Subscriptions are looked at a little after starting (not before the first frame).
             feeds_checked: if checking { f64::INFINITY } else { -1e9 },
             note: None,
+            account_edit: None,
+            signing_in: None,
+            account_ask: None,
+            synced_at: if checking { f64::INFINITY } else { -1e9 },
+            sync_soon: None,
             open_uid,
             scrolled: false,
             problem: None,
@@ -288,6 +389,22 @@ impl CalendarApp {
         };
         if let Some(path) = open.filter(|o| !is_feed_address(o)) {
             app.ask_import(&path);
+        }
+        // Checks: RIVET_CALENDAR_ACCOUNT=1 opens the add-account dialog for a CalDAV server;
+        // =google and =microsoft for those, and =google-own with one's own client ID shown.
+        if checking && let Some(which) = std::env::var_os("RIVET_CALENDAR_ACCOUNT") {
+            let which = which.to_string_lossy();
+            let provider = Provider::from_key(which.trim_end_matches("-own"));
+            let mut ae = AccountEdit::new(provider);
+            if provider.is_none() {
+                (ae.url, ae.user, ae.pass) = ("nextcloud.example.org".into(), "sam".into(), "secret".into());
+            }
+            if which.ends_with("-own") {
+                ae.own = true;
+                ae.client_id = "1234567890-abc.apps.googleusercontent.com".into();
+                ae.client_secret = "secret".into();
+            }
+            app.account_edit = Some(ae);
         }
         // Checks: RIVET_CALENDAR_SUBSCRIBE=1 opens the subscribe dialog.
         if checking && std::env::var_os("RIVET_CALENDAR_SUBSCRIBE").is_some() {
@@ -331,21 +448,46 @@ impl CalendarApp {
             });
             self.job = Some((String::new(), rx));
         }
+        // Calendars on servers: every 5 minutes, and a few seconds after a change here.
+        let has_accounts = self.store.calendars.iter().any(|c| c.account.is_some());
+        let soon = self.sync_soon.is_some_and(|t| now >= t);
+        if self.job.is_none() && has_accounts && (soon || now - self.synced_at > 300.0) {
+            self.synced_at = now;
+            self.sync_soon = None;
+            let root = self.root.clone();
+            let (tx, rx) = std::sync::mpsc::channel();
+            let ctx = ctx.clone();
+            std::thread::spawn(move || {
+                let (done, problems) = rivet_cal::caldav::sync_all(&root);
+                let _ = tx.send(if problems.is_empty() { Ok(if done == rivet_cal::caldav::Synced::default() { String::new() } else { "Synced".into() }) } else { Err(format!("Couldn't sync {}", problems.join("; "))) });
+                ctx.request_repaint();
+            });
+            self.job = Some((String::new(), rx));
+        }
         if let Some((_, rx)) = &self.job
             && let Ok(r) = rx.try_recv()
         {
             self.job = None;
             match r {
                 Ok(n) => {
+                    let added = n.starts_with("Added");
                     self.note = Some(n).filter(|n| !n.is_empty());
                     if self.cal_edit.as_ref().is_some_and(|c| c.feed.is_some() && c.dir.is_none()) {
                         self.cal_edit = None;
                     }
+                    if added {
+                        self.account_edit = None;
+                        // Its calendars are brought down now, in the background.
+                        self.sync_soon = Some(0.0);
+                    }
+                    self.signing_in = None;
                 }
-                Err(e) => self.problem = Some(e),
+                Err(e) => {
+                    self.signing_in = None;
+                    self.problem = Some(e);
+                }
             }
-            self.store.reload();
-            self.stamp = Store::stamp(&self.root);
+            self.changed();
         }
     }
 
@@ -364,6 +506,31 @@ impl CalendarApp {
         Choice { mode: self.s.theme, accent: self.s.accent, follow_desktop_colors: self.s.follow_desktop_colors, text_size: self.s.text_size }
     }
 
+    /// The colours of the other calendars an occurrence is also in (three at most).
+    fn also_colors(&self, o: &Occurrence) -> Vec<Color32> {
+        o.also.iter().take(3).map(|&c| self.color_of(c)).collect()
+    }
+
+    /// For an event in several calendars: which ones.
+    fn in_calendars(&self, o: &Occurrence) -> Option<String> {
+        if o.also.is_empty() {
+            return None;
+        }
+        let names: Vec<&str> = std::iter::once(o.cal).chain(o.also.iter().copied()).filter_map(|c| self.store.calendars.get(c)).map(|c| c.name.as_str()).collect();
+        let (last, rest) = names.split_last()?;
+        Some(format!("In {} and {last}", rest.join(", ")))
+    }
+
+    /// Stripes down the right of a filled shape, one in each other calendar's colour.
+    fn also_stripes(&self, p: &egui::Painter, r: Rect, o: &Occurrence) {
+        let clip = p.with_clip_rect(r);
+        for (k, c) in self.also_colors(o).into_iter().enumerate() {
+            let x = r.right() - 4.0 * (k as f32 + 1.0);
+            clip.rect_filled(Rect::from_min_max(Pos2::new(x, r.top()), Pos2::new(x + 4.0, r.bottom())), 0.0, c);
+            clip.vline(x, r.y_range(), Stroke::new(1.0, Color32::from_black_alpha(40)));
+        }
+    }
+
     fn color_of(&self, cal: usize) -> Color32 {
         rgb(self.store.calendars.get(cal).and_then(|c| c.color).unwrap_or(COLORS[cal % COLORS.len()]))
     }
@@ -372,8 +539,31 @@ impl CalendarApp {
         self.store.calendars.iter().filter(|c| !c.read_only).map(|c| (c.dir.clone(), c.name.clone())).collect()
     }
 
+    /// A span's occurrences, worked out once for each version of the calendars (a frame asks
+    /// for the same ones several times, and thousands of events take a while).
     fn occurrences(&self, from: NaiveDate, to: NaiveDate) -> Vec<Occurrence> {
-        self.store.occurrences(from, to, &self.s.hidden)
+        let key = (from, to, self.version, self.s.hidden.clone());
+        if let Some((_, v)) = self.occ_cache.borrow().iter().find(|(k, _)| *k == key) {
+            return v.clone();
+        }
+        let v = self.store.occurrences(from, to, &self.s.hidden);
+        let mut cache = self.occ_cache.borrow_mut();
+        cache.retain(|(k, _)| k.2 == self.version && k.3 == self.s.hidden);
+        if cache.len() >= 8 {
+            cache.remove(0);
+        }
+        cache.push((key, v.clone()));
+        v
+    }
+
+    /// Something changed here (an event saved, a calendar made), or on disk by a job: the
+    /// occurrences are worked out again, and the loader looks at the folder now.
+    fn changed(&mut self) {
+        self.generation += 1;
+        self.version += 1;
+        if let Some(l) = &self.loader {
+            let _ = l.ask.send(self.generation);
+        }
     }
 
     /// Move the view on (or back) by one of its own steps.
@@ -546,12 +736,17 @@ impl CalendarApp {
         if ctx.text_edit_focused() {
             return;
         }
-        if self.editor.is_some() || self.cal_edit.is_some() || self.trash_ask.is_some() || self.import.is_some() {
+        if self.editor.is_some() || self.cal_edit.is_some() || self.trash_ask.is_some() || self.import.is_some() || self.account_edit.is_some() || self.account_ask.is_some() {
             if ctx.input(|i| i.key_pressed(Key::Escape)) {
                 self.editor = None;
                 self.cal_edit = None;
                 self.trash_ask = None;
                 self.import = None;
+                self.account_edit = None;
+                self.account_ask = None;
+                if let Some(flag) = self.signing_in.take() {
+                    flag.store(true, std::sync::atomic::Ordering::Relaxed);
+                }
             }
             return;
         }
@@ -607,16 +802,24 @@ impl eframe::App for CalendarApp {
         self.look.frame(&ctx, &c, self.shot.is_none());
         // Changes made elsewhere (another program, a sync) show within seconds.
         let now = ctx.input(|i| i.time);
-        if self.shot.is_none() && now - self.checked > 3.0 {
-            self.checked = now;
-            let st = Store::stamp(&self.root);
-            if st != self.stamp {
-                self.stamp = st;
-                self.store.reload();
+        if let Some(l) = &self.loader {
+            while let Ok((generation, store)) = l.got.try_recv() {
+                // The first reading is always taken (nothing made here can be in it yet).
+                if generation >= self.generation || !self.loaded {
+                    self.store = store;
+                    self.loaded = true;
+                    self.version += 1;
+                }
+            }
+            if now - self.checked > 3.0 {
+                self.checked = now;
+                let _ = l.ask.send(self.generation);
             }
         }
         ctx.request_repaint_after(std::time::Duration::from_secs(3));
-        if let Some(uid) = self.open_uid.take() {
+        if self.loaded
+            && let Some(uid) = self.open_uid.take()
+        {
             let found = self.occurrences(self.day, self.day + Duration::days(1)).into_iter().find(|o| uid.is_empty() || self.store.event(o).is_some_and(|e| e.uid == uid));
             if let Some(o) = found {
                 self.edit(&o);
@@ -656,6 +859,8 @@ impl eframe::App for CalendarApp {
         self.calendar_window(&ctx, accent);
         self.trash_window(&ctx);
         self.import_window(&ctx, accent);
+        self.account_window(&ctx, accent);
+        self.account_remove_window(&ctx);
         if let Some(shot) = self.shot.as_mut() {
             shot.step(&ctx);
         }
@@ -690,7 +895,8 @@ impl CalendarApp {
             };
             ui.label(egui::RichText::new(title).font(ui_font(18.0)).color(v.strong_text_color()));
             // What's being done, or was just done.
-            let status = self.job.as_ref().map(|(w, _)| w.clone()).filter(|w| !w.is_empty()).or_else(|| self.note.clone());
+            let reading = (!self.loaded).then(|| "Reading your calendars…".to_string());
+            let status = reading.or_else(|| self.job.as_ref().map(|(w, _)| w.clone()).filter(|w| !w.is_empty())).or_else(|| self.note.clone());
             if let Some(t) = status {
                 ui.add_space(10.0);
                 if ui.add(egui::Label::new(egui::RichText::new(t).size(12.5).color(v.weak_text_color())).sense(Sense::click())).on_hover_text("Click to dismiss").clicked() {
@@ -783,6 +989,19 @@ impl CalendarApp {
                         self.cal_edit = Some(CalEdit { dir: None, name: String::new(), color, feed: Some(String::new()) });
                         ui.close();
                     }
+                    ui.separator();
+                    if ui.button("Add a Google Account…").clicked() {
+                        self.account_edit = Some(AccountEdit::new(Some(Provider::Google)));
+                        ui.close();
+                    }
+                    if ui.button("Add a Microsoft Account…").clicked() {
+                        self.account_edit = Some(AccountEdit::new(Some(Provider::Microsoft)));
+                        ui.close();
+                    }
+                    if ui.button("Add a CalDAV Account…").clicked() {
+                        self.account_edit = Some(AccountEdit::new(None));
+                        ui.close();
+                    }
                 });
             });
         });
@@ -791,6 +1010,9 @@ impl CalendarApp {
         let mut edit: Option<usize> = None;
         let mut refresh: Option<PathBuf> = None;
         let mut trash: Option<usize> = None;
+        let mut sync_now = false;
+        let mut remove_account: Option<String> = None;
+        let accounts = rivet_cal::caldav::accounts();
         for (i, cal) in self.store.calendars.iter().enumerate() {
             let shown = !self.s.hidden.contains(&cal.id);
             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
@@ -812,18 +1034,23 @@ impl CalendarApp {
             if cal.feed.is_some() {
                 // A subscription: a small mark at the end of its row.
                 let at = Pos2::new(r.right() - 12.0, r.center().y);
-                for (k, rad) in [3.5f32, 6.5].iter().enumerate() {
-                    let _ = k;
-                    ui.painter().add(egui::Shape::line((0..=8).map(|j| { let a = -std::f32::consts::FRAC_PI_2 + j as f32 / 8.0 * std::f32::consts::FRAC_PI_2; at + Vec2::new(-3.0, 3.0) + Vec2::angled(a) * *rad }).collect(), Stroke::new(1.3, v.weak_text_color())));
+                // Two arcs and a dot: the usual sign for a feed.
+                for rad in [3.5f32, 6.5] {
+                    let arc = (0..=8).map(|j| at + Vec2::new(-3.0, 3.0) + Vec2::angled(-std::f32::consts::FRAC_PI_2 + j as f32 / 8.0 * std::f32::consts::FRAC_PI_2) * rad).collect();
+                    ui.painter().add(egui::Shape::line(arc, Stroke::new(1.3, v.weak_text_color())));
                 }
                 ui.painter().circle_filled(at + Vec2::new(-3.0, 3.0), 1.3, v.weak_text_color());
             }
-            let tip = match &cal.feed {
-                Some(url) => {
+            let tip = match (&cal.feed, &cal.account) {
+                (Some(url), _) => {
                     let when = rivet_cal::feed::fetched(&cal.dir).and_then(|t| t.elapsed().ok()).map(|a| ago(a.as_secs())).unwrap_or_else(|| "not yet".into());
                     format!("Subscribed to {url}\nUpdated {when}")
                 }
-                None => String::new(),
+                (None, Some(id)) => {
+                    let name = accounts.iter().find(|a| &a.id == id).map(|a| a.name.clone()).unwrap_or_else(|| id.clone());
+                    format!("Synced with {name}")
+                }
+                _ => String::new(),
             };
             let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             let resp = if tip.is_empty() { resp } else { resp.on_hover_text(tip) };
@@ -839,10 +1066,25 @@ impl CalendarApp {
                     refresh = Some(cal.dir.clone());
                     ui.close();
                 }
-                ui.separator();
-                if ui.button(if cal.feed.is_some() { "Unsubscribe…" } else { "Move to Trash…" }).clicked() {
-                    trash = Some(i);
+                if cal.account.is_some() && ui.button("Sync Now").clicked() {
+                    sync_now = true;
                     ui.close();
+                }
+                ui.separator();
+                match &cal.account {
+                    // A server's calendar goes with its account (deleting it on the server is for the server).
+                    Some(id) => {
+                        if ui.button("Remove Account…").clicked() {
+                            remove_account = Some(id.clone());
+                            ui.close();
+                        }
+                    }
+                    None => {
+                        if ui.button(if cal.feed.is_some() { "Unsubscribe…" } else { "Move to Trash…" }).clicked() {
+                            trash = Some(i);
+                            ui.close();
+                        }
+                    }
                 }
             });
         }
@@ -862,6 +1104,13 @@ impl CalendarApp {
         if let Some(i) = trash {
             let c = &self.store.calendars[i];
             self.trash_ask = Some((c.dir.clone(), c.name.clone()));
+        }
+        if sync_now {
+            self.sync_soon = Some(ui.ctx().input(|i| i.time));
+        }
+        if let Some(id) = remove_account {
+            let name = accounts.iter().find(|a| a.id == id).map(|a| a.name.clone()).unwrap_or_else(|| id.clone());
+            self.account_ask = Some((id, name));
         }
         if let Some(dir) = refresh
             && self.job.is_none()
@@ -884,21 +1133,35 @@ impl CalendarApp {
         let p = ui.painter();
         if o.all_day {
             p.rect_filled(r, r_xs(), if resp.hovered() { mix(c, Color32::WHITE, 0.12) } else { c });
-            let g = one_line(p, &title, 11.5, ink_on(c), r.width() - 10.0);
+            self.also_stripes(p, r, o);
+            let g = one_line(p, &title, 11.5, ink_on(c), r.width() - 10.0 - 4.0 * o.also.len().min(3) as f32);
             p.galley(Pos2::new(r.left() + 6.0, r.center().y - g.size().y / 2.0), g, ink_on(c));
         } else {
             if resp.hovered() {
                 p.rect_filled(r, r_xs(), mix(v.panel_fill, v.text_color(), 0.07));
             }
-            p.circle_filled(Pos2::new(r.left() + 6.0, r.center().y), 3.0, c);
+            // A dot for each calendar it's in, overlapping, its own on top.
+            let dots: Vec<Color32> = std::iter::once(c).chain(self.also_colors(o)).collect();
+            let more = 4.0 * (dots.len() - 1) as f32;
+            for (k, d) in dots.iter().enumerate().rev() {
+                let at = Pos2::new(r.left() + 6.0 + 4.0 * k as f32, r.center().y);
+                if k > 0 {
+                    p.circle_filled(at, 4.0, v.panel_fill);
+                }
+                p.circle_filled(at, 3.0, *d);
+            }
             let time = clock(o.start.time(), self.s.clock_24);
             let tg = p.layout_no_wrap(time, ui_font(11.0), v.weak_text_color());
-            let tw = tg.size().x;
-            p.galley(Pos2::new(r.left() + 13.0, r.center().y - tg.size().y / 2.0), tg, v.weak_text_color());
+            let tw = tg.size().x + more;
+            p.galley(Pos2::new(r.left() + 13.0 + more, r.center().y - tg.size().y / 2.0), tg, v.weak_text_color());
             let g = one_line(p, &title, 11.5, v.text_color(), r.width() - 18.0 - tw);
             p.galley(Pos2::new(r.left() + 17.0 + tw, r.center().y - g.size().y / 2.0), g, v.text_color());
         }
-        resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        match self.in_calendars(o) {
+            Some(t) => resp.on_hover_text(t),
+            None => resp,
+        }
     }
 
     fn month(&mut self, ui: &mut egui::Ui, accent: Color32) {
@@ -1058,6 +1321,7 @@ impl CalendarApp {
                     let c = self.color_of(o.cal);
                     let p = ui.painter();
                     p.rect_filled(r, r_sm(), if resp.hovered() { mix(c, Color32::WHITE, 0.12) } else { c.gamma_multiply(0.92) });
+                    self.also_stripes(p, r.shrink(1.0), o);
                     let ink = ink_on(c);
                     let title = self.store.event(o).map(|e| if e.summary.trim().is_empty() { "Untitled event".to_string() } else { e.summary.clone() }).unwrap_or_default();
                     let clip = p.with_clip_rect(r.shrink(1.0));
@@ -1070,7 +1334,12 @@ impl CalendarApp {
                         let when = format!("{} – {}", clock(o.start.time(), self.s.clock_24), clock(o.end.time(), self.s.clock_24));
                         clip.text(Pos2::new(r.left() + 6.0, r.top() + 6.0 + gh), Align2::LEFT_TOP, when, ui_font(10.5), ink.gamma_multiply(0.85));
                     }
-                    if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let resp = match self.in_calendars(o) {
+                        Some(t) => resp.on_hover_text(t),
+                        None => resp,
+                    };
+                    if resp.clicked() {
                         open = Some((*o).clone());
                     }
                 }
@@ -1120,8 +1389,14 @@ impl CalendarApp {
                 if resp.hovered() {
                     ui.painter().rect_filled(r, r_sm(), mix(v.panel_fill, v.text_color(), 0.06));
                 }
-                let c = self.color_of(o.cal);
-                ui.painter().rect_filled(Rect::from_min_size(Pos2::new(r.left() + 8.0, r.top() + 8.0), Vec2::new(4.0, r.height() - 16.0)), 2.0, c);
+                // Its calendar's colour as a bar, split between the calendars it's in.
+                let colors: Vec<Color32> = std::iter::once(self.color_of(o.cal)).chain(self.also_colors(o)).collect();
+                let bar = Rect::from_min_size(Pos2::new(r.left() + 8.0, r.top() + 8.0), Vec2::new(4.0, r.height() - 16.0));
+                let part = bar.height() / colors.len() as f32;
+                for (k, c) in colors.iter().enumerate() {
+                    let seg = Rect::from_min_size(Pos2::new(bar.left(), bar.top() + part * k as f32), Vec2::new(4.0, part));
+                    ui.painter().rect_filled(seg, if colors.len() == 1 { 2.0 } else { 0.0 }, *c);
+                }
                 let when = if o.all_day { "All day".to_string() } else { format!("{} – {}", clock(o.start.time(), self.s.clock_24), clock(o.end.time(), self.s.clock_24)) };
                 ui.painter().text(Pos2::new(r.left() + 22.0, r.center().y), Align2::LEFT_CENTER, &when, ui_font(12.0), v.weak_text_color());
                 if let Some(ev) = self.store.event(o) {
@@ -1134,7 +1409,12 @@ impl CalendarApp {
                         ui.painter().galley(Pos2::new(r.left() + 152.0 + gw, r.center().y - lg.size().y / 2.0), lg, v.weak_text_color());
                     }
                 }
-                if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let resp = match self.in_calendars(o) {
+                    Some(t) => resp.on_hover_text(t),
+                    None => resp,
+                };
+                if resp.clicked() {
                     open = Some(o.clone());
                 }
             }
@@ -1263,7 +1543,8 @@ impl CalendarApp {
             Some("save") => match self.save_editor() {
                 Ok(()) => {
                     self.editor = None;
-                    self.stamp = Store::stamp(&self.root);
+                    self.sync_soon = Some(ctx.input(|i| i.time) + 3.0);
+                    self.changed();
                 }
                 Err(p) => {
                     if let Some(ed) = self.editor.as_mut() {
@@ -1276,7 +1557,8 @@ impl CalendarApp {
                 match self.delete_editor(every) {
                     Ok(()) => {
                         self.editor = None;
-                        self.stamp = Store::stamp(&self.root);
+                        self.sync_soon = Some(ctx.input(|i| i.time) + 3.0);
+                        self.changed();
                     }
                     Err(p) => {
                         if let Some(ed) = self.editor.as_mut() {
@@ -1366,7 +1648,7 @@ impl CalendarApp {
             if let Err(e) = r {
                 self.problem = Some(format!("Couldn't save the calendar: {e}"));
             }
-            self.stamp = Store::stamp(&self.root);
+            self.changed();
         }
     }
 }
@@ -1429,7 +1711,169 @@ impl CalendarApp {
                 self.problem = Some(format!("Couldn't move “{name}” to the Trash: {e}"));
             }
             self.s.hidden.retain(|h| Some(h.as_str()) != dir.file_name().and_then(|n| n.to_str()));
-            self.stamp = Store::stamp(&self.root);
+            self.changed();
+        }
+    }
+
+    /// Adding an account.
+    fn account_window(&mut self, ctx: &egui::Context, accent: Color32) {
+        let busy = self.job.is_some();
+        let waiting = self.signing_in.is_some();
+        let Some(ae) = self.account_edit.as_mut() else { return };
+        let title = match ae.provider {
+            Some(p) => format!("Add a {} Account", p.name()),
+            None => "Add a CalDAV Account".into(),
+        };
+        let chrome = windows::Chrome { title, icon: None, close: None, flush: false };
+        // As tall as its fields: a server's four, a name alone, or a name and a client.
+        let tall = match ae.provider {
+            None => 300.0,
+            Some(p) if ae.own && p.builtin().is_some() => 290.0,
+            Some(_) if ae.own => 260.0,
+            Some(_) => 220.0,
+        };
+        let mut win = WinState::new(45, Vec2::new(440.0, tall));
+        let mut act = None;
+        let shown = windows::show(ctx, &mut win, &chrome, ctx.content_rect().shrink(16.0), Vec2::new(400.0, tall), |ui| {
+            let v = ui.visuals().clone();
+            let weak = |ui: &mut egui::Ui, text: &str| {
+                ui.label(egui::RichText::new(text).color(v.weak_text_color()).size(12.5));
+            };
+            ui.spacing_mut().item_spacing = Vec2::new(8.0, 10.0);
+            let ready = match ae.provider {
+                None => {
+                    egui::Grid::new("account-fields").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
+                        ui.label("Server");
+                        ui.add(egui::TextEdit::singleline(&mut ae.url).hint_text("nextcloud.example.org").desired_width(260.0));
+                        ui.end_row();
+                        ui.label("User name");
+                        ui.add(egui::TextEdit::singleline(&mut ae.user).desired_width(260.0));
+                        ui.end_row();
+                        ui.label("Password");
+                        ui.add(egui::TextEdit::singleline(&mut ae.pass).password(true).desired_width(260.0));
+                        ui.end_row();
+                        ui.label("Name");
+                        ui.add(egui::TextEdit::singleline(&mut ae.name).hint_text("Optional").desired_width(260.0));
+                        ui.end_row();
+                    });
+                    weak(ui, "For iCloud and Fastmail, use an app password made on their website. The password is kept in your keyring.");
+                    !ae.url.trim().is_empty() && !ae.user.trim().is_empty() && !ae.pass.is_empty()
+                }
+                Some(p) => {
+                    let builtin = p.builtin().is_some();
+                    ui.add_enabled_ui(!waiting, |ui| {
+                        egui::Grid::new("account-fields").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
+                            ui.label("Name");
+                            ui.add(egui::TextEdit::singleline(&mut ae.name).hint_text("Your address, if left empty").desired_width(270.0));
+                            ui.end_row();
+                            if builtin {
+                                ui.label("");
+                                ui.checkbox(&mut ae.own, "Sign in with my own client ID");
+                                ui.end_row();
+                            }
+                            if ae.own {
+                                ui.label("Client ID");
+                                ui.add(egui::TextEdit::singleline(&mut ae.client_id).desired_width(270.0));
+                                ui.end_row();
+                                if p.wants_secret() {
+                                    ui.label("Client secret");
+                                    ui.add(egui::TextEdit::singleline(&mut ae.client_secret).password(true).desired_width(270.0));
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                    });
+                    if waiting {
+                        weak(ui, "Finish signing in in your browser. Rivet Calendar is waiting for it.");
+                    } else if !builtin {
+                        weak(ui, &format!("This copy of Rivet Calendar has no {} client ID of its own, so it signs in with one you registered.", p.name()));
+                    } else {
+                        weak(ui, &format!("Your browser opens to sign in to {}. Rivet Calendar then syncs your calendars with it.", p.name()));
+                    }
+                    !ae.own || (!ae.client_id.trim().is_empty() && (!p.wants_secret() || !ae.client_secret.trim().is_empty()))
+                }
+            };
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let label = match (ae.provider, busy) {
+                    (None, true) => "Adding…",
+                    (None, false) => "Add Account",
+                    (Some(_), true) => "Signing In…",
+                    (Some(_), false) => "Sign In",
+                };
+                let ok = egui::Button::new(egui::RichText::new(label).color(rivet_look::theme::StatusColors::on(accent))).fill(accent);
+                if ui.add_enabled(!busy && ready, ok).clicked() {
+                    act = Some(true);
+                }
+                if ui.button(if waiting { "Stop" } else { "Cancel" }).clicked() {
+                    act = Some(false);
+                }
+            });
+        });
+        if act == Some(false) && waiting {
+            // Stop waiting for the browser; the dialog stays for another try.
+            if let Some(flag) = self.signing_in.take() {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            return;
+        }
+        if !shown.open || act == Some(false) {
+            if let Some(flag) = self.signing_in.take() {
+                flag.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+            self.account_edit = None;
+            return;
+        }
+        if act == Some(true)
+            && let Some(ae) = self.account_edit.as_ref()
+        {
+            let root = self.root.clone();
+            let name = ae.name.clone();
+            let added = |d: Vec<PathBuf>| format!("Added {} calendar{}", d.len(), if d.len() == 1 { "" } else { "s" });
+            match ae.provider {
+                None => {
+                    let (url, user, pass) = (ae.url.clone(), ae.user.clone(), ae.pass.clone());
+                    self.run(ctx, "Adding the account…", move || rivet_cal::caldav::add_account(&root, &url, &user, &pass, &name).map(added));
+                }
+                Some(p) => {
+                    let own = ae.own.then(|| Client { id: ae.client_id.clone(), secret: ae.client_secret.clone() });
+                    let flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                    self.signing_in = Some(flag.clone());
+                    self.run(ctx, "Waiting for the browser…", move || rivet_cal::caldav::add_signed_in(&root, p, own, &name, &flag).map(added));
+                }
+            }
+        }
+    }
+
+    /// Asking before an account (and its calendars here) is removed.
+    fn account_remove_window(&mut self, ctx: &egui::Context) {
+        let Some((id, name)) = self.account_ask.clone() else { return };
+        let chrome = windows::Chrome { title: "Remove Account".into(), icon: None, close: None, flush: false };
+        let mut win = WinState::new(46, Vec2::new(400.0, 170.0));
+        let mut act = None;
+        let shown = windows::show(ctx, &mut win, &chrome, ctx.content_rect().shrink(16.0), Vec2::new(360.0, 150.0), |ui| {
+            let v = ui.visuals().clone();
+            ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
+            ui.label(egui::RichText::new(format!("Remove “{name}”?")).font(ui_font(14.5)).color(v.strong_text_color()));
+            ui.label(egui::RichText::new("Its calendars here go to the Trash. On the server they stay as they are.").color(v.weak_text_color()));
+            ui.add_space(4.0);
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if rivet_look::widgets::danger_button(ui, "Remove Account").clicked() {
+                    act = Some(true);
+                }
+                if ui.button("Keep It").clicked() {
+                    act = Some(false);
+                }
+            });
+        });
+        if !shown.open || act == Some(false) {
+            self.account_ask = None;
+        }
+        if act == Some(true) {
+            self.account_ask = None;
+            if let Err(e) = rivet_cal::caldav::remove_account(&self.root, &id) {
+                self.problem = Some(format!("Couldn't remove “{name}”: {e}"));
+            }
+            self.changed();
         }
     }
 
@@ -1474,10 +1918,13 @@ impl CalendarApp {
             && let Some(im) = self.import.take()
         {
             match self.store.import(&im.cal, &im.text) {
-                Ok(n) => self.note = Some(format!("Added {}", events_word(n))),
+                Ok(n) => {
+                    self.note = Some(format!("Added {}", events_word(n)));
+                    self.sync_soon = Some(ctx.input(|i| i.time) + 3.0);
+                }
                 Err(e) => self.problem = Some(format!("Couldn't add the events: {e}")),
             }
-            self.stamp = Store::stamp(&self.root);
+            self.changed();
         }
     }
 }
@@ -1556,7 +2003,7 @@ mod tests {
     #[test]
     fn overlapping_events_share_the_width() {
         let d = NaiveDate::from_ymd_opt(2026, 11, 24).unwrap();
-        let o = |h: u32, e: u32| Occurrence { cal: 0, item: 0, ev: 0, start: d.and_hms_opt(h, 0, 0).unwrap(), end: d.and_hms_opt(e, 0, 0).unwrap(), all_day: false, original: When::Date(d), repeats: false };
+        let o = |h: u32, e: u32| Occurrence { cal: 0, item: 0, ev: 0, start: d.and_hms_opt(h, 0, 0).unwrap(), end: d.and_hms_opt(e, 0, 0).unwrap(), all_day: false, original: When::Date(d), repeats: false, also: Vec::new() };
         let (a, b, c) = (o(9, 11), o(10, 12), o(13, 14));
         let placed = side_by_side(&[&a, &b, &c], d.and_time(NaiveTime::MIN), (d + Duration::days(1)).and_time(NaiveTime::MIN));
         let get = |x: &Occurrence| placed.iter().find(|p| std::ptr::eq(p.0, x)).map(|p| (p.1, p.2)).unwrap();
