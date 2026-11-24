@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Discord can take the theme's colors**: with BetterDiscord or Vencord in Discord, or with Vesktop or Equibop, turn it on under Applications in Settings, then turn on the Rivet theme in Discord's own Themes settings. Discord's layout stays as it is.
 - **The HUD**: a screen of widgets that opens over your windows, with a grid of apps, the calendar, the events coming up, what's playing, the weather and the system's readings. Open it with a key (`rivet-shell msg hud`) or from a corner of the screen, chosen on the Widgets page. Type to narrow the apps and press Enter to open the first.
 - **Widgets you place yourself**: Edit Widgets on the Widgets page shows the desktop over your windows. Drag a widget to move it, drag its corner to resize it, add or remove one, and choose whether it is on every display or only the one you are editing. The HUD is arranged the same way, and its widgets lock to a grid as you drag them; Lock to Grid in the editor's bar turns that on or off for each. The desktop also gains Calendar, Events, Apps and Now Playing widgets.
 - Widgets on the desktop no longer move when dragged outside Edit Widgets, so the ones with buttons can be clicked.

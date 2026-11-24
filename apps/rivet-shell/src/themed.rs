@@ -130,10 +130,23 @@ pub const APPS: &[App] = &[
     App { id: "foot", name: "foot", commands: &["foot"], folder: "foot", file: "rivet-colors.ini", hook: Hook::FirstLine { file: "foot.ini", line: "include=~/.config/foot/rivet-colors.ini" }, reload: Reload::Later, make: foot },
     App { id: "zed", name: "Zed", commands: &["zed", "zeditor", "zedit"], folder: "zed", file: "themes/rivet.json", hook: Hook::Tell("In Zed, choose the theme named Rivet."), reload: Reload::Watches, make: zed },
     App { id: "btop", name: "btop", commands: &["btop"], folder: "btop", file: "themes/rivet.theme", hook: Hook::Tell("In btop, press Esc, open Options and set Color theme to rivet."), reload: Reload::Later, make: btop },
+    // Discord takes a theme only through a mod, or a client built on one: each keeps a themes
+    // folder of its own, and is here when that folder's parent is.
+    App { id: "betterdiscord", name: "Discord with BetterDiscord", commands: &[], folder: "BetterDiscord", file: "themes/rivet.theme.css", hook: Hook::Tell(DISCORD_HOOK), reload: Reload::Watches, make: discord },
+    App { id: "vencord", name: "Discord with Vencord", commands: &[], folder: "Vencord", file: "themes/rivet.theme.css", hook: Hook::Tell(DISCORD_HOOK), reload: Reload::Watches, make: discord },
+    App { id: "vesktop", name: "Vesktop", commands: &[], folder: "vesktop", file: "themes/rivet.theme.css", hook: Hook::Tell(DISCORD_HOOK), reload: Reload::Watches, make: discord },
+    App { id: "equibop", name: "Equibop", commands: &[], folder: "equibop", file: "themes/rivet.theme.css", hook: Hook::Tell(DISCORD_HOOK), reload: Reload::Watches, make: discord },
 ];
+
+const DISCORD_HOOK: &str = "In its settings, open Themes and turn on Rivet.";
 
 impl App {
     pub fn installed(&self) -> bool {
+        // One with no command of its own (a mod inside another program) is here when its
+        // settings folder is.
+        if self.commands.is_empty() {
+            return self.dir().is_dir();
+        }
         self.commands.iter().any(|c| crate::browser::on_path(c).is_some())
     }
 
@@ -400,6 +413,57 @@ fn zed(c: &Colors) -> String {
     serde_json::to_string_pretty(&family).unwrap_or_default() + "\n"
 }
 
+/// A theme for Discord's mods (BetterDiscord, Vencord and the clients built on it): Discord's
+/// own colour names set to the theme's, with its layout left as it is. The chat is the
+/// window's colour; the lists beside it and what floats over it step away from it.
+fn discord(c: &Colors) -> String {
+    let at = |t: f32| hex(mix(c.bg, c.fg, t));
+    let tint = |x: Color32, t: f32| hex(mix(c.bg, x, t));
+    let far = if c.dark { Color32::WHITE } else { Color32::BLACK };
+    // What's written on the accent: whichever of the window's two colours reads on it.
+    let on_accent = if luminance(c.accent) > 0.45 { mix(c.bg, Color32::BLACK, if c.dark { 0.3 } else { 0.85 }) } else { Color32::WHITE };
+    let (red, green, yellow) = (c.ansi[1], c.ansi[2], c.ansi[3]);
+    let groups: [(String, &[&str]); 22] = [
+        (hex(c.bg), &["background-base-low", "background-primary", "bg-base-primary", "chat-background", "chat-background-default", "home-background"]),
+        (at(0.035), &["background-base-lower", "background-secondary", "bg-base-secondary", "custom-channel-members-bg"]),
+        (at(0.07), &["background-base-lowest", "background-tertiary", "background-secondary-alt", "bg-base-tertiary", "app-frame-background"]),
+        (at(0.1), &["background-surface-high", "background-surface-higher", "background-floating", "background-nested-floating", "bg-surface-raised", "bg-surface-overlay", "card-primary-bg", "autocomplete-bg", "activity-card-background"]),
+        (at(0.14), &["background-surface-highest", "modal-background", "modal-footer-background", "background-accent", "card-secondary-bg"]),
+        (at(0.09), &["input-background", "input-background-default", "channeltextarea-background", "background-code", "deprecated-text-input-bg"]),
+        (at(0.06), &["background-mod-subtle", "background-modifier-hover", "background-message-hover", "message-background-hover", "interactive-background-hover"]),
+        (at(0.1), &["background-mod-normal", "background-modifier-active", "interactive-background-active"]),
+        (at(0.14), &["background-mod-strong", "background-modifier-selected", "interactive-background-selected", "background-modifier-accent"]),
+        (at(0.1), &["border-subtle", "border-faint", "border-muted", "chat-border"]),
+        (at(0.18), &["border-normal", "input-border", "input-border-default", "deprecated-text-input-border"]),
+        (at(0.28), &["border-strong", "scrollbar-thin-thumb", "scrollbar-auto-thumb", "scrollbar-auto-scrollbar-color-thumb"]),
+        (hex(c.fg), &["text-default", "text-normal", "text-primary", "input-text-default", "interactive-hover", "interactive-text-hover", "interactive-icon-hover", "icon-primary"]),
+        (hex(mix(c.fg, far, 0.5)), &["text-strong", "header-primary", "embed-title", "interactive-active", "interactive-text-active", "interactive-icon-active"]),
+        (at(0.68), &["text-muted", "text-subtle", "text-secondary", "header-secondary", "header-muted", "chat-text-muted", "interactive-normal", "interactive-icon-default", "channels-default", "channel-icon", "icon-secondary", "icon-muted"]),
+        (at(0.45), &["text-tertiary", "interactive-muted", "icon-tertiary", "input-placeholder-text-default", "channel-text-area-placeholder"]),
+        (hex(c.accent), &["brand-500", "brand-experiment", "brand-experiment-500", "bg-brand", "background-brand", "text-brand", "text-link", "control-brand-foreground", "control-brand-foreground-new", "mention-foreground", "focus-primary", "button-filled-brand-background", "control-primary-background-default", "button-outline-brand-text", "redesign-input-control-selected"]),
+        (hex(mix(c.accent, far, 0.14)), &["brand-360", "brand-400", "brand-experiment-360", "button-filled-brand-background-hover", "control-primary-background-hover"]),
+        (hex(mix(c.accent, c.bg, 0.2)), &["brand-560", "brand-600", "button-filled-brand-background-active", "control-primary-background-active"]),
+        (hex(on_accent), &["button-filled-brand-text", "control-primary-text-default", "control-primary-text-hover", "control-primary-text-active", "control-primary-icon-default", "control-primary-icon-hover", "control-primary-icon-active", "badge-text-brand"]),
+        (tint(c.accent, 0.22), &["mention-background", "background-mentioned", "message-mentioned-background-default", "message-reacted-background-default"]),
+        (tint(c.accent, 0.3), &["background-mentioned-hover", "message-mentioned-background-hover"]),
+    ];
+    let mut t = String::from("/**\n * @name Rivet\n * @description Discord in the Rivet desktop's colors. Rivet Shell writes this file again when the theme changes.\n * @author Rivet Shell\n * @version 1.0.0\n */\n\n");
+    t.push_str(".theme-dark,\n.theme-light,\n.visual-refresh.theme-dark,\n.visual-refresh.theme-light,\n.visual-refresh .theme-dark,\n.visual-refresh .theme-light {\n");
+    for (value, names) in &groups {
+        for n in *names {
+            t.push_str(&format!("    --{n}: {value} !important;\n"));
+        }
+    }
+    // Who is here, away or busy, and what went right or wrong: the theme's green, yellow and red.
+    for (value, names) in [(green, ["status-online", "status-positive", "icon-status-online", "text-feedback-positive"]), (yellow, ["status-idle", "status-warning", "icon-status-idle", "text-feedback-warning"]), (red, ["status-dnd", "status-danger", "icon-status-dnd", "text-feedback-critical"])] {
+        for n in names {
+            t.push_str(&format!("    --{n}: {} !important;\n", hex(value)));
+        }
+    }
+    t.push_str("}\n");
+    t
+}
+
 fn btop(c: &Colors) -> String {
     let (red, green, yellow, blue, cyan) = (c.ansi[1], c.ansi[2], c.ansi[3], c.ansi[4], c.ansi[6]);
     let lines: [(&str, Color32); 37] = [
@@ -479,6 +543,15 @@ mod tests {
         assert!(alacritty(&c).contains("[colors.bright]\nblack = \"#"));
         assert!(ghostty(&c).contains("palette = 15=#"));
         assert!(btop(&c).contains("theme[main_bg]=\"#1f1f1f\"\n"));
+        // Discord's: named Rivet in its header, the chat the window's colour, every line a
+        // colour, and no name set twice.
+        let d = discord(&c);
+        assert!(d.starts_with("/**\n * @name Rivet\n") && d.contains("    --background-base-low: #1f1f1f !important;\n") && d.ends_with("}\n"));
+        let names: Vec<&str> = d.lines().filter_map(|l| l.trim().strip_prefix("--")?.split_once(':').map(|(n, _)| n)).collect();
+        let mut once = names.clone();
+        once.sort();
+        once.dedup();
+        assert!(names.len() > 100 && once.len() == names.len());
         // Zed's is JSON it can read back, with one theme named Rivet.
         let z: serde_json::Value = serde_json::from_str(&zed(&c)).unwrap();
         assert_eq!(z["themes"][0]["name"], "Rivet");

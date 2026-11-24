@@ -272,6 +272,23 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Quick settings: a VPN block appears when there is at least one VPN that can be switched. It turns one on and off: the first there is, or the one chosen under Quick settings on the VPN page when there are several. Its arrow opens the VPN page. For a ZeroTier network, off means leaving it and on means joining it again.
 - The shell reads the VPNs every ten seconds with the rest of the slower status.
 
+### Applications: Discord
+
+Location: `apps/rivet-shell/src/settings_app/themed_apps.rs`, Applications; the theme is
+written by `discord()` in `apps/rivet-shell/src/themed.rs`.
+
+- Discord itself has no themes. A mod adds them: BetterDiscord or Vencord inside Discord, or a
+  client built on one (Vesktop, Equibop). Each shows on the Applications page when its settings
+  folder exists, under its own name.
+- Turned on, Rivet writes a theme named Rivet into that mod's themes folder and writes it again
+  when the theme changes. The person turns it on once, in Discord's settings under Themes. The
+  mods watch that folder, so a new wallpaper recolours a running Discord.
+- It only sets colours: the chat is the window's colour, the lists beside it and what floats
+  over it step away from it, links, buttons and mentions take the accent, and online, idle and
+  busy take the theme's green, yellow and red. Discord's layout is untouched, and the file
+  loads nothing from the internet.
+- Turned off, Rivet's theme file is taken away.
+
 ### Widgets: placing them, and the HUD
 
 Location: `apps/rivet-shell/src/settings_app.rs`, Widgets, "On the desktop" and "HUD"; the boards
