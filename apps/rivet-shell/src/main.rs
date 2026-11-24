@@ -9,6 +9,7 @@ mod auth;
 mod bar;
 mod browser;
 mod themed;
+mod user;
 mod vpn;
 mod cc;
 mod comp;

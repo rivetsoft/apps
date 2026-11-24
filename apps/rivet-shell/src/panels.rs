@@ -45,6 +45,7 @@ pub const ITEMS: &[(&str, &str, &str)] = &[
     ("battery", "Battery", "Click for quick settings"),
     ("ai", "AI Usage", "Claude, Codex and other plans' limits"),
     ("weather", "Weather", "The sky and the temperature. Click for the forecast."),
+    ("user", "User", "Your picture. Click to lock, log out or shut down."),
     ("dock", "Dock", "Pinned and open apps, the same as the dock's"),
     ("tray", "System Tray", "Apps' status icons (chat, sync, games…)"),
     ("notifications", "Notifications", "A bell, with a dot when there are new notifications"),

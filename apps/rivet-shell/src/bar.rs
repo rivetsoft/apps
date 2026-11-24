@@ -124,7 +124,7 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
         return want_down(b, id);
     }
     Some(match id {
-        "launcher" | "network" | "quick-settings" | "power" => (SLOT, false),
+        "launcher" | "network" | "quick-settings" | "power" | "user" => (SLOT, false),
         "bluetooth" => (if st.bluetooth.is_some() { SLOT } else { return None }, false),
         "ai" => {
             let parts = ai_parts(b);
@@ -181,7 +181,7 @@ fn want_down(b: &Bar, id: &str) -> Option<(f32, bool)> {
     let st = b.m.status;
     let s = b.m.s;
     Some(match id {
-        "launcher" | "network" | "quick-settings" | "power" => (SLOT, false),
+        "launcher" | "network" | "quick-settings" | "power" | "user" => (SLOT, false),
         "bluetooth" => (if st.bluetooth.is_some() { SLOT } else { return None }, false),
         "notifications" => (if b.m.extra.notifying { SLOT } else { return None }, false),
         "ai" => {
@@ -1360,6 +1360,14 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             glyph::quick(&p, r.center(), fg, b.m.s.quick_icon);
             if resp.on_hover_text("Quick settings").clicked() {
                 let a = b.control(b.at(r));
+                b.acts.push(a);
+            }
+        }
+        "user" => {
+            let resp = b.button(ui, r, id);
+            crate::user::draw(ui, r.center(), 22.0, &ex.user, accent);
+            if resp.on_hover_text(format!("{}\nLock, log out, restart, shut down", ex.user)).clicked() {
+                let a = b.popup(PopupKind::Power { confirm: None }, b.at(r));
                 b.acts.push(a);
             }
         }

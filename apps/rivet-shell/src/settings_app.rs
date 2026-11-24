@@ -27,6 +27,7 @@ mod idle_lock;
 mod colors;
 mod connect;
 mod sound;
+mod user_page;
 mod vpn_page;
 mod icon_pick;
 mod browser_colors;
@@ -44,6 +45,8 @@ pub const ICON_SVG: &str = include_str!("../data/rivet-shell.svg");
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 enum Page {
+    /// The person: their picture, and the place the weather is for.
+    User,
     #[default]
     Wallpaper,
     Appearance,
@@ -71,7 +74,7 @@ enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 17] = [Page::Wallpaper, Page::Appearance, Page::Applications, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    const ALL: [Page; 18] = [Page::User, Page::Wallpaper, Page::Appearance, Page::Applications, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
     /// Whether the page is in the sidebar and in search: all but the ones for a compositor
     /// that isn't running or for programs that aren't installed. Screenshots show every one.
     fn shown(self) -> bool {
@@ -96,6 +99,7 @@ impl Page {
 
     fn label(self) -> &'static str {
         match self {
+            Page::User => "User",
             Page::Wallpaper => "Wallpaper",
             Page::Appearance => "Appearance",
             Page::Applications => "Applications",
@@ -136,6 +140,7 @@ pub struct SettingsApp {
     /// The Network and Bluetooth pages' lists, and the Sound page's devices.
     conn: connect::State,
     sound: sound::State,
+    user: user_page::State,
     vpn: vpn_page::State,
     apps: Vec<DesktopApp>,
     /// The wallpaper folder's pictures and thumbnails.
@@ -345,6 +350,7 @@ impl SettingsApp {
             home,
             conn: connect::State::new(shot_mode),
             sound: sound::State::new(shot_mode),
+            user: Default::default(),
             vpn: vpn_page::State::new(shot_mode),
             apps,
             picker: Default::default(),
@@ -595,6 +601,7 @@ impl eframe::App for SettingsApp {
                         Page::Bluetooth => self.bluetooth_page(ui),
                         Page::Vpn => self.vpn_page(ui),
                         Page::Sound => self.sound_page(ui),
+                        Page::User => self.user_page(ui, accent),
                             Page::Panel => self.panel_page(ui),
                             Page::Dock => self.dock_page(ui),
                             Page::Widgets => self.widgets_page(ui),
@@ -972,9 +979,9 @@ impl SettingsApp {
                 }
             }
         });
-        // The weather's place and units, for the widget and the panel's Weather item alike.
+        // The weather's place and units are the person's, on the User page.
         if self.s.shows_weather() {
-            section(ui, "Weather", &mut |ui| weather_opts::options(ui, &mut self.s, 360.0));
+            hint(ui, if self.s.weather_at.is_some() { "The weather's place and units are on the User page." } else { "Choose the weather's place on the User page." });
         }
     }
 

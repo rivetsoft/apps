@@ -10,11 +10,12 @@ use super::Page;
 use crate::glyph;
 
 /// The pages under a small heading each; About sits apart at the end.
-pub(super) const GROUPS: &[(&str, &[Page])] = &[("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance, Page::Applications]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
+pub(super) const GROUPS: &[(&str, &[Page])] = &[("Account", &[Page::User]), ("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance, Page::Applications]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
 
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
     match page {
+        Page::User => "Your picture, and the place the weather is for",
         Page::Wallpaper => "The desktop picture and how a new one appears",
         Page::Appearance => "Colors, text, and the look of panels and windows",
         Page::Applications => "Other apps that take the theme's colors",
@@ -40,6 +41,11 @@ pub(super) fn icon(p: &egui::Painter, page: Page, c: Pos2, col: Color32) {
     let s = Stroke::new(1.5, col);
     let screen = Rect::from_center_size(c, Vec2::new(15.0, 12.0));
     match page {
+        Page::User => {
+            // A head over shoulders.
+            p.circle_filled(c + Vec2::new(0.0, -3.0), 3.2, col);
+            p.rect_filled(Rect::from_min_max(c + Vec2::new(-6.0, 2.0), c + Vec2::new(6.0, 7.0)), egui::CornerRadius { nw: 6, ne: 6, sw: 2, se: 2 }, col);
+        }
         Page::Wallpaper => {
             // A picture: a sun over hills.
             p.rect_stroke(screen, 2.5, s, egui::StrokeKind::Inside);

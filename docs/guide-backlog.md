@@ -259,6 +259,7 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Bluetooth: the switch, My devices (paired: Connect, Disconnect, Forget) and Devices nearby (Pair). Pairing works for devices that need no code; a device that shows a code to confirm or type has to be paired another way for now.
 - Sound: Output and Input each list the devices, with Use to choose one; choosing an output moves the apps playing to it. Volume and Mute under each list act on the one in use. Apps lists what is playing, with a volume each and, when there is more than one output, which output it plays on.
 - The pages read only while they are showing, and use the same code as the panel's Network, Bluetooth and Sound popups.
+- Getting around with the keyboard: Tab moves between controls and Enter or Space uses one; while the keyboard is in use, what it's on has a ring in the accent, and a page scrolls to it. In the sidebar, Up and Down go through the pages, opening each (up from the first is All Settings). In the overview, the arrow keys go from tile to tile, Down from the search field reaches the first one, and Up from the top row goes back to the field. Anywhere: Ctrl+Page Down and Ctrl+Page Up (or Alt+Down and Alt+Up) open the next and previous page; Alt+Left, or Esc when nothing is being typed and no menu is open, goes back to All Settings; Ctrl+F is search.
 
 ### VPN: the page in Settings and the block in quick settings
 
@@ -283,6 +284,25 @@ Location: `apps/rivet-shell/src/settings_app/launcher.rs`, Launcher, Layout, "Ro
   bigger icons make a wider launcher. On a screen too narrow it shows as many as fit.
 - "From the size" (the slider at its left end) leaves that direction to Size, as before.
   The two are separate: Rows can be set with Columns left to Size, and the other way round.
+
+### User: your picture, and the weather's place
+
+Location: `apps/rivet-shell/src/settings_app/user_page.rs`, User; the picture is handled in
+`apps/rivet-shell/src/user.rs`, the panel item in `bar.rs` ("user").
+
+- Your picture: Choose a Picture opens the file picker. Rivet keeps the middle square of the
+  picture, 512 pixels a side, as the file `.face` in the home folder, which is where the lock
+  screen, the login screen and other desktops look. Remove takes that file away.
+- With no `.face`, the picture the system keeps for the account is shown (one set from
+  another desktop's settings). Rivet can't remove that one, so Remove isn't offered for it;
+  choosing a picture here takes its place in Rivet.
+- With no picture at all, the first letter of the name shows on the accent.
+- The name is the account's full name, and can't be changed here.
+- Weather: the place and the units, for the weather widget and the panel's Weather item
+  alike. They used to be on the Widgets page, which now points here. The panel item's own
+  options still show them too.
+- The panel's User item (Panels, Add Item, User): the picture in a circle. Clicking it opens
+  the same Lock, Suspend, Log Out, Restart and Shut Down as the Power item.
 
 ### Login screen (greetd)
 
