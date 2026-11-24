@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Network, Bluetooth and Sound pages in Settings**: join, leave and forget Wi-Fi networks; pair, connect and forget Bluetooth devices; choose where sound plays and records, set each one's volume, and set the volume and output of each app playing. Each page shows only when the computer has what it needs.
+- **Network, Bluetooth and Sound pages in Settings**: see each wired connection with its speed and address, and connect or disconnect it; join, leave and forget Wi-Fi networks; pair, connect and forget Bluetooth devices; choose where sound plays and records, set each one's volume, and set the volume and output of each app playing. Each page shows only when the computer has what it needs.
 - **Settings opens on an overview**: every page as a symbol and its name, group by group, with search above them. Open a page and the sidebar is there as before, with All Settings at its top to go back.
 - **Softcore**: under Softcore, Rivet's own compositor, the panel shows workspaces and the focused window's title, the dock shows what is open and can close it, and Log Out and turning the screens off work. Displays and the window look (gaps, borders, corners) can be set from Settings there too; Softcore applies them as you change them.
 - **A Softcore page in Settings**, shown only under Softcore: its windows, columns, motion, keyboard and pointer settings, and your key bindings. Each change is one line of Softcore's settings file, so what you wrote there by hand stays, and a change made by hand shows in the window.

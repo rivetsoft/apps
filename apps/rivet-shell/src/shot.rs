@@ -58,6 +58,7 @@ pub fn demo_radios() -> crate::radio::Radios {
     let dev = |name: &str, paired, connected| BtDevice { mac: format!("00:11:22:33:44:{:02X}", name.len()), name: name.into(), paired, connected };
     Radios {
         wifi: vec![net("Home", 82, true, true, true), net("Home 5G", 64, true, false, true), net("Corner Café", 51, false, false, false), net("Neighbours", 40, true, false, false), net("Library Guest", 22, true, false, false)],
+        wired: vec![crate::radio::Wired { device: "enp3s0".into(), name: "Wired connection 1".into(), link: crate::radio::Link::Connected, address: "192.168.1.24".into(), speed: 1000 }],
         bt: vec![dev("Headphones", true, true), dev("Keyboard", true, false), dev("Speaker in the Kitchen", false, false)],
         wifi_read: true,
         bt_read: true,

@@ -17,7 +17,7 @@ pub(super) fn about(page: Page) -> &'static str {
     match page {
         Page::Wallpaper => "The desktop picture and how a new one appears",
         Page::Appearance => "Colors, text, and the look of panels and windows",
-        Page::Network => "Wi-Fi networks to join, and the ones this computer remembers",
+        Page::Network => "Wired connections, and Wi-Fi networks to join or forget",
         Page::Bluetooth => "Devices to pair, connect and forget",
         Page::Sound => "Where sound plays and records, and how loud each app is",
         Page::Panel => "The bars along the screen's edges and the items on each",

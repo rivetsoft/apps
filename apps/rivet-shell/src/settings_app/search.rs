@@ -32,6 +32,7 @@ const fn item(id: &'static str, title: &'static str, words: &'static str) -> Ent
 pub const INDEX: &[Entry] = &[
     // Network, Bluetooth, Sound
     e(Page::Network, "Wi-Fi", "Wi-Fi", "wifi wireless network internet join connect password ssid forget"),
+    e(Page::Network, "Wired", "Wired connection", "ethernet cable lan network address ip speed connect disconnect"),
     e(Page::Bluetooth, "Bluetooth", "Bluetooth", "wireless turn on off adapter"),
     e(Page::Bluetooth, "My devices", "Paired devices", "bluetooth headphones keyboard mouse connect disconnect forget"),
     e(Page::Bluetooth, "Devices nearby", "Pair a device", "bluetooth new discover scan look"),

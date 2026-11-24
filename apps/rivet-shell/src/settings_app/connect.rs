@@ -8,7 +8,7 @@ use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 
 use super::{SettingsApp, controls, hint, section};
 use crate::glyph;
-use crate::radio::{self, BtDevice, Job, RadioLive, Radios, WifiNet};
+use crate::radio::{self, BtDevice, Job, Link, RadioLive, Radios, WifiNet, Wired};
 
 /// Whether Wi-Fi and Bluetooth are on (None: not known yet, or there is no such radio).
 #[derive(Clone, Copy, Default)]
@@ -141,8 +141,24 @@ impl SettingsApp {
     pub(super) fn network_page(&mut self, ui: &mut egui::Ui) {
         let now = ui.input(|i| i.time);
         let radios = self.conn.radios();
+        let wifi = self.conn.on(radio::WIFI, now);
+        if !radios.wired.is_empty() {
+            section(ui, "Wired", &mut |ui| {
+                for w in &radios.wired {
+                    self.wired_row(ui, w, &radios.busy, radios.wired.len() > 1);
+                }
+                // Without Wi-Fi there is no card below to say what went wrong.
+                if wifi.is_none() {
+                    trouble(ui, &radios.error);
+                }
+            });
+            // A computer with a cable and no Wi-Fi has nothing more to show.
+            if wifi.is_none() {
+                return;
+            }
+        }
         section(ui, "Wi-Fi", &mut |ui| {
-            let Some(mut on) = self.conn.on(radio::WIFI, now) else {
+            let Some(mut on) = wifi else {
                 quiet(ui, "Wi-Fi isn't available on this computer.");
                 return;
             };
@@ -166,6 +182,51 @@ impl SettingsApp {
                 self.conn.run(Job::WifiRescan);
             }
         });
+    }
+
+    fn wired_row(&mut self, ui: &mut egui::Ui, w: &Wired, busy: &Option<String>, several: bool) {
+        let working = busy.as_deref() == Some(w.device.as_str());
+        let sub = match w.link {
+            Link::Connected if working => "Disconnecting…".to_string(),
+            Link::Connected => {
+                let mut parts = vec!["Connected".to_string()];
+                if w.speed > 0 {
+                    parts.push(if w.speed >= 1000 { format!("{} Gb/s", w.speed as f32 / 1000.0) } else { format!("{} Mb/s", w.speed) });
+                }
+                if !w.address.is_empty() {
+                    parts.push(w.address.clone());
+                }
+                parts.join(" · ")
+            }
+            Link::Connecting => "Connecting…".to_string(),
+            Link::Idle if working => "Connecting…".to_string(),
+            Link::Idle => "Not connected".to_string(),
+            Link::Unplugged => "No cable plugged in".to_string(),
+        };
+        // The connection's name when one is in use. Otherwise what it is, with the adapter's own
+        // name only when there are several to tell apart.
+        let title = match (w.name.is_empty(), several) {
+            (false, _) => w.name.clone(),
+            (true, false) => "Ethernet".to_string(),
+            (true, true) => format!("Ethernet ({})", w.device),
+        };
+        let mut job = None;
+        row(ui, &|p, c, col| glyph::wired(p, c, col), &title, &sub, w.link == Link::Connected, &mut |ui| match w.link {
+            Link::Connected | Link::Connecting => {
+                if controls::button_if(ui, !working, controls::Icon::Off, "Disconnect").clicked() {
+                    job = Some(Job::WiredDisconnect(w.device.clone()));
+                }
+            }
+            Link::Idle => {
+                if controls::button_if(ui, !working, controls::Icon::Forward, "Connect").clicked() {
+                    job = Some(Job::WiredConnect(w.device.clone()));
+                }
+            }
+            Link::Unplugged => {}
+        });
+        if let Some(j) = job {
+            self.conn.run(j);
+        }
     }
 
     fn wifi_row(&mut self, ui: &mut egui::Ui, n: &WifiNet, busy: &Option<String>) {

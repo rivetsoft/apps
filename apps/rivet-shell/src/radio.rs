@@ -27,11 +27,37 @@ pub struct BtDevice {
     pub connected: bool,
 }
 
+/// How a wired connection stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Link {
+    Connected,
+    Connecting,
+    /// A cable is in, and nothing is using it.
+    #[default]
+    Idle,
+    /// No cable.
+    Unplugged,
+}
+
+/// A wired network adapter.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct Wired {
+    /// The system's name for the adapter (what connecting takes).
+    pub device: String,
+    /// The connection in use on it, when there is one.
+    pub name: String,
+    pub link: Link,
+    /// This computer's address on it, and the link's speed in megabits a second (0: not known).
+    pub address: String,
+    pub speed: u32,
+}
+
 /// What the popups show.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Radios {
     /// Strongest first; the one in use first of all.
     pub wifi: Vec<WifiNet>,
+    pub wired: Vec<Wired>,
     pub bt: Vec<BtDevice>,
     /// Looked at least once since the popup opened.
     pub wifi_read: bool,
@@ -50,6 +76,9 @@ pub enum Job {
     WifiDisconnect,
     WifiForget(String),
     WifiRescan,
+    /// A wired adapter, by its device name.
+    WiredConnect(String),
+    WiredDisconnect(String),
     BtConnect(String),
     BtDisconnect(String),
     BtForget(String),
@@ -136,9 +165,10 @@ pub fn start(wake: impl Fn() + Send + Sync + 'static) -> RadioLive {
                 if which != NONE {
                     let before = l.generation();
                     if which == WIFI {
-                        let list = wifi_list();
+                        let (list, wired) = (wifi_list(), wired_list());
                         l.edit(|s| {
                             s.wifi = list;
+                            s.wired = wired;
                             s.wifi_read = true;
                         });
                     } else {
@@ -270,6 +300,35 @@ fn bt_list() -> Vec<BtDevice> {
     out
 }
 
+/// The wired adapters in nmcli's terse `DEVICE,TYPE,STATE,CONNECTION` listing, without the
+/// ones NetworkManager leaves alone.
+fn wired_from(listing: &str) -> Vec<Wired> {
+    listing
+        .lines()
+        .map(split_terse)
+        .filter(|f| f.len() >= 4 && f[1] == "ethernet" && f[2] != "unmanaged")
+        .map(|f| {
+            let link = match f[2].as_str() {
+                s if s.starts_with("connected") => Link::Connected,
+                s if s.starts_with("connecting") => Link::Connecting,
+                "unavailable" => Link::Unplugged,
+                _ => Link::Idle,
+            };
+            Wired { device: f[0].clone(), name: f[3].clone(), link, ..Default::default() }
+        })
+        .collect()
+}
+
+fn wired_list() -> Vec<Wired> {
+    let mut out = wired_from(&run("nmcli", &["-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "device"]).unwrap_or_default());
+    for w in out.iter_mut().filter(|w| w.link == Link::Connected) {
+        let shown = run("nmcli", &["-t", "-f", "IP4.ADDRESS", "device", "show", &w.device]).unwrap_or_default();
+        w.address = shown.lines().find_map(|l| l.split_once(':')).map(|(_, a)| a.split('/').next().unwrap_or(a).to_string()).unwrap_or_default();
+        w.speed = std::fs::read_to_string(format!("/sys/class/net/{}/speed", w.device)).ok().and_then(|s| s.trim().parse::<i64>().ok()).filter(|s| *s > 0).unwrap_or(0) as u32;
+    }
+    out
+}
+
 fn wifi_device() -> Option<String> {
     run("nmcli", &["-t", "-f", "DEVICE,TYPE,STATE", "device"]).ok()?.lines().map(split_terse).find(|f| f.len() >= 3 && f[1] == "wifi" && f[2].starts_with("connected")).map(|f| f[0].clone())
 }
@@ -278,6 +337,7 @@ fn work(l: &RadioLive, job: Job, wake: &dyn Fn()) {
     let busy = match &job {
         Job::WifiConnect { ssid, .. } => Some(ssid.clone()),
         Job::BtConnect(mac) | Job::BtDisconnect(mac) => Some(mac.clone()),
+        Job::WiredConnect(dev) | Job::WiredDisconnect(dev) => Some(dev.clone()),
         _ => None,
     };
     if busy.is_some() {
@@ -310,6 +370,8 @@ fn work(l: &RadioLive, job: Job, wake: &dyn Fn()) {
             Some(dev) => run("nmcli", &["device", "disconnect", &dev]).map(|_| ()).map_err(|e| short(&e)),
             None => Ok(()),
         },
+        Job::WiredConnect(dev) => run("nmcli", &["device", "connect", &dev]).map(|_| ()).map_err(|e| format!("Couldn't connect: {}", short(&e))),
+        Job::WiredDisconnect(dev) => run("nmcli", &["device", "disconnect", &dev]).map(|_| ()).map_err(|e| short(&e)),
         Job::WifiForget(ssid) => run("nmcli", &["connection", "delete", "id", &ssid]).map(|_| ()).map_err(|e| short(&e)),
         Job::BtScan => {
             l.edit(|s| s.bt_scanning = true);
@@ -356,6 +418,13 @@ mod tests {
     fn terse_keeps_escaped_colons() {
         assert_eq!(split_terse(r"*:My\:Net:80:WPA2"), ["*", "My:Net", "80", "WPA2"]);
         assert_eq!(split_terse(" ::60:"), [" ", "", "60", ""]);
+    }
+
+    #[test]
+    fn wired_adapters() {
+        let w = wired_from("wlp0s20f3:wifi:connected:Home\nenp3s0:ethernet:connected:Wired connection 1\nenp4s0:ethernet:unavailable:\nveth1:ethernet:unmanaged:\nenp5s0:ethernet:disconnected:");
+        assert_eq!(w.iter().map(|w| (w.device.as_str(), w.link)).collect::<Vec<_>>(), [("enp3s0", Link::Connected), ("enp4s0", Link::Unplugged), ("enp5s0", Link::Idle)]);
+        assert_eq!(w[0].name, "Wired connection 1");
     }
 
     #[test]
