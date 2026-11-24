@@ -219,6 +219,24 @@ fn sign_in_at(path: &Path, login: &str, password: &str, session: &[String]) -> R
 // ------------------------------------------------------------------ setting it up
 
 /// `sudo rivet-shell greeter --setup`: make the shared folder, and say how to use the greeter.
+/// How greetd should name this program: plain `rivet-shell` when the system's own folders have
+/// it (a package, or a link to a build), since greetd's user has nobody's own folders on its
+/// path. Otherwise where this program is, in quotes when the path has a space, which would
+/// split the command in two.
+fn command_name() -> String {
+    let here = std::env::current_exe().ok();
+    let real = here.as_ref().and_then(|p| std::fs::canonicalize(p).ok());
+    if ["/usr/bin/rivet-shell", "/usr/local/bin/rivet-shell"].iter().any(|p| std::fs::canonicalize(p).ok() == real && real.is_some()) {
+        return "rivet-shell".to_string();
+    }
+    quoted(&here.map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|| "rivet-shell".into()))
+}
+
+/// A path as one word of a shell command.
+fn quoted(path: &str) -> String {
+    if path.chars().all(|c| c.is_ascii_alphanumeric() || "/._-+".contains(c)) { path.to_string() } else { format!("'{}'", path.replace('\'', "'\\''")) }
+}
+
 pub fn setup() -> std::process::ExitCode {
     let root = dir();
     let root = root.as_path();
@@ -226,7 +244,7 @@ pub fn setup() -> std::process::ExitCode {
         eprintln!("Couldn't make {} ({e}). Run this with sudo.", root.display());
         return std::process::ExitCode::FAILURE;
     }
-    let me = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_else(|_| "rivet-shell".into());
+    let me = command_name();
     println!(
         "Made {}. Each person's Rivet Shell now leaves its wallpaper and look there.\n\n\
          To use the greeter, set greetd's default session in /etc/greetd/config.toml, with a\n\
@@ -246,6 +264,13 @@ pub fn setup() -> std::process::ExitCode {
 mod tests {
     use super::*;
     use std::os::unix::net::UnixListener;
+
+    #[test]
+    fn paths_with_spaces_stay_one_word() {
+        assert_eq!(quoted("/usr/bin/rivet-shell"), "/usr/bin/rivet-shell");
+        assert_eq!(quoted("/home/sam/My Code/rivet-shell"), "'/home/sam/My Code/rivet-shell'");
+        assert_eq!(quoted("/a/it's"), "'/a/it'\\''s'");
+    }
 
     /// A greetd that wants `password` and answers each message as it would.
     fn fake_greetd(path: &Path, password: &'static str) -> std::thread::JoinHandle<Vec<String>> {
