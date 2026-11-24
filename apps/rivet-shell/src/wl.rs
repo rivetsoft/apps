@@ -1593,6 +1593,14 @@ impl Shell {
                 sf.dirty = true;
                 continue;
             }
+            // Asked to be full size, and the compositor hasn't answered: the surface is still
+            // the strip, where a dock drawn would show as a bar of its middle along the edge.
+            // It waits, wholly out, and slides in from the first frame at its own size.
+            if dock && !sf.collapsed && sf.size.1 <= DOCK_STRIP {
+                sf.slide = 1.0;
+                sf.slide_at = now;
+                continue;
+            }
             let target = if show { 0.0 } else { 1.0 };
             if sf.slide != target && !sf.collapsed {
                 let step = now.duration_since(sf.slide_at).as_secs_f32().min(0.05) / DOCK_SLIDE;
@@ -1794,7 +1802,7 @@ impl Shell {
                 }
                 Kind::Dock => {
                     // Slid part of the way out (a hidden one, down to its strip, shows nothing).
-                    if !collapsed {
+                    if !collapsed && h > DOCK_STRIP {
                         let r = ui.max_rect();
                         let mut c = ui.new_child(egui::UiBuilder::new().max_rect(r.translate(Vec2::new(0.0, slide * r.height()))));
                         ui::dock(&mut c, &mut m, &mut surf.kit);
