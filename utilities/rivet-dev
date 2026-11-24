@@ -51,8 +51,10 @@ Building
 Using your build
   install [APP] [--default]        Install for this user (~/.local/bin + app launcher);
                                    --default also makes Rivet Files the default file manager
-  link [--user] [--remove]         A `rivet` command that always runs this build
-                                   (/usr/bin, or ~/.local/bin with --user)
+  link [APP|shell] [--user] [--remove]
+                                   A command that always runs this build: `rivet`, or the
+                                   app's own (`link shell` for rivet-shell). In /usr/bin, or
+                                   ~/.local/bin with --user
 
 Docs and checks
   screenshots                      Regenerate the README screenshots (sample home folder)
