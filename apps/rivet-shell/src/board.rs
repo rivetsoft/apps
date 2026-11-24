@@ -15,6 +15,10 @@ use crate::ui::{Act, Kit, Model, card, find_app, hover_fill, one_line, ui_font};
 const CARD: f32 = 0.82;
 /// The corner of a widget that resizes it, in edit mode.
 const GRIP: f32 = 22.0;
+/// The grid widgets lock to while they're arranged: this many columns across the room, rows as
+/// near to square as fit, and this much room left between two widgets side by side.
+const GRID_COLS: f32 = 24.0;
+const GRID_GAP: f32 = 12.0;
 /// The room between the stacked desktop widgets that haven't been moved.
 const STACK_GAP: f32 = 14.0;
 
@@ -86,6 +90,30 @@ fn fractions(r: Rect, area: Rect) -> ((f32, f32), (f32, f32)) {
     let room = (area.size() - r.size()).max(Vec2::ZERO);
     let part = |d: f32, of: f32| if of > 0.5 { (d / of).clamp(0.0, 1.0) } else { 0.0 };
     ((part(r.left() - area.left(), room.x), part(r.top() - area.top(), room.y)), (part(r.width(), area.width()), part(r.height(), area.height())))
+}
+
+/// A grid cell's size in `area`, the gap after it counted in (so the last column ends at the
+/// room's edge with no gap past it).
+fn grid_cell(area: Rect) -> Vec2 {
+    let w = (area.width() + GRID_GAP) / GRID_COLS;
+    let rows = ((area.height() + GRID_GAP) / w).round().max(1.0);
+    Vec2::new(w, (area.height() + GRID_GAP) / rows)
+}
+
+/// A rectangle locked to the grid: its top left on a grid line, and, when it's being sized
+/// (`size`), as wide and tall as a whole number of cells less the gap. Kept inside the room.
+fn snapped(r: Rect, area: Rect, size: bool, small: Vec2) -> Rect {
+    let cell = grid_cell(area);
+    let dims = if size {
+        let n = ((r.size() + Vec2::splat(GRID_GAP)) / cell).round().max(((small + Vec2::splat(GRID_GAP)) / cell).ceil());
+        (n * cell - Vec2::splat(GRID_GAP)).min(area.size())
+    } else {
+        r.size()
+    };
+    // The furthest line it can start on and still fit.
+    let last = ((area.size() - dims) / cell + Vec2::splat(0.001)).floor().max(Vec2::ZERO);
+    let at = ((r.min - area.min) / cell).round().clamp(Vec2::ZERO, last);
+    Rect::from_min_size(area.min + at * cell, dims)
 }
 
 // ------------------------------------------------------------------ what each widget draws
@@ -348,8 +376,21 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
     let pointer = ui.input(|i| i.pointer.latest_pos());
     let held: Option<Held> = if edit { ui.ctx().data(|d| d.get_temp(held_id())) } else { None };
     let mut picked: Option<usize> = if edit { ui.ctx().data(|d| d.get_temp(picked_id())) } else { None };
+    let grid = edit && if board == Board::Hud { m.s.hud_grid } else { m.s.desktop_grid };
+    // The grid shows while something is held: a dot where its lines cross.
+    if grid && held.is_some() {
+        let cell = grid_cell(area);
+        let (cols, rows) = ((area.width() / cell.x).round() as usize + 1, (area.height() / cell.y).round() as usize + 1);
+        for i in 0..cols {
+            for j in 0..rows {
+                p.circle_filled(area.min + Vec2::new(i as f32 * cell.x, j as f32 * cell.y), 1.5, Color32::from_white_alpha(70));
+            }
+        }
+    }
     let mut stack = area.top();
-    let list: Vec<(usize, Placed)> = m.s.widgets.iter().cloned().enumerate().filter(|(_, w)| w.board == board && w.on(m.output)).collect();
+    let mut list: Vec<(usize, Placed)> = m.s.widgets.iter().cloned().enumerate().filter(|(_, w)| w.board == board && w.on(m.output)).collect();
+    // The one held is drawn last, over the rest.
+    list.sort_by_key(|(i, _)| held.is_some_and(|h| h.idx == *i));
     let mut bar: Option<(usize, Placed, Rect)> = None;
     for (idx, w) in &list {
         let (idx, small) = (*idx, smallest(w.kind));
@@ -365,6 +406,10 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
                 let room = (area.size() - h.from.size()).max(Vec2::ZERO);
                 Rect::from_min_size((h.from.min + by).clamp(area.min, area.min + room), h.from.size())
             };
+            if grid {
+                // Sized once, it keeps to whole cells; at its own size only its corner locks.
+                r = snapped(r, area, h.resize || w.size.is_some(), small);
+            }
         }
         draw(ui, w.kind, r, m, kit, query, idx);
         if !edit {
@@ -460,7 +505,8 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
     let tg = p.layout_no_wrap(title.to_string(), ui_font(14.0), v.strong_text_color());
     let adds: f32 = addable.iter().map(|k| chip_width(ui, &format!("Add {}", k.label())) + 6.0).sum();
     let done = chip_width(ui, "Done");
-    let one_row = 16.0 + tg.size().x + 16.0 + adds + done + 10.0;
+    let lock = chip_width(ui, "Lock to Grid") + 6.0;
+    let one_row = 16.0 + tg.size().x + 16.0 + adds + lock + done + 10.0;
     let wide = one_row.min(full.width() - 16.0);
     let two = one_row > full.width() - 16.0;
     let back = Rect::from_min_size(Pos2::new(full.center().x - wide / 2.0, full.top() + 10.0), Vec2::new(wide, if two { 76.0 } else { 44.0 }));
@@ -474,6 +520,11 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
             // In the middle, at its own size, to be dragged from there.
             m.acts.push(Act::WidgetAdd(Placed { at: Some((0.5, 0.5)), ..Placed::new(k, board) }));
         }
+    }
+    // On: in the accent's tint. Dragged widgets then keep to the grid's lines.
+    let (_, clicked) = chip(ui, Pos2::new(back.right() - done - 8.0 - lock, back.top() + 8.0), "Lock to Grid", egui::Id::unique("board-grid"), grid.then(|| mix(v.panel_fill, accent, 0.55)));
+    if clicked {
+        m.acts.push(Act::BoardGrid(board, !grid));
     }
     let (_, clicked) = chip(ui, Pos2::new(back.right() - done - 8.0, back.top() + 8.0), "Done", egui::Id::unique("board-done"), Some(accent));
     if clicked {
@@ -630,6 +681,15 @@ mod tests {
         assert_eq!((a.right(), a.top(), b.top()), (area.right(), area.top(), area.top() + 120.0 + STACK_GAP));
         let c = rect_of(&Placed::new(WidgetKind::Events, Board::Hud), Vec2::new(300.0, 260.0), area, Side::Left, &mut stack);
         assert_eq!(c.center(), area.center());
+        // Locked to the grid: its corner on a line, whole cells with the gap between, in the room.
+        let cell = grid_cell(area);
+        assert!((cell.x - (1200.0 + GRID_GAP) / 24.0).abs() < 1e-3 && (cell.y - cell.x).abs() < cell.x * 0.1);
+        let g = snapped(Rect::from_min_size(area.min + Vec2::new(cell.x * 2.4, cell.y * 0.6), Vec2::new(cell.x * 5.1, cell.y * 3.6)), area, true, Vec2::new(90.0, 44.0));
+        assert!((g.left() - (area.left() + 2.0 * cell.x)).abs() < 0.01 && (g.top() - (area.top() + cell.y)).abs() < 0.01);
+        assert!((g.width() - (5.0 * cell.x - GRID_GAP)).abs() < 0.01 && (g.height() - (4.0 * cell.y - GRID_GAP)).abs() < 0.01);
+        // The last column ends at the room's edge, and nothing is pushed past it.
+        let far = snapped(Rect::from_min_size(area.max, Vec2::new(cell.x * 3.0 - GRID_GAP, 100.0)), area, false, Vec2::ZERO);
+        assert!((far.right() - area.right()).abs() < 0.01 && far.bottom() <= area.bottom() + 0.01);
         // Never smaller than it can be, nor bigger than the room.
         let tiny = Placed { size: Some((0.02, 0.02)), ..Placed::new(WidgetKind::Apps, Board::Hud) };
         assert_eq!(rect_of(&tiny, Vec2::ZERO, area, Side::Left, &mut stack).size(), smallest(WidgetKind::Apps));

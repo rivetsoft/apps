@@ -908,6 +908,9 @@ pub struct Settings {
     pub widget_side: Side,
     /// The corner the pointer opens the HUD from.
     pub hud_corner: Corner,
+    /// Widgets being arranged lock to a grid: on the HUD, and on the desktop.
+    pub hud_grid: bool,
+    pub desktop_grid: bool,
     /// The weather, for the widget and the panel item: the place chosen (its name as shown,
     /// and its latitude and longitude; None: no place yet), and the units it shows in.
     pub weather_place: String,
@@ -1044,6 +1047,8 @@ impl Default for Settings {
             widgets: default_widgets(),
             widget_side: Side::Left,
             hud_corner: Corner::Off,
+            hud_grid: true,
+            desktop_grid: false,
             weather_place: String::new(),
             weather_at: None,
             weather_units: crate::weather::Units::local(),
@@ -1347,6 +1352,8 @@ impl Settings {
                 "dock_running" => self.dock_running = b,
                 "widget_count" => widget_count = v.parse().ok(),
                 "hud_corner" => self.hud_corner = Corner::from(v),
+                "hud_grid" => self.hud_grid = b,
+                "desktop_grid" => self.desktop_grid = b,
                 "widget_side" => self.widget_side = if v == "right" { Side::Right } else { Side::Left },
                 // The three desktop widgets as they were kept before there was a list.
                 "widget_clock" => was.clock.0 = Some(b),
@@ -1442,7 +1449,7 @@ impl Settings {
         t.push_str(&format!("color_use={}\nsecondary={}\ntertiary={}\n", self.color_use, rgb_text(self.secondary), rgb_text(self.tertiary)));
         let at = |p: Option<(f32, f32)>| p.map(|(x, y)| format!("{x:.4},{y:.4}")).unwrap_or_default();
         t.push_str(&format!("weather_place={}\nweather_at={}\nweather_units={}\n", one(&self.weather_place), at(self.weather_at), self.weather_units.name()));
-        t.push_str(&format!("hud_corner={}\nwidget_count={}\n", self.hud_corner.name(), self.widgets.len()));
+        t.push_str(&format!("hud_corner={}\nhud_grid={}\ndesktop_grid={}\nwidget_count={}\n", self.hud_corner.name(), self.hud_grid, self.desktop_grid, self.widgets.len()));
         for (i, w) in self.widgets.iter().enumerate() {
             t.push_str(&format!("widget.{i}={}\n", w.text()));
         }
@@ -1692,7 +1699,7 @@ mod tests {
         let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, dock_places: false, blur: false, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.widgets = vec![Placed { at: Some((0.25, 0.5)), ..Placed::new(WidgetKind::System, Board::Desktop) }, Placed { output: "DP-2".into(), at: Some((1.0, 0.0)), size: Some((0.25, 0.5)), ..Placed::new(WidgetKind::Weather, Board::Hud) }];
-        s.hud_corner = Corner::BottomRight;
+        (s.hud_corner, s.hud_grid, s.desktop_grid) = (Corner::BottomRight, false, true);
         (s.weather_place, s.weather_at, s.weather_units) = ("Portland, Oregon".into(), Some((45.5234, -122.6762)), crate::weather::Units::Imperial);
         s.secondary = Some([0x35, 0x84, 0xe4]);
         (s.wallpaper_screens, s.wall_transition, s.wall_transition_ms, s.matugen_screen, s.matugen_contrast) = (vec![("DP-2".into(), "/p/two.png".into())], Transition::Grow, 900, "DP-2".into(), 0.5);

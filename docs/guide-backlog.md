@@ -287,6 +287,11 @@ themselves are `apps/rivet-shell/src/board.rs`.
   Click a widget for its own buttons: "On Every Display" or "Only on NAME" (the display being
   edited), "Its Own Size" (after a resize) and "Remove". The bar at the top adds the kinds not
   on this display yet. Done or Esc ends editing. Changes save as they are made.
+- "Lock to Grid" in the editor's bar (on for the HUD, off for the desktop, remembered for each):
+  a widget dragged keeps its top left corner on the grid's lines, and one resized is a whole
+  number of cells wide and tall, with the same gap between neighbours. The grid is 24 columns
+  across the room with rows as near square as fit, and shows as dots while a widget is held.
+  Widgets already placed stay where they are until they are next dragged.
 - Places and sizes are kept as fractions of the screen's room (the screen less its panels), so a
   layout holds on a display of another size. A desktop widget that has never been moved stacks
   on the side chosen by "Side"; Reset Positions puts them all back there at their own sizes.

@@ -293,6 +293,8 @@ pub enum Act {
     WidgetPut(usize, crate::config::Placed),
     WidgetAdd(crate::config::Placed),
     WidgetRemove(usize),
+    /// Widgets being arranged on a board lock to its grid, or move freely.
+    BoardGrid(crate::config::Board, bool),
     /// Done editing a board: the HUD goes back to being the HUD, the desktop's editor closes.
     BoardDone,
     /// Sound devices and apps: choose, change the volume, mute, move.

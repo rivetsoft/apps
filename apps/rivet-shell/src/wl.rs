@@ -1469,7 +1469,7 @@ impl Shell {
             // The control center's Dark Style tile.
             self.redraw_kinds(&[Kind::Popup]);
         }
-        let widgets = old.widgets != s.widgets || old.widget_side != s.widget_side;
+        let widgets = old.widgets != s.widgets || old.widget_side != s.widget_side || old.hud_grid != s.hud_grid || old.desktop_grid != s.desktop_grid;
         if old.hud_corner != s.hud_corner {
             self.sync_corners();
         }
@@ -2180,6 +2180,10 @@ impl Shell {
                 if i < s.widgets.len() {
                     s.widgets.remove(i);
                 }
+            }),
+            Act::BoardGrid(board, on) => self.change_settings(|s| match board {
+                Board::Hud => s.hud_grid = on,
+                Board::Desktop => s.desktop_grid = on,
             }),
             Act::BoardDone => match self.popup.as_mut().map(|p| &mut p.kind) {
                 Some(PopupKind::Hud { edit, .. }) if *edit => {

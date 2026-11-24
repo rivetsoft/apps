@@ -3,7 +3,7 @@
 ## Unreleased
 
 - **The HUD**: a screen of widgets that opens over your windows, with a grid of apps, the calendar, the events coming up, what's playing, the weather and the system's readings. Open it with a key (`rivet-shell msg hud`) or from a corner of the screen, chosen on the Widgets page. Type to narrow the apps and press Enter to open the first.
-- **Widgets you place yourself**: Edit Widgets on the Widgets page shows the desktop over your windows. Drag a widget to move it, drag its corner to resize it, add or remove one, and choose whether it is on every display or only the one you are editing. The HUD is arranged the same way. The desktop also gains Calendar, Events, Apps and Now Playing widgets.
+- **Widgets you place yourself**: Edit Widgets on the Widgets page shows the desktop over your windows. Drag a widget to move it, drag its corner to resize it, add or remove one, and choose whether it is on every display or only the one you are editing. The HUD is arranged the same way, and its widgets lock to a grid as you drag them; Lock to Grid in the editor's bar turns that on or off for each. The desktop also gains Calendar, Events, Apps and Now Playing widgets.
 - Widgets on the desktop no longer move when dragged outside Edit Widgets, so the ones with buttons can be clicked.
 - **A new icon**: a desktop with a sun, hills, a panel and a dock, drawn in the website's colors with a plum outline and a hard shadow.
 - **Drag the dock's icons into order**: press a pinned app and drag it along the dock, and the others move over to make room. The Dock page in Settings shows the new order.
