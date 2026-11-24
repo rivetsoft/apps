@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A new icon**: a green window with a prompt and a yellow cursor, drawn in the website's colors with a plum outline and a hard shadow.
 - When Rivet Terminal asks before closing something that is still running, Return closes it
   and Escape cancels.
 - In that question, Tab to Cancel and Return now cancels. It used to close anyway.

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A new icon**: the box the apps come in, with the apps on a shelf behind it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Rivet Snip is listed**, as coming soon until its first release. Then it installs and updates
   like the other apps.
 

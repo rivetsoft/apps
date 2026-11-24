@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A new icon**: the pink folder with the rivet through it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Open in Rivet Vice**: right-click an archive to look inside it before taking anything out. Shown when Rivet Vice, the archive manager, is installed.
 - The Empty Trash question is roomier and easier to read: the Trash's icon beside it, how many items are in it, and the buttons on the right, as in the Delete question.
 - `rivet trash:///` opens straight on the Trash, as other file managers do, so a dock or launcher can open it there.

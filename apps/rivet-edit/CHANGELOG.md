@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **A new icon**: a box with lines of code and a cursor, in place of the folder.
+- **A new icon**: a blue card of code with a cursor, drawn in the website's colors with a plum outline and a hard shadow.
 - **Return in a question presses the highlighted button**: Save, Replace, Discard and Move to
   Trash answer to Return. Tab moves between the buttons, and Return on Cancel cancels.
 

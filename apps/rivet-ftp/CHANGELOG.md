@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A new icon**: two panes with files going each way between them, in place of the folder, drawn in the website's colors with a plum outline and a hard shadow.
 - **Return in a question presses the highlighted button**: Delete, Replace, the changed-on-the-
   server question and Info answer to Return. Tab moves between the buttons, and Return on
   Cancel cancels.

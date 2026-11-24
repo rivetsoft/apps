@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A new icon**: a yellow notepad on spiral rings, in place of the folder, drawn in the website's colors with a plum outline and a hard shadow.
 - **Return in a question presses the highlighted button**: Move to Trash and Keep Mine answer
   to Return. Tab moves between the buttons, and Return on Cancel cancels.
 - Rivet Notes no longer closes with a crash report when a note has an ellipsis (…), an
