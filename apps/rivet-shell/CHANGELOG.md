@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Browser colors can go darker**: under Browser colors on the Appearance page, Darker takes the browser's window from the color of the desktop's windows down to black.
 - **Browser colors follow dark and light**: the browser now takes the color of the desktop's windows, with the accent on its buttons, so it is dark under a dark theme. Before, it took the accent for its whole window, which made it bright. Accent is still there as a choice.
 - **VPNs**: a VPN page in Settings lists the VPN connections NetworkManager keeps (WireGuard, OpenVPN and others), Tailscale with its exit node, and ZeroTier's networks, which you can join by ID, leave and join again. Quick settings gets a VPN block that turns one of them on and off; the page chooses which when there are several.
 - **Network, Bluetooth and Sound pages in Settings**: see each wired connection with its speed and address, and connect or disconnect it; join, leave and forget Wi-Fi networks; pair, connect and forget Bluetooth devices; choose where sound plays and records, set each one's volume, and set the volume and output of each app playing. Each page shows only when the computer has what it needs.

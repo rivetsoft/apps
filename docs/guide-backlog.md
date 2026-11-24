@@ -153,6 +153,8 @@ the work is `apps/rivet-shell/src/browser.rs`.
   the accent mixed in: dark under a dark theme, with the accent's hue on buttons and outlines.
   A plain gray would leave the browser to pick a hue of its own. Accent gives it the accent
   for the whole window, which is bright under most themes. Single parts can't be set.
+- Darker (shown under Windows): mixes that color toward black, 0% to 100% in steps of 5, for a
+  browser darker than the desktop's windows. The accent's hue on buttons stays.
 - It follows the theme: the shell writes the color again when the wallpaper's colors change
   and tells a running browser to read it, so open windows recolor with no restart.
 - How: these browsers read "managed policies" from a folder under `/etc`

@@ -87,6 +87,11 @@ impl SettingsApp {
                 ui.label("Color");
                 panel_editor::segmented(ui, &mut self.s.browser_accent, &[(false, "Windows"), (true, "Accent")]);
                 ui.end_row();
+                if !self.s.browser_accent {
+                    ui.label("Darker");
+                    ui.add(egui::Slider::new(&mut self.s.browser_darker, 0..=100).step_by(5.0).suffix("%")).on_hover_text("At 100% the browser's window is black.");
+                    ui.end_row();
+                }
             });
             hint(ui, if self.s.browser_accent { "The whole browser window takes the accent, which is bright under most themes." } else { "The browser takes the color of the desktop's windows, so it is dark when they are, with the accent on its buttons." });
         });

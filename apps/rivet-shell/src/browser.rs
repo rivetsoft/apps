@@ -113,7 +113,7 @@ fn look(s: &Settings) -> Option<[u8; 3]> {
     let dark = pal.map(|p| p.is_dark()).unwrap_or(s.theme != rivet_look::theme::Mode::Light);
     let accent = live.accent(&s.choice());
     let surface = pal.and_then(|p| p.window_bg).unwrap_or(if dark { eframe::egui::Color32::from_rgb(0x24, 0x24, 0x24) } else { eframe::egui::Color32::from_rgb(0xf6, 0xf5, 0xf4) });
-    let c = if s.browser_accent { accent } else { rivet_look::palette::mix(surface, accent, 0.06) };
+    let c = if s.browser_accent { accent } else { rivet_look::palette::mix(rivet_look::palette::mix(surface, accent, 0.06), eframe::egui::Color32::BLACK, s.browser_darker.min(100) as f32 / 100.0) };
     Some([c.r(), c.g(), c.b()])
 }
 
