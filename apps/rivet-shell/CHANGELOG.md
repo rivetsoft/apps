@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Drag the dock's icons into order**: press a pinned app and drag it along the dock, and the others move over to make room. The Dock page in Settings shows the new order.
 - **Events on the panel's calendar**: with the Calendar plugin on (Rivet Calendar's), days with events get a dot in each calendar's color, and the chosen day's events are listed under the month. Click a day to see its events, and an event to open it in Rivet Calendar. Any plugin can give the calendar events the same way.
 - **Quick settings opens with you**: your picture and name sit at its top in place of the Quick Settings title, with how long the computer has been up under them. The picture is the one the lock screen shows; without one, your initial shows on the accent.
 - **Where an app comes from, in the launcher**: Flatpak, Snap and AppImage apps carry a small package on their icon in the grid, and after their name in the list; point at it to see which. Turn it off on the Launcher page.

@@ -2099,6 +2099,10 @@ impl Shell {
                     }
                 });
             }
+            Act::PlacePin(id, to) => {
+                let apps = self.apps.clone();
+                self.change_settings(|s| ui::place_pin(&mut s.dock_apps, &apps, &id, to));
+            }
             Act::OpenTrash => {
                 // In the desktop's file manager, at the address they all take for it.
                 let trash = [PathBuf::from("trash:///")];

@@ -272,6 +272,15 @@ Hyprland, Sway and mango nothing of Softcore's is looked for or run. The guide s
 - Quick settings: a VPN block appears when there is at least one VPN that can be switched. It turns one on and off: the first there is, or the one chosen under Quick settings on the VPN page when there are several. Its arrow opens the VPN page. For a ZeroTier network, off means leaving it and on means joining it again.
 - The shell reads the VPNs every ten seconds with the rest of the slower status.
 
+### Dock: moving the pinned apps
+
+Press a pinned app's icon and drag it along the dock: the other pins move over to show where it
+will land, and letting go leaves it there. A press let go without moving still opens the app.
+The order is the same list the Dock page in Settings shows, so the page follows within a moment,
+and Move Left and Move Right, there and in an icon's right-click menu, do the same thing a step
+at a time. Only pinned apps move: open apps that aren't pinned, Downloads and the Trash keep
+their places at the end.
+
 ### Launcher: rows and columns
 
 Location: `apps/rivet-shell/src/settings_app/launcher.rs`, Launcher, Layout, "Rows" and

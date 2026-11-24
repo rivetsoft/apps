@@ -63,6 +63,15 @@ pub fn dock_items(s: &Settings, apps: &[DesktopApp], running: &[String]) -> Vec<
     out
 }
 
+/// Move the pinned app `id` to place `to` among the pins the dock shows (a pin whose app isn't
+/// installed isn't shown, and keeps its place beside the one before it).
+pub fn place_pin(pins: &mut Vec<String>, apps: &[DesktopApp], id: &str, to: usize) {
+    let Some(from) = pins.iter().position(|d| find_app(apps, d).is_some_and(|a| a.id == id)) else { return };
+    let moved = pins.remove(from);
+    let at = pins.iter().enumerate().filter(|(_, d)| find_app(apps, d).is_some()).map(|(i, _)| i).nth(to).unwrap_or(pins.len());
+    pins.insert(at, moved);
+}
+
 /// The dock surface's size, and the room it keeps from windows.
 pub fn dock_size(s: &Settings, items: &[(DesktopApp, bool)]) -> (Vec2, f32) {
     let places = if s.dock_places { 2 } else { 0 };
@@ -312,6 +321,8 @@ pub enum Act {
     Pin(String),
     Unpin(String),
     MovePin(String, i32),
+    /// A pinned app dragged along the dock: its desktop id, and its new place among the pins shown.
+    PlacePin(String, usize),
     /// The calendar shows the days from one to the other: plugins that give events are told.
     CalendarSpan(NaiveDate, NaiveDate),
     /// Open the Trash in the file manager.
@@ -877,19 +888,65 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let drop = m.extra.drop.clone();
     let mimes = drop.as_ref().and_then(|d| d.mimes.clone());
     let trash_full = crate::places_pop::trash_full();
+    // A pinned app held and dragged along the dock (its id, and where on the icon it was
+    // taken): it follows the pointer, and the other pins make room where it would land.
+    let drag_id = egui::Id::unique("dock-drag");
+    let pins: Vec<(String, f32)> = slots.iter().filter_map(|(slot, r)| if let DockSlot::App(a, true) = slot { Some((a.id.clone(), r.left())) } else { None }).collect();
+    let held: Option<(String, f32)> = ui.ctx().data(|d| d.get_temp::<(String, f32)>(drag_id)).filter(|(id, _)| pins.iter().any(|(p, _)| p == id));
+    let held = held.zip(ui.input(|i| i.pointer.latest_pos())).map(|((id, grab), pos)| {
+        let cx = pos.x - grab;
+        let to = pins.iter().filter(|(p, x)| *p != id && x + size / 2.0 < cx).count();
+        (id, cx, to)
+    });
     for (slot, r) in &slots {
         let id = match slot {
             DockSlot::App(a, _) => a.id.clone(),
             DockSlot::Downloads => "@downloads".into(),
             DockSlot::Trash => "@trash".into(),
         };
-        let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &id)), Sense::click());
+        let can_move = matches!(slot, DockSlot::App(_, true)) && pins.len() > 1;
+        let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &id)), if can_move { Sense::click_and_drag() } else { Sense::click() });
+        if can_move && resp.drag_started() {
+            // Where it was pressed, not where the pointer had got to when it counted as a drag.
+            let grab = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos()).map_or(0.0, |p| p.x - r.center().x);
+            ui.ctx().data_mut(|d| d.insert_temp(drag_id, (id.clone(), grab)));
+        }
+        // Where it is drawn: its slot, or while a pin is being dragged, under the pointer (the
+        // one held) or in the slot it would have were the pin dropped now (the others, moving
+        // over to it).
+        let mut carried = false;
+        let r = &match (slot, &held) {
+            (DockSlot::App(_, true), Some((h, cx, to))) if *h == id => {
+                carried = true;
+                if resp.drag_stopped() {
+                    m.acts.push(Act::PlacePin(id.clone(), *to));
+                    ui.ctx().data_mut(|d| d.remove::<(String, f32)>(drag_id));
+                }
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                let x = (cx - size / 2.0).clamp(pins[0].1, pins[pins.len() - 1].1);
+                Rect::from_min_size(Pos2::new(x, r.top()), r.size())
+            }
+            (DockSlot::App(_, true), held) => {
+                let x = match held {
+                    Some((h, _, to)) => {
+                        let k = pins.iter().filter(|(p, _)| p != h).position(|(p, _)| *p == id).unwrap_or(0);
+                        ui.ctx().animate_value_with_time(egui::Id::unique(("dock-x", &id)), pins[if k >= *to { k + 1 } else { k }.min(pins.len() - 1)].1, 0.12)
+                    }
+                    // At rest: in its slot at once (the dock's own changes of size don't glide).
+                    None => ui.ctx().animate_value_with_time(egui::Id::unique(("dock-x", &id)), r.left(), 0.0),
+                };
+                Rect::from_min_size(Pos2::new(x, r.top()), r.size())
+            }
+            _ => *r,
+        };
+        // The one carried is drawn over the rest.
+        let p = if carried { ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, drag_id)) } else { p.clone() };
         let (lit, faded) = match &drop {
             Some(d) => {
                 let takes = dock_takes(slot, mimes.as_deref());
                 (takes && r.expand2(Vec2::new(DOCK_GAP / 2.0 + 0.5, DOCK_PAD)).contains(d.pos), !takes)
             }
-            None => (resp.hovered(), false),
+            None => (if held.is_some() { carried } else { resp.hovered() }, false),
         };
         let lift = if lit { -4.0 } else { 0.0 };
         let r2 = r.translate(Vec2::new(0.0, lift));
@@ -900,7 +957,9 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         };
         if lit {
             p.rect_filled(r.expand(3.0), hover_r, mix(v.panel_fill, v.text_color(), 0.08));
-            label = Some((name.clone(), r.center().x));
+            if !carried {
+                label = Some((name.clone(), r.center().x));
+            }
         }
         let tint = if faded { Color32::from_white_alpha(80) } else { Color32::WHITE };
         let tex = match slot {
@@ -919,7 +978,7 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         }
         // The dock is centred on its screen: a menu's place is the icon's from the middle.
         let at = r.center().x - full.center().x;
-        let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+        let resp = if held.is_some() { resp } else { resp.on_hover_cursor(egui::CursorIcon::PointingHand) };
         match slot {
             DockSlot::App(a, pinned) => {
                 // Open: a dot under it.
@@ -1681,6 +1740,49 @@ mod tests {
         assert!(glass_rects(r, egui::CornerRadius::same(12), half).iter().any(|q| q[1] + q[3] == 45 && q[0] == 10 && q[2] == 200));
     }
 
+    /// A pinned icon pressed, carried past the others and let go asks for its new place; a
+    /// press let go where it was is still a click.
+    #[test]
+    fn a_pin_dragged_along_the_dock_is_placed() {
+        let apps = [app("a.desktop", "A"), app("b.desktop", "B"), app("c.desktop", "C")];
+        let s = Settings { dock_apps: vec!["a".into(), "b".into(), "c".into()], dock_places: false, ..Settings::default() };
+        let (status, extra) = (Status::default(), Extra::default());
+        let (size, _) = dock_size(&s, &dock_items(&s, &apps, &[]));
+        let full = Rect::from_min_size(Pos2::ZERO, size);
+        let (_, slots, _) = dock_layout(&s, &apps, &[], full);
+        let (first, last) = (slots[0].1.center(), slots[2].1.center());
+        let ctx = egui::Context::default();
+        let mut kit = Kit::new(false);
+        let mut time = 0.0;
+        let mut frame = |events: Vec<egui::Event>| {
+            let mut acts = Vec::new();
+            time += 0.05;
+            let raw = egui::RawInput { screen_rect: Some(full), time: Some(time), events, ..Default::default() };
+            let mut out = ctx.run_ui(raw, |ui| {
+                kit.begin(ui.ctx(), &s);
+                let mut m = Model { s: &s, status: &status, extra: &extra, apps: &apps, compositor: Compositor::Other, output: "", acts: &mut acts };
+                dock(ui, &mut m, &mut kit);
+            });
+            out.textures_delta.clear();
+            acts
+        };
+        let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(vec![egui::Event::PointerMoved(first)]);
+        frame(vec![button(first, true)]);
+        // Over to the last icon, a step at a time, and a little past its middle.
+        for k in 1..=6 {
+            let at = first + (last - first) * (k as f32 / 6.0) + Vec2::new(if k == 6 { 4.0 } else { 0.0 }, 0.0);
+            assert!(frame(vec![egui::Event::PointerMoved(at)]).is_empty());
+        }
+        let acts = frame(vec![button(last + Vec2::new(4.0, 0.0), false)]);
+        assert!(matches!(acts.as_slice(), [Act::PlacePin(id, 2)] if id == "a.desktop"), "{acts:?}");
+        // Let go: nothing is held any more, and a plain press and release opens the app.
+        assert!(frame(vec![egui::Event::PointerMoved(first)]).is_empty());
+        frame(vec![button(first, true)]);
+        let acts = frame(vec![button(first, false)]);
+        assert!(matches!(acts.as_slice(), [Act::Launch(id)] if id == "a.desktop"));
+    }
+
     fn app(id: &str, name: &str) -> DesktopApp {
         DesktopApp { id: id.into(), name: name.into(), exec: String::new(), icon: String::new(), mimes: Vec::new(), terminal: false }
     }
@@ -1691,6 +1793,15 @@ mod tests {
         assert_eq!(find_app(&apps, "firefox").map(|a| a.name.as_str()), Some("Firefox"));
         assert_eq!(find_app(&apps, "rivet-files").map(|a| a.name.as_str()), Some("Rivet Files"));
         assert!(find_app(&apps, "nope").is_none());
+        // Dragged along the dock: places count the pins shown, and one not installed stays put.
+        let abc = [app("a.desktop", "A"), app("b.desktop", "B"), app("c.desktop", "C")];
+        let mut pins: Vec<String> = ["a", "gone", "b", "c"].map(String::from).to_vec();
+        place_pin(&mut pins, &abc, "a.desktop", 2);
+        assert_eq!(pins, ["gone", "b", "c", "a"]);
+        place_pin(&mut pins, &abc, "c.desktop", 0);
+        assert_eq!(pins, ["gone", "c", "b", "a"]);
+        place_pin(&mut pins, &abc, "b.desktop", 1);
+        assert_eq!(pins, ["gone", "c", "b", "a"]);
         let s = Settings { dock_apps: vec!["firefox".into(), "rivet-files".into()], ..Settings::default() };
         // Open apps that aren't pinned come after the pinned ones, once each.
         let items = dock_items(&s, &apps, &["kitty".into(), "firefox".into()]);
