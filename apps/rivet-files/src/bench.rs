@@ -41,18 +41,27 @@ pub fn run(folders: Vec<PathBuf>) {
         let mut load = Vec::new();
         let mut sort_name = Vec::new();
         let mut sort_type = Vec::new();
+        let mut mixed_name = Vec::new();
+        let mut mixed_type = Vec::new();
         for _ in 0..RUNS {
             let t = Instant::now();
             tab.reload(&db, &settings);
             load.push(ms(t));
-            settings.sort = SortKey::Name;
-            let t = Instant::now();
-            tab.resort(&db, &settings);
-            sort_name.push(ms(t));
-            settings.sort = SortKey::Type;
-            let t = Instant::now();
-            tab.resort(&db, &settings);
-            sort_type.push(ms(t));
+            // In the order the folder lists them (already sorted when the files were made in
+            // name order, as test folders usually are), then scrambled, like a real folder.
+            for (order, name, ty) in [(false, &mut sort_name, &mut sort_type), (true, &mut mixed_name, &mut mixed_type)] {
+                if order {
+                    tab.scramble();
+                }
+                settings.sort = SortKey::Name;
+                let t = Instant::now();
+                tab.resort(&db, &settings);
+                name.push(ms(t));
+                settings.sort = SortKey::Type;
+                let t = Instant::now();
+                tab.resort(&db, &settings);
+                ty.push(ms(t));
+            }
         }
         settings.sort = SortKey::Name;
         // Icon lookup for every item: first pass is cold (disk), second is cached.
@@ -96,8 +105,10 @@ pub fn run(folders: Vec<PathBuf>) {
             println!("    find the selection, one / all {:>8.3} ms / {:.1} ms", median(sel_one), median(sel_all));
         }
         println!("    read + inspect every item    {:>8.1} ms  ({:.1} µs per item)", median(load.clone()), median(load) * 1000.0 / n.max(1) as f64);
-        println!("    sort by name                 {:>8.2} ms", median(sort_name));
-        println!("    sort by type                 {:>8.2} ms", median(sort_type));
+        println!("    sort by name, folder order   {:>8.2} ms", median(sort_name));
+        println!("    sort by name, scrambled      {:>8.2} ms", median(mixed_name));
+        println!("    sort by type, folder order   {:>8.2} ms", median(sort_type));
+        println!("    sort by type, scrambled      {:>8.2} ms", median(mixed_type));
         println!("    find icons, first time       {:>8.1} ms  ({found}/{n} found)", cold);
         println!("    find icons, cached           {:>8.2} ms", warm);
     }

@@ -212,6 +212,10 @@ pub struct RivetApp {
     net: netview::NetState,
     /// The Peek panel's preview and video player.
     peek: peek::PeekState,
+    /// What the item menu shows for the selection it was worked out for (see `selection_key`).
+    menu_sel: Option<((u64, u64), Arc<views::MenuSel>)>,
+    /// Each .desktop file's Icon= line, and the modification time it was read at.
+    desktop_icons: std::collections::HashMap<PathBuf, (Option<std::time::SystemTime>, Option<String>)>,
     /// The Preview light box, when open.
     quick: Option<quickview::QuickView>,
     /// Zen mode's slide-in panels.
@@ -382,23 +386,43 @@ fn fmt_time(t: Option<std::time::SystemTime>) -> String {
     }
 }
 
+// The reentrant lookups, with a buffer of our own: Peek looks these up on a thread while the
+// window may do the same, and getpwuid and getgrgid share one static result.
 fn user_name(uid: u32) -> String {
-    unsafe {
-        let pw = libc::getpwuid(uid);
-        if pw.is_null() || (*pw).pw_name.is_null() {
+    let mut buf = vec![0 as libc::c_char; 1024];
+    loop {
+        // SAFETY: an all-zero passwd is a valid value for the call to fill in.
+        let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut out: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: `pw` and `buf` outlive the call, and the name is copied out before they go.
+        let r = unsafe { libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr(), buf.len(), &mut out) };
+        if r == libc::ERANGE && buf.len() < 1 << 20 {
+            buf.resize(buf.len() * 4, 0);
+            continue;
+        }
+        if r != 0 || out.is_null() || pw.pw_name.is_null() {
             return uid.to_string();
         }
-        std::ffi::CStr::from_ptr((*pw).pw_name).to_string_lossy().to_string()
+        return unsafe { std::ffi::CStr::from_ptr(pw.pw_name) }.to_string_lossy().into_owned();
     }
 }
 
 fn group_name(gid: u32) -> String {
-    unsafe {
-        let gr = libc::getgrgid(gid);
-        if gr.is_null() || (*gr).gr_name.is_null() {
+    let mut buf = vec![0 as libc::c_char; 1024];
+    loop {
+        // SAFETY: an all-zero group is a valid value for the call to fill in.
+        let mut gr: libc::group = unsafe { std::mem::zeroed() };
+        let mut out: *mut libc::group = std::ptr::null_mut();
+        // SAFETY: `gr` and `buf` outlive the call, and the name is copied out before they go.
+        let r = unsafe { libc::getgrgid_r(gid, &mut gr, buf.as_mut_ptr(), buf.len(), &mut out) };
+        if r == libc::ERANGE && buf.len() < 1 << 20 {
+            buf.resize(buf.len() * 4, 0);
+            continue;
+        }
+        if r != 0 || out.is_null() || gr.gr_name.is_null() {
             return gid.to_string();
         }
-        std::ffi::CStr::from_ptr((*gr).gr_name).to_string_lossy().to_string()
+        return unsafe { std::ffi::CStr::from_ptr(gr.gr_name) }.to_string_lossy().into_owned();
     }
 }
 
@@ -407,10 +431,6 @@ fn step_in(steps: &[f32], cur: f32, dir: i32) -> f32 {
     steps[(idx + dir).clamp(0, steps.len() as i32 - 1) as usize]
 }
 
-fn desktop_icon(p: &Path) -> Option<String> {
-    let text = std::fs::read_to_string(p).ok()?;
-    text.lines().find_map(|l| l.strip_prefix("Icon=").map(|s| s.trim().to_string()))
-}
 
 /// The shared "selected" look (selected files, active view and sidebar-mode buttons):
 /// the surface tinted with the accent plus a thin accent outline. `bg` is the surface underneath.
@@ -523,6 +543,8 @@ impl RivetApp {
             last_pointer: None,
             net: Default::default(),
             peek: Default::default(),
+            menu_sel: None,
+            desktop_icons: Default::default(),
             quick: None,
             zen: Default::default(),
             spotlight: None,
@@ -976,6 +998,18 @@ impl RivetApp {
         }
     }
 
+    /// A .desktop file's own icon, read once per modification rather than every frame.
+    fn desktop_icon(&mut self, e: &Entry) -> Option<String> {
+        if let Some((m, icon)) = self.desktop_icons.get(&e.path)
+            && *m == e.modified
+        {
+            return icon.clone();
+        }
+        let icon = std::fs::read_to_string(&e.path).ok().and_then(|text| text.lines().find_map(|l| l.strip_prefix("Icon=").map(|s| s.trim().to_string())));
+        self.desktop_icons.insert(e.path.clone(), (e.modified, icon.clone()));
+        icon
+    }
+
     fn entry_icon(&mut self, ctx: &egui::Context, e: &Entry, px: f32, mask: bool) -> Option<egui::TextureHandle> {
         if e.is_dir {
             if let Some(special) = places::special_folder_icon(&e.path, &self.user_dirs) {
@@ -987,7 +1021,7 @@ impl RivetApp {
             return self.icon_or_mask(ctx, &["emblem-unreadable", "text-x-generic"], px, mask);
         }
         if (e.mime == "application/x-desktop" || e.name.ends_with(".desktop"))
-            && let Some(icon) = desktop_icon(&e.path) {
+            && let Some(icon) = self.desktop_icon(e) {
                 if icon.starts_with('/') {
                     let ppp = ctx.pixels_per_point();
                     let size = (px * ppp) as u32;

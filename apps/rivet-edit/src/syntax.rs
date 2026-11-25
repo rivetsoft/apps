@@ -248,9 +248,11 @@ fn spans_unless(text: &str, lang: Lang, colors: &Colors, cancel: Option<&AtomicU
 /// text on another thread.
 #[derive(Default)]
 pub struct Cache {
-    /// The file name, language, colors and font it was built with (not the text: the galley
-    /// holds that, and comparing it is far quicker than hashing it).
+    /// The file name, language, colors and font it was built with.
     style: u64,
+    /// The edit of the text it was laid out for (`crate::text::Text::generation`): comparing
+    /// the text itself would cost a pass over the whole file every frame.
+    generation: u64,
     wrap: f32,
     pixels_per_point: f32,
     /// How full egui's glyph atlas was after laying it out. The atlas only fills up until egui
@@ -282,7 +284,7 @@ impl Cache {
     /// The laid-out text of `name` in `font`, wrapped at `wrap_width`. `line_height` is the
     /// space each line takes, as a multiple of the font's own.
     #[allow(clippy::too_many_arguments)]
-    pub fn galley(&mut self, ui: &Ui, text: &str, name: &str, pick: Pick, colors: &Colors, font: &FontId, line_height: f32, wrap_width: f32) -> Arc<Galley> {
+    pub fn galley(&mut self, ui: &Ui, text: &str, generation: u64, name: &str, pick: Pick, colors: &Colors, font: &FontId, line_height: f32, wrap_width: f32) -> Arc<Galley> {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         name.hash(&mut h);
         pick.hash(&mut h);
@@ -304,7 +306,7 @@ impl Cache {
         }
         let pixels_per_point = ui.ctx().pixels_per_point();
         let atlas_fill = ui.fonts_mut(|f| f.font_atlas_fill_ratio());
-        let same_job = self.style == style && self.galley.as_ref().is_some_and(|g| g.text() == text);
+        let same_job = self.style == style && self.galley.is_some() && self.generation == generation;
         if fresh.is_none()
             && same_job
             && self.wrap == wrap_width
@@ -344,6 +346,7 @@ impl Cache {
         }
         let galley = ui.fonts_mut(|f| f.layout_job(job));
         self.style = style;
+        self.generation = generation;
         self.wrap = wrap_width;
         self.pixels_per_point = pixels_per_point;
         self.atlas_fill = ui.fonts_mut(|f| f.font_atlas_fill_ratio());

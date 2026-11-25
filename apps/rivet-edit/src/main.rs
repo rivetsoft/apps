@@ -6,10 +6,12 @@ mod history;
 mod vcs;
 mod lsp;
 mod ops;
+mod pulse;
 mod schemes;
 mod settings;
 mod shell;
 mod syntax;
+mod text;
 mod vim;
 mod workspace;
 

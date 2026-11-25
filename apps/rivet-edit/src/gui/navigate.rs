@@ -157,12 +157,12 @@ impl EditApp {
         };
         let word: String = chars[a..b].iter().collect();
         let lang = if self.s.lsp { t.lang_now() } else { None };
-        let text = t.text.clone();
+        let (text, generation) = (t.text.clone(), t.text.generation());
         if let (Some(p), Some(l)) = (&path, lang) {
             let root = self.lsp_root(p);
             self.nav.seq += 1;
             let seq = self.nav.seq;
-            if self.lsp.ask(lsp::Doc { path: p, root: &root, lang: l, text: &text }, cur, what, seq) {
+            if self.lsp.ask(lsp::Doc { path: p, root: &root, lang: l, text: &text, generation }, cur, what, seq) {
                 let utf8 = self.lsp.utf8(l, &root);
                 self.nav.waiting = Some((seq, what, word.clone(), utf8));
                 self.note = Some((format!("Looking for {}{word}…", if what == Ask::References { "uses of " } else { "" }), false));
@@ -399,10 +399,10 @@ impl EditApp {
 
     fn ask_hover(&mut self, word: (usize, usize), at: Pos2, pinned: bool, path: &Path, root: &Path, lang: crate::syntax::Lang) {
         let Some(t) = self.tabs.get(self.active) else { return };
-        let text = t.text.clone();
+        let (text, generation) = (t.text.clone(), t.text.generation());
         self.nav.seq += 1;
         let seq = self.nav.seq;
-        if self.lsp.ask(lsp::Doc { path, root, lang, text: &text }, word.0, Ask::Hover, seq) {
+        if self.lsp.ask(lsp::Doc { path, root, lang, text: &text, generation }, word.0, Ask::Hover, seq) {
             self.nav.hover = Some(HoverBox { seq, word, at, text: None, pinned });
         } else if pinned {
             self.note = Some(("No language server to ask".into(), false));

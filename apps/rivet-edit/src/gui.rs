@@ -35,9 +35,13 @@ pub const ICON_SVG: &str = include_str!("../data/rivet-edit.svg");
 pub(crate) struct Tab {
     /// None for a new file not saved yet.
     pub path: Option<PathBuf>,
-    pub text: String,
+    pub text: crate::text::Text,
     /// The text as last read or saved (to know whether it changed).
     pub saved: String,
+    /// Whether the text differed from `saved`, and the edit it was worked out for.
+    pub dirty_seen: std::cell::Cell<(u64, bool)>,
+    /// The edit undo last looked at.
+    pub hist_seen: u64,
     /// The file's date when read or saved (to notice changes made elsewhere).
     pub disk: Option<SystemTime>,
     pub cache: syntax::Cache,
@@ -61,7 +65,43 @@ pub(crate) struct Tab {
 
 impl Tab {
     pub fn dirty(&self) -> bool {
-        self.text != self.saved
+        let generation = self.text.generation();
+        let (seen, dirty) = self.dirty_seen.get();
+        if seen == generation {
+            return dirty;
+        }
+        let dirty = self.text.as_str() != self.saved;
+        self.dirty_seen.set((generation, dirty));
+        dirty
+    }
+
+    /// The text as it is now is what's on disk.
+    pub fn mark_saved(&mut self) {
+        self.saved = self.text.to_string();
+        self.dirty_seen.set((self.text.generation(), false));
+    }
+
+    /// Record for undo what changed since the last look, and where the cursors are. Nothing to
+    /// compare when the text hasn't been edited since.
+    pub fn observe(&mut self, sels: &[crate::ops::Sel]) {
+        if self.hist_seen == self.text.generation() {
+            self.hist.look(sels);
+            return;
+        }
+        self.hist.observe(&self.text, sels);
+        self.hist_seen = self.text.generation();
+    }
+
+    /// Undo (or redo) a step; the cursors to put back.
+    pub fn undo(&mut self, redo: bool) -> Option<Vec<crate::ops::Sel>> {
+        let (undos, redos) = self.hist.steps();
+        if (if redo { redos } else { undos }) == 0 {
+            return None;
+        }
+        let hist = &mut self.hist;
+        let sels = self.text.edit(|s| if redo { hist.redo(s) } else { hist.undo(s) });
+        self.hist_seen = self.text.generation();
+        sels
     }
 
     /// The line comment for Ctrl+/ (by the language it's shown as).
@@ -131,8 +171,8 @@ pub struct EditApp {
     pub(crate) note: Option<(String, bool)>,
     shot: Option<rivet_kit::Shot>,
     title: String,
-    checked_at: f64,
-    scanned_at: f64,
+    /// The checks made every few seconds (none for screenshots).
+    pulse: Option<crate::pulse::Pulse>,
     /// A workspace scan running on its own thread: its folder and the answer to come.
     scan_rx: Option<(PathBuf, std::sync::mpsc::Receiver<ScanResult>)>,
     /// Bumped whenever the file list changes (Go to File re-ranks only then).
@@ -250,8 +290,7 @@ impl EditApp {
             note: None,
             shot: screenshot.map(rivet_kit::Shot::new),
             title: String::new(),
-            checked_at: 0.0,
-            scanned_at: 0.0,
+            pulse: None,
             scan_rx: None,
             files_gen: 0,
             file_rank: None,
@@ -524,10 +563,10 @@ impl EditApp {
             self.open_folder(p);
             return;
         }
-        match workspace::read_text(&p) {
+        match workspace::open_text(&p) {
             Ok(text) => {
                 let indent = self.indent_for(&text);
-                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default(), gutter: Default::default() };
+                let tab = Tab { path: Some(p.clone()), saved: text.clone(), text: crate::text::Text::new(text), dirty_seen: Default::default(), hist_seen: 0, disk: mtime(&p), cache: Default::default(), line_col: (1, 1), preview, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default(), gutter: Default::default() };
                 // A new preview takes the old one's place (when it wasn't changed).
                 match self.tabs.iter().position(|t| t.preview && !t.dirty()).filter(|_| preview) {
                     Some(i) => {
@@ -561,7 +600,7 @@ impl EditApp {
 
     pub(crate) fn new_tab(&mut self) {
         let indent = self.default_indent();
-        self.tabs.push(Tab { path: None, text: String::new(), saved: String::new(), disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default(), gutter: Default::default() });
+        self.tabs.push(Tab { path: None, text: Default::default(), saved: String::new(), dirty_seen: Default::default(), hist_seen: 0, disk: None, cache: Default::default(), line_col: (1, 1), preview: false, sels: Vec::new(), lang: Default::default(), indent, hist: Default::default(), gutter: Default::default() });
         self.active = self.tabs.len() - 1;
     }
 
@@ -594,7 +633,7 @@ impl EditApp {
         };
         match workspace::write_text(&p, &t.text) {
             Ok(()) => {
-                t.saved = t.text.clone();
+                t.mark_saved();
                 t.disk = mtime(&p);
                 self.note = Some((format!("Saved {}", t.name()), false));
                 self.lsp.saved(&p);
@@ -679,6 +718,33 @@ impl EditApp {
         }
     }
 
+    /// Files changed on disk, the file list and Git's status, checked on another thread.
+    fn pulse(&mut self, ctx: &egui::Context) {
+        if self.shot.is_some() {
+            return;
+        }
+        let pulse = self.pulse.get_or_insert_with(|| {
+            self.git.pulsed = true;
+            crate::pulse::Pulse::start(ctx.clone(), self.git.status_reply())
+        });
+        let focused = ctx.input(|i| i.focused);
+        pulse.watch(crate::pulse::Watch {
+            files: self.tabs.iter().filter_map(|t| Some((t.path.clone()?, t.disk))).collect(),
+            root: self.root.clone().filter(|_| !self.files_cut),
+            repo: self.git.repo.clone().filter(|_| focused && self.git.running.is_none()),
+        });
+        for f in pulse.found() {
+            match f {
+                crate::pulse::Found::Disk => self.check_disk(),
+                crate::pulse::Found::Files(root, files, cut) => {
+                    if self.root.as_ref() == Some(&root) {
+                        self.set_files(files, cut);
+                    }
+                }
+            }
+        }
+    }
+
     fn check_disk(&mut self) {
         for t in &mut self.tabs {
             let Some(p) = &t.path else { continue };
@@ -687,9 +753,9 @@ impl EditApp {
                 if t.dirty() {
                     self.note = Some((format!("{} changed on disk. Saving here will overwrite that change.", t.name()), true));
                     t.disk = now;
-                } else if let Ok(text) = workspace::read_text(p) {
-                    t.text = text.clone();
-                    t.saved = text;
+                } else if let Ok(text) = workspace::open_text(p) {
+                    t.text.set(text);
+                    t.mark_saved();
                     t.disk = now;
                 }
             }
@@ -905,20 +971,9 @@ impl eframe::App for EditApp {
         for t in self.tabs.iter_mut().filter(|t| t.preview && t.dirty()) {
             t.preview = false;
         }
-        let now = ctx.input(|i| i.time);
         self.take_scan(&ctx);
+        self.pulse(&ctx);
         self.git_tick(&ctx);
-        if self.shot.is_none() && now - self.checked_at > 2.0 {
-            self.checked_at = now;
-            self.check_disk();
-            ctx.request_repaint_after(std::time::Duration::from_secs(2));
-        }
-        // The file list again every few seconds, in the background (not for huge folders).
-        if self.shot.is_none() && self.root.is_some() && !self.files_cut && now - self.scanned_at > 5.0 {
-            self.scanned_at = now;
-            self.rescan();
-            ctx.request_repaint_after(std::time::Duration::from_secs(5));
-        }
         let title = match (self.tabs.get(self.active), self.workspace_name()) {
             (Some(t), Some(w)) => format!("{}{} – {w} – Rivet Edit", if t.dirty() { "● " } else { "" }, t.name()),
             (Some(t), None) => format!("{}{} – Rivet Edit", if t.dirty() { "● " } else { "" }, t.name()),

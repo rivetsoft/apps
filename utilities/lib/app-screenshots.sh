@@ -30,24 +30,20 @@ export HOME="$T/home" TMPDIR="$T" XDG_CONFIG_HOME="$T/config" XDG_DATA_HOME="$T/
 export RIVET_SHOT_SIZE=1280x800
 
 "$BIN/rivet-snip" --screenshot "$OUT/rivet-snip-wide.png"
-RIVET_VICE_SCENE=selected "$BIN/rivet-vice" --screenshot "$OUT/rivet-vice-wide.png"
+"$BIN/rivet-vice" --screenshot "$OUT/rivet-vice-wide.png"
 RIVET_CALENDAR_VIEW=month "$BIN/rivet-calendar" --screenshot "$OUT/rivet-calendar-wide.png"
 "$BIN/rivet-color" --screenshot "$OUT/rivet-color-wide.png"
 
-# rivetfetch in Rivet Terminal, as rivet@demo. Its facts are this computer's, so the model,
-# packages and the like are left out; a user namespace gives it the host name "demo" where
-# the system allows one.
+# rivetfetch in Rivet Terminal, with RIVET_FETCH_DEMO's made-up computer instead of this one.
 cat > "$T/fetch.sh" <<'EOF'
 #!/bin/bash
 e=$(printf '\033')
 p() { printf '%s[1;32mrivet%s[0m@%s[1;34mdemo%s[0m %s[36m~%s[0m %s[1;35m>%s[0m %s' "$e" "$e" "$e" "$e" "$e" "$e" "$e" "$e" "$1"; }
 p 'rivetfetch'; echo
-rivetfetch --color always --modules title,separator,os,kernel,uptime,shell,wm,terminal,cpu,gpu,memory,rivet,break,colors
+rivetfetch --color always --modules title,separator,os,host,kernel,uptime,packages,shell,wm,terminal,cpu,gpu,memory,disk,rivet,break,colors
 p ''
 exec sleep 600
 EOF
-export PATH="$BIN:$PATH" USER=rivet LOGNAME=rivet SHELL=/bin/bash RIVET_SHOT_AFTER=200
-run="exec \"$BIN/rivet-terminal\" --screenshot \"$OUT/rivet-fetch-wide.png\" -e bash \"$T/fetch.sh\""
-unshare -Ur -u sh -c "hostname demo && $run" 2>/dev/null || sh -c "$run"
+PATH="$BIN:$PATH" RIVET_FETCH_DEMO=1 RIVET_SHOT_AFTER=200 "$BIN/rivet-terminal" --screenshot "$OUT/rivet-fetch-wide.png" -e bash "$T/fetch.sh"
 rm -rf "$T"
 echo "Saved rivet-{snip,vice,calendar,color,fetch}-wide.png in $OUT"

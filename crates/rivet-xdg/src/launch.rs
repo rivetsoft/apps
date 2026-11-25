@@ -1,8 +1,11 @@
 //! Opening files: default applications (mimeapps.list), "Open With" choices from
 //! installed .desktop entries, and opening a terminal in a folder.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 
 use crate::places;
 
@@ -139,24 +142,46 @@ pub fn mimeapps_default(mime: &str) -> Option<String> {
         files.push(dd.join("mimeapps.list"));
         files.push(dd.join("defaults.list"));
     }
+    // Each list read so far: its modification time and size when read, and its defaults.
+    // Peek and the context menu ask every frame, so a list is read again only when it changes.
+    type Lists = HashMap<PathBuf, ((Option<SystemTime>, u64), HashMap<String, String>)>;
+    static LISTS: OnceLock<Mutex<Lists>> = OnceLock::new();
+    let mut lists = LISTS.get_or_init(Default::default).lock().unwrap_or_else(|e| e.into_inner());
     for f in files {
-        let Ok(text) = std::fs::read_to_string(&f) else { continue };
-        let mut in_default = false;
-        for line in text.lines() {
-            let line = line.trim();
-            if line.starts_with('[') {
-                in_default = line == "[Default Applications]";
-                continue;
-            }
-            if in_default
-                && let Some((k, v)) = line.split_once('=')
-                    && k.trim() == mime
-                        && let Some(first) = v.split(';').find(|s| !s.is_empty()) {
-                            return Some(first.trim().to_string());
-                        }
+        let Ok(meta) = std::fs::metadata(&f) else {
+            lists.remove(&f);
+            continue;
+        };
+        let stamp = (meta.modified().ok(), meta.len());
+        if lists.get(&f).is_none_or(|(s, _)| *s != stamp) {
+            let Ok(text) = std::fs::read_to_string(&f) else { continue };
+            lists.insert(f.clone(), (stamp, parse_defaults(&text)));
+        }
+        if let Some(app) = lists.get(&f).and_then(|(_, d)| d.get(mime)) {
+            return Some(app.clone());
         }
     }
     None
+}
+
+/// A mimeapps.list's [Default Applications]: each type's first app, the first line for a type winning.
+fn parse_defaults(text: &str) -> HashMap<String, String> {
+    let mut defaults = HashMap::new();
+    let mut in_default = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_default = line == "[Default Applications]";
+            continue;
+        }
+        if in_default
+            && let Some((k, v)) = line.split_once('=')
+            && let Some(first) = v.split(';').find(|s| !s.is_empty())
+        {
+            defaults.entry(k.trim().to_string()).or_insert_with(|| first.trim().to_string());
+        }
+    }
+    defaults
 }
 
 /// Make an app the default for a file type (writes ~/.config/mimeapps.list via xdg-mime).
@@ -373,5 +398,13 @@ mod tests {
         assert_eq!(app("\"/home/me/Applications/figcraft-0.18.1-linux-x86_64.AppImage\" %F").source(), Some(Source::AppImage));
         assert_eq!(app("firefox %u").source(), None);
         assert_eq!(app("rivet-edit --run flatpak").source(), None);
+    }
+
+    #[test]
+    fn a_lists_first_default_for_a_type_wins() {
+        let d = parse_defaults("[Added Associations]\ntext/plain=added.desktop;\n[Default Applications]\ntext/plain=;edit.desktop;other.desktop\ntext/plain=late.desktop\nimage/png = view.desktop\n");
+        assert_eq!(d.get("text/plain").map(String::as_str), Some("edit.desktop"));
+        assert_eq!(d.get("image/png").map(String::as_str), Some("view.desktop"));
+        assert_eq!(d.len(), 2);
     }
 }

@@ -92,25 +92,24 @@ enum Done {
 pub(crate) struct Gutter {
     /// The staged copy the text was compared with.
     base: Option<Arc<String>>,
-    /// The text the hunks were worked out for.
-    seen: String,
+    /// The edit the hunks were worked out for.
+    seen: u64,
     pub hunks: Vec<Hunk>,
 }
 
 impl Gutter {
     /// The hunks for `text` against `base`, working them out again only when either changed.
-    pub fn update(&mut self, text: &str, base: Option<&Arc<String>>) {
+    pub fn update(&mut self, text: &crate::text::Text, base: Option<&Arc<String>>) {
         let same_base = match (&self.base, base) {
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             (None, None) => true,
             _ => false,
         };
-        if same_base && self.seen == text {
+        if same_base && self.seen == text.generation() {
             return;
         }
         self.base = base.cloned();
-        self.seen.clear();
-        self.seen.push_str(text);
+        self.seen = text.generation();
         self.hunks = match base {
             Some(b) if text.len() <= MAX_DIFF && b.len() <= MAX_DIFF => rivet_git::diff::hunks(b, text),
             _ => Vec::new(),
@@ -157,6 +156,9 @@ pub(crate) struct Git {
     ctx: Option<eframe::egui::Context>,
     /// Run everything right away on the window's thread (screenshots, so the picture is ready).
     pub sync: bool,
+    /// The status now and then comes from `crate::pulse`, which wakes the window only when it
+    /// changed.
+    pub pulsed: bool,
 }
 
 impl Default for Git {
@@ -185,6 +187,7 @@ impl Default for Git {
             rx,
             ctx: None,
             sync: false,
+            pulsed: false,
         }
     }
 }
@@ -231,6 +234,14 @@ impl Git {
         self.marks.clear();
         self.marked_dirs.clear();
         self.poke();
+    }
+
+    /// Hands a status worked out elsewhere to the next tick, as if this had asked for it.
+    pub fn status_reply(&self) -> crate::pulse::StatusReply {
+        let tx = self.tx.clone();
+        Box::new(move |root, s| {
+            let _ = tx.send(Done::Status(root, s));
+        })
     }
 
     /// Ask for the status on the next tick (after a save, or something done outside).
@@ -325,13 +336,13 @@ impl Git {
         }
         let Some(repo) = self.repo.clone() else { return news };
         let now = ctx.input(|i| i.time);
-        if !self.status_busy && self.running.is_none() && (now - self.status_at > STATUS_EVERY && (focused || self.status.is_none()) || self.status_at == f64::NEG_INFINITY) {
+        if !self.status_busy && self.running.is_none() && (!self.pulsed && now - self.status_at > STATUS_EVERY && (focused || self.status.is_none()) || self.status_at == f64::NEG_INFINITY) {
             self.status_at = now;
             self.status_busy = true;
             let r = repo.clone();
             self.spawn(move || Done::Status(r.root.clone(), r.status()));
         }
-        if !self.sync {
+        if !self.sync && !self.pulsed {
             ctx.request_repaint_after(std::time::Duration::from_secs_f64(STATUS_EVERY));
         }
         // The staged copies: read again when the index or HEAD moved, and for files opened since.

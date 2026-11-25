@@ -73,12 +73,14 @@ impl EditApp {
                 }
             }
         });
-        let mut chars: Vec<char> = t.text.chars().collect();
-        let mut cur = cur0.min(chars.len());
         if keys.is_empty() {
             // A click in Normal mode lands on a character, not past a line's end.
             if self.vim.mode == Mode::Normal && self.vim.cmdline.is_none() {
-                let c = vim::clamp(&chars, cur);
+                let cur = cur0.min(t.text.char_count());
+                let line = t.text.line_col(cur).0;
+                let (s, e) = (t.text.line_start(line), t.text.line_start(line + 1));
+                let end = if line < t.text.line_count() { e - 1 } else { e };
+                let c = if end > s { cur.min(end - 1) } else { s };
                 let selecting = st.cursor.char_range().is_some_and(|r| r.primary != r.secondary);
                 if c != cur && !selecting {
                     editing::set_primary(ctx, id, Sel::new(c, c));
@@ -86,6 +88,8 @@ impl EditApp {
             }
             return;
         }
+        let mut chars: Vec<char> = t.text.chars().collect();
+        let mut cur = cur0.min(chars.len());
         let unit = t.indent.unit();
         let width = t.indent.width;
         let before_mode = self.vim.mode;
@@ -121,7 +125,7 @@ impl EditApp {
             if before_mode != vim::Mode::Insert {
                 t.hist.command();
             }
-            t.text = chars.iter().collect();
+            t.text.set(chars.iter().collect());
             t.preview = false;
         }
         self.vim.head = cur;

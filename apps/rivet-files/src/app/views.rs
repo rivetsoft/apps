@@ -10,6 +10,15 @@ use crate::launch;
 use crate::model::{Entry, Location};
 use crate::settings::{SortKey, ViewMode};
 
+/// What the item menu needs to know about the selection, worked out once per selection rather
+/// than every frame the menu is open.
+pub(super) struct MenuSel {
+    paths: Vec<PathBuf>,
+    archives: Vec<PathBuf>,
+    /// Whether every selected item is a picture, a video or audio (for the media tools).
+    media: Option<crate::preview::Kind>,
+}
+
 /// The one selected item drawn on top with its full name: (cell, icon, icon rect, tile fill,
 /// name, name position, name color, cut, entry).
 type Expanded = (Rect, Option<egui::TextureHandle>, Rect, Color32, Arc<egui::Galley>, Pos2, Color32, bool, Entry);
@@ -600,7 +609,18 @@ impl RivetApp {
             t.selected.clear();
             t.selected.insert(e.path.clone());
         }
-        let sel = self.tab().selected_paths();
+        let key = self.tab().selection_key();
+        if self.menu_sel.as_ref().is_none_or(|(k, _)| *k != key) {
+            let entries = self.tab().selected_entries();
+            let mimes: Vec<&str> = entries.iter().map(|x| x.mime.as_str()).collect();
+            let media = crate::media::common_kind(&mimes);
+            let paths: Vec<PathBuf> = entries.iter().map(|x| x.path.clone()).collect();
+            let archives = paths.iter().filter(|p| crate::archive::is_archive(p)).cloned().collect();
+            self.menu_sel = Some((key, Arc::new(MenuSel { paths, archives, media })));
+        }
+        let Some((_, menu)) = &self.menu_sel else { return };
+        let menu = menu.clone();
+        let sel = &menu.paths;
         if in_trash {
             if ui.button("Restore").clicked() {
                 self.pending.push(Action::Restore);
@@ -631,7 +651,7 @@ impl RivetApp {
                 None => "Open".into(),
             };
             if ui.button(label).clicked() {
-                for p in &sel {
+                for p in sel {
                     self.pending.push(Action::Open(p.clone()));
                 }
             }
@@ -660,7 +680,7 @@ impl RivetApp {
             });
         }
         ui.separator();
-        let archives: Vec<PathBuf> = sel.iter().filter(|p| crate::archive::is_archive(p)).cloned().collect();
+        let archives = &menu.archives;
         if !archives.is_empty() && archives.len() == sel.len() && ui.button("Extract Here").clicked() {
             self.pending.push(Action::ExtractHere(archives.clone()));
         }
@@ -676,16 +696,14 @@ impl RivetApp {
             ui.close();
         }
         // Media tools (ffmpeg): only when every selected file is a picture, video or audio.
-        if self.media_tools_on() {
-            let mimes: Vec<String> = sel.iter().filter_map(|p| self.tab().entries.iter().find(|x| x.path == *p).map(|x| x.mime.clone())).collect();
-            let refs: Vec<&str> = mimes.iter().map(|m| m.as_str()).collect();
-            if let Some(kind) = crate::media::common_kind(&refs) {
-                if ui.button("Convert To…").clicked() {
-                    self.pending.push(Action::Convert(sel.clone()));
-                }
-                if kind == crate::preview::Kind::Image && ui.button("Resize…").clicked() {
-                    self.pending.push(Action::Resize(sel.clone()));
-                }
+        if self.media_tools_on()
+            && let Some(kind) = menu.media
+        {
+            if ui.button("Convert To…").clicked() {
+                self.pending.push(Action::Convert(sel.clone()));
+            }
+            if kind == crate::preview::Kind::Image && ui.button("Resize…").clicked() {
+                self.pending.push(Action::Resize(sel.clone()));
             }
         }
         if ui.button("Compress…").clicked() {
