@@ -3,6 +3,8 @@
 Pick a color from anywhere on the screen, copy it in the format you need, see the colors that
 go with it, and keep colors in palettes.
 
+![Rivet Color with a picked color, its shades and harmonies](../../docs/screenshots/rivet-color-wide.png)
+
 - **Pick from Screen** (or P) takes the color under the next click and copies it.
 - The color in **hex, RGB, HSL and OKLCH**: click one to copy it. **Copy as** sets the format
   copies use everywhere (the window, the panel, `rivet-color pick`).

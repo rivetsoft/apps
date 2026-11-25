@@ -4,6 +4,8 @@ A calendar kept in plain `.ics` folders. See your days as a month, a week, a day
 make, change and delete events, including ones that repeat; and see them on the panel's
 calendar in Rivet Shell.
 
+![Rivet Calendar's month view, with four calendars](../../docs/screenshots/rivet-calendar-wide.png)
+
 - **Plain files.** Each calendar is a folder in `~/.local/share/rivet-calendar` with one `.ics`
   file per event, and its name and colour in the files `displayname` and `color`. It's the
   layout vdirsyncer and khal use, so they share the same calendars: vdirsyncer can keep them in
