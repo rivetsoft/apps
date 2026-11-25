@@ -8,6 +8,9 @@
 //! - Codex and Grok: their own logins (`~/.codex/auth.json`, `~/.grok/auth.json`).
 //! - OpenRouter and DeepSeek: API keys from the environment, or from
 //!   `~/.config/rivet-shell/ai.env` (a desktop session doesn't see a terminal's exports).
+//! - Hermes Agent: not a plan with limits, but what it did over the last week, from
+//!   `hermes insights --source acp --days 7`. Only when the `hermes` program is installed, and
+//!   at most every 10 minutes (it takes a couple of seconds).
 //!
 //! Logins are only read, never refreshed or written. Keys go to curl on its standard input,
 //! never as arguments other programs could see.
@@ -25,8 +28,11 @@ use serde_json::Value;
 /// The providers: id, name.
 pub const PROVIDERS: &[(&str, &str)] = &[("claude", "Claude"), ("codex", "Codex"), ("grok", "Grok"), ("openrouter", "OpenRouter"), ("deepseek", "DeepSeek")];
 
+/// Hermes Agent: shown when it's installed, with its week's activity rather than limits.
+pub const HERMES: (&str, &str) = ("hermes", "Hermes");
+
 pub fn name(id: &str) -> &'static str {
-    PROVIDERS.iter().find(|p| p.0 == id).map(|p| p.1).unwrap_or("AI")
+    PROVIDERS.iter().chain([&HERMES]).find(|p| p.0 == id).map(|p| p.1).unwrap_or("AI")
 }
 
 /// One limit: "5-hour", "Weekly"…
@@ -60,6 +66,8 @@ pub struct Provider {
     pub windows: Vec<Window>,
     /// Money left, for pay-as-you-go accounts ("$4.20 left of $10.00").
     pub balance: Option<String>,
+    /// Figures that aren't limits, as label and value ("Sessions", "83"): Hermes' week.
+    pub facts: Vec<(String, String)>,
     /// When the numbers were read (unix seconds).
     pub at: i64,
 }
@@ -143,9 +151,10 @@ impl AiLive {
     }
 }
 
-/// Local files every 15 s; the services every 2 minutes.
+/// Local files every 15 s; the services every 2 minutes; Hermes every 10.
 const LOOK: u64 = 15;
 const ASK: i64 = 120;
+const ASK_HERMES: i64 = 600;
 
 pub fn start(wake: impl Fn() + Send + 'static) -> AiLive {
     let (poke, poked) = channel::<bool>();
@@ -156,6 +165,7 @@ pub fn start(wake: impl Fn() + Send + 'static) -> AiLive {
         .spawn(move || {
             let mut claude = ClaudePoll::default();
             let mut asked: i64 = 0;
+            let mut asked_hermes: i64 = 0;
             let mut force = false;
             loop {
                 if l.on.load(Ordering::Relaxed) {
@@ -165,6 +175,10 @@ pub fn start(wake: impl Fn() + Send + 'static) -> AiLive {
                     if ask {
                         asked = t;
                     }
+                    let ask_hermes = force || t - asked_hermes >= ASK_HERMES;
+                    if ask_hermes && on_hermes(&enabled) {
+                        asked_hermes = t;
+                    }
                     let old = l.get();
                     let keep = |id: &str| old.get(id).cloned();
                     let on = |id: &str| enabled.iter().any(|e| e == id);
@@ -172,10 +186,12 @@ pub fn start(wake: impl Fn() + Send + 'static) -> AiLive {
                     let mut results: Vec<Provider> = std::thread::scope(|sc| {
                         let jobs: Vec<_> = PROVIDERS
                             .iter()
+                            .chain([&HERMES])
                             .filter(|(id, _)| *id != "claude" && on(id))
                             .map(|&(id, _)| {
                                 let prev = keep(id);
-                                sc.spawn(move || if ask || prev.is_none() { fetch(id) } else { prev.unwrap_or_default() })
+                                let now = if id == HERMES.0 { ask_hermes } else { ask };
+                                sc.spawn(move || if now || prev.is_none() { fetch(id) } else { prev.unwrap_or_default() })
                             })
                             .collect();
                         jobs.into_iter().map(|j| j.join().unwrap_or_default()).collect()
@@ -204,6 +220,10 @@ pub fn start(wake: impl Fn() + Send + 'static) -> AiLive {
         })
         .ok();
     live
+}
+
+fn on_hermes(enabled: &[String]) -> bool {
+    enabled.iter().any(|e| e == HERMES.0)
 }
 
 // ------------------------------------------------------------------ keys and requests
@@ -473,6 +493,7 @@ fn fetch(id: &'static str) -> Provider {
         "grok" => grok(&mut p),
         "openrouter" => openrouter(&mut p),
         "deepseek" => deepseek(&mut p),
+        "hermes" => hermes(&mut p),
         _ => State::Missing(String::new()),
     };
     p
@@ -587,6 +608,60 @@ fn deepseek(p: &mut Provider) -> State {
     State::Ok
 }
 
+/// The `hermes` program: on the PATH, or where its installer puts it (a desktop session's PATH
+/// often leaves out ~/.local/bin).
+fn hermes_program() -> Option<PathBuf> {
+    let on_path = std::env::var_os("PATH").into_iter().flat_map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).map(|d| d.join("hermes"));
+    on_path.chain([home().join(".local/bin/hermes"), home().join(".hermes/bin/hermes")]).find(|p| p.is_file())
+}
+
+/// The week Hermes Agent had over ACP, from `hermes insights`, which only prints a report: its
+/// Overview and Cost lines are read as "Label:  value" pairs.
+fn hermes(p: &mut Provider) -> State {
+    use std::process::{Command, Stdio};
+    let Some(prog) = hermes_program() else { return State::Missing("Install Hermes Agent.".into()) };
+    let child = Command::new(prog).args(["insights", "--source", "acp", "--days", "7"]).env("NO_COLOR", "1").stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn();
+    let Ok(mut child) = child else { return State::Error("Couldn't run Hermes Agent.".into()) };
+    // Never wait on it for long: the other providers are read on the same pass.
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if start.elapsed() < Duration::from_secs(30) => std::thread::sleep(Duration::from_millis(100)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return State::Error("Hermes Agent took too long to answer. Trying again in 10 minutes.".into());
+            }
+        }
+    }
+    let Ok(out) = child.wait_with_output() else { return State::Error("Couldn't read what Hermes Agent answered.".into()) };
+    p.plan = "Last 7 days".into();
+    p.facts = hermes_facts(&String::from_utf8_lossy(&out.stdout));
+    State::Ok
+}
+
+/// The figures worth showing, in this order, from the report's text.
+fn hermes_facts(text: &str) -> Vec<(String, String)> {
+    let mut found: Vec<(String, String)> = Vec::new();
+    for line in text.lines() {
+        // "Sessions:          83            Messages:        447": pairs split at the colons.
+        let mut rest = line.trim();
+        while let Some((label, after)) = rest.split_once(':') {
+            let after = after.trim_start();
+            let end = after.find("  ").unwrap_or(after.len());
+            let (value, more) = after.split_at(end);
+            found.push((label.trim().to_string(), value.trim().to_string()));
+            rest = more.trim_start();
+        }
+    }
+    let get = |k: &str| found.iter().find(|f| f.0 == k).map(|f| f.1.clone()).filter(|v| !v.is_empty());
+    [("Sessions", "Sessions"), ("Messages", "Messages"), ("Tool calls", "Tool calls"), ("Total tokens", "Tokens"), ("Active time", "Active"), ("Estimated", "Cost")]
+        .iter()
+        .filter_map(|(k, label)| Some((label.to_string(), get(k)?)))
+        .collect()
+}
+
 fn title(s: &str) -> String {
     let mut c = s.chars();
     c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
@@ -627,8 +702,11 @@ pub fn report() -> String {
     let mut out = String::new();
     let (code, sessions, busy) = claude_code();
     out.push_str(&format!("Claude Code: {}\n", if !code { "not found".to_string() } else { format!("{sessions} session{} running{}", if sessions == 1 { "" } else { "s" }, if busy { ", working now" } else { "" }) }));
-    for &(id, _) in PROVIDERS {
+    for &(id, _) in PROVIDERS.iter().chain([&HERMES]) {
         let p = if id == "claude" { ClaudePoll::default().read(false) } else { fetch(id) };
+        if id == HERMES.0 && matches!(p.state, State::Missing(_)) {
+            continue;
+        }
         out.push_str(&format!("{}{}: ", name(id), if p.plan.is_empty() { String::new() } else { format!(" ({})", p.plan) }));
         match &p.state {
             State::Ok => {
@@ -638,6 +716,9 @@ pub fn report() -> String {
                 }
                 if let Some(b) = &p.balance {
                     out.push_str(&format!("  {b}\n"));
+                }
+                for (k, v) in &p.facts {
+                    out.push_str(&format!("  {k:<18} {v}\n"));
                 }
             }
             State::Missing(why) | State::Error(why) => out.push_str(&format!("{why}\n")),
@@ -697,6 +778,14 @@ mod tests {
     fn a_passed_reset_is_unused() {
         let w = settle(vec![Window { name: "5-hour".into(), used: 80.0, reset: 1 }]);
         assert_eq!((w[0].used, w[0].reset), (0.0, 0));
+    }
+
+    #[test]
+    fn reads_hermes_insights() {
+        let text = "  📋 Overview\n  ─────\n  Sessions:          83            Messages:        447\n  Tool calls:        306           User messages:   36\n  Total tokens:      6,238,657\n  Active time:       ~15h 36m      Avg session:     ~11m\n\n  💰 Cost\n  Estimated:          ~$3.55\n";
+        let f = hermes_facts(text);
+        assert_eq!(f.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>(), ["Sessions=83", "Messages=447", "Tool calls=306", "Tokens=6,238,657", "Active=~15h 36m", "Cost=~$3.55"]);
+        assert!(hermes_facts("  No sessions found in the last 7 days (source: acp).\n").is_empty());
     }
 
     #[test]

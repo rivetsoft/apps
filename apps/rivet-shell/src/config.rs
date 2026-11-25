@@ -752,6 +752,9 @@ pub struct Settings {
     pub ai_left: bool,
     /// Limits pinned to the panel, as "provider:limit name" (none: the most used one shows).
     pub ai_pins: Vec<String>,
+    /// Hermes Agent's week in the AI item, when it's installed. Kept apart from ai_providers so
+    /// a list saved before Hermes was added still shows it.
+    pub ai_hermes: bool,
     /// The volume, brightness and battery items: what each shows, and whether scrolling over
     /// volume or brightness changes it; the battery can be left out while it's charged.
     // ---- the Now Playing item
@@ -958,6 +961,7 @@ impl Default for Settings {
             ai_bar: "auto".into(),
             ai_left: false,
             ai_pins: Vec::new(),
+            ai_hermes: true,
             media_text: MediaText::TitleArtist,
             media_width: 230,
             media_art: true,
@@ -1115,6 +1119,15 @@ struct OldPanel {
 }
 
 impl Settings {
+    /// The AI item's providers to read: the ones turned on, and Hermes when it's on.
+    pub fn ai_enabled(&self) -> Vec<String> {
+        let mut v = self.ai_providers.clone();
+        if self.ai_hermes {
+            v.push(crate::ai::HERMES.0.to_string());
+        }
+        v
+    }
+
     /// Whether anything shows the weather: a widget, or the item on a panel.
     pub fn shows_weather(&self) -> bool {
         self.widgets.iter().any(|w| w.kind == WidgetKind::Weather) || self.panels.iter().any(|p| p.has("weather"))
@@ -1260,6 +1273,7 @@ impl Settings {
                 "ai_bar" => self.ai_bar = if v.is_empty() { "auto".into() } else { v.to_string() },
                 "ai_left" => self.ai_left = b,
                 "ai_pins" => self.ai_pins = v.split(',').map(str::trim).filter(|x| !x.is_empty()).map(String::from).collect(),
+                "ai_hermes" => self.ai_hermes = b,
                 "media_text" => self.media_text = MediaText::from(v),
                 "media_width" => self.media_width = v.parse().unwrap_or(230).clamp(80, 480),
                 "media_art" => self.media_art = b,
@@ -1400,7 +1414,7 @@ impl Settings {
         let [r, g, b] = self.accent;
         let one = |s: &str| s.replace('\n', " ");
         let mut t = format!(
-            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\nvol_show={}\nvol_scroll={}\nbright_show={}\nbright_scroll={}\nbatt_show={}\nbatt_hide_full={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
+            "theme={}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\nwallpaper={}\nwallpaper_dir={}\nmatugen={}\ncolor_mode={}\nscheme_type={}\nclock_format={}\nws_style={}\nws_names={}\nws_hide_empty={}\nws_scroll={}\nai_providers={}\nai_bar={}\nai_left={}\nai_pins={}\nai_hermes={}\nvol_show={}\nvol_scroll={}\nbright_show={}\nbright_scroll={}\nbatt_show={}\nbatt_hide_full={}\ndock={}\ndock_apps={}\ndock_icon={}\ndock_reserve={}\ndock_running={}\nwidget_side={}\nnotifications={}\nosd={}\nnight_kelvin={}\ndock_open_apps={}\ndock_hide={}\npanel_count={}\n",
             mode_name(self.theme),
             self.follow_desktop_colors,
             self.text_size,
@@ -1418,6 +1432,7 @@ impl Settings {
             one(&self.ai_bar),
             self.ai_left,
             self.ai_pins.join(","),
+            self.ai_hermes,
             self.vol_show.name(),
             self.vol_scroll,
             self.bright_show.name(),
@@ -1696,7 +1711,7 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, dock_places: false, blur: false, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
+        let mut s = Settings { wallpaper: "/p/a b.jpg".into(), dock_hide: DockHide::Smart, dock_places: false, blur: false, widget_side: Side::Right, color_mode: Mode::Light, ws_style: WsStyle::Dots, ws_names: false, ws_hide_empty: true, ws_scroll: false, ai_providers: vec!["claude".into()], ai_bar: "codex".into(), ai_left: true, ai_pins: vec!["claude:5-hour".into(), "claude:Weekly · Fable".into()], ai_hermes: false, vol_show: Show::Icon, vol_scroll: false, bright_show: Show::Text, bright_scroll: false, batt_show: Show::Icon, batt_hide_full: true, ..Settings::default() };
         s.dock_apps = vec!["a".into(), "b.desktop".into()];
         s.widgets = vec![Placed { at: Some((0.25, 0.5)), ..Placed::new(WidgetKind::System, Board::Desktop) }, Placed { output: "DP-2".into(), at: Some((1.0, 0.0)), size: Some((0.25, 0.5)), ..Placed::new(WidgetKind::Weather, Board::Hud) }];
         (s.hud_corner, s.hud_grid, s.desktop_grid) = (Corner::BottomRight, false, true);

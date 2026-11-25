@@ -519,6 +519,7 @@ fn ai(ui: &mut egui::Ui, s: &mut Settings) {
             }
         }
     }
+    toggle(ui, "Hermes Agent", Some("Its last 7 days, when it's installed."), &mut s.ai_hermes, accent);
     section(ui, "The panel shows");
     segmented(ui, &mut s.ai_left, &[(false, "Used"), (true, "Left")]);
     ui.add_space(4.0);

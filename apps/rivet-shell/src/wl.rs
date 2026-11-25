@@ -1007,7 +1007,7 @@ impl Shell {
 
     /// The AI item's readings run while a panel shows it.
     fn set_ai(&self) {
-        self.ai.set(self.s.panels.iter().any(|p| p.has("ai")), &self.s.ai_providers);
+        self.ai.set(self.s.panels.iter().any(|p| p.has("ai")), &self.s.ai_enabled());
         self.weather.set(self.s.shows_weather(), &self.s.weather_place, self.s.weather_at);
         // The tray starts once a panel has it (and then keeps apps' icons registered).
         if self.s.panels.iter().any(|p| p.has("tray")) {
@@ -1426,7 +1426,7 @@ impl Shell {
             return;
         }
         let old = std::mem::replace(&mut self.s, new);
-        if old.panels != self.s.panels || old.ai_providers != self.s.ai_providers {
+        if old.panels != self.s.panels || old.ai_enabled() != self.s.ai_enabled() {
             self.set_ai();
         }
         if idle::key(&old) != idle::key(&self.s) {

@@ -41,9 +41,17 @@ fn demo_ai() -> crate::ai::Quotas {
     let w = |name: &str, used: f32, hours: i64| Window { name: name.into(), used, reset: if hours > 0 { now + hours * 3600 + 600 } else { 0 } };
     Quotas {
         providers: vec![
-            Provider { id: "claude", state: State::Ok, plan: "Max 5x".into(), windows: vec![w("5-hour", 34.0, 3), w("Weekly", 78.0, 50), w("Weekly · Fable", 12.0, 50)], balance: None, at: now - 40 },
-            Provider { id: "codex", state: State::Ok, plan: "Plus".into(), windows: vec![w("5-hour", 8.0, 4), w("Weekly", 21.0, 120)], balance: None, at: now - 70 },
-            Provider { id: "openrouter", state: State::Ok, plan: String::new(), windows: vec![w("Credits", 58.0, 0)], balance: Some("$4.20 left of $10.00".into()), at: now - 70 },
+            Provider { id: "claude", state: State::Ok, plan: "Max 5x".into(), windows: vec![w("5-hour", 34.0, 3), w("Weekly", 78.0, 50), w("Weekly · Fable", 12.0, 50)], balance: None, at: now - 40, ..Default::default() },
+            Provider { id: "codex", state: State::Ok, plan: "Plus".into(), windows: vec![w("5-hour", 8.0, 4), w("Weekly", 21.0, 120)], balance: None, at: now - 70, ..Default::default() },
+            Provider { id: "openrouter", state: State::Ok, plan: String::new(), windows: vec![w("Credits", 58.0, 0)], balance: Some("$4.20 left of $10.00".into()), at: now - 70, ..Default::default() },
+            Provider {
+                id: "hermes",
+                state: State::Ok,
+                plan: "Last 7 days".into(),
+                facts: [("Sessions", "83"), ("Messages", "447"), ("Tool calls", "306"), ("Tokens", "6,238,657"), ("Active", "~15h 36m"), ("Cost", "~$3.55")].iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                at: now - 300,
+                ..Default::default()
+            },
             Provider { id: "deepseek", state: State::Missing("Set DEEPSEEK_API_KEY.".into()), ..Default::default() },
         ],
         claude_code: true,

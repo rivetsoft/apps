@@ -17,6 +17,7 @@ fn logo_svg(id: &str) -> &'static str {
         "grok" => include_str!("../data/ai/grok.svg"),
         "openrouter" => include_str!("../data/ai/openrouter.svg"),
         "deepseek" => include_str!("../data/ai/deepseek.svg"),
+        "hermes" => include_str!("../data/ai/hermes.svg"),
         _ => include_str!("../data/ai/claude.svg"),
     }
 }
@@ -55,7 +56,7 @@ fn order(q: &crate::ai::Quotas) -> (Vec<&Provider>, Vec<&Provider>) {
 fn block(p: &Provider) -> f32 {
     PHEAD
         + match &p.state {
-            State::Ok => p.windows.len() as f32 * WROW + if p.balance.is_some() { LINE } else { 0.0 } + if p.windows.is_empty() && p.balance.is_none() { LINE } else { 0.0 },
+            State::Ok => p.windows.len() as f32 * WROW + if p.balance.is_some() { LINE } else { 0.0 } + p.facts.len().div_ceil(2) as f32 * LINE + if p.windows.is_empty() && p.balance.is_none() && p.facts.is_empty() { LINE } else { 0.0 },
             _ => LINE,
         }
         + GAP
@@ -169,8 +170,20 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
                 if let Some(b) = &pv.balance {
                     line(ui, b.as_str(), v.text_color());
                 }
-                if pv.windows.is_empty() && pv.balance.is_none() {
-                    line(ui, "No limits to show.", v.weak_text_color());
+                // Figures that aren't limits, two to a row: the label faint, the value after it.
+                for pair in pv.facts.chunks(2) {
+                    let (r, _) = ui.allocate_exact_size(Vec2::new(w, LINE), Sense::hover());
+                    for (i, (k, val)) in pair.iter().enumerate() {
+                        let x = r.left() + 2.0 + i as f32 * (w / 2.0);
+                        let kg = p.layout_no_wrap(k.clone(), ui_font(12.0), v.weak_text_color());
+                        let kw = kg.size().x;
+                        p.galley(Pos2::new(x, r.center().y - kg.size().y / 2.0), kg, v.weak_text_color());
+                        let vg = one_line(&p, val, ui_font(12.0), v.text_color(), w / 2.0 - kw - 14.0);
+                        p.galley(Pos2::new(x + kw + 6.0, r.center().y - vg.size().y / 2.0), vg, v.text_color());
+                    }
+                }
+                if pv.windows.is_empty() && pv.balance.is_none() && pv.facts.is_empty() {
+                    line(ui, if pv.id == crate::ai::HERMES.0 { "No sessions in the last 7 days." } else { "No limits to show." }, v.weak_text_color());
                 }
             }
             State::Error(e) => line(ui, e.as_str(), sc.danger),
