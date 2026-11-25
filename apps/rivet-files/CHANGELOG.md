@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 - **A new icon**: the pink folder with the rivet through it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Open in Rivet Vice**: right-click an archive to look inside it before taking anything out. Shown when Rivet Vice, the archive manager, is installed.
