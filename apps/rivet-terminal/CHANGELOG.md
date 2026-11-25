@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - **A new icon**: a green window with a prompt and a yellow cursor, drawn in the website's colors with a plum outline and a hard shadow.
 - When Rivet Terminal asks before closing something that is still running, Return closes it
