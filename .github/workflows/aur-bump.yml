@@ -10,20 +10,22 @@ permissions:
 jobs:
   bump:
     name: Bump PKGBUILD checksums
+    # Only Rivet Files' releases (tags vX.Y.Z); rivet-ftp-v… and rivet-notes-v… aren't on the AUR.
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Download the release and rewrite packaging/aur
-        run: packaging/aur/bump.sh "${GITHUB_REF_NAME#v}"
+      - name: Download the release and rewrite apps/rivet-files/packaging/aur
+        run: apps/rivet-files/packaging/aur/bump.sh "${GITHUB_REF_NAME#v}"
 
       - name: Commit the new version on main
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packaging/aur
+          git add apps/rivet-files/packaging/aur
           if git diff --cached --quiet; then
             echo "AUR files already match this release."
             exit 0

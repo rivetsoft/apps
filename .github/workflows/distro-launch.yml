@@ -104,20 +104,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binutils squashfs-tools curl ca-certificates xz-utils shared-mime-info
 
       - name: Portable tarball and AppImage
-        run: |
-          set -eu
-          ./utilities/rivet-dev portable
-          ./utilities/rivet-dev appimage
-          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          arch=$(uname -m)
-          name="rivet-files-$version-$arch-linux"
-          stage="dist/$name"
-          rm -rf "$stage"
-          mkdir -p "$stage"
-          strip -o "$stage/rivet" "$(./utilities/rivet-dev portable-bin)"
-          cp data/rivet-files.desktop data/rivet-files.svg utilities/lib/install.sh README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$stage/"
-          cp -r data/icons "$stage/icons"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
+        run: ./utilities/lib/distro-launch.sh pack
 
       - uses: actions/upload-artifact@v4
         with:
@@ -228,7 +215,7 @@ jobs:
       - name: Manifest allows Wayland and X11
         run: |
           set -eu
-          manifest=packaging/flatpak/io.github.ulinaaron.rivet-files.yml
+          manifest=apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml
           grep -qx '  - --socket=wayland' "$manifest"
           grep -qx '  - --socket=fallback-x11' "$manifest"
 
@@ -245,7 +232,7 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: rivet-files.flatpak
-          manifest-path: packaging/flatpak/io.github.ulinaaron.rivet-files.yml
+          manifest-path: apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml
           cache-key: flatpak-26.08
 
       - name: Open the Flatpak under Xvfb

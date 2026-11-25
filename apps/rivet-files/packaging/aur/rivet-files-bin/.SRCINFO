@@ -1,0 +1,21 @@
+pkgbase = rivet-files-bin
+	pkgdesc = Classic Linux file manager, like Nemo, Thunar and Caja, written in Rust
+	pkgver = 0.9.0
+	pkgrel = 1
+	url = https://github.com/rivetsoft/apps
+	arch = x86_64
+	license = MIT
+	license = Apache-2.0
+	depends = gcc-libs
+	depends = glibc
+	depends = hicolor-icon-theme
+	depends = libglvnd
+	depends = libxkbcommon
+	depends = libxcb
+	depends = wayland
+	provides = rivet-files
+	conflicts = rivet-files
+	source = https://github.com/rivetsoft/apps/releases/download/v0.9.0/rivet-files-0.9.0-x86_64-linux.tar.gz
+	sha256sums = cffa3e94d3192d249152ee92185c69556b8d65cac35a5a170d6128f32d93e337
+
+pkgname = rivet-files-bin

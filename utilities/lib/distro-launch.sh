@@ -1,6 +1,7 @@
 #!/bin/sh
 # Install and launch checks for a stock distro, plus X11 and Wayland.
 #
+#   utilities/lib/distro-launch.sh pack
 #   utilities/lib/distro-launch.sh deps
 #   utilities/lib/distro-launch.sh deps-display
 #   utilities/lib/distro-launch.sh tarball DIST.tar.gz SHOTDIR
@@ -8,6 +9,8 @@
 #   utilities/lib/distro-launch.sh displays RIVET_BIN SHOTDIR
 #   utilities/lib/distro-launch.sh all
 #
+# `pack` builds Rivet Files' release tarball and AppImage in dist/, staged the way
+# release.sh stages them, without tagging or needing a changelog section.
 # `deps` is the runtime set a desktop install needs, plus Xvfb so the GUI can
 # open with no monitor. `deps-display` adds Sway and grim for the Wayland run.
 # winit 0.30 picks the backend from WAYLAND_DISPLAY / DISPLAY. WINIT_UNIX_BACKEND
@@ -169,6 +172,24 @@ install_pkgs() {
     esac
 }
 
+pack() {
+    ./utilities/rivet-dev portable
+    ./utilities/rivet-dev appimage
+    app=apps/rivet-files
+    version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$app/Cargo.toml" | head -1)
+    name="rivet-files-$version-$(uname -m)-linux"
+    stage="dist/$name"
+    rm -rf "$stage"
+    mkdir -p "$stage"
+    strip -o "$stage/rivet" "$(./utilities/rivet-dev portable-bin)"
+    cp "$app/data/rivet-files.desktop" "$app/data/rivet-files.svg" utilities/lib/install.sh \
+        "$app/README.md" "$app/CHANGELOG.md" LICENSE-MIT LICENSE-APACHE "$stage/"
+    cp -r "$app/data/icons" "$stage/icons"
+    tar -C dist -czf "dist/$name.tar.gz" "$name"
+    rm -rf "$stage"
+    echo "Built dist/$name.tar.gz"
+}
+
 check_cli() {
     "$@" --version
     "$@" --help | grep -q -- '--version'
@@ -315,6 +336,7 @@ EOF
 
 cmd=${1:-}
 case "$cmd" in
+    pack) pack ;;
     deps) install_pkgs ;;
     deps-display) install_pkgs --display ;;
     tarball) check_tarball "$2" "$3" ;;
@@ -341,7 +363,7 @@ case "$cmd" in
         check_displays "$bin" shots
         ;;
     *)
-        echo "Usage: $0 deps|deps-display|tarball TAR SHOTDIR|appimage APP SHOTDIR|displays BIN SHOTDIR|all" >&2
+        echo "Usage: $0 pack|deps|deps-display|tarball TAR SHOTDIR|appimage APP SHOTDIR|displays BIN SHOTDIR|all" >&2
         exit 2
         ;;
 esac

@@ -1,0 +1,26 @@
+[package]
+name = "rivet-color"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Pick colors from the screen, keep them in palettes, and find the colors that go with them"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rivetsoft/apps"
+publish = false
+
+[[bin]]
+name = "rivet-color"
+path = "src/main.rs"
+
+[dependencies]
+rivet-kit = { path = "../../crates/rivet-kit" }
+rivet-look = { path = "../../crates/rivet-look" }
+# Picking a color through the desktop portal, where the compositor has no picker of its own.
+rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+# The shell plugin's lines, and niri's answer.
+serde_json = "1.0.154"
+# The picker with the loupe: a layer-shell surface over each screen, drawn into shared memory.
+smithay-client-toolkit = "0.20"
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }

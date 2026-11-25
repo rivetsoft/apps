@@ -13,35 +13,63 @@ usage() {
     cat <<'EOF'
 Rivet developer utilities
 
-Usage: utilities/rivet-dev <command> [options]
+Usage: utilities/rivet-dev <command> [APP] [options]
+
+APP is files (the default), ftp, notes, edit, terminal, welcome or snip, for the commands marked [APP].
+Each app has its own version, changelog and release tags: vX.Y.Z (Rivet Files), rivet-ftp-vX.Y.Z,
+rivet-notes-vX.Y.Z, rivet-edit-vX.Y.Z, rivet-terminal-vX.Y.Z, rivet-welcome-vX.Y.Z,
+rivet-snip-vX.Y.Z.
 
 Releasing
-  bump [patch|minor|major|X.Y.Z]   Set the next version; "## Unreleased" in CHANGELOG.md
-                                   becomes its section; commits "Release X.Y.Z"
-  release                          Build the tarball + AppImage in dist/ and tag vX.Y.Z —
-                                   on this computer only, nothing goes online
-  release --publish                The same, then send code + tag to GitHub and create the
-                                   GitHub release with the files (what users download)
-  push                             Send your latest commits to GitHub — no release
-                                   (creates the GitHub repo the first time)
+  apps                             Each app's version, last release tag and unreleased changes
+  bump [APP] [patch|minor|major|X.Y.Z]
+                                   Set the app's next version; "## Unreleased" in its
+                                   CHANGELOG.md becomes its section; commits the release
+  release [APP]                    Build the app's downloads in dist/ and tag it — on this
+                                   computer only, nothing goes online (a tarball and an
+                                   AppImage, for every app)
+  release [APP] --publish          The same, then send code + tag to GitHub and create the
+                                   GitHub release with the files (Edit, Terminal and Notes as
+                                   full releases, FTP and Welcome as pre-releases; "latest
+                                   release" stays Rivet Files')
+  release-all [--publish] [--dry-run] [--yes] [--only edit,terminal] [--no-checks]
+                                   Every app one at a time: shows its state, skips it when
+                                   nothing changed, asks release / skip / stop, then runs its
+                                   bump and release. Checks build, tests and lint once first;
+                                   stops at the first failure. --dry-run changes nothing
+  push [--all]                     Send the branch you're on to GitHub (--all: every local
+                                   branch) — no release (creates the GitHub repo the first time)
   aur-bump X.Y.Z                   Update the AUR PKGBUILDs for a published release
 
 Building
-  appimage                         dist/Rivet_Files-VERSION-ARCH.AppImage (needs squashfs-tools)
+  appimage [APP]                   dist/Rivet_Files-VERSION-ARCH.AppImage, or that app's (needs
+                                   squashfs-tools)
   portable                         Release binary linked against glibc 2.31 (via Zig)
   portable-bin                     Print the path of that binary
   check-glibc --max V FILE…        Fail if FILE needs a GLIBC symbol newer than V
 
 Using your build
-  install [--default|--uninstall] Install for this user (~/.local/bin + app launcher);
-                                   --default also makes Rivet the default file manager
-                                   --uninstall removes that binary, desktop entry and icons
-  link [--user] [--remove]         A `rivet` command that always runs this build
-                                   (/usr/bin, or ~/.local/bin with --user)
+  install [APP] [--default|--uninstall]
+                                   Install for this user (~/.local/bin + app launcher);
+                                   --default also makes Rivet Files the default file manager;
+                                   --uninstall (Rivet Files) removes its program, desktop
+                                   entry and icons
+  link [APP|shell] [--user] [--remove]
+                                   A command that always runs this build: `rivet`, or the
+                                   app's own (`link shell` for rivet-shell). In /usr/bin, or
+                                   ~/.local/bin with --user
 
 Docs and checks
   screenshots                      Regenerate the README screenshots (sample home folder)
+  notes-screenshots                Regenerate Rivet Notes' screenshots (demo vault)
+  shell-screenshots WALLPAPER      Regenerate Rivet Shell's README picture over that wallpaper,
+                                   in the colors matugen makes from it (needs matugen)
+  ftp-screenshots                  Regenerate Rivet FTP's screenshots (demo server, no network)
+  edit-screenshots                 Regenerate Rivet Edit's screenshots (demo project)
+  flatpak-sources                  Add new crates from Cargo.lock to the Flatpak's offline list
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
+  qa                               Open every dialog and mode looking for crashes, then run the
+                                   common file workflows (all in a throwaway home folder)
 
   help                             This text
 EOF
@@ -49,19 +77,39 @@ EOF
 
 cmd=${1:-help}
 [ $# -gt 0 ] && shift
+# An app name after the command (bump notes, release ftp --publish, install notes).
+. "$LIB/apps.sh"
+if [ $# -gt 0 ] && is_app "$1"; then
+    app_select "$1"
+    RIVET_APP=$APP_ID
+    export RIVET_APP
+    shift
+fi
 case "$cmd" in
+    apps)          exec sh "$LIB/apps-status.sh" "$@" ;;
     bump)          exec sh "$LIB/bump.sh" "$@" ;;
     release)       exec sh "$LIB/release.sh" "$@" ;;
+    release-all)   exec sh "$LIB/release-all.sh" "$@" ;;
     push|publish)  exec sh "$LIB/push.sh" "$@" ;;   # "publish" was its old name
-    aur-bump)      exec sh "$HERE/../packaging/aur/bump.sh" "$@" ;;
+    aur-bump)      exec sh "$HERE/../apps/rivet-files/packaging/aur/bump.sh" "$@" ;;
     appimage)      exec sh "$LIB/appimage.sh" "$@" ;;
     portable)      exec sh "$LIB/portable-build.sh" "$@" ;;
     portable-bin)  exec sh "$LIB/portable-bin.sh" "$@" ;;
     check-glibc)   exec sh "$LIB/check-glibc.sh" "$@" ;;
-    install)       exec sh "$LIB/install.sh" "$@" ;;
+    install)
+        case "${RIVET_APP:-files}" in
+            files) exec sh "$LIB/install.sh" "$@" ;;
+            *) app_select "$RIVET_APP"; RIVET_INSTALL_BIN=$BIN exec sh "$LIB/install-app.sh" "$@" ;;
+        esac ;;
     link)          exec sh "$LIB/link.sh" "$@" ;;
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;
+    notes-screenshots) exec sh "$LIB/notes-screenshots.sh" "$@" ;;
+    shell-screenshots) exec sh "$LIB/shell-screenshots.sh" "$@" ;;
+    ftp-screenshots) exec sh "$LIB/ftp-screenshots.sh" "$@" ;;
+    edit-screenshots) exec sh "$LIB/edit-screenshots.sh" "$@" ;;
+    flatpak-sources) exec python3 "$LIB/flatpak-sources-sync.py" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
+    qa)            exec sh "$LIB/qa.sh" "$@" ;;
     help|-h|--help) usage ;;
     *)
         echo "Unknown command: $cmd" >&2

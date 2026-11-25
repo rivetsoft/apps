@@ -1,0 +1,17 @@
+[package]
+name = "rivet-kit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Tools every Rivet app uses for checks: in-memory screenshots that never wait for the screen"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+eframe = { version = "0.37.0", default-features = false }
+fast_image_resize = "6.1.0"
+image = { version = "0.25", default-features = false, features = ["png"] }
+libc = "0.2.191"
+raw-window-handle = "0.6"
+wayland-backend = { version = "0.3", features = ["client_system"] }
+wayland-client = "0.31"

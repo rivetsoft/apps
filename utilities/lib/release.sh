@@ -10,8 +10,14 @@
 # For a new release: run utilities/rivet-dev bump first (sets the version, changelog section, commits), then this.
 set -e
 cd "$(dirname "$0")/../.."
+# Rivet FTP and Rivet Notes have their own (simpler) release.
+case "${RIVET_APP:-files}" in
+    files | rivet-files | rivet) ;;
+    *) exec sh ./utilities/lib/release-app.sh "$@" ;;
+esac
+APP=apps/rivet-files   # Rivet Files: its version, changelog, desktop file and icons
 
-VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' $APP/Cargo.toml | head -1)
 ARCH=$(uname -m)
 NAME="rivet-files-$VERSION-$ARCH-linux"
 TAG="v$VERSION"
@@ -22,23 +28,25 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 # Publishing: take in GitHub's commits first (e.g. the automatic "aur: X.Y.Z" one), so the
 # tag goes on a commit that GitHub will accept.
-if [ "$1" = "--publish" ] && git remote get-url origin >/dev/null 2>&1; then
-    git pull --rebase origin main
+. ./utilities/lib/publish.sh
+if [ "$1" = "--publish" ]; then
+    sync_with_github
 fi
-grep -q "^## $VERSION" CHANGELOG.md || { echo "CHANGELOG.md has no section for $VERSION." >&2; exit 1; }
+grep -q "^## $VERSION" "$APP/CHANGELOG.md" || { echo "CHANGELOG.md has no section for $VERSION." >&2; exit 1; }
 
-# A published version never moves to a different commit: ask for a new version instead.
+# A published version never moves to a different commit; a release whose tag is on an earlier
+# commit of this branch (publishing cut short) is finished instead of rebuilt.
 HEAD_COMMIT=$(git rev-parse HEAD)
-LOCAL_TAG=$(git rev-parse -q --verify "refs/tags/$TAG^{}" || true)
-REMOTE_TAG=$(git ls-remote origin "refs/tags/$TAG^{}" 2>/dev/null | cut -f1)
-for T in "$LOCAL_TAG" "$REMOTE_TAG"; do
-    if [ -n "$T" ] && [ "$T" != "$HEAD_COMMIT" ]; then
-        echo "$TAG already exists for an earlier commit (it may already be published)." >&2
-        echo "Bump 'version' in Cargo.toml, add a CHANGELOG section for it, commit, and run this again." >&2
+check_tag || { echo "Run utilities/rivet-dev bump, then this again." >&2; exit 1; }
+APPIMAGE="dist/Rivet_Files-$VERSION-$ARCH.AppImage"
+if [ -n "$RESUME" ]; then
+    if [ ! -f "$APPIMAGE" ] || [ ! -f "dist/$NAME.tar.gz" ] || [ ! -f "dist/notes-$VERSION.md" ]; then
+        echo "$TAG is already made, but its files aren't in dist/ any more." >&2
+        echo "Rebuild them from the tag (git checkout $TAG; utilities/rivet-dev release; git checkout main), then run this again." >&2
         exit 1
     fi
-done
-
+    echo "$TAG was made earlier; finishing it (nothing is rebuilt)."
+else
 ./utilities/lib/portable-build.sh
 RIVET_BIN=$(./utilities/lib/portable-bin.sh)
 mkdir -p dist
@@ -52,8 +60,8 @@ ROOT=$(pwd)
 . ./utilities/lib/ensure-zigbuild.sh
 ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/rivet"
 BIN_GLIBC=$(objdump -T "$STAGE/rivet" | sed -n 's/.*GLIBC_\([0-9][0-9.]*\).*/\1/p' | sort -Vu | tail -n 1)
-cp data/rivet-files.desktop data/rivet-files.svg utilities/lib/install.sh README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$STAGE/"
-cp -r data/icons "$STAGE/icons"
+cp "$APP/data/rivet-files.desktop" "$APP/data/rivet-files.svg" utilities/lib/install.sh "$APP/README.md" "$APP/CHANGELOG.md" LICENSE-MIT LICENSE-APACHE "$STAGE/"
+cp -r "$APP/data/icons" "$STAGE/icons"
 tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
 rm -rf "$STAGE"
 (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
@@ -61,7 +69,7 @@ rm -rf "$STAGE"
 APPIMAGE="dist/Rivet_Files-$VERSION-$ARCH.AppImage"
 
 # Release notes = this version's CHANGELOG section.
-awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' CHANGELOG.md | tail -n +2 > "dist/notes-$VERSION.md"
+awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "dist/notes-$VERSION.md"
 cat >> "dist/notes-$VERSION.md" <<EOF
 
 ### Install
@@ -90,10 +98,15 @@ EOF
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "Rivet Files $VERSION"
 echo "Built $APPIMAGE and dist/$NAME.tar.gz, tagged $TAG."
+fi
 
 if [ "$1" = "--publish" ]; then
-    git push origin main "$TAG"
-    gh release create "$TAG" "$APPIMAGE" "$APPIMAGE.sha256" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
-        --title "Rivet Files $VERSION" --notes-file "dist/notes-$VERSION.md"
+    push_release
+    if github_release_exists; then
+        echo "GitHub already has the $TAG release."
+    else
+        gh release create "$TAG" "$APPIMAGE" "$APPIMAGE.sha256" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
+            --title "Rivet Files $VERSION" --notes-file "dist/notes-$VERSION.md"
+    fi
     gh release view "$TAG" --json url -q .url
 fi

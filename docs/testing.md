@@ -48,17 +48,7 @@ gh workflow run distro-launch.yml --ref main -f arch=false
 Build the same artifacts CI uses, then hand them to a stock container. Docker has to be able to install packages, so the container needs a network.
 
 ```sh
-utilities/rivet-dev portable
-utilities/rivet-dev appimage
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-arch=$(uname -m)
-name="rivet-files-$version-$arch-linux"
-stage="dist/$name"
-rm -rf "$stage" && mkdir -p "$stage"
-strip -o "$stage/rivet" "$(utilities/rivet-dev portable-bin)"
-cp data/rivet-files.desktop data/rivet-files.svg utilities/lib/install.sh README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$stage/"
-cp -r data/icons "$stage/icons"
-tar -C dist -czf "dist/$name.tar.gz" "$name"
+utilities/lib/distro-launch.sh pack
 
 docker run --rm --user root -v "$PWD:/src" -w /src ubuntu:24.04 \
   utilities/lib/distro-launch.sh all

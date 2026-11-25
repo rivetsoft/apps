@@ -1,0 +1,27 @@
+# Filled in by Rivet Shell's "Report on GitHub" button after a crash (rivet_xdg::crash).
+name: Rivet Shell crash
+description: Rivet Shell closed unexpectedly or ran into a problem.
+title: "Crash in Rivet Shell"
+labels: ["bug", "app: shell"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for sending this. Check the report below before you submit it, and remove anything you'd rather not share.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+    validations:
+      required: true
+  - type: textarea
+    id: doing
+    attributes:
+      label: What were you doing when it happened?
+      description: Optional, but it often makes the difference.
+  - type: textarea
+    id: report
+    attributes:
+      label: Crash report
+      render: text
+    validations:
+      required: true

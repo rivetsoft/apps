@@ -1,0 +1,15 @@
+[package]
+name = "rivet-look"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "The look shared by Rivet apps: desktop colours, fonts, icon themes, Rivet's own icons, code colours and the egui theme"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+rivet-xdg = { path = "../rivet-xdg" }
+eframe = { version = "0.37.0", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png"] }
+resvg = { version = "0.50.0", default-features = false }
+skrifa = "0.44.0"

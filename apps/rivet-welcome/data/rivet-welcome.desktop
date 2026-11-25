@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Welcome
+GenericName=App Installer
+Comment=Install and update the Rivet apps
+Exec=rivet-welcome
+Icon=rivet-welcome
+Terminal=false
+Categories=System;PackageManager;Settings;
+Keywords=rivet;install;update;apps;store;releases;
+StartupWMClass=rivet-welcome

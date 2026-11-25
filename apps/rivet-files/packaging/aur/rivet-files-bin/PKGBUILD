@@ -1,0 +1,23 @@
+# Maintainer: ulinaaron <2819298+ulinaaron@users.noreply.github.com>
+pkgname=rivet-files-bin
+_pkgname=rivet-files
+pkgver=0.9.0
+pkgrel=1
+pkgdesc='Classic Linux file manager, like Nemo, Thunar and Caja, written in Rust'
+arch=('x86_64')
+url='https://github.com/rivetsoft/apps'
+license=('MIT' 'Apache-2.0')
+depends=('gcc-libs' 'glibc' 'hicolor-icon-theme' 'libglvnd' 'libxkbcommon' 'libxcb' 'wayland')
+provides=('rivet-files')
+conflicts=('rivet-files')
+source=("${url}/releases/download/v${pkgver}/${_pkgname}-${pkgver}-x86_64-linux.tar.gz")
+sha256sums=('cffa3e94d3192d249152ee92185c69556b8d65cac35a5a170d6128f32d93e337')
+
+package() {
+  cd "${_pkgname}-${pkgver}-x86_64-linux"
+  install -Dm755 rivet "${pkgdir}/usr/bin/rivet"
+  install -Dm644 rivet-files.desktop "${pkgdir}/usr/share/applications/rivet-files.desktop"
+  mkdir -p "${pkgdir}/usr/share/icons"
+  cp -a icons/hicolor "${pkgdir}/usr/share/icons/"
+  install -Dm644 LICENSE-MIT LICENSE-APACHE -t "${pkgdir}/usr/share/licenses/${pkgname}"
+}

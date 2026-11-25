@@ -1,0 +1,20 @@
+[package]
+name = "rivet-fetch"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Shows this computer at a glance in the terminal, next to Rivet the mascot"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rivetsoft/apps"
+publish = false
+
+[[bin]]
+name = "rivetfetch"
+path = "src/main.rs"
+
+[dependencies]
+rivet-xdg = { path = "../../crates/rivet-xdg" }
+# uname, statvfs and isatty.
+libc = "0.2.191"
+# The screens' current modes, which only the compositor knows.
+wayland-client = "0.31"

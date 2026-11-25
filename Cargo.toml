@@ -1,23 +1,33 @@
-[package]
-name = "rivet"
-version = "0.5.0"
-edition = "2024"
-# let-chains (`if let … && let …`)
-rust-version = "1.88"
-description = "A classic Linux file manager, like Nemo, Thunar and Caja, written in Rust/egui — no GTK or Qt"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/ulinaaron/rivet-files"
-
-[dependencies]
-chrono = "0.4.45"
-eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
-image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
-libc = "0.2.191"
-skrifa = "0.44.0"
-resvg = { version = "0.50.0", default-features = false }
+# Rivet Apps: one workspace, several apps, shared crates.
+#   apps/rivet-files   Rivet Files, the file manager (the `rivet` program)
+#   apps/rivet-ftp     Rivet FTP (early alpha)
+#   apps/rivet-notes   Rivet Notes (early alpha)
+#   apps/rivet-edit    Rivet Edit, the code editor
+#   apps/rivet-terminal  Rivet Terminal (tabs and split panes; the terminal is crates/rivet-term)
+#   apps/rivet-shell   Rivet Shell (panel, dock, widgets, wallpaper for Wayland)
+#   apps/rivet-welcome Rivet Welcome (installs and updates the apps; a tray icon)
+#   apps/rivet-snip    Rivet Snip (clips and marks up screenshots)
+#   apps/rivet-fetch   rivetfetch (the computer at a glance in the terminal)
+#   apps/rivet-calendar Rivet Calendar (events in plain .ics folders; the panel's calendar)
+#   apps/rivet-color   Rivet Color (picks colors from the screen; shades, harmonies, palettes)
+#   crates/*           pieces the apps share
+# Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
+# `-p rivet-notes` for the others, or `--workspace` for everything.
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*"]
+default-members = ["apps/rivet-files"]
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# The software renderer (screenshots, Rivet Shell) is slow unoptimised, even in debug builds.
+[profile.dev.package.rivet-kit]
+opt-level = 3
+
+# Calendars of thousands of events (a work Google account) take seconds to read unoptimised.
+[profile.dev.package.rivet-cal]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

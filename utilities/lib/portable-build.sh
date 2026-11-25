@@ -12,8 +12,10 @@ cd "$ROOT"
 
 triple=$("$ROOT/utilities/lib/gnu-triple.sh")
 target=$triple.$GLIBC_LINK_VERSION
-echo "Linking rivet for glibc $GLIBC_LINK_VERSION ($target) with $($CARGO_ZIGBUILD_ZIG_PATH version)"
-cargo zigbuild --release --locked --target "$target"
+# Which program: RIVET_PKG (a cargo package; rivet, the file manager, by default).
+pkg=${RIVET_PKG:-rivet}
+echo "Linking $pkg for glibc $GLIBC_LINK_VERSION ($target) with $($CARGO_ZIGBUILD_ZIG_PATH version)"
+cargo zigbuild --release --locked --target "$target" -p "$pkg"
 bin=$("$ROOT/utilities/lib/portable-bin.sh")
 [ -x "$bin" ] || { echo "expected $bin" >&2; exit 1; }
 "$ROOT/utilities/lib/check-glibc.sh" --max "$GLIBC_MAX_VERSION" "$bin"

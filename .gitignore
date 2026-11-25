@@ -3,3 +3,6 @@
 *.swp
 /dist
 __pycache__/
+
+# Rivet's own OAuth client IDs and secret, read by crates/rivet-cal/build.rs (docs/calendar-accounts.md)
+keys.env

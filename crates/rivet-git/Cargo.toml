@@ -1,0 +1,10 @@
+[package]
+name = "rivet-git"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Git for Rivet apps, with no user interface: a repository's status, changes by line, staging, commits, branches and syncing, by running the git program"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Rivet FTP: two panes with files going each way between them -->
+  <defs>
+    <!-- a halftone screen, like old print, laid over the pieces at the back -->
+    <pattern id="dots" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <circle cx="3" cy="3" r="1.3" fill="#24121b" fill-opacity="0.35"/>
+    </pattern>
+  </defs>
+  <!-- the hard shadow, offset down and right like the website's cards -->
+  <g transform="translate(5 5)" fill="#24121b" stroke="#24121b" stroke-width="4" stroke-linejoin="round">
+    <rect x="10" y="16" width="100" height="92" rx="10"/>
+  </g>
+  <g stroke="#24121b" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+    <rect x="10" y="16" width="100" height="92" rx="10" fill="#3ecf9a"/>
+    <path d="M16 23h88" stroke="#b6f0cf" stroke-width="4"/>
+    <rect x="18" y="32" width="38" height="68" rx="4" fill="#1f8f66"/>
+    <rect x="18" y="32" width="38" height="68" rx="4" fill="url(#dots)" stroke="none"/>
+    <rect x="64" y="32" width="38" height="68" rx="4" fill="#1f8f66"/>
+    <rect x="64" y="32" width="38" height="68" rx="4" fill="url(#dots)" stroke="none"/>
+    <path d="M28 44h50v-9l17 15-17 15v-9h-50z" fill="#fff270"/>
+    <path d="M92 74h-50v-9l-17 15 17 15v-9h50z" fill="#ffffff"/>
+  </g>
+</svg>

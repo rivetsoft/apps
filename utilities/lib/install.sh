@@ -20,17 +20,17 @@ if [ "${1:-}" = "--uninstall" ]; then
     echo "Removed Rivet Files from this account."
     exit 0
 fi
-if [ -x ./rivet ] && [ ! -d ./src ]; then
+if [ -x ./rivet ] && [ ! -d ./apps ]; then
     SRC=./rivet                                  # release download
 else
-    cargo build --release && SRC=target/release/rivet   # source checkout
+    cargo build --release -p rivet && SRC=target/release/rivet   # source checkout
 fi
-DESKTOP=data/rivet-files.desktop
+DESKTOP=apps/rivet-files/data/rivet-files.desktop
 [ -f "$DESKTOP" ] || DESKTOP=rivet-files.desktop
 install -Dm755 "$SRC" "$BIN/rivet"
 mkdir -p "$APPS"
-# Logo at every standard size (data/icons in a checkout, icons/ in a release download).
-ICONS=data/icons
+# Logo at every standard size (apps/rivet-files/data/icons in a checkout, icons/ in a release download).
+ICONS=apps/rivet-files/data/icons
 [ -d "$ICONS" ] || ICONS=icons
 (cd "$ICONS" && find hicolor -type f) | while read -r f; do install -Dm644 "$ICONS/$f" "$ICON_HOME/$f"; done
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$ICON_HOME/hicolor" 2>/dev/null || true

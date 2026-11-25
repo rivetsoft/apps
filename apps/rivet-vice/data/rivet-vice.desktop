@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Vice
+GenericName=Archive Manager
+Comment=Open archives, extract from them and make new ones
+Exec=rivet-vice %f
+Icon=rivet-vice
+Terminal=false
+Categories=Utility;Archiving;Compression;
+Keywords=rivet;archive;zip;tar;7z;rar;extract;unzip;compress;unpack;
+MimeType=application/zip;application/x-tar;application/x-compressed-tar;application/x-xz-compressed-tar;application/x-bzip-compressed-tar;application/x-bzip2-compressed-tar;application/x-zstd-compressed-tar;application/x-lzma-compressed-tar;application/x-7z-compressed;application/vnd.rar;application/x-rar;application/java-archive;application/x-java-archive;application/gzip;application/x-gzip;application/x-xz;application/x-bzip;application/x-bzip2;application/zstd;application/x-cd-image;application/vnd.ms-cab-compressed;application/vnd.debian.binary-package;application/x-deb;application/x-rpm;
+StartupWMClass=rivet-vice

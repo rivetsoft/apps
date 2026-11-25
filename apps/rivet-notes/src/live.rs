@@ -1,0 +1,548 @@
+//! Live mode: the note is still Markdown text, but every line except the one being edited
+//! shows rendered. This works out, for each byte of the text, how it looks: which Markdown
+//! marks hide (or show faintly, on the line being edited), which text is bold, a heading, a
+//! link, code… plus the things drawn over the text (bullets, check boxes, quote bars, rules).
+
+use std::ops::Range;
+
+/// How a Markdown mark is hidden when its line isn't being edited.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Hide {
+    #[default]
+    No,
+    /// Squeezed to almost nothing.
+    Tiny,
+    /// Invisible but keeping its width (something is drawn in its place).
+    Clear,
+}
+
+/// How one byte of the text looks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct St {
+    /// Heading level (1-6) of the line, 0 for none.
+    pub heading: u8,
+    pub bold: bool,
+    pub italic: bool,
+    pub strike: bool,
+    /// `inline code`.
+    pub code: bool,
+    /// Inside a fenced code block.
+    pub block: bool,
+    pub link: bool,
+    pub tag: bool,
+    pub quote: bool,
+    /// A finished task's text.
+    pub done: bool,
+    /// A Markdown mark shown faintly (on the line being edited).
+    pub marker: bool,
+    pub hide: Hide,
+    /// The whole line folds away (a code fence off the line being edited).
+    pub collapse: bool,
+    /// The collapsed opening fence (a little taller: the block's label sits on it).
+    pub fence_top: bool,
+    /// The line is a picture shown in place: the room it takes (points), else 0.
+    pub image_h: u16,
+}
+
+/// Something drawn over the text; positions are character indices.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Deco {
+    /// A bullet in place of the list mark at this character.
+    Bullet(usize),
+    /// A check box over `[ ]` starting at this character; `byte` is the space or x inside.
+    Check { at: usize, done: bool, doing: bool, byte: usize },
+    /// A super todo's details, drawn after its text (at this character).
+    Todo { at: usize, due: Option<chrono::NaiveDate>, priority: crate::tasks::Priority, done: bool },
+    /// A super todo's text (characters `from..to` on line `line`): clicking it opens its panel.
+    /// A picture shown in place of its line (at this character).
+    Image { at: usize, src: String },
+    Super { line: usize, start: usize, from: usize, to: usize, due: Option<chrono::NaiveDate>, priority: crate::tasks::Priority, done: bool },
+    /// A quote bar at this character (the `>`).
+    Quote(usize),
+    /// A horizontal rule on the line starting at this character.
+    Rule(usize),
+}
+
+/// A fenced code block's text and language, for coloring.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Block {
+    /// The fences and everything between them.
+    pub whole: Range<usize>,
+    pub inner: Range<usize>,
+    pub lang: String,
+}
+
+pub struct Live {
+    pub st: Vec<St>,
+    pub decos: Vec<Deco>,
+    pub blocks: Vec<Block>,
+}
+
+/// Work out how `text` looks. `raw` is the bytes being edited (the cursor or selection): the
+/// lines it touches keep their marks (shown faintly), and a code block it touches keeps its
+/// fences.
+/// A line's heading level (1-6), or 0.
+pub fn heading_level(line: &str) -> u8 {
+    let t = line.trim_start();
+    let n = t.bytes().take_while(|b| *b == b'#').count();
+    if (1..=6).contains(&n) && t[n..].starts_with(' ') { n as u8 } else { 0 }
+}
+
+/// `held` is the line being edited (by index) and the heading level it had when the cursor came
+/// to it: that line shows as plain Markdown at that size until the cursor leaves it.
+pub fn analyze(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>) -> Live {
+    analyze_with(text, raw, held, &[], &|_| None)
+}
+
+/// [`analyze`], with the todo tags that make a task a super todo (its tag and details fold away
+/// into a due date and a flag).
+pub fn analyze_with(text: &str, raw: Option<(usize, usize)>, held: Option<(usize, u8)>, triggers: &[String], image_h: &dyn Fn(&str) -> Option<f32>) -> Live {
+    let mut st = vec![St::default(); text.len()];
+    let mut decos = Vec::new();
+    let mut blocks = Vec::new();
+    // A line is being edited when the cursor is anywhere on it, its end included (the last
+    // line may have no newline, so the very end of the text counts too).
+    let touches = |r: &Range<usize>| {
+        let end = if text[r.clone()].ends_with('\n') { r.end - 1 } else { r.end };
+        raw.is_some_and(|(a, b)| r.start <= b && a <= end)
+    };
+    // Lines with their byte ranges (the newline included).
+    let mut lines: Vec<Range<usize>> = Vec::new();
+    let mut pos = 0;
+    for l in text.split_inclusive('\n') {
+        lines.push(pos..pos + l.len());
+        pos += l.len();
+    }
+    // Character index of every byte, for decorations.
+    let char_at = |b: usize| text[..b].chars().count();
+    let mut i = 0;
+    while i < lines.len() {
+        let r = lines[i].clone();
+        let line = &text[r.clone()];
+        let body = line.trim_end_matches(['\n', '\r']);
+        let indent = body.len() - body.trim_start().len();
+        let t = body.trim_start();
+        // ---- fenced code: find the closing fence, then the whole block at once
+        if t.starts_with("```") || t.starts_with("~~~") {
+            let fence = &t[..3];
+            let lang = t[3..].trim().to_string();
+            let mut j = i + 1;
+            while j < lines.len() && !text[lines[j].clone()].trim_start().starts_with(fence) {
+                j += 1;
+            }
+            let end = if j < lines.len() { j } else { lines.len() - 1 };
+            let whole = r.start..lines[end].end;
+            let editing = touches(&whole);
+            for (k, lr) in lines.iter().enumerate().take(end + 1).skip(i) {
+                let is_fence = k == i || (k == end && j < lines.len());
+                for s in &mut st[lr.clone()] {
+                    s.block = true;
+                    if is_fence {
+                        if editing {
+                            s.marker = true;
+                        } else {
+                            s.hide = Hide::Tiny;
+                            s.collapse = true;
+                            s.fence_top = k == i;
+                        }
+                    }
+                }
+            }
+            let inner_start = lines.get(i + 1).map(|l| l.start).unwrap_or(r.end).min(lines[end].end);
+            let inner_end = if j < lines.len() { lines[end].start } else { lines[end].end };
+            blocks.push(Block { whole: whole.clone(), inner: inner_start..inner_end.max(inner_start), lang });
+            i = end + 1;
+            continue;
+        }
+        let editing = touches(&r);
+        // The line being edited: plain Markdown, at the size it had (nothing re-renders while
+        // typing on it).
+        if editing {
+            // Headings take their size from their marks straight away (so a new heading is
+            // the right size before its text is typed); nothing else changes while typing.
+            let _ = held;
+            let level = heading_level(body);
+            for s in &mut st[r.clone()] {
+                s.heading = level;
+            }
+            i += 1;
+            continue;
+        }
+        let at = r.start + indent;
+        // A line that's just a picture (which could be loaded): the picture, in its place.
+        if let Some(src) = image_only(t)
+            && let Some(h) = image_h(src)
+        {
+            for s in &mut st[r.clone()] {
+                s.hide = Hide::Tiny;
+                s.image_h = h.clamp(1.0, 2000.0) as u16;
+            }
+            decos.push(Deco::Image { at: char_at(r.start), src: src.to_string() });
+            i += 1;
+            continue;
+        }
+        let mark = |st: &mut [St], range: Range<usize>, hide: Hide| {
+            for s in &mut st[range] {
+                if editing {
+                    s.marker = true;
+                } else {
+                    s.hide = hide;
+                }
+            }
+        };
+        let mut rest = at; // where the line's own text starts
+        // ---- horizontal rule
+        let rule = t.len() >= 3 && ["-", "*", "_"].iter().any(|c| t.chars().all(|x| x.to_string() == *c || x == ' ') && t.matches(c).count() >= 3);
+        if rule && !editing {
+            for s in &mut st[r.clone()] {
+                s.hide = Hide::Clear;
+            }
+            decos.push(Deco::Rule(char_at(r.start)));
+            i += 1;
+            continue;
+        }
+        // ---- heading
+        let hashes = t.bytes().take_while(|b| *b == b'#').count();
+        if (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') {
+            for s in &mut st[r.clone()] {
+                s.heading = hashes as u8;
+            }
+            mark(&mut st, at..at + hashes + 1, Hide::Tiny);
+            rest = at + hashes + 1;
+        } else if let Some(q) = t.strip_prefix('>') {
+            // ---- quote
+            for s in &mut st[r.clone()] {
+                s.quote = true;
+            }
+            let n = if q.starts_with(' ') { 2 } else { 1 };
+            mark(&mut st, at..at + 1, Hide::Clear);
+            if n == 2 {
+                mark(&mut st, at + 1..at + 2, Hide::No);
+            }
+            if !editing {
+                decos.push(Deco::Quote(char_at(at)));
+            }
+            rest = at + n;
+        } else if t.len() >= 2 && matches!(t.as_bytes()[0], b'-' | b'*' | b'+') && t.as_bytes()[1] == b' ' {
+            // ---- list item, maybe a task
+            let after = &t[2..];
+            let task = after.len() >= 3 && after.starts_with('[') && matches!(after.as_bytes()[1], b' ' | b'x' | b'X' | b'/') && after.as_bytes()[2] == b']' && (after.len() == 3 || after.as_bytes()[3] == b' ');
+            if task {
+                let done = matches!(after.as_bytes()[1], b'x' | b'X');
+                let doing = after.as_bytes()[1] == b'/';
+                mark(&mut st, at..at + 2, Hide::Tiny);
+                mark(&mut st, at + 2..at + 5, Hide::Clear);
+                if !editing {
+                    decos.push(Deco::Check { at: char_at(at + 2), done, doing, byte: at + 3 });
+                }
+                rest = (at + 6).min(r.start + body.len());
+                if done {
+                    for s in &mut st[rest..r.start + body.len()] {
+                        s.done = true;
+                    }
+                }
+            } else {
+                mark(&mut st, at..at + 1, Hide::Clear);
+                if !editing {
+                    decos.push(Deco::Bullet(char_at(at)));
+                }
+                rest = at + 2;
+            }
+        }
+        inline(text, &mut st, rest..r.start + body.len(), editing);
+        // A super todo: its todo tag and details fold away; a due date and flag show instead.
+        if !editing
+            && !triggers.is_empty()
+            && let Some(it) = crate::tasks::parse_line(i, body)
+            && it.is_super(triggers)
+        {
+            let end = r.start + body.len();
+            let mut p = rest;
+            while p < end {
+                let ws = text[p..end].find(|c: char| !c.is_whitespace()).map(|o| p + o).unwrap_or(end);
+                if ws >= end {
+                    break;
+                }
+                let we = text[ws..end].find(char::is_whitespace).map(|o| ws + o).unwrap_or(end);
+                let w = &text[ws..we];
+                let meta = w.strip_prefix('#').is_some_and(|t| triggers.iter().any(|g| g.eq_ignore_ascii_case(t))) || w.starts_with("due:") || w.starts_with("priority:");
+                if meta {
+                    for s in &mut st[p..we] {
+                        s.hide = Hide::Tiny;
+                    }
+                }
+                p = we;
+            }
+            // After the last thing still shown.
+            let mut last = end;
+            while last > rest && (st[last - 1].hide != Hide::No || text.as_bytes()[last - 1].is_ascii_whitespace()) {
+                last -= 1;
+            }
+            decos.push(Deco::Super { line: i, start: char_at(at), from: char_at(rest), to: char_at(last), due: it.due, priority: it.priority, done: it.done });
+            if it.due.is_some() || it.priority != crate::tasks::Priority::None {
+                decos.push(Deco::Todo { at: char_at(last), due: it.due, priority: it.priority, done: it.done });
+            }
+        }
+        i += 1;
+    }
+    Live { st, decos, blocks }
+}
+
+/// The address of a picture when the line is only `![alt](address)`.
+pub fn image_only(line: &str) -> Option<&str> {
+    let t = line.trim();
+    let rest = t.strip_prefix("![")?;
+    let mid = rest.find("](")?;
+    let src = rest[mid + 2..].strip_suffix(')')?;
+    (!src.is_empty() && !src.contains(char::is_whitespace) && !rest[..mid].contains(']')).then_some(src)
+}
+
+/// Bold, italics, strikethrough, `code`, links and #tags inside one line.
+fn inline(text: &str, st: &mut [St], r: Range<usize>, editing: bool) {
+    if r.is_empty() {
+        return;
+    }
+    let b = text.as_bytes();
+    let mut used = vec![false; r.end - r.start];
+    let idx = |p: usize| p - r.start;
+    let mark = |st: &mut [St], used: &mut [bool], range: Range<usize>| {
+        for p in range {
+            used[p - r.start] = true;
+            if editing {
+                st[p].marker = true;
+            } else {
+                st[p].hide = Hide::Tiny;
+            }
+        }
+    };
+    // `code` first: nothing inside it is Markdown.
+    let mut p = r.start;
+    while p < r.end {
+        if b[p] == b'`'
+            && let Some(q) = (p + 1..r.end).find(|&q| b[q] == b'`')
+            && q > p + 1
+        {
+            mark(st, &mut used, p..p + 1);
+            mark(st, &mut used, q..q + 1);
+            for k in p + 1..q {
+                st[k].code = true;
+                used[idx(k)] = true;
+            }
+            p = q + 1;
+            continue;
+        }
+        p += 1;
+    }
+    // [[wiki links]] and [label](url) (and ![images]). `p` walks bytes, so it can stand inside
+    // a letter of more than one byte: marks are looked for in the bytes, and the text is only
+    // cut just after a mark, which is always between letters.
+    let mut p = r.start;
+    while p < r.end {
+        if used[idx(p)] {
+            p += 1;
+            continue;
+        }
+        if b[p..r.end].starts_with(b"[[")
+            && let Some(off) = text[p + 2..r.end].find("]]")
+            && off > 0
+        {
+            let q = p + 2 + off;
+            mark(st, &mut used, p..p + 2);
+            mark(st, &mut used, q..q + 2);
+            for s in &mut st[p + 2..q] {
+                s.link = true;
+            }
+            p = q + 2;
+            continue;
+        }
+        let img = b[p] == b'!' && p + 1 < r.end && b[p + 1] == b'[';
+        let open = if img { p + 1 } else { p };
+        if b[open] == b'['
+            && let Some(off) = text[open + 1..r.end].find("](")
+            && !text[open + 1..open + 1 + off].contains(']')
+            && let Some(coff) = text[open + 1 + off + 2..r.end].find(')')
+        {
+            let label_end = open + 1 + off;
+            let close = label_end + 2 + coff;
+            mark(st, &mut used, p..open + 1);
+            mark(st, &mut used, label_end..close + 1);
+            for s in &mut st[open + 1..label_end] {
+                s.link = true;
+            }
+            p = close + 1;
+            continue;
+        }
+        // Bare web addresses.
+        if (b[p..r.end].starts_with(b"https://") || b[p..r.end].starts_with(b"http://")) && (p == r.start || !b[p - 1].is_ascii_alphanumeric()) {
+            let end = text[p..r.end].find(char::is_whitespace).map(|o| p + o).unwrap_or(r.end);
+            for k in p..end {
+                st[k].link = true;
+                used[idx(k)] = true;
+            }
+            p = end;
+            continue;
+        }
+        p += 1;
+    }
+    // Pairs: **bold**, __bold__, ~~strike~~, then *italic* and _italic_.
+    let pairs = |st: &mut [St], used: &mut Vec<bool>, m: &str, apply: &dyn Fn(&mut St)| {
+        let n = m.len();
+        let mut p = r.start;
+        while p + n <= r.end {
+            let free = |a: usize, used: &Vec<bool>| (a..a + n).all(|k| !used[idx(k)]);
+            if b[p..p + n] == *m.as_bytes() && free(p, used) && p + n < r.end && !b[p + n].is_ascii_whitespace() {
+                // `_` only at word edges (snake_case stays as it is).
+                if m.starts_with('_') && p > r.start && b[p - 1].is_ascii_alphanumeric() {
+                    p += 1;
+                    continue;
+                }
+                let mut q = p + n + 1;
+                let mut found = None;
+                while q + n <= r.end {
+                    if b[q..q + n] == *m.as_bytes() && free(q, used) && !b[q - 1].is_ascii_whitespace() && (n > 1 || q + 1 >= r.end || b[q + 1] != m.as_bytes()[0]) {
+                        if m.starts_with('_') && q + n < r.end && b[q + n].is_ascii_alphanumeric() {
+                            q += 1;
+                            continue;
+                        }
+                        found = Some(q);
+                        break;
+                    }
+                    q += 1;
+                }
+                if let Some(q) = found {
+                    for x in &mut st[p + n..q] {
+                        apply(x);
+                    }
+                    for k in (p..p + n).chain(q..q + n) {
+                        used[idx(k)] = true;
+                        if editing {
+                            st[k].marker = true;
+                        } else {
+                            st[k].hide = Hide::Tiny;
+                        }
+                    }
+                    p = q + n;
+                    continue;
+                }
+            }
+            p += 1;
+        }
+    };
+    pairs(st, &mut used, "**", &|s| s.bold = true);
+    pairs(st, &mut used, "__", &|s| s.bold = true);
+    pairs(st, &mut used, "~~", &|s| s.strike = true);
+    pairs(st, &mut used, "*", &|s| s.italic = true);
+    pairs(st, &mut used, "_", &|s| s.italic = true);
+    // Super todo details (due:…, priority:…) colored like tags.
+    for key in ["due:", "priority:"] {
+        let mut from = r.start;
+        while let Some(off) = text[from..r.end].find(key) {
+            let p = from + off;
+            let end = text[p..r.end].find(char::is_whitespace).map(|o| p + o).unwrap_or(r.end);
+            if (p == r.start || b[p - 1].is_ascii_whitespace()) && end > p + key.len() && !used[idx(p)] {
+                for s in &mut st[p..end] {
+                    s.tag = true;
+                }
+            }
+            from = end.max(p + 1);
+        }
+    }
+    // #tags (shown as they are, colored).
+    let mut p = r.start;
+    while p < r.end {
+        if b[p] == b'#' && !used[idx(p)] && (p == r.start || b[p - 1].is_ascii_whitespace() || b[p - 1] == b'(') {
+            let end = text[p + 1..r.end].find(|c: char| !(c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))).map(|o| p + 1 + o).unwrap_or(r.end);
+            if end > p + 1 && !text[p + 1..end].chars().all(|c| c.is_ascii_digit()) {
+                for s in &mut st[p..end] {
+                    s.tag = true;
+                }
+                p = end;
+                continue;
+            }
+        }
+        p += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shown(text: &str, raw: Option<(usize, usize)>) -> String {
+        let l = analyze(text, raw, None);
+        text.char_indices().filter(|(i, _)| l.st[*i].hide == Hide::No).map(|(_, c)| c).collect()
+    }
+
+    #[test]
+    fn hides_marks_off_the_edited_line() {
+        let t = "# Title\nSome **bold** and *it* and `code`.\n";
+        assert_eq!(shown(t, None), "Title\nSome bold and it and code.\n");
+        // Editing the second line: its marks stay (the heading's still hidden).
+        assert_eq!(shown(t, Some((10, 10))), "Title\nSome **bold** and *it* and `code`.\n");
+        // …and nothing on it is styled while it's being edited.
+        let l = analyze(t, Some((10, 10)), None);
+        assert!(!l.st[t.find("bold").unwrap()].bold);
+        // A line made a heading while editing it takes the heading's size straight away.
+        let t2 = "# Title\n## new\n";
+        assert_eq!(analyze(t2, Some((10, 10)), Some((1, 0))).st[10].heading, 2);
+        assert_eq!(analyze(t2, None, None).st[12].heading, 2);
+        let l = analyze(t, None, None);
+        assert_eq!(l.st[2].heading, 1);
+        assert!(l.st[t.find("bold").unwrap()].bold);
+        assert!(l.st[t.find("it*").unwrap()].italic);
+        assert!(l.st[t.find("code`").unwrap()].code);
+    }
+
+    #[test]
+    fn letters_of_more_than_one_byte() {
+        let t = "Wait… then **bóld**, ~~é~~, _ñ_ and [[Nöte]] at https://x.org/é…\n";
+        assert_eq!(shown(t, None), "Wait… then bóld, é, ñ and Nöte at https://x.org/é…\n");
+        assert_eq!(shown(t, Some((0, 0))), t);
+    }
+
+    #[test]
+    fn links_lists_tasks_and_rules() {
+        let t = "See [docs](https://x.org) and [[Note]].\n- item\n- [x] done\n---\n> quote\n";
+        assert_eq!(shown(t, None), "See docs and Note.\n item\n done\n quote\n");
+        let l = analyze(t, None, None);
+        assert!(l.decos.contains(&Deco::Bullet(40)));
+        assert!(l.decos.iter().any(|d| matches!(d, Deco::Check { done: true, .. })));
+        assert!(l.decos.iter().any(|d| matches!(d, Deco::Rule(_))));
+        assert!(l.decos.iter().any(|d| matches!(d, Deco::Quote(_))));
+    }
+
+    #[test]
+    fn last_line_counts_as_edited_at_its_end() {
+        // Typing at the very end of a note with no final newline keeps that line plain.
+        let t = "a\nsome **bold**";
+        assert!(analyze(t, Some((t.len(), t.len())), None).st[t.len() - 3].marker || !analyze(t, Some((t.len(), t.len())), None).st[t.len() - 3].bold);
+        assert_eq!(shown(t, Some((t.len(), t.len()))), t);
+        // The start of the next line doesn't make the line above edited.
+        assert_eq!(shown("**a**\nb", Some((6, 6))), "a\nb");
+    }
+
+    #[test]
+    fn super_todos_fold_their_details() {
+        let t = "- [ ] Ship it #task #work due:2026-12-01 priority:high\n- [ ] plain #work\n";
+        let tags = vec!["task".to_string()];
+        let l = analyze_with(t, None, None, &tags, &|_| None);
+        let shown: String = t.char_indices().filter(|(i, _)| l.st[*i].hide == Hide::No).map(|(_, c)| c).collect();
+        assert!(shown.starts_with(" Ship it #work\n"), "{shown:?}");
+        assert!(l.decos.iter().any(|d| matches!(d, Deco::Todo { priority: crate::tasks::Priority::High, due: Some(_), .. })));
+        // Without the module (no todo tags) nothing folds.
+        assert!(analyze(t, None, None).decos.iter().all(|d| !matches!(d, Deco::Todo { .. })));
+    }
+
+    #[test]
+    fn code_blocks_fold_their_fences() {
+        let t = "a\n```rust\nlet x = 1;\n```\nb\n";
+        let l = analyze(t, None, None);
+        assert!(l.st[2].collapse && l.st[t.find("let").unwrap()].block);
+        assert_eq!(l.blocks, vec![Block { whole: 2..25, inner: 10..21, lang: "rust".into() }]);
+        // Inside the block, the fences show.
+        let l = analyze(t, Some((12, 12)), None);
+        assert!(!l.st[2].collapse && l.st[2].marker);
+        // snake_case isn't italic.
+        assert!(!analyze("a_b_c\n", None, None).st[2].italic);
+    }
+}

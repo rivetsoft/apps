@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Calendar
+GenericName=Calendar
+Comment=Events in plain .ics folders, by day, week, month or as a list
+Exec=rivet-calendar %u
+Icon=rivet-calendar
+Terminal=false
+Categories=Office;Calendar;
+Keywords=calendar;events;agenda;schedule;ical;ics;
+StartupWMClass=rivet-calendar
+MimeType=text/calendar;x-scheme-handler/webcal;x-scheme-handler/webcals;

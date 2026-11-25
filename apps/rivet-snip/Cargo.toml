@@ -1,0 +1,25 @@
+[package]
+name = "rivet-snip"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Clip and mark up screenshots: crop, arrows, boxes, text, numbered steps and blur, then copy or save"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/rivetsoft/apps"
+publish = false
+
+[[bin]]
+name = "rivet-snip"
+path = "src/main.rs"
+
+[dependencies]
+rivet-kit = { path = "../../crates/rivet-kit" }
+rivet-look = { path = "../../crates/rivet-look" }
+# The file picker (Open, Save As) and, where a program can't take a screenshot itself, the
+# desktop's own.
+rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
+eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
+# Reading the picture handed over (a compositor's PNG, or any picture opened with it).
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+# The local time, for a saved picture's name.
+libc = "0.2.191"
