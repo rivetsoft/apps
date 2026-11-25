@@ -59,6 +59,9 @@ pub fn known(name: &str) -> bool {
 
 /// The facts of one module. `colors` and `separator` are drawn by the caller.
 pub fn gather(module: &str, gtk: &Gtk) -> Vec<Fact> {
+    if demo_mode() {
+        return demo(module);
+    }
     let one = |key: &str, v: Option<String>| v.map(|v| vec![Fact::new(key, v)]).unwrap_or_default();
     match module {
         "title" => vec![Fact::new("", title())],
@@ -83,6 +86,42 @@ pub fn gather(module: &str, gtk: &Gtk) -> Vec<Fact> {
         "battery" => battery(),
         "locale" => one("Locale", ["LC_ALL", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))),
         "rivet" => one("Rivet", rivet()),
+        _ => Vec::new(),
+    }
+}
+
+/// Checks and pictures: RIVET_FETCH_DEMO=1 shows the facts of a made-up computer instead of this
+/// one's, so a screenshot shows nobody's machine.
+pub fn demo_mode() -> bool {
+    std::env::var_os("RIVET_FETCH_DEMO").is_some_and(|v| !v.is_empty())
+}
+
+fn demo(module: &str) -> Vec<Fact> {
+    const GIB: u64 = 1 << 30;
+    let one = |key: &str, v: &str| vec![Fact::new(key, v)];
+    match module {
+        "title" => vec![Fact::new("", title())],
+        "os" => one("OS", "Arch Linux x86_64"),
+        "host" => one("Host", "Laptop 13"),
+        "kernel" => one("Kernel", "Linux 6.17.8-arch1-1"),
+        "uptime" => one("Uptime", "3 hours, 12 mins"),
+        "packages" => one("Packages", "1184 (pacman), 12 (flatpak)"),
+        "shell" => one("Shell", "bash 5.3.3"),
+        "display" => one("Display (eDP-1)", "2880x1920 in 14\", 120 Hz [Built-in]"),
+        "wm" => one("WM", "softcore (Wayland)"),
+        "theme" => one("Theme", "adw-gtk3-dark"),
+        "icons" => one("Icons", "Papirus-Dark"),
+        "font" => one("Font", "Inter (11pt)"),
+        "cursor" => one("Cursor", "Bibata-Modern-Classic"),
+        "terminal" => one("Terminal", "rivet-terminal"),
+        "cpu" => one("CPU", "AMD Ryzen 7 7840U (16) @ 5.13 GHz"),
+        "gpu" => one("GPU", "AMD Radeon 780M [Integrated]"),
+        "memory" => vec![used("Memory", 7_344_394_240, 32_943_521_792)],
+        "swap" => vec![used("Swap", 0, 8 * GIB)],
+        "disk" => vec![Fact { after: Some(" - btrfs".into()), ..used("Disk (/)", 201_234_567_168, 998_052_462_592) }],
+        "battery" => vec![Fact { key: "Battery".into(), value: "[Discharging]".into(), percent: Some(86.0), after: None }],
+        "locale" => one("Locale", "en_US.UTF-8"),
+        "rivet" => one("Rivet", "Files, Shell, Edit, Terminal, Notes, FTP, Snip (Shell running)"),
         _ => Vec::new(),
     }
 }
@@ -119,6 +158,9 @@ fn field(f: &[libc::c_char]) -> String {
 }
 
 pub fn user_name() -> String {
+    if demo_mode() {
+        return "rivet".into();
+    }
     std::env::var("USER").ok().filter(|u| !u.is_empty()).unwrap_or_else(|| {
         let pw = unsafe { libc::getpwuid(libc::getuid()) };
         if pw.is_null() { "user".into() } else { unsafe { std::ffi::CStr::from_ptr((*pw).pw_name) }.to_string_lossy().to_string() }
@@ -126,6 +168,9 @@ pub fn user_name() -> String {
 }
 
 pub fn host_name() -> String {
+    if demo_mode() {
+        return "demo".into();
+    }
     uname().map(|u| field(&u.nodename)).filter(|h| !h.is_empty()).unwrap_or_else(|| "localhost".into())
 }
 
