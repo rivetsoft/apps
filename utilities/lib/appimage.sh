@@ -30,8 +30,8 @@ if [ ! -s "$RUNTIME" ]; then
 fi
 
 # Linked for glibc 2.31, not whatever this machine's libm exports.
-RIVET_PKG=$PKG ./utilities/lib/portable-build.sh >/dev/null
-RIVET_BIN=$(RIVET_PKG=$PKG ./utilities/lib/portable-bin.sh)
+RIVET_PKG=$PKG RIVET_BIN=$BIN RIVET_GLIBC_LINK=$LINK_GLIBC ./utilities/lib/portable-build.sh >/dev/null
+RIVET_BIN=$(RIVET_PKG=$PKG RIVET_BIN=$BIN ./utilities/lib/portable-bin.sh)
 APPDIR="dist/AppDir-$DIST_NAME"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons"

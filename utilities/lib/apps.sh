@@ -62,6 +62,11 @@ app_select() {
     # A program for the terminal (rivetfetch) gets no launcher entry when installed.
     LAUNCHER=1
     [ "$APP_ID" = fetch ] && LAUNCHER=
+    # The glibc the release program is linked for. Rivet Shell links libxkbcommon itself (its
+    # keyboard handling), and Ubuntu 22.04's libxkbcommon needs glibc 2.33; the others load it
+    # at run time and keep 2.31 (ensure-zigbuild.sh). Both run on Ubuntu 22.04 and Debian 12.
+    LINK_GLIBC=
+    [ "$APP_ID" = shell ] && LINK_GLIBC=2.33
     return 0
 }
 

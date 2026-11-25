@@ -47,8 +47,8 @@ if [ -n "$RESUME" ]; then
     fi
     echo "$TAG was made earlier; finishing it (nothing is rebuilt)."
 else
-RIVET_PKG=$PKG ./utilities/lib/portable-build.sh
-BIN_PATH=$(RIVET_PKG=$PKG ./utilities/lib/portable-bin.sh)
+RIVET_PKG=$PKG RIVET_BIN=$BIN RIVET_GLIBC_LINK=$LINK_GLIBC ./utilities/lib/portable-build.sh
+BIN_PATH=$(RIVET_PKG=$PKG RIVET_BIN=$BIN ./utilities/lib/portable-bin.sh)
 ROOT=$(pwd)
 # shellcheck disable=SC1091
 . ./utilities/lib/ensure-zigbuild.sh
@@ -90,7 +90,7 @@ cd $NAME
 ./install.sh          # $BIN in ~/.local/bin, and $TITLE in your app launcher
 \`\`\`
 
-Portable $ARCH build, linked against glibc $GLIBC_LINK_VERSION. Or build from source: \`cargo build --release -p $PKG\`.
+Portable $ARCH build, linked against glibc ${LINK_GLIBC:-$GLIBC_LINK_VERSION}. Or build from source: \`cargo build --release -p $PKG\`.
 EOF
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$TITLE $VERSION"
