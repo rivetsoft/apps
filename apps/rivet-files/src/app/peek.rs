@@ -352,7 +352,8 @@ impl RivetApp {
             });
             self.peek.facts_rx = Some(rx);
         }
-        let facts = self.peek.facts.as_ref().filter(|(k, ..)| *k == facts_key).map(|(_, _, f)| f);
+        // The same item read before it last changed stands in until the new read arrives.
+        let facts = self.peek.facts.as_ref().filter(|(k, ..)| k.0 == facts_key.0 && k.2 == facts_key.2).map(|(_, _, f)| f);
         // While a new item's details are read, their rows show a placeholder so the cards
         // keep their size.
         let loading = facts.is_none();
