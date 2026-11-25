@@ -795,7 +795,8 @@ impl EditApp {
             Some("revert") => {
                 if let Some(t) = self.tabs.get_mut(self.active) {
                     t.hist.command();
-                    t.text = rivet_git::diff::revert(&base, &t.text, &h);
+                    let reverted = rivet_git::diff::revert(&base, &t.text, &h);
+                    t.text.set(reverted);
                     t.sels.clear();
                     t.preview = false;
                 }

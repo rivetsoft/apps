@@ -315,8 +315,8 @@ impl EditApp {
         let new = crate::ops::convert_indent(&t.text, tabs, t.indent.width);
         t.indent.tabs = tabs;
         t.sels.clear();
-        let changed = new != t.text;
-        t.text = new;
+        let changed = new != *t.text;
+        t.text.set(new);
         if changed {
             t.preview = false;
         }

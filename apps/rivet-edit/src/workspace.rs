@@ -68,6 +68,24 @@ pub fn read_text(p: &Path) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| "it isn't UTF-8 text".into())
 }
 
+/// The largest file opened in a tab. The editor lays out the whole file at once, which takes
+/// about 280 bytes of memory per character, so a 19 MB file runs out of memory. Until it lays
+/// out only the lines on screen, larger files aren't opened. Find in Files still searches them.
+const OPEN_MAX_BYTES: u64 = 8 << 20;
+const OPEN_MAX_LINES: usize = 200_000;
+
+/// A file's text to open in a tab: as `read_text`, and not more than the editor can lay out.
+pub fn open_text(p: &Path) -> Result<String, String> {
+    if std::fs::metadata(p).is_ok_and(|m| m.len() > OPEN_MAX_BYTES) {
+        return Err("it's over 8 MB, more than Rivet Edit can open for now".into());
+    }
+    let text = read_text(p)?;
+    if text.bytes().filter(|&b| b == b'\n').count() >= OPEN_MAX_LINES {
+        return Err("it has over 200,000 lines, more than Rivet Edit can open for now".into());
+    }
+    Ok(text)
+}
+
 /// Write a file without leaving it half-written (a temporary file, then a rename), keeping its
 /// permissions.
 pub fn write_text(p: &Path, text: &str) -> std::io::Result<()> {
@@ -128,6 +146,20 @@ mod tests {
         assert!(read_text(&t.join("bin.dat")).is_err());
         write_text(&t.join("README.md"), "hello").unwrap();
         assert_eq!(read_text(&t.join("README.md")).unwrap(), "hello");
+        let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn files_too_large_to_lay_out_are_not_opened() {
+        let t = std::env::temp_dir().join(format!("rivet-edit-big-{}", std::process::id()));
+        std::fs::create_dir_all(&t).unwrap();
+        std::fs::write(t.join("lines"), "\n".repeat(OPEN_MAX_LINES)).unwrap();
+        std::fs::write(t.join("bytes"), "x".repeat(OPEN_MAX_BYTES as usize + 1)).unwrap();
+        std::fs::write(t.join("fine"), "a\n".repeat(OPEN_MAX_LINES - 1)).unwrap();
+        assert!(open_text(&t.join("lines")).is_err());
+        assert!(open_text(&t.join("bytes")).is_err());
+        assert!(read_text(&t.join("bytes")).is_ok());
+        assert!(open_text(&t.join("fine")).is_ok());
         let _ = std::fs::remove_dir_all(&t);
     }
 }

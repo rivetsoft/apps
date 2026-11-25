@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 
@@ -347,8 +348,8 @@ pub struct Server {
     pub failed: Option<String>,
     pub utf8: bool,
     pub triggers: Vec<char>,
-    /// Open documents: address → (version, the text last sent).
-    docs: HashMap<String, (i32, u64)>,
+    /// Open documents by address.
+    docs: HashMap<String, Open>,
     /// Sent before `initialize` was answered.
     queued: Vec<Value>,
 }
@@ -359,12 +360,23 @@ fn send(stdin: &Arc<Mutex<ChildStdin>>, msg: &Value) -> bool {
     write!(w, "Content-Length: {}\r\n\r\n{body}", body.len()).and_then(|_| w.flush()).is_ok()
 }
 
-fn hash(text: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    text.hash(&mut h);
-    h.finish()
+/// A document the server has open.
+struct Open {
+    version: i32,
+    /// The edit last sent.
+    sent: u64,
+    /// The newest edit seen, and when.
+    seen: u64,
+    seen_at: Instant,
+    /// When the first edit not sent yet was seen.
+    waiting: Option<Instant>,
 }
+
+/// Typing sends the text once it pauses this long…
+const QUIET: Duration = Duration::from_millis(250);
+/// …or at least this often while it doesn't. Each send is the whole file, and the server
+/// works through each one.
+const MOST: Duration = Duration::from_secs(1);
 
 impl Server {
     fn start(program: &'static str, args: &[&str], root: &Path, ctx: Option<eframe::egui::Context>) -> Result<Server, String> {
@@ -465,23 +477,35 @@ impl Server {
         }
     }
 
-    /// Make sure the server has this document's latest text.
-    fn sync(&mut self, path: &Path, lang: Lang, text: &str) {
+    /// Give the server this document's latest text: `now` before a question about it, else once
+    /// typing pauses. While it waits, how long until it's due.
+    fn sync(&mut self, path: &Path, lang: Lang, text: &str, generation: u64, now: bool) -> Option<Duration> {
         let u = uri(path);
-        let h = hash(text);
-        match self.docs.get_mut(&u) {
-            Some((_, last)) if *last == h => {}
-            Some((ver, last)) => {
-                *ver += 1;
-                *last = h;
-                let ver = *ver;
-                self.notify("textDocument/didChange", json!({ "textDocument": { "uri": u, "version": ver }, "contentChanges": [{ "text": text }] }));
-            }
-            None => {
-                self.docs.insert(u.clone(), (1, h));
-                self.notify("textDocument/didOpen", json!({ "textDocument": { "uri": u, "languageId": language_id(lang), "version": 1, "text": text } }));
-            }
+        let at = Instant::now();
+        let Some(d) = self.docs.get_mut(&u) else {
+            self.docs.insert(u.clone(), Open { version: 1, sent: generation, seen: generation, seen_at: at, waiting: None });
+            self.notify("textDocument/didOpen", json!({ "textDocument": { "uri": u, "languageId": language_id(lang), "version": 1, "text": text } }));
+            return None;
+        };
+        if d.sent == generation {
+            d.waiting = None;
+            return None;
         }
+        if d.seen != generation {
+            d.seen = generation;
+            d.seen_at = at;
+        }
+        let waiting = *d.waiting.get_or_insert(at);
+        let left = QUIET.saturating_sub(at - d.seen_at).min(MOST.saturating_sub(at - waiting));
+        if !now && !left.is_zero() {
+            return Some(left);
+        }
+        d.version += 1;
+        d.sent = generation;
+        d.waiting = None;
+        let ver = d.version;
+        self.notify("textDocument/didChange", json!({ "textDocument": { "uri": u, "version": ver }, "contentChanges": [{ "text": text }] }));
+        None
     }
 
     /// Take in what the server sent; completions go to `out`, problems into `diags`.
@@ -593,6 +617,8 @@ pub struct Doc<'a> {
     pub root: &'a Path,
     pub lang: Lang,
     pub text: &'a str,
+    /// The text's edit number (`crate::text::Text::generation`).
+    pub generation: u64,
 }
 
 /// The language server state for the status bar.
@@ -630,13 +656,18 @@ impl Lsp {
     }
 
     /// Make sure a server knows the file (starting one when needed); its state.
-    pub fn touch(&mut self, path: &Path, root: &Path, lang: Lang, text: &str) -> State {
+    pub fn touch(&mut self, doc: Doc) -> State {
+        let Doc { path, root, lang, text, generation } = doc;
         let Some(k) = self.key(lang, root) else { return State::None(lang) };
         let Some(s) = self.servers.get_mut(&k) else { return State::None(lang) };
         if let Some(f) = &s.failed {
             return State::Failed(f.clone());
         }
-        s.sync(path, lang, text);
+        if let Some(wait) = s.sync(path, lang, text, generation, false)
+            && let Some(c) = &self.ctx
+        {
+            c.request_repaint_after(wait);
+        }
         if s.ready { State::Ready(s.program) } else { State::Starting(s.program) }
     }
 
@@ -656,12 +687,12 @@ impl Lsp {
 
     /// Ask for suggestions at `ch` (a character index); the answer comes back as `seq`.
     pub fn complete(&mut self, doc: Doc, ch: usize, trigger: Option<char>, seq: u64) -> bool {
-        let Doc { path, root, lang, text } = doc;
+        let Doc { path, root, lang, text, generation } = doc;
         let Some(s) = self.server(lang, root) else { return false };
         if !s.ready {
             return false;
         }
-        s.sync(path, lang, text);
+        s.sync(path, lang, text, generation, true);
         let (line, character) = to_pos(text, ch, s.utf8);
         let context = match trigger {
             Some(c) => json!({ "triggerKind": 2, "triggerCharacter": c.to_string() }),
@@ -674,12 +705,12 @@ impl Lsp {
     /// Ask where the thing at `ch` is defined or used, or about it (hover); the answer comes
     /// back as `seq`. False when there's no server ready.
     pub fn ask(&mut self, doc: Doc, ch: usize, what: Ask, seq: u64) -> bool {
-        let Doc { path, root, lang, text } = doc;
+        let Doc { path, root, lang, text, generation } = doc;
         let Some(s) = self.server(lang, root) else { return false };
         if !s.ready {
             return false;
         }
-        s.sync(path, lang, text);
+        s.sync(path, lang, text, generation, true);
         let (line, character) = to_pos(text, ch, s.utf8);
         let mut params = json!({ "textDocument": { "uri": uri(path) }, "position": { "line": line, "character": character } });
         let (method, pending) = match what {
