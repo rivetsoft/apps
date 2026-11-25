@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - **Rivet Snip, a new app**: clip and mark up a screenshot, then copy or save it. Crop, draw
   arrows, lines, boxes, ovals and freehand, highlight, type text, place numbered steps, and
