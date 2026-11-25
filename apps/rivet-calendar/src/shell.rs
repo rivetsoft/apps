@@ -5,7 +5,8 @@
 //!
 //! The shell tells it which month it shows (`month`, with `from` and `to`), and it answers with
 //! `events`: one entry a day an event covers, so a three-day event marks all three. The folder
-//! is read again when anything in it changes, so an event saved anywhere shows within seconds;
+//! is read again when anything in it changes, so an event saved anywhere shows within seconds
+//! (one edited in place by another program within a few minutes);
 //! subscriptions are read again from their addresses when they're due, and calendars on servers
 //! synced every ten minutes.
 
@@ -15,12 +16,12 @@ use std::sync::mpsc::{RecvTimeoutError, channel};
 use std::time::Duration;
 
 use chrono::{Datelike, Local, NaiveDate};
-use rivet_cal::Store;
+use rivet_cal::{Store, Watch};
 use serde_json::{Value, json};
 
 use crate::settings::Settings;
 
-/// How often the folder is looked at for changes.
+/// How often the folder is looked at for changes (the calendar folders' times only: see `Watch`).
 const EVERY: Duration = Duration::from_secs(4);
 /// How often subscriptions are looked at to see which are due (each is read every few hours).
 const FEEDS: Duration = Duration::from_secs(600);
@@ -63,7 +64,7 @@ pub fn run() -> ExitCode {
     let s = Settings::load();
     let root = s.root();
     let mut store = Store::open(&root);
-    let mut stamp = Store::stamp(&root);
+    let mut watch = Watch::new(&root);
     let mut span = around(Local::now().date_naive());
     // Subscriptions are read again here too, on a thread, so they're current with no window open.
     let reading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -125,9 +126,7 @@ pub fn run() -> ExitCode {
                         reading.store(false, std::sync::atomic::Ordering::SeqCst);
                     });
                 }
-                let now = Store::stamp(&root);
-                if now != stamp {
-                    stamp = now;
+                if watch.changed() {
                     store.reload();
                     say(&store, span);
                 }

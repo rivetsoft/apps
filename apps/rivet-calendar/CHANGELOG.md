@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The panel's Calendar plugin and the window sit idle when nothing changes: a store of tens of
+  thousands of events no longer costs a steady few percent of a core. Events saved by another
+  program still show within seconds, and one edited in place within five minutes.
+
 ## 0.1.0
 
 - **Rivet Calendar, a new app**: your events by month, week, day or as a list, kept in plain

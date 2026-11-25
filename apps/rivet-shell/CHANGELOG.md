@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop color changes right away.
+
 ## 0.1.0
 
 - **A quieter desktop when idle**: with Processor and Memory on a panel, only that panel redraws, and only when the numbers it shows change, and not while it is rolled up or hidden. Before, every panel redrew about once a second.

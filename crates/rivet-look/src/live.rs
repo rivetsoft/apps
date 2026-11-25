@@ -1,9 +1,11 @@
 //! What every Rivet app does to look like the others: the desktop's UI font, the theme built
 //! from a light/dark choice and an accent, and the desktop's generated colors followed live
-//! (their files are checked every two seconds).
+//! (their files are checked every two seconds, on a thread that wakes the window only when one
+//! changed).
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use eframe::egui::{self, Color32};
@@ -15,6 +17,10 @@ pub struct LiveLook {
     palette: Option<palette::Palette>,
     watched: Vec<(PathBuf, Option<SystemTime>)>,
     checked: f64,
+    /// The thread looking at the colour files, once a live frame has started it.
+    watcher: Option<Arc<Watcher>>,
+    /// No thread: something else redraws when the colours change (see `without_watcher`).
+    no_watcher: bool,
     key: Option<String>,
     fonts_set: bool,
     /// The app's own colours for dark and for light, and what they were made for (see `set_own`).
@@ -26,6 +32,42 @@ pub struct LiveLook {
 
 fn mtime(p: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+/// What the colour-file thread shares with the window: the files and their times as last read,
+/// and whether one changed since.
+struct Watcher {
+    files: Mutex<Vec<(PathBuf, Option<SystemTime>)>>,
+    changed: AtomicBool,
+}
+
+impl Watcher {
+    /// Look at `files` every two seconds and wake the window when one changed; stops when the
+    /// `LiveLook` is gone.
+    fn start(files: Vec<(PathBuf, Option<SystemTime>)>, ctx: egui::Context) -> Arc<Watcher> {
+        let w = Arc::new(Watcher { files: Mutex::new(files), changed: AtomicBool::new(false) });
+        let shared = w.clone();
+        std::thread::spawn(move || {
+            while Arc::strong_count(&shared) > 1 {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let mut files = shared.files.lock().unwrap_or_else(|e| e.into_inner());
+                let mut moved = false;
+                for (p, t) in files.iter_mut() {
+                    let now = mtime(p);
+                    if now != *t {
+                        *t = now;
+                        moved = true;
+                    }
+                }
+                drop(files);
+                if moved {
+                    shared.changed.store(true, Ordering::Relaxed);
+                    ctx.request_repaint();
+                }
+            }
+        });
+        w
+    }
 }
 
 /// The app's choices.
@@ -132,6 +174,13 @@ impl LiveLook {
         LiveLook { palette: pal, watched: watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect(), ..Default::default() }
     }
 
+    /// No thread watching the colour files, for a program that already watches them and redraws
+    /// (Rivet Shell's surfaces): a live frame still looks at them every two seconds.
+    pub fn without_watcher(mut self) -> LiveLook {
+        self.no_watcher = true;
+        self
+    }
+
     /// The desktop's colors, when there are any.
     pub fn palette(&self) -> Option<&palette::Palette> {
         self.palette.as_ref()
@@ -161,13 +210,21 @@ impl LiveLook {
             ctx.set_fonts(defs);
         }
         let now = ctx.input(|i| i.time);
-        if live && (now - self.checked >= 2.0 || self.checked == 0.0) {
-            self.checked = now;
-            if self.watched.iter().any(|(p, t)| mtime(p) != *t) {
-                *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), own: std::mem::take(&mut self.own), own_key: std::mem::take(&mut self.own_key), checked: now, ..LiveLook::new() };
+        if live {
+            // Watched also when not following: a palette chosen in Rivet is taken up all the same.
+            if self.watcher.is_none() && !self.no_watcher {
+                self.watcher = Some(Watcher::start(self.watched.clone(), ctx.clone()));
             }
-            // Also when not following: a palette chosen in Rivet is taken up all the same.
-            ctx.request_repaint_after(std::time::Duration::from_secs(2));
+            let woken = self.watcher.as_ref().is_some_and(|w| w.changed.swap(false, Ordering::Relaxed));
+            if woken || now - self.checked >= 2.0 || self.checked == 0.0 {
+                self.checked = now;
+                if self.watched.iter().any(|(p, t)| mtime(p) != *t) {
+                    *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), own: std::mem::take(&mut self.own), own_key: std::mem::take(&mut self.own_key), checked: now, watcher: self.watcher.take(), no_watcher: self.no_watcher, ..LiveLook::new() };
+                    if let Some(w) = &self.watcher {
+                        *w.files.lock().unwrap_or_else(|e| e.into_inner()) = self.watched.clone();
+                    }
+                }
+            }
         }
         let size = if c.text_size > 0.0 { c.text_size } else { fonts::desktop_font_cached().map(|(_, pt)| fonts::points_to_ui(pt)).unwrap_or(fonts::BASE_SIZE) };
         fonts::set_scale(size / fonts::BASE_SIZE);

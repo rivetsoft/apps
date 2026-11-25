@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop color changes right away.
+
 ## 0.1.0
 
 - **Rivet Vice, a new app**: open an archive and see what is in it, folder by folder, with

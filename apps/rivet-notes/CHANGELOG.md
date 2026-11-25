@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop color changes right away.
+
 ## 0.4.1
 
 - **A new icon**: a yellow notepad on spiral rings, in place of the folder, drawn in the website's colors with a plum outline and a hard shadow.

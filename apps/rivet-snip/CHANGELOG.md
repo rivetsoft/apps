@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop color changes right away.
+
 ## 0.1.0
 
 - **Rivet Snip, a new app**: clip and mark up a screenshot, then copy or save it. Crop, draw

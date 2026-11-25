@@ -4,6 +4,7 @@
 
 - **Block pictures without gaps**: block characters such as ▀ and █ fill their whole cell, so
   pictures drawn with them, like rivetfetch's mascot, show without stripes between the lines.
+- An idle window follows desktop color changes right away.
 
 ## 0.3.1
 

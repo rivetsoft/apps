@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop color changes right away.
+
 ## 0.3.1
 
 - **Large files stay quick**: an open file no longer costs time on every frame in proportion to
