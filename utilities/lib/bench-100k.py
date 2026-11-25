@@ -30,7 +30,7 @@ def make_fixture(path, n):
     # A fixture from before (made in name order, or with another count): remove exactly the
     # files its marker says it made, then start again.
     for name in os.listdir(path):
-        made = re.fullmatch(r"\.rivet-fixture-(\d+)(-shuffled)?", name)
+        made = re.fullmatch(r"\.rivet-fixture-(\d+)(-shuffled|-building)?", name)
         if not made:
             continue
         for i in range(int(made.group(1))):
@@ -39,11 +39,14 @@ def make_fixture(path, n):
             except FileNotFoundError:
                 pass
         os.remove(os.path.join(path, name))
+    # Marked before the first file, so a run stopped halfway is cleaned up by the next one.
+    building = os.path.join(path, f".rivet-fixture-{n}-building")
+    open(building, "w").close()
     order = list(range(n))
     random.Random(n).shuffle(order)
     for i in order:
         open(os.path.join(path, f"file-{i:06d}"), "w").close()
-    open(marker, "w").close()
+    os.rename(building, marker)
 
 
 def compositor_has(pid):

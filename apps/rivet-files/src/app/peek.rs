@@ -450,18 +450,19 @@ impl RivetApp {
         access.push(("Mode".into(), format!("{} ({:04o}){exec}", mode_string(e.mode), e.mode & 0o7777)));
         self.peek_section(ui, "Access", access, card_fill, width);
 
-        if let Some((total, free)) = disk {
+        if disk.is_some() || (loading && here) {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new("DISK").size(10.5).strong().color(weak));
                 egui::Frame::NONE.fill(card_fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 9)).show(ui, |ui| {
                     ui.set_width(width - 20.0);
+                    let (total, free) = disk.unwrap_or((0, 0));
                     let used = total.saturating_sub(free);
                     let frac = if total > 0 { used as f32 / total as f32 } else { 0.0 };
                     let (bar, _) = ui.allocate_exact_size(Vec2::new(width - 20.0, 6.0), Sense::hover());
                     ui.painter().rect_filled(bar, 3.0, v.widgets.inactive.bg_fill);
                     ui.painter().rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac, bar.height())), 3.0, v.selection.bg_fill);
                     ui.add_space(2.0);
-                    ui.label(format!("{} free of {}", fsops::human_size(free), fsops::human_size(total)));
+                    ui.label(if disk.is_some() { format!("{} free of {}", fsops::human_size(free), fsops::human_size(total)) } else { "…".to_string() });
                 });
             }
         ui.add_space(8.0);
