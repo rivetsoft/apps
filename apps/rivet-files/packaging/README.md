@@ -22,8 +22,8 @@ Build it from this checkout:
 
 ```sh
 flatpak install -y flathub org.freedesktop.Platform//26.08 org.freedesktop.Sdk//26.08 org.freedesktop.Sdk.Extension.rust-stable//26.08 org.flatpak.Builder
-flatpak run org.flatpak.Builder --force-clean --install --user flatpak-build apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml
-flatpak run io.github.ulinaaron.rivet-files
+flatpak run org.flatpak.Builder --force-clean --install --user flatpak-build apps/rivet-files/packaging/flatpak/io.github.rivetsoft.rivet-files.yml
+flatpak run io.github.rivetsoft.rivet-files
 ```
 
 CI builds `rivet-files.flatpak` on pull requests and attaches that file to a published GitHub release. Installing the tarball and the AppImage on clean distros and opening them under X11 and Wayland, plus an optional Flatpak launch, is a separate workflow described in [docs/testing.md](../../../docs/testing.md). It does not run on pull requests.
@@ -50,12 +50,12 @@ Wait until the Flatpak path fixes are in a tagged release. The copy in this repo
    gh repo fork --clone flathub/flathub
    cd flathub
    git checkout --track origin/new-pr
-   git checkout -b add-io.github.ulinaaron.rivet-files new-pr
+   git checkout -b add-io.github.rivetsoft.rivet-files new-pr
    ```
 
 4. Copy only these two files into that branch, at the top of the tree (not under `apps/rivet-files/packaging/`):
 
-   - `apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml`, renamed to `io.github.ulinaaron.rivet-files.yml`
+   - `apps/rivet-files/packaging/flatpak/io.github.rivetsoft.rivet-files.yml`, renamed to `io.github.rivetsoft.rivet-files.yml`
    - `apps/rivet-files/packaging/flatpak/cargo-sources.json`
 
    Do not copy the Rust source, the icons, or a built Flatpak. Flathub builds from the git tag. The desktop file, metainfo and icons are installed from that tag by the manifest's `build-commands`.
@@ -76,8 +76,8 @@ Wait until the Flatpak path fixes are in a tagged release. The copy in this repo
 
    ```sh
    flatpak install -y flathub org.flatpak.Builder
-   flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.ulinaaron.rivet-files.yml
-   flatpak run org.flatpak.Builder --force-clean --repo=repo build io.github.ulinaaron.rivet-files.yml
+   flatpak run --command=flatpak-builder-lint org.flatpak.Builder manifest io.github.rivetsoft.rivet-files.yml
+   flatpak run org.flatpak.Builder --force-clean --repo=repo build io.github.rivetsoft.rivet-files.yml
    flatpak run --command=flatpak-builder-lint org.flatpak.Builder repo repo
    ```
 
@@ -85,15 +85,34 @@ Wait until the Flatpak path fixes are in a tagged release. The copy in this repo
 
 7. The linter reports three errors for permissions a file manager cannot drop: `finish-args-host-filesystem-access`, `finish-args-host-os-filesystem-access`, and `finish-args-host-etc-filesystem-access`. Flathub only ignores those after an exception is merged in [flathub-infra/flatpak-builder-lint](https://github.com/flathub-infra/flatpak-builder-lint), in `flatpak_builder_lint/staticfiles/exceptions.json`. Open that pull request yourself. Flathub says not to have an agent file exception requests. One entry, with a reason in your own words, along these lines: Rivet is a file manager and has to read and write files outside the home directory, including mounted drives (`host`); host icon themes and the MIME database live on the host `/usr` (`host-os`); host `/etc` is the computer's configuration, not the runtime's (`host-etc`).
 
-8. Commit, push the fork, and open a pull request **against `flathub/flathub`'s `new-pr` branch**, not `master`. Title: `Add io.github.ulinaaron.rivet-files`.
+8. Commit, push the fork, and open a pull request **against `flathub/flathub`'s `new-pr` branch**, not `master`. Title: `Add io.github.rivetsoft.rivet-files`.
 
    In the description, state that you are the upstream author and that you will maintain the Flatpak. Explain `filesystem=host`: Rivet has to browse, copy and trash files anywhere on the computer, and it has to read the icon theme and the color files in `~/.config`. Mention the limitations above (host `/usr` is under `/run/host`, Unmount may fail, Open With and Open in Terminal do not launch host programs).
 
 9. Answer review comments on that pull request. When a reviewer asks for a test build, comment `bot, build` on the pull request. Do not close and reopen it to update the branch.
 
-10. After it is merged, Flathub creates `flathub/io.github.ulinaaron.rivet-files` and invites the GitHub account. Accept within a week. Later updates are commits to that repository's `master`, not another submission through `new-pr`.
+10. After it is merged, Flathub creates `flathub/io.github.rivetsoft.rivet-files` and invites the GitHub account. Accept within a week. Later updates are commits to that repository's `master`, not another submission through `new-pr`.
 
-The app id `io.github.ulinaaron.rivet-files` is Rivet Files' Flathub id (under `io.github.ulinaaron`, the GitHub account); it stays the same now that the repository is `https://github.com/rivetsoft/apps`.
+## The app id
+
+Rivet Files' Flatpak id is `io.github.rivetsoft.rivet-files`, under the `rivetsoft` GitHub organization. Bundles up to 0.10.0 used `io.github.ulinaaron.rivet-files`. Flathub's linter turns an `io.github.OWNER.NAME` id into `https://github.com/OWNER/NAME` and needs that page to answer 200 with no redirect, so `https://github.com/rivetsoft/rivet-files` has to exist as a public repository for the lint (and a Flathub submission) to pass.
+
+### Moving from the old id
+
+The old id was never on Flathub, so there is no Flathub app to mark end-of-life. Only people who installed a `rivet-files.flatpak` bundle from a GitHub release have it.
+
+- **The new id says what it replaces.** The metainfo lists `io.github.ulinaaron.rivet-files` under `<replaces>` and `<provides>`, so software centers treat the new app as the old one's successor and keep its reviews. The desktop file carries `X-Flatpak-RenamedFrom=io.github.ulinaaron.rivet-files.desktop;`, so desktops that honor it move dock and favorite pins to the new entry.
+- **Bundles cannot switch on their own.** Flatpak's end-of-life rebase (`flatpak build-commit-from --end-of-life-rebase=OLD=NEW`) only acts when the new id is in the same remote, and a bundle installed from a file has an origin remote with no URL. Installing such a rebase bundle records the marker (`flatpak info` shows `End-of-life-rebase`) but `flatpak update` never offers the move, so releases don't ship one.
+- **Nothing needs copying.** Rivet ignores Flatpak's per-app `XDG_CONFIG_HOME` and `XDG_DATA_HOME` and keeps its settings, bookmarks, Trash and thumbnails in the real home directory (`~/.config/rivet`, `~/.local/share`, `~/.cache`), so both ids see the same files and `~/.var/app/io.github.ulinaaron.rivet-files` holds nothing Rivet needs.
+
+To move, install the new bundle and remove the old app with its empty data folder:
+
+```sh
+flatpak install --user rivet-files.flatpak
+flatpak uninstall --user --delete-data io.github.ulinaaron.rivet-files
+```
+
+If Rivet Files is ever published under one id on a remote with a URL (Flathub or a self-hosted repository) and renamed there later, commit the old id as an end-of-life rebase to the new one in that remote (on Flathub, `flathub.json` with `end-of-life` and `end-of-life-rebase`); Flatpak then offers the switch on update and moves `~/.var/app` itself.
 
 ## Publishing to the AUR
 

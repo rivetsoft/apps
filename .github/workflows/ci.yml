@@ -130,7 +130,7 @@ jobs:
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: rivet-files.flatpak
-          manifest-path: apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml
+          manifest-path: apps/rivet-files/packaging/flatpak/io.github.rivetsoft.rivet-files.yml
           cache-key: flatpak-26.08
           # Download the metainfo screenshots into the repo and rewrite their
           # URLs to dl.flathub.org/media, which is what the linter checks for.
@@ -146,16 +146,12 @@ jobs:
           # host, host-os and host-etc are errors until Flathub grants an
           # exception. A file manager cannot browse the computer without them.
           # Any other error still fails this job.
-          # appid-url-not-reachable: the app id io.github.ulinaaron.rivet-files points at
-          # github.com/ulinaaron/rivet-files, which redirects since the move to rivetsoft/apps.
-          # Allowed until the app id question is settled; Flathub will still reject it.
           python3 - <<'PY'
           import json, shutil, subprocess, sys
           allowed = {
               "finish-args-host-filesystem-access",
               "finish-args-host-os-filesystem-access",
               "finish-args-host-etc-filesystem-access",
-              "appid-url-not-reachable",
           }
           if shutil.which("flatpak-builder-lint"):
               lint = ["flatpak-builder-lint"]
@@ -180,7 +176,7 @@ jobs:
                   print("unexpected linter errors:", sorted(unexpected), file=sys.stderr)
                   sys.exit(1)
               print("file-manager permissions pending a Flathub exception:", sorted(set(data.get("errors") or [])))
-          run(["manifest", "apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.yml"])
+          run(["manifest", "apps/rivet-files/packaging/flatpak/io.github.rivetsoft.rivet-files.yml"])
           run(["repo", "repo"])
           PY
 

@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.ulinaaron.rivet-files</id>
+  <id>io.github.rivetsoft.rivet-files</id>
   <name>Rivet Files</name>
   <summary>Classic Linux file manager</summary>
-  <developer id="io.github.ulinaaron">
-    <name>ulinaaron</name>
+  <developer id="io.github.rivetsoft">
+    <name>Rivetsoft</name>
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT OR Apache-2.0</project_license>
-  <launchable type="desktop-id">io.github.ulinaaron.rivet-files.desktop</launchable>
+  <replaces>
+    <id>io.github.ulinaaron.rivet-files</id>
+  </replaces>
+  <provides>
+    <id>io.github.ulinaaron.rivet-files</id>
+    <id>io.github.ulinaaron.rivet-files.desktop</id>
+  </provides>
+  <launchable type="desktop-id">io.github.rivetsoft.rivet-files.desktop</launchable>
   <content_rating type="oars-1.1"/>
   <url type="homepage">https://github.com/rivetsoft/apps</url>
   <url type="bugtracker">https://github.com/rivetsoft/apps/issues</url>

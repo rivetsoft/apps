@@ -391,7 +391,7 @@ mod tests {
     #[test]
     fn flatpak_keeps_the_real_xdg_directories() {
         let home = Path::new("/home/me");
-        let redirected = Path::new("/home/me/.var/app/io.github.ulinaaron.rivet-files/config");
+        let redirected = Path::new("/home/me/.var/app/io.github.rivetsoft.rivet-files/config");
         assert_eq!(xdg_base(home, Some(redirected), true, ".config"), home.join(".config"));
         assert_eq!(xdg_base(home, Some(redirected), false, ".config"), redirected);
         assert_eq!(xdg_base(home, None, false, ".local/share"), home.join(".local/share"));

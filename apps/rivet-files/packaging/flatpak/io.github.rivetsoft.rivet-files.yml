@@ -1,4 +1,4 @@
-id: io.github.ulinaaron.rivet-files
+id: io.github.rivetsoft.rivet-files
 runtime: org.freedesktop.Platform
 runtime-version: '26.08'
 sdk: org.freedesktop.Sdk
@@ -38,13 +38,13 @@ modules:
       - cargo --offline fetch --manifest-path Cargo.toml --locked
       - cargo --offline build --release --locked -p rivet
       - install -Dm755 target/release/rivet -t ${FLATPAK_DEST}/bin
-      - install -Dm644 apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.desktop -t ${FLATPAK_DEST}/share/applications
-      - install -Dm644 apps/rivet-files/packaging/flatpak/io.github.ulinaaron.rivet-files.metainfo.xml -t ${FLATPAK_DEST}/share/metainfo
-      - install -Dm644 LICENSE-MIT LICENSE-APACHE -t ${FLATPAK_DEST}/share/licenses/io.github.ulinaaron.rivet-files
+      - install -Dm644 apps/rivet-files/packaging/flatpak/io.github.rivetsoft.rivet-files.desktop -t ${FLATPAK_DEST}/share/applications
+      - install -Dm644 apps/rivet-files/packaging/flatpak/io.github.rivetsoft.rivet-files.metainfo.xml -t ${FLATPAK_DEST}/share/metainfo
+      - install -Dm644 LICENSE-MIT LICENSE-APACHE -t ${FLATPAK_DEST}/share/licenses/io.github.rivetsoft.rivet-files
       - |
         find apps/rivet-files/data/icons/hicolor -type f | while read -r f; do
           rel=${f#apps/rivet-files/data/icons/}
-          rel=$(printf '%s' "$rel" | sed 's/rivet-files\./io.github.ulinaaron.rivet-files./')
+          rel=$(printf '%s' "$rel" | sed 's/rivet-files\./io.github.rivetsoft.rivet-files./')
           install -Dm644 "$f" "${FLATPAK_DEST}/share/icons/${rel}"
         done
     sources:
