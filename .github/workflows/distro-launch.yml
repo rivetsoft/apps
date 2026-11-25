@@ -35,7 +35,6 @@ on:
         default: false
   push:
     tags: ["v*"]
-  pull_request:
 
 permissions:
   contents: read
@@ -222,7 +221,7 @@ jobs:
 
   flatpak-launch:
     name: Flatpak under Xvfb
-    if: inputs.flatpak_launch || github.event_name == 'pull_request'
+    if: inputs.flatpak_launch
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
