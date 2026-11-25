@@ -711,9 +711,7 @@ impl WelcomeApp {
                                         .unwrap_or_default(),
                                 };
                                 let out = match latest {
-                                    Some((_, l))
-                                        if inst.version.as_ref().is_some_and(|v| v < l) =>
-                                    {
+                                    Some((_, l)) if inst.version.as_ref().is_some_and(|v| v < l) => {
                                         format!(" · {l} is out")
                                     }
                                     _ => String::new(),

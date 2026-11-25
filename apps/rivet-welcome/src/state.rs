@@ -33,9 +33,7 @@ impl Row {
     /// Rivet Welcome running without being installed: the release that would install it.
     pub fn install_copy(&self) -> Option<&(Release, Version)> {
         let i = self.installed.as_ref()?;
-        (i.running != Running::No)
-            .then_some(self.latest.as_ref())
-            .flatten()
+        (i.running != Running::No).then_some(self.latest.as_ref()).flatten()
     }
 
     pub fn is_welcome(&self) -> bool {
@@ -118,11 +116,7 @@ mod tests {
         w.installed.as_mut().unwrap().running = Running::AppImage;
         assert!(w.installable().is_none() && w.update().is_none());
         assert!(w.install_copy().is_some());
-        assert!(
-            row("files", Some(("0.6.0", false)))
-                .install_copy()
-                .is_none()
-        );
+        assert!(row("files", Some(("0.6.0", false))).install_copy().is_none());
         let rows = [
             row("files", Some(("0.6.0", true))),
             row("notes", Some(("0.1.0", true))),

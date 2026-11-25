@@ -11,7 +11,7 @@ Rivet Files only, so name any other app with `-p`:
 
 ```sh
 cargo build --release                    # Rivet Files (the program is `rivet`)
-cargo build --release -p rivet-shell     # or rivet-ftp, rivet-notes, rivet-edit, rivet-terminal, rivet-welcome, rivet-snip
+cargo build --release -p rivet-shell     # or rivet-ftp, rivet-notes, rivet-edit, rivet-terminal, rivet-welcome, rivet-snip, rivet-color
 cargo build --release --workspace        # everything
 ```
 
@@ -24,7 +24,8 @@ it:
 [Edit](../apps/rivet-edit/README.md),
 [Terminal](../apps/rivet-terminal/README.md),
 [Welcome](../apps/rivet-welcome/README.md),
-[Snip](../apps/rivet-snip/README.md).
+[Snip](../apps/rivet-snip/README.md),
+[Color](../apps/rivet-color/README.md).
 
 `utilities/rivet-dev install notes` (or `ftp`, `files`…) builds an app and installs it for you,
 in `~/.local/bin` and your app launcher.
@@ -76,6 +77,7 @@ Ubuntu 22.04 and Debian 12. Rivet Files' packaging (AppImage, Flatpak, AUR) is d
 | `apps/rivet-terminal` | Rivet Terminal |
 | `apps/rivet-welcome` | Rivet Welcome: installs and updates the apps, with a tray icon |
 | `apps/rivet-snip` | Rivet Snip: clips and marks up screenshots |
+| `apps/rivet-color` | Rivet Color: picks colors from the screen, with shades, harmonies and palettes |
 | `crates/rivet-look` | The shared look: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |
 | `crates/rivet-kit` | A software renderer for egui: screenshots, and Rivet Shell's surfaces |
 | `crates/rivet-xdg` | XDG folders, bookmarks and drives, file types, default apps and Open With |

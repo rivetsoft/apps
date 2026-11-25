@@ -38,8 +38,8 @@ Releasing
                                    already on GitHub (what the Release workflow runs)
   release [APP] --publish          Without the workflow: build here, send code + tag to GitHub and create the
                                    GitHub release with the files (Edit, Terminal and Notes as
-                                   full releases, FTP and Welcome as pre-releases; "latest
-                                   release" stays Rivet Files')
+                                   full releases, FTP, Welcome and Color as pre-releases;
+                                   "latest release" stays Rivet Files')
   release-all [--publish] [--dry-run] [--yes] [--only edit,terminal] [--no-checks]
                                    Every app one at a time: shows its state, skips it when
                                    nothing changed, asks release / skip / stop, then runs its
