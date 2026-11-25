@@ -4,7 +4,7 @@
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::theme::{ACCENTS, Mode, paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile};
 use rivet_look::{fonts, palette, windows};
-use rivet_term::CursorStyle;
+use rivet_term::{CursorStyle, MAX_SCROLLBACK};
 
 use super::*;
 
@@ -293,7 +293,7 @@ impl TermApp {
                                     section(ui, "Scrollback", &mut |ui| {
                                         grid(ui, "term-scroll", &mut |ui| {
                                             ui.label("Lines kept");
-                                            ui.add(egui::Slider::new(&mut self.s.scrollback, 1_000..=100_000).logarithmic(true));
+                                            ui.add(egui::Slider::new(&mut self.s.scrollback, 1_000..=MAX_SCROLLBACK).logarithmic(true));
                                             ui.end_row();
                                         });
                                         hint(ui, "For tabs and panes opened from now on.");
