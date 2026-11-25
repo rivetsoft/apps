@@ -57,8 +57,11 @@ Building
   check-glibc --max V FILE…        Fail if FILE needs a GLIBC symbol newer than V
 
 Using your build
-  install [APP] [--default]        Install for this user (~/.local/bin + app launcher);
-                                   --default also makes Rivet Files the default file manager
+  install [APP] [--default|--uninstall]
+                                   Install for this user (~/.local/bin + app launcher);
+                                   --default also makes Rivet Files the default file manager;
+                                   --uninstall (Rivet Files) removes its program, desktop
+                                   entry and icons
   link [APP|shell] [--user] [--remove]
                                    A command that always runs this build: `rivet`, or the
                                    app's own (`link shell` for rivet-shell). In /usr/bin, or
