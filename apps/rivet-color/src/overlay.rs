@@ -517,7 +517,21 @@ impl PointerHandler for Picker {
 // of the program, so the portable build links against nothing newer than its glibc.
 impl Dispatch<wl_keyboard::WlKeyboard, ()> for Picker {
     fn event(p: &mut Self, _: &wl_keyboard::WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, qh: &QueueHandle<Self>) {
-        let wl_keyboard::Event::Key { key, state, .. } = event else { return };
+        // Focus coming or going: the keys held at that moment, since their presses and releases
+        // went to whatever had the keyboard before.
+        let (key, state) = match event {
+            wl_keyboard::Event::Key { key, state, .. } => (key, state),
+            wl_keyboard::Event::Enter { keys, .. } => {
+                let held: Vec<u32> = keys.as_chunks::<4>().0.iter().map(|b| u32::from_ne_bytes(*b)).collect();
+                p.shift = [held.contains(&42), held.contains(&54)];
+                return;
+            }
+            wl_keyboard::Event::Leave { .. } => {
+                p.shift = [false; 2];
+                return;
+            }
+            _ => return,
+        };
         let down = state == WEnum::Value(wl_keyboard::KeyState::Pressed);
         // KEY_LEFTSHIFT, KEY_RIGHTSHIFT
         if key == 42 || key == 54 {
