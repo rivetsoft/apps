@@ -201,7 +201,6 @@ impl RivetApp {
     fn name_galley(&self, ui: &egui::Ui, name: &str, width: f32, rows: usize, color: Color32) -> Arc<egui::Galley> {
         let mut job = egui::text::LayoutJob::simple(name.to_string(), crate::fonts::ui_font(13.0), color, width);
         job.wrap.max_rows = rows;
-        job.wrap.break_anywhere = true;
         job.wrap.overflow_character = Some('…');
         job.halign = egui::Align::Center;
         ui.painter().layout_job(job)
@@ -279,7 +278,7 @@ impl RivetApp {
                 let tex = self.entry_texture(ctx, &e, z);
                 if selected && single {
                     // Drawn after everything else so the full name can overlap the next row.
-                    let galley = self.name_galley(ui, &e.name, cell_w - 8.0, 5, fg);
+                    let galley = self.name_galley(ui, &e.name, cell_w - 8.0, usize::MAX, fg);
                     let bottom = (text_pos.y + galley.size().y + 6.0).max(tile.bottom());
                     expanded = Some((Rect::from_min_max(tile.min, Pos2::new(tile.right(), bottom)), tex, icon_rect, tint, galley, text_pos, fg, e.is_link, e.clone()));
                 } else {
@@ -342,11 +341,21 @@ impl RivetApp {
         let in_trash = matches!(self.tab().loc, Location::Trash);
         let in_search = matches!(self.tab().loc, Location::Search { .. } | Location::Recent);
         let full_w = ui.available_width();
-        let size_w = 90.0;
-        let type_w = 150.0;
-        let date_w = 150.0;
-        let extra_w = if in_trash || in_search { 220.0 } else { 0.0 };
-        let name_w = (full_w - size_w - type_w - date_w - extra_w - 16.0).max(160.0);
+        // Size, Type, Date and Location share what Name's 160 points leave. In a narrow pane
+        // (a small window, or Peek open) they narrow down to 60% and their text ends in an
+        // ellipsis; past that the least needed are left out (Type, Location, then Size), so
+        // the ones shown stay readable and none runs off the edge.
+        let mut widths: [f32; 4] = [90.0, 150.0, 150.0, if in_trash || in_search { 220.0 } else { 0.0 }];
+        let room = (full_w - 16.0 - 160.0).max(0.0);
+        for i in [1, 3, 0, 2] {
+            if widths.iter().sum::<f32>() * 0.6 <= room {
+                break;
+            }
+            widths[i] = 0.0;
+        }
+        let fit = (room / widths.iter().sum::<f32>().max(1.0)).min(1.0);
+        let [size_w, type_w, date_w, extra_w] = widths.map(|w| w * fit);
+        let name_w = (full_w - 16.0 - size_w - type_w - date_w - extra_w).max(0.0);
         let mut columns: Vec<(&str, Option<SortKey>, f32)> = vec![("Name", Some(SortKey::Name), name_w), ("Size", Some(SortKey::Size), size_w), ("Type", Some(SortKey::Type), type_w)];
         if in_trash {
             columns.push(("Original Location", None, extra_w));
@@ -357,6 +366,7 @@ impl RivetApp {
             }
             columns.push(("Date Modified", Some(SortKey::Modified), date_w));
         }
+        columns.retain(|c| c.2 > 0.0);
 
         let (hrect, _) = ui.allocate_exact_size(Vec2::new(full_w, header_h), Sense::hover());
         let v = ui.visuals().clone();
@@ -368,8 +378,13 @@ impl RivetApp {
             if resp.hovered() && key.is_some() {
                 ui.painter().rect_filled(r, 0.0, v.widgets.hovered.weak_bg_fill);
             }
-            let tr = ui.painter().text(Pos2::new(r.left() + 8.0, r.center().y), Align2::LEFT_CENTER, *label, crate::fonts::ui_font(12.5), v.strong_text_color());
-            if *key == Some(self.s.sort) {
+            let sorted = *key == Some(self.s.sort);
+            let mut job = egui::text::LayoutJob::simple_singleline(label.to_string(), crate::fonts::ui_font(12.5), v.strong_text_color());
+            job.wrap = egui::text::TextWrapping::truncate_at_width((w - if sorted { 32.0 } else { 12.0 }).max(10.0));
+            let g = ui.painter().layout_job(job);
+            let tr = Rect::from_min_size(Pos2::new(r.left() + 8.0, r.center().y - g.size().y / 2.0), g.size());
+            ui.painter().with_clip_rect(r.intersect(ui.clip_rect())).galley(tr.min, g, v.strong_text_color());
+            if sorted {
                 // Sort direction arrow, drawn so it never depends on the font having the glyph.
                 let c = Pos2::new(tr.right() + 10.0, r.center().y);
                 let pts = if self.s.sort_desc {
@@ -449,6 +464,9 @@ impl RivetApp {
                 }
                 let painter = ui.painter().with_clip_rect(row.intersect(clip));
                 let cell = |x: f32, w: f32, text: String, color: Color32| {
+                    if w <= 0.0 {
+                        return;
+                    }
                     let mut job = egui::text::LayoutJob::simple_singleline(text, crate::fonts::ui_font(13.0), color);
                     job.wrap = egui::text::TextWrapping::truncate_at_width((w - 12.0).max(10.0));
                     let g = painter.layout_job(job);

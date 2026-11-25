@@ -261,6 +261,15 @@ fn main() -> eframe::Result {
         // Checks always use a predictable size and the default look.
         settings.window_w = 1100.0;
         settings.window_h = 700.0;
+        // Test hook for checks: RIVET_SHOT_SIZE=WxH draws the window at another size.
+        if let Some((w, h)) = std::env::var("RIVET_SHOT_SIZE").ok().and_then(|v| v.split_once('x').and_then(|(w, h)| Some((w.parse().ok()?, h.parse().ok()?)))) {
+            settings.window_w = w;
+            settings.window_h = h;
+        }
+        // Test hook for checks: RIVET_PEEK_WIDTH sets the Peek panel's width.
+        if let Some(w) = std::env::var("RIVET_PEEK_WIDTH").ok().and_then(|v| v.parse::<f32>().ok()) {
+            settings.peek_width = w;
+        }
     }
 
     // A picker: read the request, start in its folder.
