@@ -27,10 +27,15 @@ def make_fixture(path, n):
     if os.path.exists(marker):
         return
     os.makedirs(path, exist_ok=True)
-    # A fixture from before, made in name order: start again.
-    for name in os.listdir(path):
-        if name.startswith("file-") or name.startswith(".rivet-fixture-"):
-            os.remove(os.path.join(path, name))
+    # A fixture from before, made in name order: remove exactly what it made, then start again.
+    old = os.path.join(path, f".rivet-fixture-{n}")
+    if os.path.exists(old):
+        for i in range(n):
+            try:
+                os.remove(os.path.join(path, f"file-{i:06d}"))
+            except FileNotFoundError:
+                pass
+        os.remove(old)
     order = list(range(n))
     random.Random(n).shuffle(order)
     for i in order:

@@ -38,10 +38,12 @@ pub(super) struct PeekState {
     here: Option<(PathBuf, Option<SystemTime>, Entry)>,
     /// A selection of several items summed up, and the selection it's for (see `selection_key`).
     many: Option<((u64, u64), Option<Many>)>,
-    /// The details that need a system call, and the item they are for: (path, modification
-    /// time, whether it is the open folder). Read once, not every frame, so a slow disk or
-    /// user database can't hold up drawing.
-    facts: Option<(FactsKey, Facts)>,
+    /// The details that need a system call, the item they are for (path, modification time,
+    /// whether it is the open folder) and when they were read. Read every couple of seconds
+    /// rather than every frame, so a slow disk or user database can't hold up drawing, while
+    /// what changes without touching the modification time (group, last opened, free space)
+    /// still catches up.
+    facts: Option<(FactsKey, std::time::Instant, Facts)>,
 }
 
 type FactsKey = (PathBuf, Option<SystemTime>, bool);
@@ -332,10 +334,11 @@ impl RivetApp {
 
         // ---- details, grouped
         let facts_key = (e.path.clone(), e.modified, here);
-        if self.peek.facts.as_ref().is_none_or(|(k, _)| *k != facts_key) {
-            self.peek.facts = Some((facts_key, Facts::read(&e, here)));
+        const FACTS_FOR: std::time::Duration = std::time::Duration::from_secs(2);
+        if self.peek.facts.as_ref().is_none_or(|(k, read, _)| *k != facts_key || read.elapsed() > FACTS_FOR) {
+            self.peek.facts = Some((facts_key, std::time::Instant::now(), Facts::read(&e, here)));
         }
-        let Some((_, facts)) = &self.peek.facts else { return };
+        let Some((_, _, facts)) = &self.peek.facts else { return };
         let (link, created, accessed, owner, group, disk) = (facts.link.clone(), facts.created, facts.accessed, facts.owner.clone(), facts.group.clone(), facts.disk);
         let mut general: Vec<(String, String)> = Vec::new();
         general.push(("Type".into(), if e.is_dir { "Folder".into() } else { format!("{desc}\n{}", e.mime) }));
