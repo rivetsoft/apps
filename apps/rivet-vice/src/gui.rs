@@ -147,7 +147,45 @@ fn demo() -> Vec<Entry> {
     let at = 1_795_000_000;
     let f = |path: &str, size: u64, days: i64| Entry { path: path.into(), dir: false, size, modified: at - days * 86400 - size as i64 % 80000 };
     let d = |path: &str, days: i64| Entry { path: path.into(), dir: true, size: 0, modified: at - days * 86400 };
-    vec![d("Trip", 3), d("Trip/Photos", 3), f("Trip/Photos/harbor.jpg", 3_412_880, 9), f("Trip/Photos/lighthouse.jpg", 2_904_112, 9), f("Trip/Photos/low tide.jpg", 4_120_034, 8), d("Trip/Receipts", 5), f("Trip/Receipts/ferry.pdf", 88_410, 12), f("Trip/Receipts/hotel.pdf", 131_902, 11), f("Trip/itinerary.md", 4_211, 20), f("Trip/packing list.txt", 912, 25), f("Trip/route.gpx", 248_330, 14)]
+    vec![
+        d("Trip", 3),
+        d("Trip/Maps", 15),
+        f("Trip/Maps/coast.pdf", 1_204_880, 16),
+        f("Trip/Maps/town.png", 742_116, 15),
+        d("Trip/Notes", 4),
+        f("Trip/Notes/day one.md", 3_120, 9),
+        f("Trip/Notes/day two.md", 2_874, 8),
+        f("Trip/Notes/places to eat.md", 1_874, 4),
+        d("Trip/Photos", 3),
+        f("Trip/Photos/beach huts.jpg", 2_611_004, 9),
+        f("Trip/Photos/cliff path.jpg", 3_002_517, 8),
+        f("Trip/Photos/harbor.jpg", 3_412_880, 9),
+        f("Trip/Photos/lighthouse.jpg", 2_904_112, 9),
+        f("Trip/Photos/low tide.jpg", 4_120_034, 8),
+        f("Trip/Photos/market.jpg", 2_250_870, 7),
+        f("Trip/Photos/pier at dusk.jpg", 3_780_221, 7),
+        f("Trip/Photos/rock pools.jpg", 2_488_660, 6),
+        d("Trip/Receipts", 5),
+        f("Trip/Receipts/ferry.pdf", 88_410, 12),
+        f("Trip/Receipts/hotel.pdf", 131_902, 11),
+        f("Trip/Receipts/museum.pdf", 46_220, 8),
+        d("Trip/Videos", 6),
+        f("Trip/Videos/ferry.mp4", 48_220_114, 9),
+        f("Trip/Videos/waves.mp4", 31_880_402, 6),
+        f("Trip/bookings.ics", 5_610, 21),
+        f("Trip/budget.ods", 18_204, 18),
+        f("Trip/contacts.vcf", 2_118, 22),
+        f("Trip/ferry times.pdf", 152_330, 19),
+        f("Trip/itinerary.md", 4_211, 20),
+        f("Trip/packing list.txt", 912, 25),
+        f("Trip/playlist.m3u", 1_480, 17),
+        f("Trip/route.gpx", 248_330, 14),
+        f("Trip/souvenirs.txt", 640, 5),
+        f("Trip/tickets.pdf", 96_118, 23),
+        f("Trip/tide tables.csv", 7_942, 16),
+        f("Trip/trail map.png", 1_884_506, 15),
+        f("Trip/weather.json", 3_306, 10),
+    ]
 }
 
 impl ViceApp {
@@ -724,11 +762,17 @@ mod tests {
         let all = demo();
         let name = |i: &usize| all[*i].name().to_string();
         // Folders first, then by name.
-        assert_eq!(children(&all, "Trip", (Sort::Name, true)).iter().map(name).collect::<Vec<_>>(), ["Photos", "Receipts", "itinerary.md", "packing list.txt", "route.gpx"]);
+        assert_eq!(
+            children(&all, "Trip", (Sort::Name, true)).iter().map(name).collect::<Vec<_>>(),
+            ["Maps", "Notes", "Photos", "Receipts", "Videos", "bookings.ics", "budget.ods", "contacts.vcf", "ferry times.pdf", "itinerary.md", "packing list.txt", "playlist.m3u", "route.gpx", "souvenirs.txt", "tickets.pdf", "tide tables.csv", "trail map.png", "weather.json"]
+        );
         // Turned round, the biggest file comes first; folders stay on top, in turned-round order too.
-        assert_eq!(children(&all, "Trip", (Sort::Size, false)).iter().map(name).collect::<Vec<_>>(), ["Receipts", "Photos", "route.gpx", "itinerary.md", "packing list.txt"]);
+        assert_eq!(
+            children(&all, "Trip", (Sort::Size, false)).iter().map(name).collect::<Vec<_>>(),
+            ["Videos", "Receipts", "Photos", "Notes", "Maps", "trail map.png", "route.gpx", "ferry times.pdf", "tickets.pdf", "budget.ods", "tide tables.csv", "bookings.ics", "itinerary.md", "weather.json", "contacts.vcf", "playlist.m3u", "packing list.txt", "souvenirs.txt"]
+        );
         assert_eq!(children(&all, "", (Sort::Name, true)).iter().map(name).collect::<Vec<_>>(), ["Trip"]);
-        assert_eq!(inside(&all, "Trip/Receipts"), (2, 88_410 + 131_902));
-        assert_eq!(inside(&all, "Trip").0, 8);
+        assert_eq!(inside(&all, "Trip/Receipts"), (3, 88_410 + 131_902 + 46_220));
+        assert_eq!(inside(&all, "Trip").0, 31);
     }
 }

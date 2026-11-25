@@ -3,7 +3,7 @@
 An archive manager for the Rivet desktop: open an archive, see what is in it, take out all
 or some of it, and make new ones. It is unreleased and built from source.
 
-![Rivet Vice inside an archive, with two photos selected to extract](../../docs/screenshots/rivet-vice-wide.png)
+![Rivet Vice inside a trip archive, with folders of photos, maps and notes](../../docs/screenshots/rivet-vice-wide.png)
 
 ```sh
 cargo build -p rivet-vice
