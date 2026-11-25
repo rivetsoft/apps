@@ -19,6 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The Flatpak builds offline from cargo-sources.json, and its own check runs only on pull
+      # requests, so a crate added to Cargo.lock without it is caught here on every push.
+      - name: Flatpak crate list matches Cargo.lock
+        run: python3 utilities/lib/flatpak-sources-sync.py --check
+
       # The tests read the desktop's file-type database (shared-mime-info); Rivet Shell's keyboard
       # handling links libxkbcommon, and its lock screen links PAM.
       - name: Install file-type database, keyboard and password libraries

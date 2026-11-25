@@ -102,7 +102,7 @@ pub fn missing_libraries_message(session: Session, missing: &[(&str, &str)]) -> 
     if x11 {
         out.push_str("  Debian or Ubuntu:  sudo apt install libxkbcommon-x11-0\n");
         out.push_str("  Fedora or RHEL:    sudo dnf install libxkbcommon-x11\n");
-        out.push_str("  Arch Linux:        sudo pacman -S libxkbcommon\n");
+        out.push_str("  Arch Linux:        sudo pacman -S libxkbcommon-x11\n");
         out.push_str("  openSUSE:          sudo zypper install libxkbcommon-x11-0\n");
     } else {
         out.push_str("  Debian or Ubuntu:  sudo apt install libxkbcommon0\n");
@@ -113,7 +113,7 @@ pub fn missing_libraries_message(session: Session, missing: &[(&str, &str)]) -> 
     if x11 && missing.iter().any(|(name, _)| name.starts_with("libxkbcommon.so")) {
         out.push_str(
             "\nlibxkbcommon itself was missing too. The package above depends on it \
-             (Debian and Ubuntu: libxkbcommon0, Fedora: libxkbcommon).\n",
+             (Debian and Ubuntu: libxkbcommon0, Fedora and Arch: libxkbcommon).\n",
         );
     }
     out
@@ -203,7 +203,7 @@ mod tests {
         assert!(text.contains("libxcb-xkb1"));
         assert!(text.contains("sudo apt install libxkbcommon-x11-0"));
         assert!(text.contains("sudo dnf install libxkbcommon-x11"));
-        assert!(text.contains("sudo pacman -S libxkbcommon"));
+        assert!(text.contains("sudo pacman -S libxkbcommon-x11"));
         assert!(text.contains("sudo zypper install libxkbcommon-x11-0"));
         assert!(!text.contains("panicked"));
     }

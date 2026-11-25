@@ -260,8 +260,8 @@ impl RivetApp {
             let job = self.peek_highlighted(ui, &e, text);
             egui::Frame::NONE.fill(card_fill).corner_radius(r_md()).inner_margin(egui::Margin::same(10)).show(ui, |ui| {
                 ui.set_width(width - 20.0);
-                egui::ScrollArea::both().id_salt("peek-text").max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
-                    ui.add(egui::Label::new(job).wrap_mode(egui::TextWrapMode::Extend));
+                egui::ScrollArea::vertical().id_salt("peek-text").max_height(max_h).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.add(egui::Label::new(job).wrap());
                 });
             });
             self.peek_grip(ui, width);

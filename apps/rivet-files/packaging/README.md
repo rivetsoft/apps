@@ -28,13 +28,13 @@ flatpak run io.github.ulinaaron.rivet-files
 
 CI builds `rivet-files.flatpak` on pull requests and attaches that file to a published GitHub release. Installing the tarball and the AppImage on clean distros and opening them under X11 and Wayland, plus an optional Flatpak launch, is a separate workflow described in [docs/testing.md](../../../docs/testing.md). It does not run on pull requests.
 
-When `Cargo.lock` changes, regenerate the offline crate list (no network during the Flatpak build):
+When `Cargo.lock` gains a crate, add it to the offline crate list (no network during the Flatpak build):
 
 ```sh
-python3 flatpak-cargo-generator.py Cargo.lock -o apps/rivet-files/packaging/flatpak/cargo-sources.json
+utilities/rivet-dev flatpak-sources
 ```
 
-The script is [flatpak-cargo-generator](https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo). CI does not refresh it for you.
+CI does not refresh the list for you, but its Build and test check fails when a crate in `Cargo.lock` is missing from it.
 
 ## Submitting to Flathub
 

@@ -5,6 +5,7 @@
 - `./install.sh --uninstall` in the downloaded archive takes Rivet Files back off: the program in `~/.local/bin`, its app launcher entry and its icons.
 - **A new icon**: the pink folder with the rivet through it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Open in Rivet Vice**: right-click an archive to look inside it before taking anything out. Shown when Rivet Vice, the archive manager, is installed.
+- On Arch Linux under X11, the message about a missing keyboard library names the right package to install, `libxkbcommon-x11`, instead of `libxkbcommon`, which doesn't include it on Arch.
 - The Empty Trash question is roomier and easier to read: the Trash's icon beside it, how many items are in it, and the buttons on the right, as in the Delete question.
 - `rivet trash:///` opens straight on the Trash, as other file managers do, so a dock or launcher can open it there.
 - **Settings changed in one window stay changed**: with several windows open, closing one no
@@ -14,6 +15,13 @@
   Replace in the file picker answer to Return, as Delete already did. Tab to Cancel and Return
   cancels; before, Return in the Delete and Open With questions went ahead even with Cancel
   focused.
+- **Long names read better in the icon view**: they wrap between words and at hyphens instead
+  of mid-word, a word is broken only when it is wider than the label on its own, and a name
+  longer than two lines ends in an ellipsis. Select it to see the whole name, or hover for it.
+- **Peek fits its panel**: a text preview wraps to the panel's width instead of running off its
+  right edge, and the list view's columns narrow to make room for Peek, ending in an ellipsis
+  (Type, Location and Size are left out when there is no room) rather than running past the
+  edge of the window.
 - The AUR packages also install libxkbcommon-x11, which Rivet Files needs to start under X11.
 
 ## 0.9.0
