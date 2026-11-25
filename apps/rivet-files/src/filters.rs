@@ -423,6 +423,7 @@ mod tests {
         Entry {
             path: PathBuf::from("/x").join(name),
             name: name.into(),
+            lower: name.to_lowercase(),
             is_dir,
             is_link: false,
             broken_link: false,

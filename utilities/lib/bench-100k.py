@@ -10,7 +10,7 @@
 Usage: utilities/rivet-dev bench [--runs 3] [--views list,icons] [--files 100000]
 Run from the repository; needs a release build (cargo build --release).
 """
-import argparse, json, os, shutil, statistics, subprocess, sys, time
+import argparse, json, os, random, shutil, statistics, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -20,11 +20,20 @@ QUIET = 0.5
 
 
 def make_fixture(path, n):
-    marker = os.path.join(path, f".rivet-fixture-{n}")
+    """The files are made in a shuffled order. A folder lists files in about the order they
+    were made, so a fixture made in name order would hand Rivet an already sorted folder and
+    hide what sorting a real one costs."""
+    marker = os.path.join(path, f".rivet-fixture-{n}-shuffled")
     if os.path.exists(marker):
         return
     os.makedirs(path, exist_ok=True)
-    for i in range(n):
+    # A fixture from before, made in name order: start again.
+    for name in os.listdir(path):
+        if name.startswith("file-") or name.startswith(".rivet-fixture-"):
+            os.remove(os.path.join(path, name))
+    order = list(range(n))
+    random.Random(n).shuffle(order)
+    for i in order:
         open(os.path.join(path, f"file-{i:06d}"), "w").close()
     open(marker, "w").close()
 

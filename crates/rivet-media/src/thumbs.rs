@@ -127,10 +127,8 @@ fn thumbnail(job: &Job) -> Option<egui::ColorImage> {
     let mtime = job.mtime.and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok()).map(|d| d.as_secs()).unwrap_or(0);
     // 1. The shared cache (the right size first, then bigger, then smaller).
     for dir in ["large", "x-large", "xx-large", "normal"] {
-        if read_cached(&cache.join(dir).join(&name), mtime).is_some()
-            && let Ok(img) = image::open(cache.join(dir).join(&name))
-        {
-            return Some(to_color_image(&backdrop(img.to_rgba8(), &job.mime)));
+        if let Some(img) = read_cached(&cache.join(dir).join(&name), mtime) {
+            return Some(to_color_image(&backdrop(img, &job.mime)));
         }
     }
     // Tried before and failed (and the file hasn't changed since).
@@ -191,12 +189,11 @@ fn cached_mtime(path: &Path) -> Option<u64> {
 }
 
 /// A cached thumbnail, if it's for this version of the file.
-fn read_cached(path: &Path, mtime: u64) -> Option<egui::ColorImage> {
+fn read_cached(path: &Path, mtime: u64) -> Option<image::RgbaImage> {
     if cached_mtime(path)? != mtime {
         return None;
     }
-    let img = image::open(path).ok()?.to_rgba8();
-    Some(to_color_image(&img))
+    Some(image::open(path).ok()?.to_rgba8())
 }
 
 /// Save a thumbnail with the tags the spec asks for, privately and atomically.
@@ -456,7 +453,7 @@ mod tests {
         let img = image::RgbaImage::from_pixel(4, 3, image::Rgba([10, 20, 30, 255]));
         write_png(&p, &img, "file:///x", 1234);
         assert_eq!(cached_mtime(&p), Some(1234));
-        assert!(read_cached(&p, 1234).is_some_and(|c| c.size == [4, 3]));
+        assert!(read_cached(&p, 1234).is_some_and(|c| c.dimensions() == (4, 3)));
         assert!(read_cached(&p, 99).is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }

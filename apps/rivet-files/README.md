@@ -69,7 +69,7 @@ Rivet is powerful all the while being minimal. Make it your own — bloat the in
 
 **Under the hood**
 - ⚡ **Fast** — opens a 100,000-file folder in under 0.4 s; no CPU use when idle
-- 🦀 **Small** — one 16 MB binary or a 7 MB AppImage; ffmpeg is optional (video previews and conversion)
+- 🦀 **Small** — one 19 MB binary or a 7 MB AppImage; ffmpeg is optional (video previews and conversion)
 - 🩹 **Crash reports** — saved on your computer and shown on the next start; nothing is sent unless you choose to share it
 
 ## 🎨 Follows your colors
@@ -252,10 +252,11 @@ Release build on Fedora, Wayland, NVMe SSD:
 | --- | --- |
 | Drawing a frame (100,000 items, any selection, Peek open or not) | ~1.5–3 ms |
 | Reading 100,000 items | ~140 ms |
-| Sorting 100,000 items by name / type | ~17 ms / ~27 ms |
+| Sorting 100,000 items by name / type, as a folder lists them (in no particular order) | ~120 ms / ~130 ms |
+| Sorting 100,000 items by name / type, when the folder lists them sorted already | ~15 ms / ~20 ms |
 | Finding icons for 100,000 items (first time / cached) | ~35 ms / ~14 ms |
 | Indexing an icon theme (once) | ~4 ms |
-| Binary size (stripped) | ~16 MB (AppImage ~7 MB) |
+| Binary size (stripped) | ~19 MB (AppImage ~7 MB) |
 
 Reproduce with `rivet --bench [FOLDER…]`, `RIVET_FRAME_STATS=1 rivet --screenshot out.png`
 and `utilities/rivet-dev bench`.
