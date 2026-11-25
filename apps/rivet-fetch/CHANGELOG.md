@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - **rivetfetch, a new program**: this computer at a glance in the terminal, beside Rivet the
   mascot, in the desktop's accent. It shows the essentials by default; screens, theme, disk,
