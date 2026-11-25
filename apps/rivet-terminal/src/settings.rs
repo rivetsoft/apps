@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use rivet_look::theme::Mode;
-use rivet_term::CursorStyle;
+use rivet_term::{CursorStyle, MAX_SCROLLBACK};
 
 pub static NO_SAVE: AtomicBool = AtomicBool::new(false);
 
@@ -92,7 +92,7 @@ impl Settings {
                 "cursor" => s.cursor = CursorStyle::from_name(v),
                 "bold_is_bright" => s.bold_is_bright = b,
                 "padding" => s.padding = v.parse::<f32>().unwrap_or(10.0).clamp(0.0, 40.0),
-                "scrollback" => s.scrollback = v.parse::<usize>().unwrap_or(10_000).clamp(100, 200_000),
+                "scrollback" => s.scrollback = v.parse::<usize>().unwrap_or(10_000).clamp(100, MAX_SCROLLBACK),
                 "shell" => s.shell = v.to_string(),
                 "copy_on_select" => s.copy_on_select = b,
                 "visual_bell" => s.visual_bell = b,

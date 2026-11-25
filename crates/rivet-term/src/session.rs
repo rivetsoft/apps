@@ -6,14 +6,19 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use std::thread::JoinHandle;
 
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
-use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg};
+use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg, State};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config, Term};
 use alacritty_terminal::tty;
 use eframe::egui;
+
+/// The most scrollback a session keeps. Every line is stored at the pane's full width, about
+/// 24 bytes a cell, so a 200-column pane at this limit can hold close to half a gigabyte.
+pub const MAX_SCROLLBACK: usize = 100_000;
 
 /// What to start, where, and how much to remember.
 #[derive(Clone, Debug, Default)]
@@ -22,7 +27,7 @@ pub struct Spawn {
     pub program: Option<(String, Vec<String>)>,
     pub cwd: Option<PathBuf>,
     pub env: HashMap<String, String>,
-    /// Lines of scrollback.
+    /// Lines of scrollback, up to [`MAX_SCROLLBACK`].
     pub scrollback: usize,
 }
 
@@ -96,6 +101,8 @@ pub struct Session {
     /// The last bell, by the window's clock (for a short flash).
     pub bell_at: Option<f64>,
     viewport: Arc<std::sync::Mutex<egui::ViewportId>>,
+    /// The reader thread, which owns the other reference to `term` until it ends.
+    reader: Option<JoinHandle<(EventLoop<tty::Pty, Listener>, State)>>,
 }
 
 impl Session {
@@ -116,12 +123,12 @@ impl Session {
         let pid = pty.child().id();
         let (tx, rx) = channel();
         let listener = Listener { tx, ctx, viewport: viewport.clone() };
-        let config = Config { scrolling_history: spawn.scrollback.clamp(100, 200_000), ..Default::default() };
+        let config = Config { scrolling_history: spawn.scrollback.clamp(100, MAX_SCROLLBACK), ..Default::default() };
         let term = Arc::new(FairMutex::new(Term::new(config, &size, listener.clone())));
         let event_loop = EventLoop::new(term.clone(), listener, pty, true, false).map_err(|e| e.to_string())?;
         let sender = event_loop.channel();
-        event_loop.spawn();
-        Ok(Session { term, sender, rx, size, title: None, exited: false, pid, bell_at: None, viewport })
+        let reader = Some(event_loop.spawn());
+        Ok(Session { term, sender, rx, size, title: None, exited: false, pid, bell_at: None, viewport, reader })
     }
 
     /// Say which window shows the session now, so its output wakes that one (an app with
@@ -229,5 +236,23 @@ impl Drop for Session {
         unsafe {
             libc::kill(self.pid as i32, libc::SIGHUP);
         }
+        // A long scrollback is freed in many small pieces that the allocator keeps for itself, so
+        // the app would stay at its largest size after the pane is gone. Once the reader thread
+        // and this session have let go of the screen, hand the free memory back to the system.
+        let Some(reader) = self.reader.take() else { return };
+        let term = Arc::downgrade(&self.term);
+        let _ = std::thread::Builder::new().name("terminal cleanup".into()).spawn(move || {
+            drop(reader.join());
+            for _ in 0..100 {
+                if term.strong_count() == 0 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
+            unsafe {
+                libc::malloc_trim(0);
+            }
+        });
     }
 }
