@@ -14,6 +14,13 @@
   Replace in the file picker answer to Return, as Delete already did. Tab to Cancel and Return
   cancels; before, Return in the Delete and Open With questions went ahead even with Cancel
   focused.
+- **Long names read better in the icon view**: they wrap between words and at hyphens instead
+  of mid-word, a word is broken only when it is wider than the label on its own, and a name
+  longer than two lines ends in an ellipsis. Select it to see the whole name, or hover for it.
+- **Peek fits its panel**: a text preview wraps to the panel's width instead of running off its
+  right edge, and the list view's columns narrow to make room for Peek, ending in an ellipsis
+  (Type, Location and Size are left out when there is no room) rather than running past the
+  edge of the window.
 
 ## 0.9.0
 
