@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build a single-file AppImage for an app: dist/Rivet_Files-VERSION-ARCH.AppImage (RIVET_APP or
-# the first argument picks the app: files by default, ftp, notes, edit, terminal, welcome or snip).
+# the first argument picks the app: files by default, ftp, notes, edit, terminal, welcome, snip or color).
 #
 # Needs mksquashfs (squashfs-tools). The AppImage "type 2 runtime" (the small
 # program at the front of every AppImage) is downloaded once from the AppImage

@@ -5,6 +5,7 @@
 - **A new icon**: the box the apps come in, with the apps on a shelf behind it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Rivet Snip is listed**, as coming soon until its first release. Then it installs and updates
   like the other apps.
+- **Rivet Color is listed**, and installs and updates like the other apps.
 
 ## 0.2.0
 

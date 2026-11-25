@@ -72,10 +72,10 @@ suggest() {
     echo "$major.$((minor + 1)).0"
 }
 
-APPS="files ftp notes edit terminal welcome"
+APPS="files ftp notes edit terminal welcome color"
 [ -n "$ONLY" ] && APPS=$ONLY
 for a in $APPS; do
-    is_app "$a" || { echo "Unknown app: $a (files, ftp, notes, edit, terminal or welcome)" >&2; exit 1; }
+    is_app "$a" || { echo "Unknown app: $a (files, ftp, notes, edit, terminal, welcome or color)" >&2; exit 1; }
 done
 
 if [ -z "$DRY" ] && [ -n "$(git status --porcelain)" ]; then

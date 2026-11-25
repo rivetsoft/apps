@@ -126,6 +126,16 @@ pub fn known() -> Vec<Entry> {
             include_str!("../../rivet-snip/data/rivet-snip.svg"),
         ),
         entry(
+            "color",
+            "Rivet Color",
+            "rivet-color",
+            "rivet-color",
+            "rivet-color-v",
+            "Pick a color from the screen, with its shades, harmonies, contrast and palettes.",
+            Kind::App,
+            include_str!("../../rivet-color/data/rivet-color.svg"),
+        ),
+        entry(
             "shell",
             "Rivet Shell",
             "rivet-shell",
