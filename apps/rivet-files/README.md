@@ -187,7 +187,7 @@ Rivet talks to X11 or Wayland directly. It does not use GTK or Qt. A normal desk
 | --- | --- |
 | Debian, Ubuntu | `sudo apt install libxkbcommon0 libxkbcommon-x11-0 libxcb-xkb1` |
 | Fedora, RHEL | `sudo dnf install libxkbcommon libxkbcommon-x11` |
-| Arch Linux | `sudo pacman -S libxkbcommon` |
+| Arch Linux | `sudo pacman -S libxkbcommon libxkbcommon-x11` |
 | openSUSE | `sudo zypper install libxkbcommon0 libxkbcommon-x11-0` |
 
 ## ⌨️ Handy shortcuts
