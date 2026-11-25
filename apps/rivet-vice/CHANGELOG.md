@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - **Rivet Vice, a new app**: open an archive and see what is in it, folder by folder, with
   each thing's size and when it was last changed. Zip, tar of every kind, 7z and more, using
