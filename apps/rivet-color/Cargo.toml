@@ -21,6 +21,8 @@ eframe = { version = "0.37.0", default-features = false, features = ["default_fo
 # The shell plugin's lines, and niri's answer.
 serde_json = "1.0.154"
 # The picker with the loupe: a layer-shell surface over each screen, drawn into shared memory.
-smithay-client-toolkit = "0.20"
+# Without its xkbcommon feature: the picker reads key codes itself (overlay.rs), so the program
+# doesn't link libxkbcommon and the portable release build links.
+smithay-client-toolkit = { version = "0.20", default-features = false, features = ["calloop"] }
 wayland-client = "0.31"
 wayland-protocols = { version = "0.32", features = ["client"] }
