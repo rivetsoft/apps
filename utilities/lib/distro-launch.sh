@@ -146,7 +146,7 @@ install_pkgs() {
         fedora)
             dnf install -y --setopt=install_weak_deps=False \
                 libxkbcommon libxkbcommon-x11 libxcb \
-                wayland \
+                libwayland-client libwayland-cursor libwayland-egl \
                 libX11 libXcursor libXrandr libXi libXext libXrender libXxf86vm \
                 mesa-libGL mesa-libEGL mesa-dri-drivers \
                 shared-mime-info dejavu-sans-fonts fontconfig \
@@ -157,7 +157,7 @@ install_pkgs() {
             ;;
         arch)
             pacman -Syu --noconfirm --needed \
-                libxkbcommon libxcb wayland \
+                libxkbcommon libxkbcommon-x11 libxcb wayland \
                 libx11 libxcursor libxrandr libxi libxext libxrender libxxf86vm \
                 mesa shared-mime-info ttf-dejavu fontconfig \
                 xorg-server-xvfb

@@ -22,8 +22,8 @@ These are the libraries a normal desktop already has. A minimal server image oft
 | Distro | Packages |
 | --- | --- |
 | Ubuntu 22.04, Ubuntu 24.04, Debian 12 | `libxkbcommon0` `libxkbcommon-x11-0` `libxcb-xkb1` `libwayland-client0` `libwayland-cursor0` `libwayland-egl1` `libx11-6` `libxcursor1` `libxrandr2` `libxi6` `libxext6` `libxrender1` `libxxf86vm1` `libgl1` `libegl1` `libgl1-mesa-dri` `shared-mime-info` `fonts-dejavu-core` `fontconfig` |
-| Fedora | `libxkbcommon` `libxkbcommon-x11` `libxcb` `wayland` `libX11` `libXcursor` `libXrandr` `libXi` `libXext` `libXrender` `libXxf86vm` `mesa-libGL` `mesa-libEGL` `mesa-dri-drivers` `shared-mime-info` `dejavu-sans-fonts` `fontconfig` |
-| Arch | `libxkbcommon` `libxcb` `wayland` `libx11` `libxcursor` `libxrandr` `libxi` `libxext` `libxrender` `libxxf86vm` `mesa` `shared-mime-info` `ttf-dejavu` `fontconfig` |
+| Fedora | `libxkbcommon` `libxkbcommon-x11` `libxcb` `libwayland-client` `libwayland-cursor` `libwayland-egl` `libX11` `libXcursor` `libXrandr` `libXi` `libXext` `libXrender` `libXxf86vm` `mesa-libGL` `mesa-libEGL` `mesa-dri-drivers` `shared-mime-info` `dejavu-sans-fonts` `fontconfig` |
+| Arch | `libxkbcommon` `libxkbcommon-x11` `libxcb` `wayland` `libx11` `libxcursor` `libxrandr` `libxi` `libxext` `libxrender` `libxxf86vm` `mesa` `shared-mime-info` `ttf-dejavu` `fontconfig` |
 
 The lists live in `utilities/lib/distro-launch.sh`, which is what CI runs.
 
