@@ -427,7 +427,7 @@ pub struct Kit {
 
 impl Kit {
     pub fn new(live: bool) -> Kit {
-        Kit { look: LiveLook::new(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), face: Face::Base, live, avatar: None }
+        Kit { look: LiveLook::new().without_watcher(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), face: Face::Base, live, avatar: None }
     }
 
     /// The person's picture (as on the lock screen), read the first time it's asked for.

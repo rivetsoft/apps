@@ -19,6 +19,8 @@ pub struct LiveLook {
     checked: f64,
     /// The thread looking at the colour files, once a live frame has started it.
     watcher: Option<Arc<Watcher>>,
+    /// No thread: something else redraws when the colours change (see `without_watcher`).
+    no_watcher: bool,
     key: Option<String>,
     fonts_set: bool,
     /// The app's own colours for dark and for light, and what they were made for (see `set_own`).
@@ -172,6 +174,13 @@ impl LiveLook {
         LiveLook { palette: pal, watched: watched.into_iter().map(|p| { let t = mtime(&p); (p, t) }).collect(), ..Default::default() }
     }
 
+    /// No thread watching the colour files, for a program that already watches them and redraws
+    /// (Rivet Shell's surfaces): a live frame still looks at them every two seconds.
+    pub fn without_watcher(mut self) -> LiveLook {
+        self.no_watcher = true;
+        self
+    }
+
     /// The desktop's colors, when there are any.
     pub fn palette(&self) -> Option<&palette::Palette> {
         self.palette.as_ref()
@@ -203,13 +212,17 @@ impl LiveLook {
         let now = ctx.input(|i| i.time);
         if live {
             // Watched also when not following: a palette chosen in Rivet is taken up all the same.
-            let watcher = self.watcher.get_or_insert_with(|| Watcher::start(self.watched.clone(), ctx.clone())).clone();
-            let woken = watcher.changed.swap(false, Ordering::Relaxed);
+            if self.watcher.is_none() && !self.no_watcher {
+                self.watcher = Some(Watcher::start(self.watched.clone(), ctx.clone()));
+            }
+            let woken = self.watcher.as_ref().is_some_and(|w| w.changed.swap(false, Ordering::Relaxed));
             if woken || now - self.checked >= 2.0 || self.checked == 0.0 {
                 self.checked = now;
                 if self.watched.iter().any(|(p, t)| mtime(p) != *t) {
-                    *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), own: std::mem::take(&mut self.own), own_key: std::mem::take(&mut self.own_key), checked: now, watcher: Some(watcher.clone()), ..LiveLook::new() };
-                    *watcher.files.lock().unwrap_or_else(|e| e.into_inner()) = self.watched.clone();
+                    *self = LiveLook { fonts_set: true, key: self.key.take(), font_key: self.font_key.take(), own: std::mem::take(&mut self.own), own_key: std::mem::take(&mut self.own_key), checked: now, watcher: self.watcher.take(), no_watcher: self.no_watcher, ..LiveLook::new() };
+                    if let Some(w) = &self.watcher {
+                        *w.files.lock().unwrap_or_else(|e| e.into_inner()) = self.watched.clone();
+                    }
                 }
             }
         }

@@ -87,6 +87,8 @@ impl ColorApp {
     pub fn new(cc: &eframe::CreationContext, start: Option<Rgb>, screenshot: Option<PathBuf>) -> ColorApp {
         let (tx, rx) = channel();
         let shot = screenshot.map(rivet_kit::Shot::new);
+        // The files' times first, then what's in them: a write in between is then seen as a change.
+        let (history_seen, palettes_seen) = (store::changed(&store::history_path()), store::changed(&store::palettes_dir()));
         let (history, palettes, format) = if shot.is_some() { demo() } else { (store::load_history(), store::load_palettes(), store::load_format()) };
         let color = start.or(history.first().copied()).unwrap_or(Rgb(0xd5, 0x3f, 0x8c));
         let mut app = ColorApp {
@@ -102,9 +104,9 @@ impl ColorApp {
             typed: color.format(format),
             format,
             history,
-            history_seen: store::changed(&store::history_path()),
+            history_seen,
             palettes,
-            palettes_seen: store::changed(&store::palettes_dir()),
+            palettes_seen,
             chosen: 0,
             renaming: None,
             confirm_clear: false,
@@ -158,8 +160,8 @@ impl ColorApp {
 
     fn remember(&mut self, c: Rgb) {
         if self.live() {
-            self.history = store::remember(c);
             self.history_seen = store::changed(&store::history_path());
+            self.history = store::remember(c);
         } else {
             self.history.retain(|x| *x != c);
             self.history.insert(0, c);
