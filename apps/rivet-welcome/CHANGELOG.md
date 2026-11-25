@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop colour changes right away.
+
 ## 0.3.0
 
 - **A new icon**: the box the apps come in, with the apps on a shelf behind it, drawn in the website's colors with a plum outline and a hard shadow.

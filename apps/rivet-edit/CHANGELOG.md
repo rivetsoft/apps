@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop colour changes right away.
+
 ## 0.3.1
 
 - **A new icon**: a blue card of code with a cursor, drawn in the website's colors with a plum outline and a hard shadow.

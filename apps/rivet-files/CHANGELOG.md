@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop colour changes right away.
+
 ## 0.10.0
 
 - `./install.sh --uninstall` in the downloaded archive takes Rivet Files back off: the program in `~/.local/bin`, its app launcher entry and its icons.

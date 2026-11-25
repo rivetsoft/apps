@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop colour changes right away.
+
 ## 0.3.1
 
 - **A new icon**: a green window with a prompt and a yellow cursor, drawn in the website's colors with a plum outline and a hard shadow.

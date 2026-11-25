@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- An idle window follows desktop colour changes right away.
+
 ## 0.1.0
 
 - **A Color plugin** (Rivet Color's): the color you picked last on the panel. Click it to pick a new one or copy a recent one, or middle-click to pick straight away. In the launcher, `@color` lists your recent colors and palettes, and `@color #d53f8c` copies a color in the format you use.
