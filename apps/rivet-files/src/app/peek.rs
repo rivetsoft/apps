@@ -39,11 +39,12 @@ pub(super) struct PeekState {
     /// A selection of several items summed up, and the selection it's for (see `selection_key`).
     many: Option<((u64, u64), Option<Many>)>,
     /// The details that need a system call, the item they are for (path, modification time,
-    /// whether it is the open folder) and when they were read. Read every couple of seconds
-    /// rather than every frame, so a slow disk or user database can't hold up drawing, while
-    /// what changes without touching the modification time (group, last opened, free space)
-    /// still catches up.
+    /// whether it is the open folder) and when they were read. They are read on a thread, so a
+    /// slow disk or user database can't hold up drawing, and read again when they are more
+    /// than a couple of seconds old on a frame that is drawn anyway, so what changes without
+    /// touching the modification time (group, last opened, free space) catches up.
     facts: Option<(FactsKey, std::time::Instant, Facts)>,
+    facts_rx: Option<Receiver<(FactsKey, Facts)>>,
 }
 
 type FactsKey = (PathBuf, Option<SystemTime>, bool);
@@ -334,12 +335,28 @@ impl RivetApp {
 
         // ---- details, grouped
         let facts_key = (e.path.clone(), e.modified, here);
-        const FACTS_FOR: std::time::Duration = std::time::Duration::from_secs(2);
-        if self.peek.facts.as_ref().is_none_or(|(k, read, _)| *k != facts_key || read.elapsed() > FACTS_FOR) {
-            self.peek.facts = Some((facts_key, std::time::Instant::now(), Facts::read(&e, here)));
+        if let Some(rx) = &self.peek.facts_rx
+            && let Ok((k, f)) = rx.try_recv()
+        {
+            self.peek.facts = Some((k, std::time::Instant::now(), f));
+            self.peek.facts_rx = None;
         }
-        let Some((_, _, facts)) = &self.peek.facts else { return };
-        let (link, created, accessed, owner, group, disk) = (facts.link.clone(), facts.created, facts.accessed, facts.owner.clone(), facts.group.clone(), facts.disk);
+        let stale = self.peek.facts.as_ref().is_none_or(|(k, read, _)| *k != facts_key || read.elapsed() > std::time::Duration::from_secs(2));
+        if stale && self.peek.facts_rx.is_none() {
+            let (tx, rx) = channel();
+            let (item, key, c) = (e.clone(), facts_key.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                let facts = Facts::read(&item, key.2);
+                let _ = tx.send((key, facts));
+                c.request_repaint();
+            });
+            self.peek.facts_rx = Some(rx);
+        }
+        let facts = self.peek.facts.as_ref().filter(|(k, ..)| *k == facts_key).map(|(_, _, f)| f);
+        let (link, created, accessed, owner, group, disk) = match facts {
+            Some(f) => (f.link.clone(), f.created, f.accessed, Some(f.owner.clone()), f.group.clone(), f.disk),
+            None => (None, None, None, None, None, None),
+        };
         let mut general: Vec<(String, String)> = Vec::new();
         general.push(("Type".into(), if e.is_dir { "Folder".into() } else { format!("{desc}\n{}", e.mime) }));
         if e.is_dir {
@@ -406,7 +423,7 @@ impl RivetApp {
         }
         self.peek_section(ui, "Dates", dates, card_fill, width);
 
-        let mut access = vec![("Owner".to_string(), owner)];
+        let mut access: Vec<(String, String)> = owner.map(|o| ("Owner".to_string(), o)).into_iter().collect();
         if let Some(g) = group {
             access.push(("Group".into(), g));
         }

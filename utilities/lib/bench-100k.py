@@ -10,7 +10,7 @@
 Usage: utilities/rivet-dev bench [--runs 3] [--views list,icons] [--files 100000]
 Run from the repository; needs a release build (cargo build --release).
 """
-import argparse, json, os, random, shutil, statistics, subprocess, sys, time
+import argparse, json, os, random, re, shutil, statistics, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -27,15 +27,11 @@ def make_fixture(path, n):
     if os.path.exists(marker):
         return
     os.makedirs(path, exist_ok=True)
-    # A fixture from before, made in name order: remove exactly what it made, then start again.
-    old = os.path.join(path, f".rivet-fixture-{n}")
-    if os.path.exists(old):
-        for i in range(n):
-            try:
-                os.remove(os.path.join(path, f"file-{i:06d}"))
-            except FileNotFoundError:
-                pass
-        os.remove(old)
+    # A fixture from before (made in name order, or with another count): remove only the
+    # files and markers this script makes, then start again.
+    for name in os.listdir(path):
+        if re.fullmatch(r"file-\d{6}|\.rivet-fixture-\d+(-shuffled)?", name):
+            os.remove(os.path.join(path, name))
     order = list(range(n))
     random.Random(n).shuffle(order)
     for i in order:
