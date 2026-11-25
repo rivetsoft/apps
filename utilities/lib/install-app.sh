@@ -11,10 +11,15 @@ if [ -x "./$BIN_NAME" ]; then
     SRC="./$BIN_NAME"                               # release download
 else
     cd ../..                                         # a source checkout (utilities/lib)
-    cargo build --release -p "$BIN_NAME"
+    cargo build --release -p "${RIVET_INSTALL_PKG:-$BIN_NAME}"
     SRC="target/release/$BIN_NAME"
 fi
 DEST="${XDG_BIN_HOME:-$HOME/.local/bin}"
 install -Dm755 "$SRC" "$DEST/$BIN_NAME"
-"$DEST/$BIN_NAME" --install-desktop-entry
-echo "Installed $BIN_NAME in $DEST. It is now in your app launcher."
+# A program for the terminal (rivetfetch) has no launcher entry.
+if [ -n "${RIVET_INSTALL_LAUNCHER-@LAUNCHER@}" ]; then
+    "$DEST/$BIN_NAME" --install-desktop-entry
+    echo "Installed $BIN_NAME in $DEST. It is now in your app launcher."
+else
+    echo "Installed $BIN_NAME in $DEST."
+fi

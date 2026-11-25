@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build a single-file AppImage for an app: dist/Rivet_Files-VERSION-ARCH.AppImage (RIVET_APP or
-# the first argument picks the app: files by default, ftp, notes, edit, terminal, welcome or snip).
+# the first argument picks the app: files by default, or any app in ALL_APPS in apps.sh).
 #
 # Needs mksquashfs (squashfs-tools). The AppImage "type 2 runtime" (the small
 # program at the front of every AppImage) is downloaded once from the AppImage
@@ -39,8 +39,8 @@ strip -o "$APPDIR/usr/bin/$BIN" "$RIVET_BIN"
 # winit dlopens these; ldd on rivet does not see them. Ubuntu 22.04 builds,
 # so the bundle itself does not need glibc 2.43.
 ./utilities/lib/bundle-runtime-libs.sh "$APPDIR/usr/lib"
-cp "$APP/data/$DIST_NAME.desktop" "$APPDIR/$DIST_NAME.desktop"
-cp "$APP/data/$DIST_NAME.desktop" "$APPDIR/usr/share/applications/"
+cp "$APP/data/$DESKTOP" "$APPDIR/$DESKTOP"
+cp "$APP/data/$DESKTOP" "$APPDIR/usr/share/applications/"
 cp "$APP/data/$DIST_NAME.svg" "$APPDIR/$DIST_NAME.svg"
 # The icon in every size the app has (Rivet Files), else its SVG as the scalable one.
 if [ -d "$APP/data/icons/hicolor" ]; then

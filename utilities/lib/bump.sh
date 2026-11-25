@@ -6,7 +6,7 @@
 #   utilities/rivet-dev bump [APP] major      0.1.1 -> 1.0.0
 #   utilities/rivet-dev bump [APP] 0.3.0      an exact version
 #
-# APP is files (the default), ftp, notes, edit, terminal, welcome or snip (rivet-dev passes it as RIVET_APP).
+# APP is files (the default) or any app in ALL_APPS (utilities/lib/apps.sh); rivet-dev passes it as RIVET_APP.
 # Updates the app's Cargo.toml and Cargo.lock, adds the release to the app metadata (Rivet
 # Files), starts a CHANGELOG.md section from the commit messages since the app's last release
 # tag, and commits it all as "Release <App> X.Y.Z".
@@ -31,7 +31,7 @@ case "${1:-patch}" in
     minor) NEW="$MAJOR.$((MINOR + 1)).0" ;;
     major) NEW="$((MAJOR + 1)).0.0" ;;
     [0-9]*.[0-9]*.[0-9]*) NEW="$1" ;;
-    *) echo "Usage: utilities/rivet-dev bump [files|ftp|notes|edit|terminal|welcome|snip] [patch|minor|major|X.Y.Z]" >&2; exit 1 ;;
+    *) echo "Usage: utilities/rivet-dev bump [APP] [patch|minor|major|X.Y.Z]  (APP: $ALL_APPS)" >&2; exit 1 ;;
 esac
 TAG="$TAG_PREFIX$NEW"
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
@@ -55,7 +55,7 @@ else
     # Only this app's changes: commits that touched its folder or the shared crates, without
     # release and AUR-workflow commits, and without the ones named for another app ("Rivet Edit:
     # …", "Rivet Terminal, and …") even when they touched a shared crate.
-    OTHERS=$(for a in files ftp notes edit terminal welcome snip; do (app_select "$a"; [ "$APP_ID" = "${RIVET_APP:-files}" ] || printf '%s|' "$TITLE"); done)
+    OTHERS=$(for a in $ALL_APPS; do (app_select "$a"; [ "$APP_ID" = "${RIVET_APP:-files}" ] || printf '%s|' "$TITLE"); done)
     OTHERS=${OTHERS%|}
     NOTES=$(git log --no-merges --format='%s' $RANGE -- "$APP" crates ":(exclude)$APP/packaging/aur" \
         | grep -vE '^(Release |aur: )' \
@@ -83,4 +83,4 @@ if [ "$APP_ID" = files ]; then
 else
     git commit -q -m "Release $TITLE $NEW"
 fi
-echo "Bumped $TITLE $OLD -> $NEW and committed. Review $APP/CHANGELOG.md, then run utilities/rivet-dev release $APP_ID --publish"
+echo "Bumped $TITLE $OLD -> $NEW and committed. Review $APP/CHANGELOG.md; once it is on main, utilities/rivet-dev ship $APP_ID (docs/releasing.md)."

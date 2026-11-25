@@ -15,20 +15,28 @@ Rivet developer utilities
 
 Usage: utilities/rivet-dev <command> [APP] [options]
 
-APP is files (the default), ftp, notes, edit, terminal, welcome or snip, for the commands marked [APP].
-Each app has its own version, changelog and release tags: vX.Y.Z (Rivet Files), rivet-ftp-vX.Y.Z,
-rivet-notes-vX.Y.Z, rivet-edit-vX.Y.Z, rivet-terminal-vX.Y.Z, rivet-welcome-vX.Y.Z,
-rivet-snip-vX.Y.Z.
+APP is files (the default), notes, edit, terminal, ftp, snip, shell, vice, calendar, color,
+fetch or welcome, for the commands marked [APP]. Each app has its own version, changelog and
+release tags: vX.Y.Z for Rivet Files, rivet-APP-vX.Y.Z for the rest (rivet-notes-v0.4.1).
+How a release goes, step by step: docs/releasing.md.
 
 Releasing
   apps                             Each app's version, last release tag and unreleased changes
   bump [APP] [patch|minor|major|X.Y.Z]
                                    Set the app's next version; "## Unreleased" in its
                                    CHANGELOG.md becomes its section; commits the release
+                                   (in a branch, for a pull request)
+  ship APP… | all [--dry-run]      After the bump is merged: tag main and push the tag. GitHub
+                                   builds the downloads and makes a draft release (all: every
+                                   app whose version isn't tagged yet)
+  live APP… | all                  Publish those drafts (Files as the latest release, the
+                                   others as before) and rebuild the website
   release [APP]                    Build the app's downloads in dist/ and tag it — on this
                                    computer only, nothing goes online (a tarball and an
                                    AppImage, for every app)
-  release [APP] --publish          The same, then send code + tag to GitHub and create the
+  release [APP] --draft            Build, then make a draft GitHub release of a tag that is
+                                   already on GitHub (what the Release workflow runs)
+  release [APP] --publish          Without the workflow: build here, send code + tag to GitHub and create the
                                    GitHub release with the files (Edit, Terminal and Notes as
                                    full releases, FTP and Welcome as pre-releases; "latest
                                    release" stays Rivet Files')
@@ -87,6 +95,8 @@ case "$cmd" in
     bump)          exec sh "$LIB/bump.sh" "$@" ;;
     release)       exec sh "$LIB/release.sh" "$@" ;;
     release-all)   exec sh "$LIB/release-all.sh" "$@" ;;
+    ship)          exec sh "$LIB/ship.sh" "$@" ;;
+    live)          exec sh "$LIB/live.sh" "$@" ;;
     push|publish)  exec sh "$LIB/push.sh" "$@" ;;   # "publish" was its old name
     aur-bump)      exec sh "$HERE/../apps/rivet-files/packaging/aur/bump.sh" "$@" ;;
     appimage)      exec sh "$LIB/appimage.sh" "$@" ;;
@@ -96,7 +106,7 @@ case "$cmd" in
     install)
         case "${RIVET_APP:-files}" in
             files) exec sh "$LIB/install.sh" "$@" ;;
-            *) app_select "$RIVET_APP"; RIVET_INSTALL_BIN=$BIN exec sh "$LIB/install-app.sh" "$@" ;;
+            *) app_select "$RIVET_APP"; RIVET_INSTALL_BIN=$BIN RIVET_INSTALL_PKG=$PKG RIVET_INSTALL_LAUNCHER=$LAUNCHER exec sh "$LIB/install-app.sh" "$@" ;;
         esac ;;
     link)          exec sh "$LIB/link.sh" "$@" ;;
     screenshots)   exec sh "$LIB/screenshots.sh" "$@" ;;

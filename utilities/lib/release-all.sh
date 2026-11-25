@@ -13,7 +13,7 @@
 #   --yes         release every app that has changes, with the suggested version, no questions
 #   --only LIST   only these apps, e.g. --only edit,terminal
 #
-# For each app (Files, FTP, Notes, Edit, Terminal) it shows the version, the last release and
+# For each app (every one in ALL_APPS, utilities/lib/apps.sh) it shows the version, the last release and
 # the changes since. Apps with no changes since their last release are skipped. Then it asks:
 # release (with the suggested version, or one you type), skip, or stop. Releasing runs the
 # usual `bump` and `release` for that app, so each keeps its own version, changelog and tags.
@@ -72,10 +72,10 @@ suggest() {
     echo "$major.$((minor + 1)).0"
 }
 
-APPS="files ftp notes edit terminal welcome"
+APPS=$ALL_APPS
 [ -n "$ONLY" ] && APPS=$ONLY
 for a in $APPS; do
-    is_app "$a" || { echo "Unknown app: $a (files, ftp, notes, edit, terminal or welcome)" >&2; exit 1; }
+    is_app "$a" || { echo "Unknown app: $a (one of: $ALL_APPS)" >&2; exit 1; }
 done
 
 if [ -z "$DRY" ] && [ -n "$(git status --porcelain)" ]; then
