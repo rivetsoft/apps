@@ -157,7 +157,7 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
             let tw = if text.is_empty() { 0.0 } else { b.text_w(text).min(s.media_width as f32) + ICON_GAP };
             (PAD * 2.0 + media_lead(b) + tw + if media_viz(b) { VIZ_W + ICON_GAP } else { 0.0 } + if s.media_controls { MEDIA_SKIP * 2.0 + ICON_GAP } else { 0.0 }, tw > 0.0)
         }
-        "system" => (b.text_w(system_text(b)) + PAD * 2.0 + ICON + ICON_GAP, false),
+        "system" => (b.text_w(system_text(b.m.status, false)) + PAD * 2.0 + ICON + ICON_GAP, false),
         "weather" => match &b.m.extra.weather.now {
             Some(n) => (b.text_w(s.weather_units.temp(n.temp)) + PAD * 2.0 + WEATHER_ICON + ICON_GAP, false),
             None => (SLOT, false),
@@ -450,9 +450,13 @@ fn media_clicks(ui: &egui::Ui, b: &mut Bar, r: Rect, resp: &egui::Response, md: 
     resp.clone().on_hover_text(tip);
 }
 
-fn system_text(b: &Bar) -> String {
-    let (used, _) = b.m.status.mem;
-    format!("{:.0}%  ·  {:.1} GB", b.m.status.cpu, used as f32 / (1u64 << 30) as f32)
+/// The system item's text, across a panel or down a side one (where only the processor fits).
+/// The shell redraws a panel for this item only when its text changes.
+pub fn system_text(st: &crate::sys::Status, vert: bool) -> String {
+    if vert {
+        return format!("{:.0}", st.cpu);
+    }
+    format!("{:.0}%  ·  {:.1} GB", st.cpu, st.mem.0 as f32 / (1u64 << 30) as f32)
 }
 
 /// This screen's workspaces, less the empty ones when they're hidden (the active one stays).
@@ -1136,7 +1140,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
         "system" => {
             let resp = ui.interact(r, egui::Id::unique(("panel", b.idx, id)), Sense::hover());
             glyph::chip(&p, Pos2::new(r.left() + PAD + ICON / 2.0, cy), fg);
-            let g = p.layout_no_wrap(system_text(b), ui_font(12.5), fg);
+            let g = p.layout_no_wrap(system_text(b.m.status, false), ui_font(12.5), fg);
             p.galley(Pos2::new(r.left() + PAD + ICON + ICON_GAP, cy - g.size().y / 2.0), g, fg);
             resp.on_hover_text("Processor use · memory in use");
         }
@@ -1420,7 +1424,7 @@ fn draw_down(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) -> bool {
         }
         "system" => {
             glyph::chip(&p, Pos2::new(c.x, r.top() + 13.0), fg);
-            small(&p, Pos2::new(c.x, r.bottom() - 9.0), &format!("{:.0}", st.cpu), SMALL, fg);
+            small(&p, Pos2::new(c.x, r.bottom() - 9.0), &system_text(st, true), SMALL, fg);
         }
         "ai" => {
             let parts = ai_parts(b);

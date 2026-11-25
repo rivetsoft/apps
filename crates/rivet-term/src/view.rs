@@ -708,6 +708,37 @@ fn snapshot(session: &Session, style: &Style) -> Snapshot {
     snap
 }
 
+/// Block elements (U+2580 to U+259F, but not the shades) as parts of their cell, each as
+/// left, top, right and bottom fractions. They are painted rather than taken from the font, so
+/// they fill the whole cell and pictures made of them (rivetfetch's mascot) have no gaps.
+fn block_parts(ch: char) -> Option<Vec<[f32; 4]>> {
+    let n = ch as u32;
+    let eighth = |k: u32| k as f32 / 8.0;
+    let quads = |q: [bool; 4]| {
+        let at = [[0.0, 0.0, 0.5, 0.5], [0.5, 0.0, 1.0, 0.5], [0.0, 0.5, 0.5, 1.0], [0.5, 0.5, 1.0, 1.0]];
+        Some(q.iter().zip(at).filter(|(on, _)| **on).map(|(_, r)| r).collect())
+    };
+    match n {
+        0x2580 => Some(vec![[0.0, 0.0, 1.0, 0.5]]),
+        0x2581..=0x2588 => Some(vec![[0.0, 1.0 - eighth(n - 0x2580), 1.0, 1.0]]),
+        0x2589..=0x258f => Some(vec![[0.0, 0.0, eighth(0x2590 - n), 1.0]]),
+        0x2590 => Some(vec![[0.5, 0.0, 1.0, 1.0]]),
+        0x2594 => Some(vec![[0.0, 0.0, 1.0, 0.125]]),
+        0x2595 => Some(vec![[0.875, 0.0, 1.0, 1.0]]),
+        0x2596 => quads([false, false, true, false]),
+        0x2597 => quads([false, false, false, true]),
+        0x2598 => quads([true, false, false, false]),
+        0x2599 => quads([true, false, true, true]),
+        0x259a => quads([true, false, false, true]),
+        0x259b => quads([true, true, true, false]),
+        0x259c => quads([true, true, false, true]),
+        0x259d => quads([false, true, false, false]),
+        0x259e => quads([false, true, true, false]),
+        0x259f => quads([false, true, true, true]),
+        _ => None,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw(ui: &egui::Ui, rect: Rect, inner: Rect, cell: Vec2, session: &Session, style: &Style, focused: bool, link: Option<(usize, usize, usize)>, now: f64) {
     let snap = snapshot(session, style);
@@ -735,6 +766,16 @@ fn draw(ui: &egui::Ui, rect: Rect, inner: Rect, cell: Vec2, session: &Session, s
     }
     for g in snap.glyphs {
         let w = if g.wide { 2.0 } else { 1.0 };
+        let mut chars = g.text.chars();
+        if let (Some(ch), None) = (chars.next(), chars.next())
+            && let Some(parts) = block_parts(ch)
+        {
+            let cell_rect = Rect::from_min_size(at(g.row, g.col), Vec2::new(cell.x * w, cell.y));
+            for [l, t, r, b] in parts {
+                p.rect_filled(Rect::from_min_max(cell_rect.lerp_inside(Vec2::new(l, t)), cell_rect.lerp_inside(Vec2::new(r, b))), 0.0, g.fg);
+            }
+            continue;
+        }
         p.text(at(g.row, g.col) + Vec2::new(cell.x * w / 2.0, cell.y / 2.0), Align2::CENTER_CENTER, g.text, font.clone(), g.fg);
     }
     let line = |spans: &[Span], dy: f32| {
@@ -808,6 +849,17 @@ fn draw(ui: &egui::Ui, rect: Rect, inner: Rect, cell: Vec2, session: &Session, s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn block_elements_fill_their_cell() {
+        assert_eq!(block_parts('▀'), Some(vec![[0.0, 0.0, 1.0, 0.5]]));
+        assert_eq!(block_parts('▄'), Some(vec![[0.0, 0.5, 1.0, 1.0]]));
+        assert_eq!(block_parts('█'), Some(vec![[0.0, 0.0, 1.0, 1.0]]));
+        assert_eq!(block_parts('▌'), Some(vec![[0.0, 0.0, 0.5, 1.0]]));
+        assert_eq!(block_parts('▚'), Some(vec![[0.0, 0.0, 0.5, 0.5], [0.5, 0.5, 1.0, 1.0]]));
+        assert_eq!(block_parts('░'), None);
+        assert_eq!(block_parts('a'), None);
+    }
 
     #[test]
     fn keys_and_links() {

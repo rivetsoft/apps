@@ -12,5 +12,5 @@ pub mod session;
 pub mod view;
 
 pub use colors::TermColors;
-pub use session::{Notice, Session, Size, Spawn};
+pub use session::{MAX_SCROLLBACK, Notice, Session, Size, Spawn};
 pub use view::{CursorStyle, Style};
