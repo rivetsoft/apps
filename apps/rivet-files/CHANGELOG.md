@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `./install.sh --uninstall` in the downloaded archive takes Rivet Files back off: the program in `~/.local/bin`, its app launcher entry and its icons.
 - **A new icon**: the pink folder with the rivet through it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Open in Rivet Vice**: right-click an archive to look inside it before taking anything out. Shown when Rivet Vice, the archive manager, is installed.
 - On Arch Linux under X11, the message about a missing keyboard library names the right package to install, `libxkbcommon-x11`, instead of `libxkbcommon`, which doesn't include it on Arch.
