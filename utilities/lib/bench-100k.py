@@ -30,7 +30,7 @@ def make_fixture(path, n):
     # A fixture from before (made in name order, or with another count): remove only the
     # files and markers this script makes, then start again.
     for name in os.listdir(path):
-        if re.fullmatch(r"file-\d{6}|\.rivet-fixture-\d+(-shuffled)?", name):
+        if re.fullmatch(r"file-\d{6,}|\.rivet-fixture-\d+(-shuffled)?", name):
             os.remove(os.path.join(path, name))
     order = list(range(n))
     random.Random(n).shuffle(order)

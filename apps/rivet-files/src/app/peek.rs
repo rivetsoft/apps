@@ -353,9 +353,12 @@ impl RivetApp {
             self.peek.facts_rx = Some(rx);
         }
         let facts = self.peek.facts.as_ref().filter(|(k, ..)| *k == facts_key).map(|(_, _, f)| f);
+        // While a new item's details are read, their rows show a placeholder so the cards
+        // keep their size.
+        let loading = facts.is_none();
         let (link, created, accessed, owner, group, disk) = match facts {
-            Some(f) => (f.link.clone(), f.created, f.accessed, Some(f.owner.clone()), f.group.clone(), f.disk),
-            None => (None, None, None, None, None, None),
+            Some(f) => (f.link.clone(), f.created, f.accessed, f.owner.clone(), f.group.clone(), f.disk),
+            None => (e.is_link.then(|| "…".to_string()), None, None, "…".to_string(), Some("…".to_string()), None),
         };
         let mut general: Vec<(String, String)> = Vec::new();
         general.push(("Type".into(), if e.is_dir { "Folder".into() } else { format!("{desc}\n{}", e.mime) }));
@@ -415,6 +418,10 @@ impl RivetApp {
             }
 
         let mut dates = vec![("Modified".to_string(), fmt_full(e.modified))];
+        if loading {
+            dates.push(("Created".into(), "…".into()));
+            dates.push(("Last opened".into(), "…".into()));
+        }
         if let Some(c) = created {
             dates.push(("Created".into(), fmt_full(Some(c))));
         }
@@ -423,7 +430,7 @@ impl RivetApp {
         }
         self.peek_section(ui, "Dates", dates, card_fill, width);
 
-        let mut access: Vec<(String, String)> = owner.map(|o| ("Owner".to_string(), o)).into_iter().collect();
+        let mut access = vec![("Owner".to_string(), owner)];
         if let Some(g) = group {
             access.push(("Group".into(), g));
         }

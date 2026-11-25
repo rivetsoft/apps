@@ -386,23 +386,43 @@ fn fmt_time(t: Option<std::time::SystemTime>) -> String {
     }
 }
 
+// The reentrant lookups, with a buffer of our own: Peek looks these up on a thread while the
+// window may do the same, and getpwuid and getgrgid share one static result.
 fn user_name(uid: u32) -> String {
-    unsafe {
-        let pw = libc::getpwuid(uid);
-        if pw.is_null() || (*pw).pw_name.is_null() {
+    let mut buf = vec![0 as libc::c_char; 1024];
+    loop {
+        // SAFETY: an all-zero passwd is a valid value for the call to fill in.
+        let mut pw: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut out: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: `pw` and `buf` outlive the call, and the name is copied out before they go.
+        let r = unsafe { libc::getpwuid_r(uid, &mut pw, buf.as_mut_ptr(), buf.len(), &mut out) };
+        if r == libc::ERANGE && buf.len() < 1 << 20 {
+            buf.resize(buf.len() * 4, 0);
+            continue;
+        }
+        if r != 0 || out.is_null() || pw.pw_name.is_null() {
             return uid.to_string();
         }
-        std::ffi::CStr::from_ptr((*pw).pw_name).to_string_lossy().to_string()
+        return unsafe { std::ffi::CStr::from_ptr(pw.pw_name) }.to_string_lossy().into_owned();
     }
 }
 
 fn group_name(gid: u32) -> String {
-    unsafe {
-        let gr = libc::getgrgid(gid);
-        if gr.is_null() || (*gr).gr_name.is_null() {
+    let mut buf = vec![0 as libc::c_char; 1024];
+    loop {
+        // SAFETY: an all-zero group is a valid value for the call to fill in.
+        let mut gr: libc::group = unsafe { std::mem::zeroed() };
+        let mut out: *mut libc::group = std::ptr::null_mut();
+        // SAFETY: `gr` and `buf` outlive the call, and the name is copied out before they go.
+        let r = unsafe { libc::getgrgid_r(gid, &mut gr, buf.as_mut_ptr(), buf.len(), &mut out) };
+        if r == libc::ERANGE && buf.len() < 1 << 20 {
+            buf.resize(buf.len() * 4, 0);
+            continue;
+        }
+        if r != 0 || out.is_null() || gr.gr_name.is_null() {
             return gid.to_string();
         }
-        std::ffi::CStr::from_ptr((*gr).gr_name).to_string_lossy().to_string()
+        return unsafe { std::ffi::CStr::from_ptr(gr.gr_name) }.to_string_lossy().into_owned();
     }
 }
 
