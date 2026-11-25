@@ -120,6 +120,8 @@ impl<'a> IntoIterator for &'a Selection {
 pub struct Entry {
     pub path: PathBuf,
     pub name: String,
+    /// The name in lower case, made once, for sorting and the filter.
+    pub lower: String,
     pub is_dir: bool,
     pub is_link: bool,
     pub broken_link: bool,
@@ -159,6 +161,7 @@ impl Entry {
         };
         Some(Entry {
             hidden: name.starts_with('.') || name.ends_with('~'),
+            lower: name.to_lowercase(),
             name,
             is_dir,
             is_link,
@@ -314,7 +317,7 @@ impl Tab {
         let mut vis: Vec<usize> = (0..self.entries.len())
             .filter(|&i| {
                 let e = &self.entries[i];
-                if !((show_hidden || !e.hidden) && (f.is_empty() || e.name.to_lowercase().contains(&f))) {
+                if !((show_hidden || !e.hidden) && (f.is_empty() || e.lower.contains(&f))) {
                     return false;
                 }
                 // Picking for another app: only what it can use (and folders to get there).
@@ -332,13 +335,44 @@ impl Tab {
         self.filtered_out = hidden_by_rule;
         let entries = &self.entries;
         let recent = matches!(self.loc, Location::Recent);
-        vis.sort_by(|&a, &b| {
-            let (x, y) = (&entries[a], &entries[b]);
-            if s.folders_first && x.is_dir != y.is_dir && !recent {
-                return y.is_dir.cmp(&x.is_dir);
+        // Sorting by type: each entry's type description as its place in the sorted list of
+        // descriptions, so comparing two is comparing two numbers.
+        let mut type_rank: Vec<u32> = Vec::new();
+        if s.sort == SortKey::Type {
+            let mut described: HashMap<&str, String> = HashMap::new();
+            for &i in &vis {
+                let m = entries[i].mime.as_str();
+                described.entry(m).or_insert_with(|| db.describe(m));
             }
+            let mut order: Vec<&String> = described.values().collect();
+            order.sort();
+            order.dedup();
+            let rank: HashMap<&str, u32> = described.iter().map(|(m, d)| (*m, order.binary_search(&d).unwrap_or(0) as u32)).collect();
+            type_rank = entries.iter().map(|e| rank.get(e.mime.as_str()).copied().unwrap_or(0)).collect();
+        }
+        // The sort reads compact copies of the names and folder flags rather than the entries:
+        // a big folder's entries don't fit in the processor's cache, and a sort visits them in
+        // no order, so reading them was most of its time.
+        let mut names: Vec<u8> = Vec::new();
+        let mut span = vec![(0u32, 0u32); entries.len()];
+        let mut dir = vec![false; entries.len()];
+        for &i in &vis {
+            let k = entries[i].lower.trim_start_matches('.').as_bytes();
+            span[i] = (names.len() as u32, k.len() as u32);
+            names.extend_from_slice(k);
+            dir[i] = entries[i].is_dir;
+        }
+        let name = |i: usize| {
+            let (start, len) = span[i];
+            &names[start as usize..(start + len) as usize]
+        };
+        vis.sort_by(|&a, &b| {
+            if s.folders_first && dir[a] != dir[b] && !recent {
+                return dir[b].cmp(&dir[a]);
+            }
+            let (x, y) = (&entries[a], &entries[b]);
             let o = match s.sort {
-                SortKey::Name => natural_cmp(&x.name, &y.name),
+                SortKey::Name => natural_cmp_bytes(name(a), name(b)),
                 SortKey::Size => {
                     if x.is_dir && y.is_dir {
                         x.child_count.cmp(&y.child_count)
@@ -346,15 +380,28 @@ impl Tab {
                         x.size.cmp(&y.size)
                     }
                 }
-                SortKey::Type => db.describe(&x.mime).cmp(&db.describe(&y.mime)),
+                SortKey::Type => type_rank[a].cmp(&type_rank[b]),
                 SortKey::Modified => x.modified.cmp(&y.modified),
             }
-            .then_with(|| natural_cmp(&x.name, &y.name));
+            .then_with(|| natural_cmp_bytes(name(a), name(b)));
             if s.sort_desc { o.reverse() } else { o }
         });
         self.visible = vis;
         self.view_change = next_change();
         self.index();
+    }
+
+    /// For the benchmark: put `entries` in a scrambled order, as a folder whose files were
+    /// made in no particular order reads back, so that sorting is timed on unsorted input.
+    pub fn scramble(&mut self) {
+        let mut x: u64 = 0x9e37_79b9_7f4a_7c15;
+        for i in (1..self.entries.len()).rev() {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.entries.swap(i, (x % (i as u64 + 1)) as usize);
+        }
+        self.indexed = None;
     }
 
     /// Bring the selection index up to date. `entries` is replaced only by `reload` (which
@@ -474,43 +521,43 @@ pub fn inspect_all(paths: Vec<PathBuf>, db: &MimeDb) -> Vec<Entry> {
 
 /// Natural sort: "file2" before "file10", case-insensitive.
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    let a = a.trim_start_matches('.').to_lowercase();
-    let b = b.trim_start_matches('.').to_lowercase();
-    let mut ai = a.chars().peekable();
-    let mut bi = b.chars().peekable();
-    loop {
-        match (ai.peek(), bi.peek()) {
-            (None, None) => return std::cmp::Ordering::Equal,
-            (None, _) => return std::cmp::Ordering::Less,
-            (_, None) => return std::cmp::Ordering::Greater,
-            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
-                let mut na = String::new();
-                while let Some(c) = ai.peek().filter(|c| c.is_ascii_digit()) {
-                    na.push(*c);
-                    ai.next();
-                }
-                let mut nb = String::new();
-                while let Some(c) = bi.peek().filter(|c| c.is_ascii_digit()) {
-                    nb.push(*c);
-                    bi.next();
-                }
-                let na2 = na.trim_start_matches('0');
-                let nb2 = nb.trim_start_matches('0');
-                let o = na2.len().cmp(&nb2.len()).then(na2.cmp(nb2));
-                if o != std::cmp::Ordering::Equal {
-                    return o;
-                }
+    natural_cmp_lower(&a.trim_start_matches('.').to_lowercase(), &b.trim_start_matches('.').to_lowercase())
+}
+
+/// `natural_cmp` for names already lowered and trimmed, without allocating: a sort makes
+/// millions of these. Comparing UTF-8 bytes orders characters as comparing them would.
+pub fn natural_cmp_lower(a: &str, b: &str) -> std::cmp::Ordering {
+    natural_cmp_bytes(a.as_bytes(), b.as_bytes())
+}
+
+fn natural_cmp_bytes(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        if a[i].is_ascii_digit() && b[j].is_ascii_digit() {
+            let (si, sj) = (i, j);
+            while i < a.len() && a[i].is_ascii_digit() {
+                i += 1;
             }
-            (Some(x), Some(y)) => {
-                let o = x.cmp(y);
-                if o != std::cmp::Ordering::Equal {
-                    return o;
-                }
-                ai.next();
-                bi.next();
+            while j < b.len() && b[j].is_ascii_digit() {
+                j += 1;
             }
+            let na = &a[si..i][a[si..i].iter().take_while(|&&c| c == b'0').count()..];
+            let nb = &b[sj..j][b[sj..j].iter().take_while(|&&c| c == b'0').count()..];
+            let o = na.len().cmp(&nb.len()).then(na.cmp(nb));
+            if o != Ordering::Equal {
+                return o;
+            }
+        } else {
+            let o = a[i].cmp(&b[j]);
+            if o != Ordering::Equal {
+                return o;
+            }
+            i += 1;
+            j += 1;
         }
     }
+    (i < a.len()).cmp(&(j < b.len()))
 }
 
 /// Recursive name search below `root`, streamed back in batches.
@@ -562,6 +609,18 @@ mod tests {
         let mut v = vec!["file10", "File2", "file1", ".hidden", "alpha"];
         v.sort_by(|a, b| super::natural_cmp(a, b));
         assert_eq!(v, vec!["alpha", "file1", "File2", "file10", ".hidden"]);
+    }
+    #[test]
+    fn natural_order_without_allocating() {
+        use std::cmp::Ordering::*;
+        let c = super::natural_cmp_lower;
+        assert_eq!(c("a01", "a1"), Equal);
+        assert_eq!(c("a007b", "a7c"), Less);
+        assert_eq!(c("v2.10", "v2.9"), Greater);
+        assert_eq!(c("photo", "photo 1"), Less);
+        assert_eq!(c("élan", "zebra"), Greater);
+        assert_eq!(c("éa", "éb"), Less);
+        assert_eq!(c("", ""), Equal);
     }
     #[test]
     fn selection_found_through_the_index() {

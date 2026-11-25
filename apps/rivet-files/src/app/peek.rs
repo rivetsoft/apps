@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
 use std::time::SystemTime;
 
-use super::{user_name, Action, RivetApp, r_md, r_sm};
+use super::{group_name, user_name, Action, RivetApp, r_md, r_sm};
 use crate::fsops;
 use crate::model::Entry;
 use crate::preview::{self, Kind, Player, Preview};
@@ -38,6 +38,40 @@ pub(super) struct PeekState {
     here: Option<(PathBuf, Option<SystemTime>, Entry)>,
     /// A selection of several items summed up, and the selection it's for (see `selection_key`).
     many: Option<((u64, u64), Option<Many>)>,
+    /// The details that need a system call, the item they are for (path, modification time,
+    /// whether it is the open folder) and when they were read. They are read on a thread, so a
+    /// slow disk or user database can't hold up drawing, and read again when they are more
+    /// than a couple of seconds old on a frame that is drawn anyway, so what changes without
+    /// touching the modification time (group, last opened, free space) catches up.
+    facts: Option<(FactsKey, std::time::Instant, Facts)>,
+    facts_rx: Option<Receiver<(FactsKey, Facts)>>,
+}
+
+type FactsKey = (PathBuf, Option<SystemTime>, bool);
+
+struct Facts {
+    created: Option<SystemTime>,
+    accessed: Option<SystemTime>,
+    owner: String,
+    group: Option<String>,
+    link: Option<String>,
+    /// (total, free) bytes, for the open folder only.
+    disk: Option<(u64, u64)>,
+}
+
+impl Facts {
+    fn read(e: &Entry, here: bool) -> Facts {
+        use std::os::unix::fs::MetadataExt;
+        let meta = std::fs::metadata(&e.path).ok();
+        Facts {
+            created: meta.as_ref().and_then(|m| m.created().ok()),
+            accessed: meta.as_ref().and_then(|m| m.accessed().ok()),
+            owner: user_name(e.uid),
+            group: meta.as_ref().map(|m| group_name(m.gid())),
+            link: e.is_link.then(|| std::fs::read_link(&e.path).map(|p| p.display().to_string()).unwrap_or_default()),
+            disk: if here { crate::places::disk_space(&e.path) } else { None },
+        }
+    }
 }
 
 /// Several selected items, summed up for Peek without copying them.
@@ -300,7 +334,33 @@ impl RivetApp {
         self.peek_actions(ui, ctx, &e, here, width);
 
         // ---- details, grouped
-        let meta = std::fs::metadata(&e.path).ok();
+        let facts_key = (e.path.clone(), e.modified, here);
+        if let Some(rx) = &self.peek.facts_rx
+            && let Ok((k, f)) = rx.try_recv()
+        {
+            self.peek.facts = Some((k, std::time::Instant::now(), f));
+            self.peek.facts_rx = None;
+        }
+        let stale = self.peek.facts.as_ref().is_none_or(|(k, read, _)| *k != facts_key || read.elapsed() > std::time::Duration::from_secs(2));
+        if stale && self.peek.facts_rx.is_none() {
+            let (tx, rx) = channel();
+            let (item, key, c) = (e.clone(), facts_key.clone(), ctx.clone());
+            std::thread::spawn(move || {
+                let facts = Facts::read(&item, key.2);
+                let _ = tx.send((key, facts));
+                c.request_repaint();
+            });
+            self.peek.facts_rx = Some(rx);
+        }
+        // The same item read before it last changed stands in until the new read arrives.
+        let facts = self.peek.facts.as_ref().filter(|(k, ..)| k.0 == facts_key.0 && k.2 == facts_key.2).map(|(_, _, f)| f);
+        // While a new item's details are read, their rows show a placeholder so the cards
+        // keep their size.
+        let loading = facts.is_none();
+        let (link, created, accessed, owner, group, disk) = match facts {
+            Some(f) => (f.link.clone(), f.created, f.accessed, f.owner.clone(), f.group.clone(), f.disk),
+            None => (e.is_link.then(|| "…".to_string()), None, None, "…".to_string(), Some("…".to_string()), None),
+        };
         let mut general: Vec<(String, String)> = Vec::new();
         general.push(("Type".into(), if e.is_dir { "Folder".into() } else { format!("{desc}\n{}", e.mime) }));
         if e.is_dir {
@@ -328,8 +388,8 @@ impl RivetApp {
                 general.push(("Opens with".into(), app.name.clone()));
             }
         }
-        if e.is_link {
-            general.push(("Link to".into(), std::fs::read_link(&e.path).map(|p| p.display().to_string()).unwrap_or_default()));
+        if let Some(target) = link {
+            general.push(("Link to".into(), target));
         }
         let loc = if here { e.path.clone() } else { e.path.parent().map(|p| p.to_path_buf()).unwrap_or_default() };
         let home = crate::places::home();
@@ -359,20 +419,21 @@ impl RivetApp {
             }
 
         let mut dates = vec![("Modified".to_string(), fmt_full(e.modified))];
-        if let Some(m) = &meta {
-            if let Ok(c) = m.created() {
-                dates.push(("Created".into(), fmt_full(Some(c))));
-            }
-            if let Ok(a) = m.accessed() {
-                dates.push(("Last opened".into(), fmt_full(Some(a))));
-            }
+        if loading {
+            dates.push(("Created".into(), "…".into()));
+            dates.push(("Last opened".into(), "…".into()));
+        }
+        if let Some(c) = created {
+            dates.push(("Created".into(), fmt_full(Some(c))));
+        }
+        if let Some(a) = accessed {
+            dates.push(("Last opened".into(), fmt_full(Some(a))));
         }
         self.peek_section(ui, "Dates", dates, card_fill, width);
 
-        let mut access = vec![("Owner".to_string(), user_name(e.uid))];
-        if let Some(m) = &meta {
-            use std::os::unix::fs::MetadataExt;
-            access.push(("Group".into(), super::group_name(m.gid())));
+        let mut access = vec![("Owner".to_string(), owner)];
+        if let Some(g) = group {
+            access.push(("Group".into(), g));
         }
         let can = |bits: u32| -> String {
             match (bits & 4 != 0, bits & 2 != 0) {
@@ -389,19 +450,19 @@ impl RivetApp {
         access.push(("Mode".into(), format!("{} ({:04o}){exec}", mode_string(e.mode), e.mode & 0o7777)));
         self.peek_section(ui, "Access", access, card_fill, width);
 
-        if here
-            && let Some((total, free)) = crate::places::disk_space(&e.path) {
+        if disk.is_some() || (loading && here) {
                 ui.add_space(8.0);
                 ui.label(egui::RichText::new("DISK").size(10.5).strong().color(weak));
                 egui::Frame::NONE.fill(card_fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(10, 9)).show(ui, |ui| {
                     ui.set_width(width - 20.0);
+                    let (total, free) = disk.unwrap_or((0, 0));
                     let used = total.saturating_sub(free);
                     let frac = if total > 0 { used as f32 / total as f32 } else { 0.0 };
                     let (bar, _) = ui.allocate_exact_size(Vec2::new(width - 20.0, 6.0), Sense::hover());
                     ui.painter().rect_filled(bar, 3.0, v.widgets.inactive.bg_fill);
                     ui.painter().rect_filled(Rect::from_min_size(bar.min, Vec2::new(bar.width() * frac, bar.height())), 3.0, v.selection.bg_fill);
                     ui.add_space(2.0);
-                    ui.label(format!("{} free of {}", fsops::human_size(free), fsops::human_size(total)));
+                    ui.label(if disk.is_some() { format!("{} free of {}", fsops::human_size(free), fsops::human_size(total)) } else { "…".to_string() });
                 });
             }
         ui.add_space(8.0);
