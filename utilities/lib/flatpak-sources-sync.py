@@ -2,9 +2,11 @@
 """Add the crates in Cargo.lock that the Flatpak's offline crate list (cargo-sources.json)
 is missing, in the same form as its other entries (the crate archive and its checksum file).
 Run it after adding a dependency anywhere in the workspace: the Flatpak build fetches the
-whole lockfile offline. Prints what it added."""
+whole lockfile offline. Prints what it added. With --check it changes nothing and fails when
+a crate is missing, which is how CI catches a stale list."""
 import json
 import re
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +27,11 @@ for name, version, sha in packages:
     crates.append({"type": "archive", "archive-type": "tar-gzip", "url": f"https://static.crates.io/crates/{name}/{name}-{version}.crate", "sha256": sha, "dest": dest})
     crates.append({"type": "inline", "contents": json.dumps({"package": sha, "files": {}}), "dest": dest, "dest-filename": ".cargo-checksum.json"})
     added.append(f"{name} {version}")
+if "--check" in sys.argv[1:]:
+    if added:
+        sys.exit(f"cargo-sources.json is missing {len(added)} crate(s) from Cargo.lock: " + ", ".join(added) + "\nRun utilities/rivet-dev flatpak-sources and commit the result.")
+    print("cargo-sources.json has every crate in Cargo.lock")
+    sys.exit(0)
 # Sorted by destination, each archive before its checksum file.
 crates.sort(key=lambda e: (e["dest"], 0 if e["type"] == "archive" else 1))
 LIST.write_text(json.dumps(crates + config, indent=4) + "\n")
