@@ -5,6 +5,8 @@
 #                                          current commit vVERSION — on this computer only
 #   utilities/rivet-dev release --publish  the same, then send the code and the tag to GitHub and
 #                                          create the GitHub release with the files attached
+#   utilities/rivet-dev release --draft    build, then make a draft GitHub release of the tag already
+#                                          on GitHub (what the release workflow runs)
 #
 # The version comes from Cargo.toml; the release notes from its section in CHANGELOG.md.
 # For a new release: run utilities/rivet-dev bump first (sets the version, changelog section, commits), then this.
@@ -100,6 +102,17 @@ git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "R
 echo "Built $APPIMAGE and dist/$NAME.tar.gz, tagged $TAG."
 fi
 
+if [ "$1" = "--draft" ]; then
+    # The release workflow: the tag is already on GitHub, and a person publishes the draft with
+    # utilities/rivet-dev live (docs/releasing.md), which also makes it the latest release.
+    if github_release_exists; then
+        echo "GitHub already has the $TAG release."
+    else
+        gh release create "$TAG" "$APPIMAGE" "$APPIMAGE.sha256" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" \
+            --verify-tag --draft --title "Rivet Files $VERSION" --notes-file "dist/notes-$VERSION.md"
+    fi
+    gh release view "$TAG" --json url -q .url
+fi
 if [ "$1" = "--publish" ]; then
     push_release
     if github_release_exists; then

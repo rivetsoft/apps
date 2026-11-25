@@ -14,6 +14,8 @@
   <img src="apps/rivet-welcome/data/rivet-welcome.svg" width="88" alt="Rivet Welcome icon">
   &nbsp;
   <img src="apps/rivet-snip/data/rivet-snip.svg" width="88" alt="Rivet Snip icon">
+  &nbsp;
+  <img src="apps/rivet-color/data/rivet-color.svg" width="88" alt="Rivet Color icon">
 </p>
 
 # Rivetsoft Apps
@@ -124,7 +126,18 @@ anywhere else `rivet-snip capture` takes one first.
 
 ![Rivet Snip with a marked-up screenshot](docs/screenshots/rivet-snip-wide.png)
 
-> **About the alphas.** Rivet FTP and Rivet Notes are young: things may still change or break.
+### <img src="apps/rivet-color/data/rivet-color.svg" width="32" alt=""> Rivet Color
+
+A color picker: pick a color from anywhere on the screen with a loupe over the held-still
+screen, and it's copied in hex, RGB, HSL or OKLCH. Its shades, harmonies and contrast, a
+history, and palettes kept as GIMP palette files. In Rivet Shell, the panel shows the last
+color and `@color` in the launcher copies one.
+**Early alpha, first release 0.1.0.**
+[More about Rivet Color](apps/rivet-color/README.md)
+
+![Rivet Color with a picked color, its shades and harmonies](docs/screenshots/rivet-color-wide.png)
+
+> **About the alphas.** Rivet FTP, Rivet Notes and Rivet Color are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
 ## Rivet Welcome: keeping it all current

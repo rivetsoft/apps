@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - **A new icon**: the box the apps come in, with the apps on a shelf behind it, drawn in the website's colors with a plum outline and a hard shadow.
 - **Rivet Snip is listed**, as coming soon until its first release. Then it installs and updates
   like the other apps.
+- **Rivet Color is listed**, and installs and updates like the other apps.
+- **Every Rivet app is listed**: Rivet Shell, Vice, Calendar and Fetch install and update here
+  like the others. Rivet Fetch is a program for the terminal, so it has no Open button: run
+  `rivetfetch` in a terminal.
 
 ## 0.2.0
 

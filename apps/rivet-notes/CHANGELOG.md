@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1
 
 - **A new icon**: a yellow notepad on spiral rings, in place of the folder, drawn in the website's colors with a plum outline and a hard shadow.
 - **Return in a question presses the highlighted button**: Move to Trash and Keep Mine answer

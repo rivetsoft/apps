@@ -9,6 +9,7 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 ## Building and releasing
 
 - [Development](development.md): building, checking, releasing, and the repository layout
+- [Releasing](releasing.md): from a changelog to a download in Rivet Welcome and on the website
 - [Shared crates](shared-crates.md): which code the apps share, and the order of the move
 
 ## Rivet Shell (just started)
@@ -43,3 +44,7 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 - [Rivet Terminal](../apps/rivet-terminal/README.md): keys, build and run
 - [Rivet Welcome](../apps/rivet-welcome/README.md): installing and updating the apps
 - [Rivet Snip](../apps/rivet-snip/README.md): clipping and marking up screenshots, and handing it a picture from a compositor
+
+## Rivet Color (early alpha)
+
+- [Rivet Color](../apps/rivet-color/README.md): picking, the shell plugin, key bindings and where colors are kept

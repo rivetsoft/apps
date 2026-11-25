@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - **A new icon**: a blue card of code with a cursor, drawn in the website's colors with a plum outline and a hard shadow.
 - **Return in a question presses the highlighted button**: Save, Replace, Discard and Move to

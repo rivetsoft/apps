@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
+
+The first version.
 
 - **Rivet Color, a new app**: pick a color from anywhere on the screen and it's copied, in
   hex, RGB, HSL or OKLCH, whichever you chose last.

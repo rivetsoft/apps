@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0
 
 - **Rivet Calendar, a new app**: your events by month, week, day or as a list, kept in plain
   `.ics` folders that vdirsyncer and khal share. Make, change and delete events, whole-day and

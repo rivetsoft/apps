@@ -5,6 +5,8 @@
 #                                                commit rivet-notes-vVERSION — on this computer only
 #   utilities/rivet-dev release notes --publish  the same, then send the code and the tag to GitHub
 #                                                and create a GitHub pre-release with the files
+#   utilities/rivet-dev release notes --draft    build, then make a draft GitHub release of the tag
+#                                                already on GitHub (what the release workflow runs)
 #
 # Also an AppImage of the same program. The archive holds the program (linked for an old glibc, so it runs on older systems too), its
 # desktop file and icon, README, CHANGELOG, licenses, and install.sh. These apps are released as
@@ -45,8 +47,8 @@ if [ -n "$RESUME" ]; then
     fi
     echo "$TAG was made earlier; finishing it (nothing is rebuilt)."
 else
-RIVET_PKG=$PKG ./utilities/lib/portable-build.sh
-BIN_PATH=$(RIVET_PKG=$PKG ./utilities/lib/portable-bin.sh)
+RIVET_PKG=$PKG RIVET_BIN=$BIN RIVET_GLIBC_LINK=$LINK_GLIBC ./utilities/lib/portable-build.sh
+BIN_PATH=$(RIVET_PKG=$PKG RIVET_BIN=$BIN ./utilities/lib/portable-bin.sh)
 ROOT=$(pwd)
 # shellcheck disable=SC1091
 . ./utilities/lib/ensure-zigbuild.sh
@@ -56,8 +58,8 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 strip -o "$STAGE/$BIN" "$BIN_PATH"
 ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/$BIN"
-cp "$APP/data/$DIST_NAME.desktop" "$APP/data/$DIST_NAME.svg" "$APP/README.md" "$APP/CHANGELOG.md" LICENSE-MIT LICENSE-APACHE "$STAGE/"
-sed "s/@BIN@/$BIN/g; s/@TITLE@/$TITLE/g" utilities/lib/install-app.sh > "$STAGE/install.sh"
+cp "$APP/data/$DESKTOP" "$APP/data/$DIST_NAME.svg" "$APP/README.md" "$APP/CHANGELOG.md" LICENSE-MIT LICENSE-APACHE "$STAGE/"
+sed "s/@BIN@/$BIN/g; s/@TITLE@/$TITLE/g; s/@LAUNCHER@/$LAUNCHER/g" utilities/lib/install-app.sh > "$STAGE/install.sh"
 chmod +x "$STAGE/install.sh"
 tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
 rm -rf "$STAGE"
@@ -88,13 +90,25 @@ cd $NAME
 ./install.sh          # $BIN in ~/.local/bin, and $TITLE in your app launcher
 \`\`\`
 
-Portable $ARCH build, linked against glibc $GLIBC_LINK_VERSION. Or build from source: \`cargo build --release -p $PKG\`.
+Portable $ARCH build, linked against glibc ${LINK_GLIBC:-$GLIBC_LINK_VERSION}. Or build from source: \`cargo build --release -p $PKG\`.
 EOF
 
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || git tag -a "$TAG" -m "$TITLE $VERSION"
 echo "Built dist/$NAME.tar.gz and dist/$APPIMAGE, tagged $TAG."
 fi
 
+if [ "$1" = "--draft" ]; then
+    # The release workflow: the tag is already on GitHub, and a person publishes the draft with
+    # utilities/rivet-dev live (docs/releasing.md). Rivet Welcome and the website skip drafts.
+    if github_release_exists; then
+        echo "GitHub already has the $TAG release."
+    else
+        if [ -n "$STABLE" ]; then PRE=--prerelease=false; else PRE=--prerelease; fi
+        gh release create "$TAG" "dist/$NAME.tar.gz" "dist/$NAME.tar.gz.sha256" "dist/$APPIMAGE" "dist/$APPIMAGE.sha256" \
+            --verify-tag --draft --title "$TITLE $VERSION" --notes-file "$NOTES" "$PRE"
+    fi
+    gh release view "$TAG" --json url -q .url
+fi
 if [ "$1" = "--publish" ]; then
     push_release
     if github_release_exists; then

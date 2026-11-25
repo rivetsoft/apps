@@ -1,0 +1,122 @@
+name: Release
+
+# Builds an app's downloads on GitHub and makes a draft release of them, when its tag is pushed
+# (utilities/rivet-dev ship APP). A person checks the draft and publishes it with
+# utilities/rivet-dev live APP. Rivet Welcome and the website ignore drafts until then.
+# How a release goes, step by step: docs/releasing.md.
+#
+# Run by hand (Actions → Release → Run workflow) with an app name, it builds that app's downloads
+# from the branch chosen and keeps them as the run's artifacts, with no tag and no release: a
+# rehearsal.
+
+on:
+  push:
+    tags: ["v[0-9]*", "rivet-*-v[0-9]*"]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "The app to build (files, notes, edit, terminal, ftp, snip, shell, vice, calendar, color, fetch, welcome)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}-${{ inputs.app }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and draft the release
+    # The same system the portable builds are checked on in ci.yml (glibc 2.35).
+    runs-on: ubuntu-22.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release
+
+      - name: Cache Zig and bundled library packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/rivet-build
+          key: rivet-zig-0.15.1-zigbuild-0.24.1-xkb-jammy
+
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binutils squashfs-tools curl ca-certificates xz-utils shared-mime-info librsvg2-bin libpam0g-dev libxkbcommon-dev
+
+      - name: Which app, and is the tag right
+        id: app
+        run: |
+          set -eu
+          . utilities/lib/apps.sh
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag=$GITHUB_REF_NAME
+            app=$(app_of_tag "$tag")
+            [ -n "$app" ] || { echo "::error::$tag isn't any app's release tag (utilities/lib/apps.sh)"; exit 1; }
+            app_select "$app"
+            want=$TAG_PREFIX$(app_version)
+            if [ "$tag" != "$want" ]; then
+              echo "::error::$tag is on a commit where $APP/Cargo.toml says $(app_version): bump first, then tag ($want)"
+              exit 1
+            fi
+            git fetch -q origin main
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "::error::$tag isn't on main: releases are tagged on main after the release pull request is merged"
+              exit 1
+            fi
+          else
+            app=${{ inputs.app }}
+            app_select "$app"
+          fi
+          grep -q "^## $(app_version)\$" "$APP/CHANGELOG.md" || { echo "::error::$APP/CHANGELOG.md has no section for $(app_version)"; exit 1; }
+          echo "id=$APP_ID" >> "$GITHUB_OUTPUT"
+          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          echo "version=$(app_version)" >> "$GITHUB_OUTPUT"
+
+      # The archive and the AppImage, exactly as utilities/rivet-dev release builds them on a
+      # computer (release.sh tags only when the tag isn't there, so the pushed tag is kept).
+      - name: Build the downloads
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ./utilities/rivet-dev release ${{ steps.app.outputs.id }}
+
+      # What Rivet Welcome will do with them: check the sums, unpack, install, ask the version.
+      - name: Check the downloads
+        run: |
+          set -eu
+          cd dist
+          sha256sum -c ./*.sha256
+          v=${{ steps.app.outputs.version }}
+          bin=${{ steps.app.outputs.bin }}
+          home=$(mktemp -d)
+          mkdir "$home/unpacked"
+          tar -xzf ./*-"$v"-x86_64-linux.tar.gz -C "$home/unpacked"
+          (cd "$home"/unpacked/*/ && HOME=$home XDG_BIN_HOME=$home/bin XDG_DATA_HOME=$home/share sh ./install.sh)
+          "$home/bin/$bin" --version | tee /dev/stderr | grep -q "$v"
+          # No FUSE on the runner: the AppImage unpacks itself and runs.
+          APPIMAGE_EXTRACT_AND_RUN=1 ./*-"$v"-x86_64.AppImage --version | grep -q "$v"
+          ls -l
+
+      - name: Make the draft release
+        if: github.event_name == 'push'
+        run: ./utilities/rivet-dev release ${{ steps.app.outputs.id }} --draft
+
+      - name: Keep the downloads with the run
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.app.outputs.id }}-${{ steps.app.outputs.version }}
+          path: |
+            dist/*.tar.gz
+            dist/*.AppImage
+            dist/*.sha256
+            dist/notes-*.md

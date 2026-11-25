@@ -13,7 +13,22 @@ go with it, and keep colors in palettes.
 - **History** of the colors picked and copied, and **palettes**. Right-click any swatch to
   copy it, add it to a palette or remove it.
 
-Unreleased; built from source.
+> **Early alpha.** Rivet Color is young: things may still change or break.
+
+## Install
+
+Download `Rivet_Color-0.1.0-x86_64.AppImage` from the Rivet Color release on the
+[Releases page](https://github.com/rivetsoft/apps/releases) (tag `rivet-color-v0.1.0`), make it
+executable (`chmod +x`) and run it. Or download `rivet-color-0.1.0-x86_64-linux.tar.gz`, then:
+
+```sh
+tar xzf rivet-color-0.1.0-x86_64-linux.tar.gz
+cd rivet-color-0.1.0-x86_64-linux
+./install.sh          # rivet-color in ~/.local/bin, and Rivet Color in your app launcher
+```
+
+[Rivet Welcome](../rivet-welcome/README.md) can install and update it for you too. The program
+is linked against glibc 2.31, so it doesn't need a recent system.
 
 ## Picking
 

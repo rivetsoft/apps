@@ -1,6 +1,6 @@
 [package]
 name = "rivet-terminal"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 rust-version = "1.88"
 description = "A terminal with tabs and split panes, in the Rivet apps' look: theme colours or a colour scheme, built on Rivet's core"

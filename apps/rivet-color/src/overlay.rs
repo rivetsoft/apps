@@ -13,17 +13,16 @@ use std::process::{Command, Stdio};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
-use smithay_client_toolkit::seat::keyboard::{KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers};
 use smithay_client_toolkit::seat::pointer::{CursorIcon, PointerEvent, PointerEventKind, PointerHandler, ThemeSpec, ThemedPointer};
 use smithay_client_toolkit::seat::{Capability, SeatHandler, SeatState};
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer, LayerShell, LayerShellHandler, LayerSurface, LayerSurfaceConfigure};
 use smithay_client_toolkit::shm::slot::{Buffer, SlotPool};
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
-use smithay_client_toolkit::{delegate_compositor, delegate_keyboard, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_shm, registry_handlers};
+use smithay_client_toolkit::{delegate_compositor, delegate_layer, delegate_output, delegate_pointer, delegate_registry, delegate_seat, delegate_shm, registry_handlers};
 use wayland_client::globals::{GlobalList, registry_queue_init};
 use wayland_client::protocol::{wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface};
-use wayland_client::{Connection, Dispatch, QueueHandle};
+use wayland_client::{Connection, Dispatch, QueueHandle, WEnum};
 use wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 
@@ -136,7 +135,8 @@ struct Picker {
     /// Arrow keys' moves from the pointer, in screen pixels.
     nudge: (i32, i32),
     zoom: usize,
-    shift: bool,
+    /// Shift keys held down (left, right).
+    shift: [bool; 2],
     done: Option<Option<Rgb>>,
 }
 
@@ -164,7 +164,7 @@ pub fn pick() -> Result<Option<Rgb>, String> {
         at: None,
         nudge: (0, 0),
         zoom: 2,
-        shift: false,
+        shift: [false; 2],
         done: None,
     };
     queue.roundtrip(&mut p).map_err(|e| e.to_string())?;
@@ -460,7 +460,7 @@ impl SeatHandler for Picker {
             self.pointer = self.seats.get_pointer_with_theme(qh, &seat, self.shm.wl_shm(), surface, ThemeSpec::default()).ok();
         }
         if cap == Capability::Keyboard && self.keyboard.is_none() {
-            self.keyboard = self.seats.get_keyboard(qh, &seat, None).ok();
+            self.keyboard = Some(seat.get_keyboard(qh, ()));
         }
     }
     fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, _: Capability) {}
@@ -512,26 +512,49 @@ impl PointerHandler for Picker {
     }
 }
 
-impl KeyboardHandler for Picker {
-    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32, _: &[u32], _: &[Keysym]) {}
-    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {}
-    fn press_key(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, e: KeyEvent) {
-        let step = if self.shift { 10 } else { 1 };
-        match e.keysym {
-            Keysym::Escape => self.done = Some(None),
-            Keysym::Return | Keysym::KP_Enter | Keysym::space => self.pick_here(),
-            Keysym::Left => self.nudge.0 -= step,
-            Keysym::Right => self.nudge.0 += step,
-            Keysym::Up => self.nudge.1 -= step,
-            Keysym::Down => self.nudge.1 += step,
+// The keys are read as the keyboard's own key codes (evdev's), not through a keymap: the few
+// the picker answers to are in the same place on every layout, and it leaves libxkbcommon out
+// of the program, so the portable build links against nothing newer than its glibc.
+impl Dispatch<wl_keyboard::WlKeyboard, ()> for Picker {
+    fn event(p: &mut Self, _: &wl_keyboard::WlKeyboard, event: wl_keyboard::Event, _: &(), _: &Connection, qh: &QueueHandle<Self>) {
+        // Focus coming or going: the keys held at that moment, since their presses and releases
+        // went to whatever had the keyboard before.
+        let (key, state) = match event {
+            wl_keyboard::Event::Key { key, state, .. } => (key, state),
+            wl_keyboard::Event::Enter { keys, .. } => {
+                let held: Vec<u32> = keys.as_chunks::<4>().0.iter().map(|b| u32::from_ne_bytes(*b)).collect();
+                p.shift = [held.contains(&42), held.contains(&54)];
+                return;
+            }
+            wl_keyboard::Event::Leave { .. } => {
+                p.shift = [false; 2];
+                return;
+            }
+            _ => return,
+        };
+        let down = state == WEnum::Value(wl_keyboard::KeyState::Pressed);
+        // KEY_LEFTSHIFT, KEY_RIGHTSHIFT
+        if key == 42 || key == 54 {
+            p.shift[usize::from(key == 54)] = down;
+            return;
+        }
+        if !down {
+            return;
+        }
+        let step = if p.shift.contains(&true) { 10 } else { 1 };
+        match key {
+            // KEY_ESC
+            1 => p.done = Some(None),
+            // KEY_ENTER, KEY_KPENTER, KEY_SPACE
+            28 | 96 | 57 => p.pick_here(),
+            // KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN
+            105 => p.nudge.0 -= step,
+            106 => p.nudge.0 += step,
+            103 => p.nudge.1 -= step,
+            108 => p.nudge.1 += step,
             _ => return,
         }
-        self.redraw_all(qh);
-    }
-    fn repeat_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: KeyEvent) {}
-    fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: KeyEvent) {}
-    fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, m: Modifiers, _: RawModifiers, _: u32) {
-        self.shift = m.shift;
+        p.redraw_all(qh);
     }
 }
 
@@ -560,7 +583,6 @@ delegate_compositor!(Picker);
 delegate_output!(Picker);
 delegate_shm!(Picker);
 delegate_seat!(Picker);
-delegate_keyboard!(Picker);
 delegate_pointer!(Picker);
 delegate_layer!(Picker);
 delegate_registry!(Picker);

@@ -11,7 +11,7 @@ Rivet Files only, so name any other app with `-p`:
 
 ```sh
 cargo build --release                    # Rivet Files (the program is `rivet`)
-cargo build --release -p rivet-shell     # or rivet-ftp, rivet-notes, rivet-edit, rivet-terminal, rivet-welcome, rivet-snip
+cargo build --release -p rivet-shell     # or rivet-ftp, rivet-notes, rivet-edit, rivet-terminal, rivet-welcome, rivet-snip, rivet-color
 cargo build --release --workspace        # everything
 ```
 
@@ -24,7 +24,8 @@ it:
 [Edit](../apps/rivet-edit/README.md),
 [Terminal](../apps/rivet-terminal/README.md),
 [Welcome](../apps/rivet-welcome/README.md),
-[Snip](../apps/rivet-snip/README.md).
+[Snip](../apps/rivet-snip/README.md),
+[Color](../apps/rivet-color/README.md).
 
 `utilities/rivet-dev install notes` (or `ftp`, `files`…) builds an app and installs it for you,
 in `~/.local/bin` and your app launcher.
@@ -44,21 +45,16 @@ every developer task; the scripts behind it are in `utilities/lib/`.
 
 ## Releasing
 
-Each app is released on its own, with its own version, changelog and tags: `v0.6.0` for Rivet
-Files, `rivet-notes-v0.1.0`, `rivet-ftp-v0.1.0` and so on.
+Each app is released on its own, with its own version, changelog and tags: `v0.10.0` for Rivet
+Files, `rivet-notes-v0.4.1` and so on. In short:
 
 1. Keep notes under `## Unreleased` in the app's `CHANGELOG.md` as you work.
-2. `utilities/rivet-dev apps` shows where each app stands.
-3. `utilities/rivet-dev bump notes` sets the version (patch, or `minor`, `major`, `X.Y.Z`),
-   turns the Unreleased section into the release's and commits.
-4. `utilities/rivet-dev release notes --publish` builds the downloads (a tarball and an
-   AppImage) in `dist/`, tags them and makes the GitHub release. Without `--publish` it only
-   builds and tags on your computer.
+2. `utilities/rivet-dev bump notes patch` in a pull request, and merge it.
+3. `utilities/rivet-dev ship notes` on `main`: tags and pushes, and GitHub builds a draft release.
+4. `utilities/rivet-dev live notes` publishes it and rebuilds the website.
 
-`utilities/rivet-dev release-all` goes through every app in turn: it shows what changed, skips
-apps with nothing new, and asks release, skip or stop for each. It runs the build, tests and
-lint once first. Try `--dry-run` first to see the
-plan, and add `--publish` to send each to GitHub as it goes.
+[Releasing](releasing.md) has every step, what a release contains, what Rivet Welcome reads from
+it, and what to do when something goes wrong.
 
 Release programs are linked with Zig against glibc 2.31, so they run on older systems such as
 Ubuntu 22.04 and Debian 12. Rivet Files' packaging (AppImage, Flatpak, AUR) is described in
@@ -76,6 +72,7 @@ Ubuntu 22.04 and Debian 12. Rivet Files' packaging (AppImage, Flatpak, AUR) is d
 | `apps/rivet-terminal` | Rivet Terminal |
 | `apps/rivet-welcome` | Rivet Welcome: installs and updates the apps, with a tray icon |
 | `apps/rivet-snip` | Rivet Snip: clips and marks up screenshots |
+| `apps/rivet-color` | Rivet Color: picks colors from the screen, with shades, harmonies and palettes |
 | `crates/rivet-look` | The shared look: the theme, desktop colors, fonts, icon themes, Rivet's own icons, code colors, color schemes, in-app windows |
 | `crates/rivet-kit` | A software renderer for egui: screenshots, and Rivet Shell's surfaces |
 | `crates/rivet-xdg` | XDG folders, bookmarks and drives, file types, default apps and Open With |

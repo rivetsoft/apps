@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Fetch
+GenericName=System Summary
+Comment=This computer at a glance in the terminal, beside Rivet the mascot
+Exec=rivetfetch
+Icon=rivet-fetch
+Terminal=true
+NoDisplay=true
+Categories=System;ConsoleOnly;
+Keywords=rivet;fetch;neofetch;fastfetch;system;info;

@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "rivet"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "async-io",
  "chrono",
@@ -2462,7 +2462,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-edit"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arboard",
  "chrono",
@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-ftp"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "eframe",
@@ -2554,7 +2554,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-notes"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chrono",
  "eframe",
@@ -2609,7 +2609,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-terminal"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "arboard",
  "eframe",
@@ -2632,7 +2632,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-welcome"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "eframe",
  "libc",

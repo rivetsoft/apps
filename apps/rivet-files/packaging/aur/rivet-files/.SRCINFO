@@ -12,6 +12,7 @@ pkgbase = rivet-files
 	depends = hicolor-icon-theme
 	depends = libglvnd
 	depends = libxkbcommon
+	depends = libxkbcommon-x11
 	depends = libxcb
 	depends = wayland
 	makedepends = cargo

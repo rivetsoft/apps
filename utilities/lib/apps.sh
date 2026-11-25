@@ -2,11 +2,17 @@
 # Which app a command works on. Sourced by the other scripts:
 #
 #   . utilities/lib/apps.sh
-#   app_select "$RIVET_APP"     # files (the default), ftp, notes, edit, terminal, welcome or snip
+#   app_select "$RIVET_APP"     # files (the default), or any name in ALL_APPS
 #
 # sets APP_ID, APP (its folder), PKG (the cargo package), BIN (the program), TITLE,
-# TAG_PREFIX (release tags are "$TAG_PREFIX$VERSION") and DIST_NAME (archive names).
+# TAG_PREFIX (release tags are "$TAG_PREFIX$VERSION"), DIST_NAME (archive names, and the name of
+# its desktop file and icon in data/) and DESKTOP (the desktop file the archive and AppImage carry).
 # Rivet Files keeps plain vX.Y.Z tags so its downloads, Flatpak and AUR packages carry on.
+# Rivet Welcome reads the same names from GitHub (apps/rivet-welcome/src/catalog.rs), and a test
+# there checks that it lists every app here: change both together.
+
+# Every app that is released, in the order the release commands go through them.
+ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch welcome"
 
 app_select() {
     # STABLE=1: published as a full release, not a pre-release (Rivet Welcome badges
@@ -14,23 +20,65 @@ app_select() {
     STABLE=
     case "${1:-files}" in
         files | rivet-files | rivet)
-            APP_ID=files APP=apps/rivet-files PKG=rivet BIN=rivet TITLE="Rivet Files" TAG_PREFIX=v DIST_NAME=rivet-files ;;
+            APP_ID=files PKG=rivet BIN=rivet TITLE="Rivet Files" TAG_PREFIX=v DIST_NAME=rivet-files STABLE=1 ;;
         ftp | rivet-ftp)
-            APP_ID=ftp APP=apps/rivet-ftp PKG=rivet-ftp BIN=rivet-ftp TITLE="Rivet FTP" TAG_PREFIX=rivet-ftp-v DIST_NAME=rivet-ftp ;;
+            APP_ID=ftp TITLE="Rivet FTP" ;;
         notes | rivet-notes)
-            APP_ID=notes APP=apps/rivet-notes PKG=rivet-notes BIN=rivet-notes TITLE="Rivet Notes" TAG_PREFIX=rivet-notes-v DIST_NAME=rivet-notes STABLE=1 ;;
+            APP_ID=notes TITLE="Rivet Notes" STABLE=1 ;;
         edit | rivet-edit)
-            APP_ID=edit APP=apps/rivet-edit PKG=rivet-edit BIN=rivet-edit TITLE="Rivet Edit" TAG_PREFIX=rivet-edit-v DIST_NAME=rivet-edit STABLE=1 ;;
+            APP_ID=edit TITLE="Rivet Edit" STABLE=1 ;;
         terminal | term | rivet-terminal)
-            APP_ID=terminal APP=apps/rivet-terminal PKG=rivet-terminal BIN=rivet-terminal TITLE="Rivet Terminal" TAG_PREFIX=rivet-terminal-v DIST_NAME=rivet-terminal STABLE=1 ;;
+            APP_ID=terminal TITLE="Rivet Terminal" STABLE=1 ;;
         welcome | rivet-welcome)
-            APP_ID=welcome APP=apps/rivet-welcome PKG=rivet-welcome BIN=rivet-welcome TITLE="Rivet Welcome" TAG_PREFIX=rivet-welcome-v DIST_NAME=rivet-welcome ;;
+            APP_ID=welcome TITLE="Rivet Welcome" ;;
         snip | rivet-snip)
-            APP_ID=snip APP=apps/rivet-snip PKG=rivet-snip BIN=rivet-snip TITLE="Rivet Snip" TAG_PREFIX=rivet-snip-v DIST_NAME=rivet-snip ;;
+            APP_ID=snip TITLE="Rivet Snip" ;;
+        shell | rivet-shell)
+            APP_ID=shell TITLE="Rivet Shell" ;;
+        vice | rivet-vice)
+            APP_ID=vice TITLE="Rivet Vice" ;;
+        calendar | rivet-calendar)
+            APP_ID=calendar TITLE="Rivet Calendar" ;;
+        color | rivet-color)
+            APP_ID=color TITLE="Rivet Color" ;;
+        fetch | rivet-fetch | rivetfetch)
+            APP_ID=fetch TITLE="Rivet Fetch" BIN=rivetfetch ;;
         *)
-            echo "Unknown app: $1 (files, ftp, notes, edit, terminal, welcome or snip)" >&2
+            echo "Unknown app: $1 (one of: $ALL_APPS)" >&2
             return 1 ;;
     esac
+    # The rest follow from the name: apps/rivet-notes, package and program rivet-notes,
+    # tags rivet-notes-vX.Y.Z, archives rivet-notes-X.Y.Z-ARCH-linux.tar.gz.
+    if [ "$APP_ID" != files ]; then
+        PKG=rivet-$APP_ID
+        DIST_NAME=rivet-$APP_ID
+        TAG_PREFIX=rivet-$APP_ID-v
+        [ "$APP_ID" = fetch ] || BIN=rivet-$APP_ID
+    fi
+    APP=apps/rivet-$APP_ID
+    # Rivet Shell is started by the compositor; what goes in the launcher is its Settings window.
+    DESKTOP=$DIST_NAME.desktop
+    [ "$APP_ID" = shell ] && DESKTOP=rivet-shell-settings.desktop
+    # A program for the terminal (rivetfetch) gets no launcher entry when installed.
+    LAUNCHER=1
+    [ "$APP_ID" = fetch ] && LAUNCHER=
+    # The glibc the release program is linked for. Rivet Shell links libxkbcommon itself (its
+    # keyboard handling), and Ubuntu 22.04's libxkbcommon needs glibc 2.33; the others load it
+    # at run time and keep 2.31 (ensure-zigbuild.sh). Both run on Ubuntu 22.04 and Debian 12.
+    LINK_GLIBC=
+    [ "$APP_ID" = shell ] && LINK_GLIBC=2.33
+    return 0
+}
+
+# The app a release tag belongs to: "rivet-notes-v0.4.1" -> notes, "v0.10.0" -> files.
+app_of_tag() {
+    for a in $ALL_APPS; do
+        (
+            app_select "$a"
+            v=${1#"$TAG_PREFIX"}
+            [ "$v" != "$1" ] && case "$v" in [0-9]*) echo "$APP_ID" ;; esac
+        )
+    done | head -n 1
 }
 
 # The app's version, from its Cargo.toml.
@@ -41,7 +89,7 @@ app_version() {
 # Is this word an app name? (For commands that take one first.)
 is_app() {
     case "$1" in
-        files | rivet-files | rivet | ftp | rivet-ftp | notes | rivet-notes | edit | rivet-edit | terminal | term | rivet-terminal | welcome | rivet-welcome | snip | rivet-snip) return 0 ;;
-        *) return 1 ;;
+        "" | -*) return 1 ;;
     esac
+    (app_select "$1") 2>/dev/null
 }

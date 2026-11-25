@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0
 
 - `./install.sh --uninstall` in the downloaded archive takes Rivet Files back off: the program in `~/.local/bin`, its app launcher entry and its icons.
 - **A new icon**: the pink folder with the rivet through it, drawn in the website's colors with a plum outline and a hard shadow.
@@ -22,6 +22,7 @@
   right edge, and the list view's columns narrow to make room for Peek, ending in an ellipsis
   (Type, Location and Size are left out when there is no room) rather than running past the
   edge of the window.
+- The AUR packages also install libxkbcommon-x11, which Rivet Files needs to start under X11.
 
 ## 0.9.0
 
