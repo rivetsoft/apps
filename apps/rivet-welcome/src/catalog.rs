@@ -153,7 +153,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-calendar",
             "rivet-calendar",
             "rivet-calendar-v",
-            "Your events by month, week or day, from plain folders, CalDAV, Google or Microsoft.",
+            "Your events by month, week or day, kept in plain folders or synced with your online calendars.",
             Kind::App,
             include_str!("../../rivet-calendar/data/rivet-calendar.svg"),
         ),
