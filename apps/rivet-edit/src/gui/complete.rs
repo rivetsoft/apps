@@ -114,8 +114,8 @@ impl EditApp {
         let Some(t) = self.tabs.get(self.active) else { return };
         let (Some(path), Some(lang)) = (t.path.clone(), t.lang_now()) else { return };
         let root = self.lsp_root(&path);
-        let text = t.text.clone();
-        self.lsp_status = Some(match self.lsp.touch(&path, &root, lang, &text) {
+        let t = &self.tabs[self.active];
+        self.lsp_status = Some(match self.lsp.touch(lsp::Doc { path: &path, root: &root, lang, text: &t.text, generation: t.text.generation() }) {
             lsp::State::Ready(p) => (p.to_string(), format!("{p} gives the suggestions and errors"), false),
             lsp::State::Starting(p) => (format!("{p}…"), format!("{p} is starting"), false),
             lsp::State::Failed(why) => ("No language server".into(), format!("{why}. Suggestions come from the file's own words."), true),
@@ -240,9 +240,9 @@ impl EditApp {
                 self.complete_seq += 1;
                 let seq = self.complete_seq;
                 let items = lsp::word_items(&t.text, &prefix, cur);
-                let text = t.text.clone();
+                let (text, generation) = (t.text.clone(), t.text.generation());
                 let (asked, utf8) = match (lang, &path, &root) {
-                    (Some(l), Some(p), Some(r)) => (self.lsp.complete(lsp::Doc { path: p, root: r, lang: l, text: &text }, cur, trigger, seq), self.lsp.utf8(l, r)),
+                    (Some(l), Some(p), Some(r)) => (self.lsp.complete(lsp::Doc { path: p, root: r, lang: l, text: &text, generation }, cur, trigger, seq), self.lsp.utf8(l, r)),
                     _ => (false, false),
                 };
                 self.complete = Some(Complete { anchor: ws, items, shown: Vec::new(), sel: 0, seq, waiting: asked, prefix: "\u{0}".into(), at: pos, utf8 });

@@ -533,18 +533,27 @@ impl EditApp {
         }
         // Go to a line: the cursor there.
         if let Some(n) = goto {
-            let c: usize = t.text.split_inclusive('\n').take(n.saturating_sub(1)).map(|l| l.chars().count()).sum();
+            let c = t.text.line_start(n.clamp(1, t.text.line_count()));
             let mut st = egui::TextEdit::load_state(&ctx, id).unwrap_or_default();
             st.cursor.set_char_range(Some(egui::text::CCursorRange::one(egui::text::CCursor::new(c))));
             st.store(&ctx, id);
             ctx.memory_mut(|m| m.request_focus(id));
         }
-        let lines = t.text.bytes().filter(|&b| b == b'\n').count() + 1;
-        let digits = lines.to_string().len().max(3) as f32;
+        let digits = t.text.line_count().to_string().len().max(3) as f32;
         let char_w = ctx.fonts_mut(|f| f.glyph_width(&font, '0'));
         let gutter = if numbers { digits * char_w + 28.0 } else { 14.0 };
         let Tab { text, cache, line_col, gutter: changes, .. } = t;
-        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| cache.galley(ui, buf.as_str(), &name, pick, &colors, &font, line_height, if wrap { wrap_w } else { f32::INFINITY });
+        let generation = text.generation_handle();
+        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_w: f32| cache.galley(ui, buf.as_str(), generation.load(std::sync::atomic::Ordering::Relaxed), &name, pick, &colors, &font, line_height, if wrap { wrap_w } else { f32::INFINITY });
+        // egui's own undo would keep up to a hundred copies of the whole text, taken every
+        // pause; Edit has its own (`History`), so the text box keeps the least it can.
+        let undoer_set = id.with("rivet-undoer");
+        if ctx.data(|d| d.get_temp::<bool>(undoer_set).is_none()) || egui::TextEdit::load_state(&ctx, id).is_none() {
+            let mut st = egui::TextEdit::load_state(&ctx, id).unwrap_or_default();
+            st.set_undoer(egui::util::undoer::Undoer::with_settings(egui::util::undoer::Settings { max_undos: 1, ..Default::default() }));
+            st.store(&ctx, id);
+            ctx.data_mut(|d| d.insert_temp(undoer_set, true));
+        }
         let area = ui.available_rect_before_wrap();
         let mut body = ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(Vec2::new(0.0, 4.0))).layout(egui::Layout::top_down(egui::Align::Min)));
         let scroll = if wrap { egui::ScrollArea::vertical() } else { egui::ScrollArea::both() };
@@ -569,15 +578,7 @@ impl EditApp {
                 // The cursor's line and column, for the status bar and the gutter.
                 let cur = if vim_block && vim_visual { Some(vim_head) } else { out.cursor_range.map(|r| r.primary.index.0) };
                 if let Some(c) = cur {
-                    let (mut line, mut col) = (1, 1);
-                    for ch in text.chars().take(c) {
-                        if ch == '\n' {
-                            (line, col) = (line + 1, 1);
-                        } else {
-                            col += 1;
-                        }
-                    }
-                    *line_col = (line, col);
+                    *line_col = text.line_col(c.min(text.char_count()));
                 }
                 // Line numbers (once per line, also when it wraps), the cursor's brighter. Only
                 // those on screen are drawn: each is text to lay out, every frame.
@@ -674,7 +675,7 @@ impl EditApp {
         // What this frame changed, for undo.
         if let Some(t) = self.tabs.get_mut(self.active) {
             let now = editing::sels_now(&ctx, id, t);
-            t.hist.observe(&t.text, &now);
+            t.observe(&now);
         }
         if let (Some((c, _)), Some(p)) = (caret, self.tabs.get(self.active).and_then(|t| t.path.clone())) {
             self.last_cursor.insert(p, c);

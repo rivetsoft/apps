@@ -229,6 +229,9 @@ impl EditApp {
         });
         let is_command = op.is_some();
         let multi = t.sels.len() >= 2;
+        if !is_command && !multi {
+            return;
+        }
         let mut sels = if multi { t.sels.clone() } else { vec![primary(ctx, id)] };
         let mut chars: Vec<char> = t.text.chars().collect();
         let before_len = chars.len();
@@ -334,7 +337,7 @@ impl EditApp {
             if is_command {
                 t.hist.command();
             }
-            t.text = chars.into_iter().collect();
+            t.text.set(chars.into_iter().collect());
         }
         let main = *sels.last().unwrap_or(&Sel::default());
         t.sels = if sels.len() >= 2 { sels } else { Vec::new() };
@@ -347,7 +350,7 @@ impl EditApp {
     pub(crate) fn undo_keys(&mut self, ctx: &egui::Context, id: egui::Id, keys: bool) {
         let Some(t) = self.tabs.get_mut(self.active) else { return };
         let now = sels_now(ctx, id, t);
-        t.hist.observe(&t.text, &now);
+        t.observe(&now);
         let mut asked: Vec<bool> = self.undo_asked.take().into_iter().collect();
         if keys && ctx.memory(|m| m.has_focus(id)) {
             let k = |m, key| egui::KeyboardShortcut::new(m, key);
@@ -366,7 +369,7 @@ impl EditApp {
         }
         let mut last = None;
         for redo in asked {
-            let sels = if redo { t.hist.redo(&mut t.text) } else { t.hist.undo(&mut t.text) };
+            let sels = t.undo(redo);
             if sels.is_some() {
                 last = sels;
             }
@@ -560,7 +563,7 @@ impl EditApp {
         }
         if rep_all && let Some(t) = self.tabs.get_mut(self.active) {
             if let Ok((text, n)) = find::replace_all(&t.text, &q, &with) {
-                t.text = text;
+                t.text.set(text);
                 t.sels.clear();
                 self.note = Some((format!("Replaced {n}"), false));
             }
@@ -838,7 +841,7 @@ impl EditApp {
         for f in self.search.results.clone() {
             if let Some(t) = self.tabs.iter_mut().find(|t| t.path.as_deref() == Some(f.path.as_path())) {
                 if let Ok((text, n)) = find::replace_all(&t.text, &q, &with) {
-                    t.text = text;
+                    t.text.set(text);
                     done += n;
                 }
                 continue;

@@ -77,6 +77,11 @@ impl History {
         self.record(edit, before, sels.to_vec());
     }
 
+    /// The cursors moved, but the text is as last seen.
+    pub fn look(&mut self, sels: &[Sel]) {
+        self.sels = sels.to_vec();
+    }
+
     /// The next change is a command, an undo step of its own.
     pub fn command(&mut self) {
         self.command = true;
@@ -153,8 +158,8 @@ impl History {
         self.undo.drain(..drop);
     }
 
-    #[cfg(test)]
-    fn steps(&self) -> (usize, usize) {
+    /// How many steps there are to undo and to redo.
+    pub fn steps(&self) -> (usize, usize) {
         (self.undo.len(), self.redo.len())
     }
 }
