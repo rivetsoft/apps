@@ -14,4 +14,4 @@ pub mod store;
 pub mod xml;
 
 pub use event::{Event, When};
-pub use store::{Calendar, Occurrence, Store, default_root};
+pub use store::{Calendar, Occurrence, Store, Watch, default_root};

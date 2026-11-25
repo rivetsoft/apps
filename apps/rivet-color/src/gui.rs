@@ -5,6 +5,8 @@
 //! one to copy it, keep it in a palette or take it out.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::SystemTime;
 
@@ -72,8 +74,9 @@ pub struct ColorApp {
     confirm_clear: bool,
     confirm_delete: bool,
     picking: bool,
-    /// When the files were last looked at for changes.
-    checked: f64,
+    /// Set by a thread that looks at the files once a second, when the history or the palettes
+    /// changed on disk (a pick from the panel, a palette changed elsewhere).
+    files_changed: Arc<AtomicBool>,
     /// The line along the bottom, whether it's trouble, and when it was said.
     note: Option<(String, bool, f64)>,
     tx: Sender<Result<Option<Rgb>, String>>,
@@ -81,7 +84,7 @@ pub struct ColorApp {
 }
 
 impl ColorApp {
-    pub fn new(_cc: &eframe::CreationContext, start: Option<Rgb>, screenshot: Option<PathBuf>) -> ColorApp {
+    pub fn new(cc: &eframe::CreationContext, start: Option<Rgb>, screenshot: Option<PathBuf>) -> ColorApp {
         let (tx, rx) = channel();
         let shot = screenshot.map(rivet_kit::Shot::new);
         let (history, palettes, format) = if shot.is_some() { demo() } else { (store::load_history(), store::load_palettes(), store::load_format()) };
@@ -107,7 +110,7 @@ impl ColorApp {
             confirm_clear: false,
             confirm_delete: false,
             picking: false,
-            checked: 0.0,
+            files_changed: Arc::new(AtomicBool::new(false)),
             note: None,
             tx,
             rx,
@@ -125,6 +128,9 @@ impl ColorApp {
                 "copied" => app.note = Some((format!("Copied {}", app.color.format(app.format)), false, f64::MAX)),
                 _ => {}
             }
+        }
+        if app.live() {
+            watch_files(app.files_changed.clone(), cc.egui_ctx.clone());
         }
         app
     }
@@ -160,14 +166,16 @@ impl ColorApp {
         }
     }
 
-    fn pick(&mut self) {
+    fn pick(&mut self, ctx: &egui::Context) {
         if self.picking || !self.live() {
             return;
         }
         self.picking = true;
         let tx = self.tx.clone();
+        let ctx = ctx.clone();
         std::thread::spawn(move || {
             let _ = tx.send(crate::pick::pick());
+            ctx.request_repaint();
         });
     }
 
@@ -184,13 +192,7 @@ impl ColorApp {
                 Err(e) => self.say(ctx, e, true),
             }
         }
-        if !self.live() {
-            return;
-        }
-        // A look once a second for a pick made from the panel, or a palette changed elsewhere.
-        let now = ctx.input(|i| i.time);
-        if now - self.checked >= 1.0 {
-            self.checked = now;
+        if self.files_changed.swap(false, Ordering::Relaxed) {
             let h = store::changed(&store::history_path());
             if h != self.history_seen {
                 self.history_seen = h;
@@ -202,11 +204,6 @@ impl ColorApp {
                 self.palettes = store::load_palettes();
                 self.chosen = self.chosen.min(self.palettes.len());
             }
-        }
-        if self.picking {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
-        } else {
-            ctx.request_repaint_after(std::time::Duration::from_secs(1));
         }
     }
 
@@ -230,7 +227,7 @@ impl ColorApp {
             self.show(c);
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::P)) {
-            self.pick();
+            self.pick(ctx);
         }
     }
 
@@ -241,7 +238,7 @@ impl ColorApp {
             let label = if self.picking { "Picking…" } else { "Pick from Screen" };
             let pick = egui::Button::new(egui::RichText::new(label).strong().color(c32(rgb(accent).ink()))).fill(accent);
             if ui.add_enabled(!self.picking, pick).on_hover_text("Click anywhere on the screen to take its color (P)").clicked() {
-                self.pick();
+                self.pick(&ctx);
             }
             ui.add_space(6.0);
             let edit = ui.add(egui::TextEdit::singleline(&mut self.typed).desired_width(200.0).font(FontId::monospace(14.0)).hint_text("#d53f8c"));
@@ -539,7 +536,12 @@ impl ColorApp {
         let v = ui.visuals().clone();
         let (text, color) = match &self.note {
             // A note fades after a few seconds; trouble stays until something else happens.
-            Some((t, trouble, at)) if *trouble || *at == f64::MAX || now - at < 4.0 => (t.clone(), if *trouble { v.error_fg_color } else { v.text_color() }),
+            Some((t, trouble, at)) if *trouble || *at == f64::MAX || now - at < 4.0 => {
+                if !*trouble {
+                    ui.ctx().request_repaint_after_secs((4.0 - (now - at)) as f32);
+                }
+                (t.clone(), if *trouble { v.error_fg_color } else { v.text_color() })
+            }
             _ if self.picking => ("Click a color anywhere on the screen. Escape stops.".into(), v.text_color()),
             _ => {
                 let count = |n: usize, one: &str, many: &str| if n == 1 { format!("1 {one}") } else { format!("{n} {many}") };
@@ -548,6 +550,24 @@ impl ColorApp {
         };
         ui.label(egui::RichText::new(text).size(12.5).color(color));
     }
+}
+
+/// Look at the history file and the palettes folder once a second on a thread, and wake the
+/// window only when one of them changed; stops when the window is gone.
+fn watch_files(changed: Arc<AtomicBool>, ctx: egui::Context) {
+    std::thread::spawn(move || {
+        let look = || (store::changed(&store::history_path()), store::changed(&store::palettes_dir()));
+        let mut seen = look();
+        while Arc::strong_count(&changed) > 1 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            let now = look();
+            if now != seen {
+                seen = now;
+                changed.store(true, Ordering::Relaxed);
+                ctx.request_repaint();
+            }
+        }
+    });
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) {

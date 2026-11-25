@@ -4,7 +4,7 @@
 //! the layout (vdirsyncer for a CalDAV server, khal in a terminal) sees the same calendars.
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 
@@ -152,7 +152,26 @@ impl Store {
         self.calendars.sort_by_key(|c| c.name.to_lowercase());
     }
 
+    /// The calendar folders' own times, and those of their names and colours, in one number. A
+    /// file added, removed or put in place of another (as saving here, vdirsyncer and most
+    /// editors do) changes its folder's time, so this sees nearly every change for a stat per
+    /// calendar; a file written over where it stands doesn't, and only `stamp` sees that.
+    pub fn folder_stamp(root: &Path) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        mtime(root).hash(&mut h);
+        for d in std::fs::read_dir(root).into_iter().flatten().flatten() {
+            let dir = d.path();
+            dir.hash(&mut h);
+            mtime(&dir).hash(&mut h);
+            mtime(&dir.join("displayname")).hash(&mut h);
+            mtime(&dir.join("color")).hash(&mut h);
+        }
+        h.finish()
+    }
+
     /// Something in the folder changed since this was read: the files' times, in one number.
+    /// It looks at every file, which takes a tenth of a second for tens of thousands.
     pub fn stamp(root: &Path) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -370,6 +389,40 @@ fn read_calendar_shell(dir: &Path) -> Calendar {
     Calendar { name: meta("displayname").unwrap_or_else(|| id.clone()), color: meta("color").as_deref().and_then(parse_color), id, dir: dir.to_path_buf(), read_only, feed, account, items: Vec::new() }
 }
 
+/// How long a `Watch` goes between looks at every file, for files written over in place.
+pub const SWEEP: Duration = Duration::from_secs(300);
+
+/// Says when the calendars under a folder changed, cheaply enough to ask every few seconds: it
+/// looks at the folders' times each time (`Store::folder_stamp`), and at every file's only when
+/// those moved or every `SWEEP`, which is when an edit made in place shows.
+pub struct Watch {
+    root: PathBuf,
+    folders: u64,
+    files: u64,
+    /// When every file is looked at next.
+    sweep_at: Instant,
+}
+
+impl Watch {
+    /// Watching `root` as it is now.
+    pub fn new(root: &Path) -> Watch {
+        Watch { root: root.to_path_buf(), folders: Store::folder_stamp(root), files: Store::stamp(root), sweep_at: Instant::now() + SWEEP }
+    }
+
+    /// Whether anything changed since this last said so (or since it was made).
+    pub fn changed(&mut self) -> bool {
+        let folders = Store::folder_stamp(&self.root);
+        if folders == self.folders && Instant::now() < self.sweep_at {
+            return false;
+        }
+        let files = Store::stamp(&self.root);
+        self.sweep_at = Instant::now() + SWEEP;
+        let changed = folders != self.folders || files != self.files;
+        (self.folders, self.files) = (folders, files);
+        changed
+    }
+}
+
 pub(crate) fn new_wrapper() -> Component {
     let mut c = Component::new("VCALENDAR");
     c.set(Prop::new("VERSION", "2.0"));
@@ -390,6 +443,31 @@ mod tests {
 
     fn day(d: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 11, d).unwrap()
+    }
+
+    #[test]
+    fn a_watch_sees_saves_and_renames_by_the_folders_alone() {
+        let root = tmp("watch");
+        let mut s = Store::open(&root);
+        let dir = s.create_calendar("Personal", [1, 2, 3]).unwrap();
+        let mut w = Watch::new(&root);
+        assert!(!w.changed());
+        let ev = Event::new("Lunch", When::Floating(day(24).and_hms_opt(12, 0, 0).unwrap()), When::Floating(day(24).and_hms_opt(13, 0, 0).unwrap()));
+        s.save(&dir, &ev).unwrap();
+        assert!(w.changed());
+        assert!(!w.changed());
+        s.set_calendar(&dir, "Home", [4, 5, 6]).unwrap();
+        assert!(w.changed());
+        // A file written over in place leaves the folders' times as they were: only a sweep sees it.
+        let file = s.calendars[0].items[0].path.clone();
+        let before = Store::folder_stamp(&root);
+        let f = std::fs::OpenOptions::new().write(true).open(&file).unwrap();
+        f.set_modified(SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000)).unwrap();
+        assert_eq!(Store::folder_stamp(&root), before);
+        assert!(!w.changed());
+        w.sweep_at = Instant::now();
+        assert!(w.changed());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

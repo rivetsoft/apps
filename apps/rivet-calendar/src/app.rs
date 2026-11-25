@@ -4,10 +4,10 @@
 
 use std::path::PathBuf;
 
-use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_cal::oauth::{Client, Provider};
-use rivet_cal::{Event, Occurrence, Store, When};
+use rivet_cal::{Event, Occurrence, Store, Watch, When};
 use rivet_look::fonts::ui_font;
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::palette::mix;
@@ -197,13 +197,17 @@ struct Import {
 /// A span's occurrences, as worked out for one version of the calendars and the ones hidden.
 type OccKey = ((NaiveDate, NaiveDate, u64, Vec<String>), Vec<Occurrence>);
 
+/// How often the loader looks at the folder on its own.
+const LOOK: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Something running on a thread (a feed being read), and what it'll say.
 type Job = std::sync::mpsc::Receiver<Result<String, String>>;
 
 /// The calendars, read on a thread so the window never waits on a folder of thousands of events.
-/// It's asked to look again every few seconds and after each change made here; it answers with
-/// the calendars read again, only when something changed, tagged with the change it was asked
-/// after (an answer older than a change made here since is dropped, and the next one has it).
+/// It looks at the folder every few seconds on its own (see `Watch`), and at once when asked
+/// after a change made here; it answers with the calendars read again, only when something
+/// changed, tagged with the latest change it was asked after (an answer older than a change made
+/// here since is dropped, and the next one has it), and only then wakes the window.
 struct Loader {
     ask: std::sync::mpsc::Sender<u64>,
     got: std::sync::mpsc::Receiver<(u64, Store)>,
@@ -219,21 +223,25 @@ impl Loader {
             if store.calendars.is_empty() && store.create_calendar("Personal", COLORS[0]).is_err() {
                 store = Store::open(&root);
             }
-            let mut stamp = Store::stamp(&root);
+            let mut watch = Watch::new(&root);
             if send.send((0, store.clone())).is_err() {
                 return;
             }
             ctx.request_repaint();
-            while let Ok(mut generation) = asks.recv() {
+            let mut generation = 0;
+            loop {
+                match asks.recv_timeout(LOOK) {
+                    Ok(g) => generation = generation.max(g),
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
+                }
                 // Several asks waiting are one look.
                 while let Ok(g) = asks.try_recv() {
                     generation = generation.max(g);
                 }
-                let now = Store::stamp(&root);
-                if now == stamp {
+                if !watch.changed() {
                     continue;
                 }
-                stamp = now;
                 store.reload();
                 if send.send((generation, store.clone())).is_err() {
                     return;
@@ -260,7 +268,6 @@ pub struct CalendarApp {
     version: u64,
     /// Occurrences already worked out: by span, version and the calendars hidden.
     occ_cache: std::cell::RefCell<Vec<OccKey>>,
-    checked: f64,
     /// The day the views are around (the one picked).
     day: NaiveDate,
     /// The small month's first day.
@@ -364,7 +371,6 @@ impl CalendarApp {
             look: LiveLook::new(),
             store,
             root,
-            checked: 0.0,
             day,
             mini: day.with_day(1).unwrap_or(day),
             editor: None,
@@ -463,6 +469,14 @@ impl CalendarApp {
                 ctx.request_repaint();
             });
             self.job = Some((String::new(), rx));
+        }
+        // No job running: a frame when the next one is due (a running one wakes the window when done).
+        if self.job.is_none() {
+            let feeds = self.store.calendars.iter().any(|c| c.feed.is_some()).then_some(self.feeds_checked + 600.0);
+            let sync = has_accounts.then(|| self.sync_soon.unwrap_or(f64::INFINITY).min(self.synced_at + 300.0));
+            if let Some(due) = feeds.into_iter().chain(sync).reduce(f64::min).filter(|d| d.is_finite()) {
+                ctx.request_repaint_after_secs((due - now).max(0.0) as f32);
+            }
         }
         if let Some((_, rx)) = &self.job
             && let Ok(r) = rx.try_recv()
@@ -800,8 +814,8 @@ impl eframe::App for CalendarApp {
         let c = self.choice();
         self.look.set_fonts(&ctx, "", "", "");
         self.look.frame(&ctx, &c, self.shot.is_none());
-        // Changes made elsewhere (another program, a sync) show within seconds.
-        let now = ctx.input(|i| i.time);
+        // Changes made elsewhere (another program, a sync) show within seconds: the loader wakes
+        // the window when it has them, so nothing here runs on a timer.
         if let Some(l) = &self.loader {
             while let Ok((generation, store)) = l.got.try_recv() {
                 // The first reading is always taken (nothing made here can be in it yet).
@@ -811,12 +825,10 @@ impl eframe::App for CalendarApp {
                     self.version += 1;
                 }
             }
-            if now - self.checked > 3.0 {
-                self.checked = now;
-                let _ = l.ask.send(self.generation);
-            }
         }
-        ctx.request_repaint_after(std::time::Duration::from_secs(3));
+        // A new day: today moves.
+        let midnight = (Local::now().date_naive() + Duration::days(1)).and_time(NaiveTime::MIN) - Local::now().naive_local();
+        ctx.request_repaint_after(midnight.to_std().unwrap_or_default());
         if self.loaded
             && let Some(uid) = self.open_uid.take()
         {
@@ -1346,6 +1358,7 @@ impl CalendarApp {
                 // Now, as a line across today.
                 if d == today {
                     let t = Local::now().naive_local();
+                    ui.ctx().request_repaint_after(std::time::Duration::from_secs(60 - t.second() as u64));
                     let y = grid.top() + (t - lo).num_minutes() as f32 / 60.0 * HOUR;
                     let red = rivet_look::theme::status(ui.ctx()).danger;
                     ui.painter().hline(egui::Rangef::new(x0, x0 + col), y, Stroke::new(2.0, red));
