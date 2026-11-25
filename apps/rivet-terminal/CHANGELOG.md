@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Block pictures without gaps**: block characters such as ▀ and █ fill their whole cell, so
+  pictures drawn with them, like rivetfetch's mascot, show without stripes between the lines.
+
 ## 0.3.1
 
 - **A new icon**: a green window with a prompt and a yellow cursor, drawn in the website's colors with a plum outline and a hard shadow.
