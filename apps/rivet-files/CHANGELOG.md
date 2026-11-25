@@ -13,6 +13,7 @@
   Replace in the file picker answer to Return, as Delete already did. Tab to Cancel and Return
   cancels; before, Return in the Delete and Open With questions went ahead even with Cancel
   focused.
+- The AUR packages also install libxkbcommon-x11, which Rivet Files needs to start under X11.
 
 ## 0.9.0
 
