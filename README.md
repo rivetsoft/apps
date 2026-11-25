@@ -145,7 +145,7 @@ from the right-click menu.
 **Early alpha, first release 0.1.0.**
 [More about Rivet Vice](apps/rivet-vice/README.md)
 
-![Rivet Vice inside an archive, with two photos selected to extract](docs/screenshots/rivet-vice-wide.png)
+![Rivet Vice inside a trip archive, with folders of photos, maps and notes](docs/screenshots/rivet-vice-wide.png)
 
 ### <img src="apps/rivet-calendar/data/rivet-calendar.svg" width="32" alt=""> Rivet Calendar
 
