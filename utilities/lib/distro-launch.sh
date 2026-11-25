@@ -97,6 +97,9 @@ shot() {
 }
 
 start_xvfb() {
+    unset WAYLAND_DISPLAY WAYLAND_SOCKET || true
+    export WINIT_UNIX_BACKEND=x11
+    export XDG_SESSION_TYPE=x11
     if [ -n "${DISPLAY:-}" ] && [ -e "/tmp/.X11-unix/X${DISPLAY#:}" ]; then
         return 0
     fi
@@ -112,9 +115,6 @@ start_xvfb() {
         sleep 0.1
     done
     export DISPLAY=:99
-    unset WAYLAND_DISPLAY WAYLAND_SOCKET || true
-    export WINIT_UNIX_BACKEND=x11
-    export XDG_SESSION_TYPE=x11
 }
 
 install_pkgs() {
