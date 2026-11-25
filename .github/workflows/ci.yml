@@ -125,12 +125,16 @@ jobs:
           # host, host-os and host-etc are errors until Flathub grants an
           # exception. A file manager cannot browse the computer without them.
           # Any other error still fails this job.
+          # appid-url-not-reachable: the app id io.github.ulinaaron.rivet-files points at
+          # github.com/ulinaaron/rivet-files, which redirects since the move to rivetsoft/apps.
+          # Allowed until the app id question is settled; Flathub will still reject it.
           python3 - <<'PY'
           import json, shutil, subprocess, sys
           allowed = {
               "finish-args-host-filesystem-access",
               "finish-args-host-os-filesystem-access",
               "finish-args-host-etc-filesystem-access",
+              "appid-url-not-reachable",
           }
           if shutil.which("flatpak-builder-lint"):
               lint = ["flatpak-builder-lint"]
