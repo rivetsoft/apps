@@ -226,6 +226,8 @@ pub struct Shell {
     recolor_until: Option<Instant>,
     last_minute: u32,
     bg_key: (u32, u64, Option<(u32, bool)>),
+    /// What the panel's system item shows, across and down a panel.
+    system_shown: [String; 2],
     prev_status: sys::Status,
     /// The dock's items, to notice when it must change size.
     dock_key: (usize, bool),
@@ -401,6 +403,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         recolor_until: None,
         last_minute: 99,
         bg_key: (0, 0, None),
+        system_shown: Default::default(),
         prev_status: sys::Status::default(),
         dock_key: (0, false),
         notes: Notes::default(),
@@ -1346,6 +1349,11 @@ impl Shell {
         let bg_key = (st.cpu.round() as u32, st.mem.0 / (100 << 20), st.battery);
         let bg_changed = bg_key != self.bg_key;
         self.bg_key = bg_key;
+        // Panels with the system item redraw only when its text does, each for the way it shows it,
+        // and not while rolled up or hidden (they draw afresh as they come back).
+        let shown = [crate::bar::system_text(&st, false), crate::bar::system_text(&st, true)];
+        let system_changed = [shown[0] != self.system_shown[0], shown[1] != self.system_shown[1]];
+        self.system_shown = shown;
         // Likewise the panel and the dock (open apps).
         let prev = std::mem::replace(&mut self.prev_status, st.clone());
         let front = |s: &sys::Status| s.workspaces.iter().find(|w| w.active).map(|w| (w.key.clone(), w.label.clone()));
@@ -1356,7 +1364,7 @@ impl Shell {
             let md = st.media.clone().unwrap_or_default();
             self.event("media", &[("title", &md.title), ("artist", &md.artist), ("player", &md.player), ("playing", if md.playing { "true" } else { "false" })]);
         }
-        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness || (bg_changed && self.s.panels.iter().any(|p| p.has("system")));
+        let panel_changed = st.workspaces != prev.workspaces || st.volume != prev.volume || st.net != prev.net || st.battery != prev.battery || st.window != prev.window || st.media != prev.media || st.brightness != prev.brightness;
         let dock_changed = st.running != prev.running;
         // The dock item in a panel shows open apps too.
         let panel_changed = panel_changed || (dock_changed && self.s.panels.iter().any(|p| p.has("dock")));
@@ -1373,7 +1381,7 @@ impl Shell {
         };
         for s in &mut self.surfs {
             let shows = match s.kind {
-                Kind::Panel => panel_changed,
+                Kind::Panel => panel_changed || (!s.collapsed && self.s.panels.get(s.idx).is_some_and(|p| p.has("system") && system_changed[p.vertical() as usize])),
                 Kind::Dock => dock_changed,
                 Kind::Background => desktop_changed,
                 Kind::Popup => board_open || (control_open && control_changed) || matches!(self.popup.as_ref().map(|p| &p.kind), Some(PopupKind::DockMenu { .. })) && dock_changed || (self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Media) && (st.media != prev.media || st.media_pos != prev.media_pos)),
