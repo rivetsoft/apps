@@ -445,8 +445,12 @@ impl TermApp {
     fn spawn(&mut self, cwd: Option<PathBuf>) -> Option<Pane> {
         let index = self.w.panes() + self.others.iter().map(Win::panes).sum::<usize>() + 1;
         let spec = match &self.demo {
-            // Checks: the demo script, a different scene per pane.
-            Some((root, script)) => Spawn { program: Some(("sh".into(), vec![script.display().to_string(), index.min(3).to_string()])), cwd: Some(root.clone()), env: Default::default(), scrollback: self.s.scrollback },
+            // Checks: the demo script, a different scene per pane. `-e PROGRAM` runs that program
+            // in the demo folder instead, for pictures of a terminal program such as rivetfetch.
+            Some((root, script)) => {
+                let program = self.w.start.program.clone().unwrap_or_else(|| ("sh".into(), vec![script.display().to_string(), index.min(3).to_string()]));
+                Spawn { program: Some(program), cwd: Some(root.clone()), env: Default::default(), scrollback: self.s.scrollback }
+            }
             None => {
                 let program = self.w.start.program.clone().or_else(|| {
                     let mut words = self.s.shell.split_whitespace().map(String::from);

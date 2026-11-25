@@ -7,6 +7,8 @@ Rivet is drawn from his pixel art (`docs/mascot/pixel/rivet-pixel.png`), two pix
 character cell, so he looks the same as on the website. It needs a terminal with colour; plain
 output leaves him out.
 
+![rivetfetch in Rivet Terminal, beside the mascot](../../docs/screenshots/rivet-fetch-wide.png)
+
 - **In your colours.** The keys take the desktop's accent, from the same colour files the other
   Rivet apps follow, so a new wallpaper recolours them too.
 - **Fast.** Every module runs at once; it takes about 30 ms.

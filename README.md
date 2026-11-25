@@ -137,6 +137,35 @@ color and `@color` in the launcher copies one.
 
 ![Rivet Color with a picked color, its shades and harmonies](docs/screenshots/rivet-color-wide.png)
 
+### <img src="apps/rivet-vice/data/rivet-vice.svg" width="32" alt=""> Rivet Vice
+
+An archive manager: open an archive and walk through it folder by folder, take out all of it or
+some, and make new ones as zip, tar.gz, tar.xz, tar.zst or 7z. Rivet Files opens an archive in it
+from the right-click menu.
+**Early alpha, first release 0.1.0.**
+[More about Rivet Vice](apps/rivet-vice/README.md)
+
+![Rivet Vice inside an archive, with two photos selected to extract](docs/screenshots/rivet-vice-wide.png)
+
+### <img src="apps/rivet-calendar/data/rivet-calendar.svg" width="32" alt=""> Rivet Calendar
+
+A calendar kept in plain `.ics` folders that vdirsyncer and khal share: month, week, day and
+list views, repeating events, CalDAV, Google and Microsoft accounts, and feeds to subscribe to.
+In Rivet Shell, the panel's calendar shows its events.
+**Early alpha, first release 0.1.0.**
+[More about Rivet Calendar](apps/rivet-calendar/README.md)
+
+![Rivet Calendar's month view, with four calendars](docs/screenshots/rivet-calendar-wide.png)
+
+### <img src="apps/rivet-fetch/data/rivet-fetch.svg" width="32" alt=""> Rivet Fetch
+
+`rivetfetch`: this computer at a glance in the terminal, beside Rivet the mascot, in the
+desktop's accent. Choose what it shows and in what order.
+**Early alpha, first release 0.1.0.**
+[More about Rivet Fetch](apps/rivet-fetch/README.md)
+
+![rivetfetch in Rivet Terminal, beside the mascot](docs/screenshots/rivet-fetch-wide.png)
+
 > **About the alphas.** Rivet FTP, Rivet Notes and Rivet Color are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 
