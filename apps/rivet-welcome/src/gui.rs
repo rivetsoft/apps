@@ -675,6 +675,9 @@ impl WelcomeApp {
                         if row.entry.kind == Kind::Shell {
                             tag(ui, "Desktop", st.info);
                         }
+                        if row.entry.kind == Kind::Command {
+                            tag(ui, "Terminal", st.info);
+                        }
                         tag(ui, pill, color);
                     });
                     ui.add(
@@ -708,7 +711,9 @@ impl WelcomeApp {
                                         .unwrap_or_default(),
                                 };
                                 let out = match latest {
-                                    Some((_, l)) if inst.version.as_ref().is_some_and(|v| v < l) => {
+                                    Some((_, l))
+                                        if inst.version.as_ref().is_some_and(|v| v < l) =>
+                                    {
                                         format!(" · {l} is out")
                                     }
                                     _ => String::new(),
@@ -753,6 +758,9 @@ impl WelcomeApp {
                             "Start it from your compositor; Open shows its settings".into(),
                         ));
                     }
+                    if row.entry.kind == Kind::Command && row.installed.is_some() {
+                        ui.label(weak(format!("Run {} in a terminal", row.entry.bin)));
+                    }
                 });
                 if soon {
                     return;
@@ -793,7 +801,10 @@ impl WelcomeApp {
                     {
                         *act = Some(Act::Install(i));
                     }
-                    if row.installed.is_some() && !row.is_welcome() {
+                    if row.installed.is_some()
+                        && !row.is_welcome()
+                        && row.entry.kind != Kind::Command
+                    {
                         let label = if row.entry.kind == Kind::Shell {
                             "Settings"
                         } else {

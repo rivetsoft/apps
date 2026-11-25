@@ -13,6 +13,8 @@ pub enum Kind {
     Shell,
     /// This program.
     Welcome,
+    /// A program for the terminal, with no window (rivetfetch): nothing to open.
+    Command,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -124,6 +126,46 @@ pub fn known() -> Vec<Entry> {
             "Crop and mark up screenshots, with arrows, text and blur.",
             Kind::App,
             include_str!("../../rivet-snip/data/rivet-snip.svg"),
+        ),
+        entry(
+            "color",
+            "Rivet Color",
+            "rivet-color",
+            "rivet-color",
+            "rivet-color-v",
+            "Pick a color from the screen, with its shades, harmonies, contrast and palettes.",
+            Kind::App,
+            include_str!("../../rivet-color/data/rivet-color.svg"),
+        ),
+        entry(
+            "vice",
+            "Rivet Vice",
+            "rivet-vice",
+            "rivet-vice",
+            "rivet-vice-v",
+            "Look inside archives, take out all or some of what's in them, and make new ones.",
+            Kind::App,
+            include_str!("../../rivet-vice/data/rivet-vice.svg"),
+        ),
+        entry(
+            "calendar",
+            "Rivet Calendar",
+            "rivet-calendar",
+            "rivet-calendar",
+            "rivet-calendar-v",
+            "Your events by month, week or day, from plain folders, CalDAV, Google or Microsoft.",
+            Kind::App,
+            include_str!("../../rivet-calendar/data/rivet-calendar.svg"),
+        ),
+        entry(
+            "fetch",
+            "Rivet Fetch",
+            "rivetfetch",
+            "rivet-fetch",
+            "rivet-fetch-v",
+            "This computer at a glance in the terminal, beside Rivet the mascot.",
+            Kind::Command,
+            include_str!("../../rivet-fetch/data/rivet-fetch.svg"),
         ),
         entry(
             "shell",
@@ -267,6 +309,39 @@ mod tests {
         );
         let shell = k.iter().find(|e| e.id == "shell").unwrap();
         assert!(latest(shell, &list).is_none());
+    }
+
+    /// Every app utilities/rivet-dev releases is listed here by name, under the tag, archive and
+    /// program names the release scripts give it (utilities/lib/apps.sh).
+    #[test]
+    fn every_released_app_is_known() {
+        let script = include_str!("../../../utilities/lib/apps.sh");
+        let line = script
+            .lines()
+            .find_map(|l| l.strip_prefix("ALL_APPS="))
+            .expect("ALL_APPS in apps.sh");
+        let k = known();
+        for id in line.trim_matches('"').split_whitespace() {
+            let e = k
+                .iter()
+                .find(|e| e.id == id)
+                .unwrap_or_else(|| panic!("{id} is released but Rivet Welcome doesn't list it"));
+            let (prefix, bin) = match id {
+                "files" => ("v".to_string(), "rivet".to_string()),
+                "fetch" => ("rivet-fetch-v".to_string(), "rivetfetch".to_string()),
+                _ => (format!("rivet-{id}-v"), format!("rivet-{id}")),
+            };
+            assert_eq!(
+                (e.tag_prefix.as_str(), e.bin.as_str(), e.dist.as_str()),
+                (
+                    prefix.as_str(),
+                    bin.as_str(),
+                    format!("rivet-{id}").as_str()
+                ),
+                "{id}"
+            );
+        }
+        assert_eq!(k.len(), line.trim_matches('"').split_whitespace().count());
     }
 
     #[test]
