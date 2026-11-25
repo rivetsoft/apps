@@ -130,7 +130,7 @@ impl ColorApp {
             }
         }
         if app.live() {
-            watch_files(app.files_changed.clone(), cc.egui_ctx.clone());
+            watch_files(app.files_changed.clone(), (app.history_seen, app.palettes_seen), cc.egui_ctx.clone());
         }
         app
     }
@@ -553,11 +553,11 @@ impl ColorApp {
 }
 
 /// Look at the history file and the palettes folder once a second on a thread, and wake the
-/// window only when one of them changed; stops when the window is gone.
-fn watch_files(changed: Arc<AtomicBool>, ctx: egui::Context) {
+/// window only when one of them changed since `seen` (their times as the window read them);
+/// stops when the window is gone.
+fn watch_files(changed: Arc<AtomicBool>, mut seen: (Option<SystemTime>, Option<SystemTime>), ctx: egui::Context) {
     std::thread::spawn(move || {
         let look = || (store::changed(&store::history_path()), store::changed(&store::palettes_dir()));
-        let mut seen = look();
         while Arc::strong_count(&changed) > 1 {
             std::thread::sleep(std::time::Duration::from_secs(1));
             let now = look();
