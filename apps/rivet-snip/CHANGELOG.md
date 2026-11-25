@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- An idle window follows desktop colour changes right away.
+- An idle window follows desktop color changes right away.
 
 ## 0.1.0
 
