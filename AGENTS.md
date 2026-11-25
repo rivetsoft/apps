@@ -22,6 +22,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-snip` | `rivet-snip` | Clips and marks up screenshots. A compositor hands it the picture as a file or on standard input; `rivet-snip capture` takes one itself anywhere else. Unreleased; built from source. |
 | `apps/rivet-vice` | `rivet-vice` | The archive manager: opens an archive, shows what is in it, extracts all or some of it and makes new ones. Rivet Files' right-click menu opens an archive in it. Unreleased; built from source. |
 | `apps/rivet-calendar` | `rivet-calendar` | A calendar kept in plain `.ics` folders (the vdir layout vdirsyncer and khal use): day, week, month and agenda views, an event editor, repeating events. Its shell plugin gives the panel calendar its events. Unreleased; built from source. |
+| `apps/rivet-color` | `rivet-color` | The color picker: picks a color from the screen with its own loupe over a held-still screen (grim and layer-shell; else niri, hyprpicker, slurp or the portal) and copies it, with its shades, harmonies and contrast, a history and palettes kept as GIMP palette files. Its shell plugin puts the last color on the panel and `@color` in the launcher. Unreleased; built from source. |
 | `apps/rivet-fetch` | `rivetfetch` | A fastfetch-style summary of the computer in the terminal, beside the mascot drawn from his pixel art. No window, so it uses `rivet-xdg` but not `rivet-look` or `rivet-kit`. Unreleased; built from source. |
 
 | Crate | What it holds |
@@ -116,7 +117,7 @@ the crate. A piece that is still written as part of one app's window needs lifti
   Other Rivet apps ask the portal, not Rivet Files; Rivet Shell's folder and picture choosers
   do the same (`src/portal.rs`).
 - **Shell plugins.** An app joins the shell through a plugin: a folder with a `plugin.conf`
-  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`, `rivet-edit shell-plugin`, `rivet-calendar shell-plugin`), kept
+  whose program is the app itself (`rivet-notes shell-plugin`, `rivet-ftp shell-plugin`, `rivet-edit shell-plugin`, `rivet-calendar shell-plugin`, `rivet-color shell-plugin`), kept
   running and speaking JSON lines. The shell shows what it says (a panel item, a menu, launcher
   entries under `@notes`, `@ftp` or `@edit`) and tells it what was chosen; the app then opens its own
   window (`rivet-notes FOLDER --note PATH`, `rivet-ftp open NAME`). Read PLUGINS.md before

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **A Color plugin** (Rivet Color's): the color you picked last on the panel. Click it to pick a new one or copy a recent one, or middle-click to pick straight away. In the launcher, `@color` lists your recent colors and palettes, and `@color #d53f8c` copies a color in the format you use.
 - **Hermes Agent in the AI item**: when Hermes Agent is installed, the AI Usage popup shows its last 7 days: sessions, messages, tool calls, tokens, active time and cost. Turn it off on the AI item's page in Settings.
 - **Discord can take the theme's colors**: with BetterDiscord or Vencord in Discord, or with Vesktop or Equibop, turn it on under Applications in Settings, then turn on the Rivet theme in Discord's own Themes settings. Discord's layout stays as it is.
 - **The HUD**: a screen of widgets that opens over your windows, with a grid of apps, the calendar, the events coming up, what's playing, the weather and the system's readings. Open it with a key (`rivet-shell msg hud`) or from a corner of the screen, chosen on the Widgets page. Type to narrow the apps and press Enter to open the first.

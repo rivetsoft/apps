@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Color
+GenericName=Color Picker
+Comment=Pick colors from the screen and keep them in palettes
+Exec=rivet-color
+Icon=rivet-color
+Terminal=false
+Categories=Graphics;Utility;
+Keywords=rivet;color;colour;picker;eyedropper;palette;hex;rgb;hsl;shades;complementary;
+StartupWMClass=rivet-color
+Actions=pick;
+
+[Desktop Action pick]
+Name=Pick a Color
+Exec=rivet-color pick

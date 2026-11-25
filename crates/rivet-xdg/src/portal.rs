@@ -126,3 +126,21 @@ pub fn screenshot() -> Result<Option<PathBuf>, String> {
     let _: OwnedObjectPath = shots.call("Screenshot", &("", opts)).map_err(|e| format!("the desktop can't take a screenshot for an app (xdg-desktop-portal): {e}"))?;
     answered(&mut answers, "uri")
 }
+
+/// Asks the desktop to let the person pick a color from the screen (xdg-desktop-portal's
+/// Screenshot, PickColor): red, green and blue, 0 to 1. `Ok(None)` when it was cancelled.
+pub fn pick_color() -> Result<Option<[f64; 3]>, String> {
+    let conn = Connection::session().map_err(|e| format!("no session bus ({e})"))?;
+    let (token, mut answers) = request(&conn)?;
+    let mut opts: HashMap<&str, Value> = HashMap::new();
+    opts.insert("handle_token", Value::from(token.as_str()));
+    let shots = Proxy::new(&conn, DEST, PATH, "org.freedesktop.portal.Screenshot").map_err(|e| e.to_string())?;
+    let _: OwnedObjectPath = shots.call("PickColor", &("", opts)).map_err(|e| format!("the desktop can't pick a color for an app (xdg-desktop-portal): {e}"))?;
+    let msg = answers.next().ok_or("the desktop gave no answer")?;
+    let (code, results): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize().map_err(|e| e.to_string())?;
+    if code != 0 {
+        return Ok(None);
+    }
+    let color = results.get("color").and_then(|v| v.try_clone().ok()).and_then(|v| <(f64, f64, f64)>::try_from(v).ok());
+    Ok(color.map(|(r, g, b)| [r, g, b]))
+}

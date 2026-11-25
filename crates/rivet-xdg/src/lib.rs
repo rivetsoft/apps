@@ -9,4 +9,6 @@ pub mod mime;
 pub mod places;
 pub mod trash;
 #[cfg(feature = "portal")]
+pub mod notify;
+#[cfg(feature = "portal")]
 pub mod portal;

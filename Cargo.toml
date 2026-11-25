@@ -9,6 +9,7 @@
 #   apps/rivet-snip    Rivet Snip (clips and marks up screenshots)
 #   apps/rivet-fetch   rivetfetch (the computer at a glance in the terminal)
 #   apps/rivet-calendar Rivet Calendar (events in plain .ics folders; the panel's calendar)
+#   apps/rivet-color   Rivet Color (picks colors from the screen; shades, harmonies, palettes)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.
