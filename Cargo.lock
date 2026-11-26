@@ -2616,6 +2616,7 @@ dependencies = [
  "eframe",
  "libc",
  "rivet-look",
+ "rivet-mem",
 ]
 
 [[package]]

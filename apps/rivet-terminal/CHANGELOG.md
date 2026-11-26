@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Memory freed by a closed window or pane goes back to the system once all of them have closed,
+  and again whenever Rivet Terminal sits idle with memory to spare.
+
 ## 0.3.2
 
 - Closing a tab or pane with a long scrollback now gives its memory back to the system, so

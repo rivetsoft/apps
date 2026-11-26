@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 rivet-look = { path = "../rivet-look" }
+rivet-mem = { path = "../rivet-mem" }
 eframe = { version = "0.37.0", default-features = false }
 alacritty_terminal = { version = "0.26", default-features = false }
 libc = "0.2.191"

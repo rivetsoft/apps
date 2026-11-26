@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Thumbnails take less memory**: they're kept at the size they're shown, so a folder of 3,000
+  photos keeps every thumbnail ready at the default zoom and scrolls back without loading them
+  again. Rivet Files gives the memory back to the system when you leave the folder or it sits
+  idle; after a long session in a folder of photos it holds about 120 MB instead of 180 MB.
+
 ## 0.11.0
 
 - **Big folders sort faster**: sorting 100,000 files by name or type takes about a tenth of the time it did when they were made in no particular order, as in most real folders, so changing the sort or typing in the filter keeps up.
