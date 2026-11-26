@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Closing a tab or pane with a long scrollback now gives its memory back to the system, so
+  Rivet Terminal shrinks again instead of staying at its largest size.
+- Scrollback keeps at most 100,000 lines, the most Preferences offers. A settings file that
+  asks for more gets 100,000, which keeps one pane under about half a gigabyte.
 - **Block pictures without gaps**: block characters such as ▀ and █ fill their whole cell, so
   pictures drawn with them, like rivetfetch's mascot, show without stripes between the lines.
 - An idle window follows desktop color changes right away.
@@ -12,10 +16,6 @@
 - When Rivet Terminal asks before closing something that is still running, Return closes it
   and Escape cancels.
 - In that question, Tab to Cancel and Return now cancels. It used to close anyway.
-- Closing a tab or pane with a long scrollback now gives its memory back to the system, so
-  Rivet Terminal shrinks again instead of staying at its largest size.
-- Scrollback keeps at most 100,000 lines, the most Preferences offers. A settings file that
-  asks for more gets 100,000, which keeps one pane under about half a gigabyte.
 
 ## 0.3.0
 

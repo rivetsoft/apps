@@ -2,15 +2,15 @@
 
 ## Unreleased
 
-- An idle window follows desktop color changes right away.
-
-## 0.3.1
-
 - **Large files stay quick**: an open file no longer costs time on every frame in proportion to
   its size, typing holds far less memory, and a window left alone with a file open stays idle
   instead of redrawing every few seconds. The language server hears about typing once you pause.
 - **Files over 8 MB or 200,000 lines don't open**, with a note saying so, instead of using
   several gigabytes of memory or running out. Find in Files still searches them.
+- An idle window follows desktop color changes right away.
+
+## 0.3.1
+
 - **A new icon**: a blue card of code with a cursor, drawn in the website's colors with a plum outline and a hard shadow.
 - **Return in a question presses the highlighted button**: Save, Replace, Discard and Move to
   Trash answer to Return. Tab moves between the buttons, and Return on Cancel cancels.
