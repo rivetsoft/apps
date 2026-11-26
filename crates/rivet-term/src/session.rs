@@ -238,7 +238,8 @@ impl Drop for Session {
         }
         // A long scrollback is freed in many small pieces that the allocator keeps for itself, so
         // the app would stay at its largest size after the pane is gone. Once the reader thread
-        // and this session have let go of the screen, hand the free memory back to the system.
+        // and this session have let go of the screen, ask for the free memory to go back to the
+        // system (one trim for all the panes of a closing window).
         let Some(reader) = self.reader.take() else { return };
         let term = Arc::downgrade(&self.term);
         let _ = std::thread::Builder::new().name("terminal cleanup".into()).spawn(move || {
@@ -249,10 +250,7 @@ impl Drop for Session {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            #[cfg(all(target_os = "linux", target_env = "gnu"))]
-            unsafe {
-                libc::malloc_trim(0);
-            }
+            rivet_mem::alloc::trim_soon();
         });
     }
 }

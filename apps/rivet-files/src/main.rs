@@ -43,6 +43,7 @@ pub fn measuring() -> bool {
 pub static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
 fn main() -> eframe::Result {
+    rivet_kit::mem::alloc::setup();
     STARTED.get_or_init(std::time::Instant::now);
     // A bug that stops Rivet leaves a report on this computer (shown on the next start).
     crash::install();

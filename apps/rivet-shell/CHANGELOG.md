@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Less memory**: after a long session of changing wallpapers and opening popups, Rivet Shell holds
+  about 46 MB instead of 108 MB, and it starts at 45 MB instead of 64 MB. Every panel and popup
+  shares one copy of the interface font.
+
 ## 0.1.1
 
 - **A quieter desktop when idle**: with Processor and Memory on a panel, only that panel redraws, and only when the numbers it shows change, and not while it is rolled up or hidden. Before, every panel redrew about once a second.

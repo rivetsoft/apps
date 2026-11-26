@@ -231,6 +231,7 @@ fn plugin_command(args: &[String]) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    rivet_kit::mem::alloc::setup();
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut screenshot = None;
     if let Some(i) = args.iter().position(|a| a == "--screenshot") {
