@@ -81,6 +81,16 @@ app_of_tag() {
     done | head -n 1
 }
 
+# The first screenshot in a README (one from docs/screenshots), as a Markdown picture at a release
+# tag, for the top of that release's notes: release_shot apps/rivet-notes/README.md rivet-notes-v0.4.2
+release_shot() {
+    line=$(grep -m1 -E '^!\[[^]]*\]\([^)]*docs/screenshots/[^)]+\)' "$1") || {
+        echo "$1 has no screenshot from docs/screenshots to open the release notes with." >&2
+        return 1
+    }
+    printf '%s\n\n' "$line" | sed -E "s#\]\([^)]*docs/screenshots/#](https://raw.githubusercontent.com/rivetsoft/apps/$2/docs/screenshots/#"
+}
+
 # The app's version, from its Cargo.toml.
 app_version() {
     sed -n 's/^version = "\(.*\)"/\1/p' "$APP/Cargo.toml" | head -1

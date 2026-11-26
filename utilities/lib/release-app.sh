@@ -67,7 +67,8 @@ rm -rf "$STAGE"
 # The same program as one AppImage file (nothing to install).
 sh ./utilities/lib/appimage.sh "$APP_ID"
 
-awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "$NOTES"
+release_shot "$APP/README.md" "$TAG" > "$NOTES"
+awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 >> "$NOTES"
 if [ -n "$STABLE" ]; then ALPHA=; else ALPHA="
 $TITLE is an early alpha: keep backups of what you use it with.
 "; fi

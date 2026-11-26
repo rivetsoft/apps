@@ -14,7 +14,7 @@ Softcore is released from its own repository and has no AppImage; it isn't cover
 | AppImage | `Rivet_Files-0.10.0-x86_64.AppImage` | `Rivet_Notes-0.4.1-x86_64.AppImage` |
 | Checksums | a `.sha256` beside each file | the same |
 | Source | GitHub's "Source code" archives at the tag | the same |
-| Notes | the version's section of `CHANGELOG.md`, then how to install | the same |
+| Notes | the README's first screenshot, the version's section of `CHANGELOG.md`, then how to install | the same |
 
 Notes, Edit, Terminal and Files are full releases. The rest are pre-releases, which Rivet
 Welcome badges "Alpha" and the website calls alpha: `STABLE` in
