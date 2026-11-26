@@ -18,6 +18,12 @@ resolver = "3"
 members = ["crates/*", "apps/*"]
 default-members = ["apps/rivet-files"]
 
+# Debug builds run close to release speed and still rebuild as fast: our own crates at
+# opt-level 1 (keeping debug assertions and debuginfo), dependencies at 2, compiled once and
+# cached. Numbers in docs/development.md.
+[profile.dev]
+opt-level = 1
+
 [profile.dev.package."*"]
 opt-level = 2
 
@@ -31,3 +37,11 @@ opt-level = 3
 
 [profile.release]
 opt-level = 3
+
+# What the release downloads (archive, AppImage) are built with, through
+# utilities/lib/portable-build.sh: 13–20% smaller binaries for about 30% more build time.
+# Builds from source (cargo build --release, rivet-dev install, AUR, Flatpak) keep release.
+[profile.dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1

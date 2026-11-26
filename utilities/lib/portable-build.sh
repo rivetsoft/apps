@@ -1,5 +1,7 @@
 #!/bin/sh
-# Build the release binary linked for an old glibc, regardless of the host.
+# Build the release binary linked for an old glibc, regardless of the host, with the dist profile
+# (Cargo.toml): fat LTO, one codegen unit. Builds from source (install-app.sh, AUR, Flatpak) keep the
+# faster-building release profile.
 #
 # Host linkers bind atan2f/acosf to whatever libm they have. On glibc 2.43 that
 # is GLIBC_2.43, and the binary then refuses to start on Debian 13 and older.
@@ -24,7 +26,7 @@ if [ ! -e "$libs/libxkbcommon.so" ]; then
     ln -sf libxkbcommon.so.0 "$libs/libxkbcommon.so"
 fi
 echo "Linking $pkg for glibc $link ($target) with $($CARGO_ZIGBUILD_ZIG_PATH version)"
-RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-L native=$libs" cargo zigbuild --release --locked --target "$target" -p "$pkg"
+RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-L native=$libs" cargo zigbuild --profile dist --locked --target "$target" -p "$pkg"
 bin=$("$ROOT/utilities/lib/portable-bin.sh")
 [ -x "$bin" ] || { echo "expected $bin" >&2; exit 1; }
 "$ROOT/utilities/lib/check-glibc.sh" --max "$GLIBC_MAX_VERSION" "$bin"

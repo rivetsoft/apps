@@ -30,6 +30,34 @@ it:
 `utilities/rivet-dev install notes` (or `ftp`, `files`…) builds an app and installs it for you,
 in `~/.local/bin` and your app launcher.
 
+### Debug builds
+
+Debug builds (plain `cargo build`) are optimized enough to use every day: the workspace's own
+crates at opt-level 1, dependencies at 2 (rivet-kit and rivet-cal at 3), with debug assertions
+and debuginfo kept. Dependencies are compiled once and cached, so rebuilding after an edit
+takes as long as it did unoptimized. Softcore's repository sets the same.
+
+The first debug build after this change (November 2026) recompiles the workspace's crates once,
+about a minute; dependencies aren't rebuilt. Measured on a 22-core machine, `-j 12`:
+
+| | opt-level 0 (before) | opt-level 1 (now) | release |
+| --- | ---: | ---: | ---: |
+| Rebuild after editing `rivet-files` | 3.2–3.3 s | 3.2–3.4 s | |
+| Rebuild after editing `rivet-shell` | 4.7–4.9 s | 4.8–5.0 s | |
+| Rivet Shell, one panel draw (median) | 17–21 ms | 5.8–6.0 ms | 5.7–5.8 ms |
+| Rivet Shell, idle CPU (6 windows, 40 s) | 2.8–3.0% | 1.45% | 1.3–1.4% |
+| Rivet Files, sort 100,000 names | 1.08 s | 0.135 s | 0.12 s |
+| Rivet Files, read 100,000 items | 1.33 s | 0.27 s | 0.24 s |
+
+The one-time recompile took 75 s for Files and Shell together. A step through code in a
+debugger may show some variables as optimized out; for one crate you are debugging, set
+`[profile.dev.package.NAME] opt-level = 0` locally.
+
+Release downloads (the archive Rivet Welcome installs, and the AppImage) are built with the
+`dist` profile (fat LTO, one codegen unit: 13–20% smaller, about 30% longer to build) by
+`utilities/rivet-dev release` and `appimage`. Builds from source (`cargo build --release`,
+`utilities/rivet-dev install`, the AUR package and the Flatpak) keep the faster release profile.
+
 ## Checking a change
 
 ```sh
