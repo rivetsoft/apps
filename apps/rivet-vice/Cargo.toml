@@ -1,6 +1,6 @@
 [package]
 name = "rivet-vice"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Open archives, take out all or some of what is in them, and make new ones"
