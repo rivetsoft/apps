@@ -103,9 +103,9 @@ impl LiveLook {
         self.fonts_set = true;
         let mut defs = egui::FontDefinitions::default();
         let mut load = |name: &str, path: Option<std::path::PathBuf>| -> bool {
-            match path.and_then(|p| std::fs::read(p).ok()) {
-                Some(bytes) => {
-                    defs.font_data.insert(name.into(), Arc::new(egui::FontData::from_owned(bytes)));
+            match path.and_then(|p| fonts::data(&p)) {
+                Some(data) => {
+                    defs.font_data.insert(name.into(), data);
                     true
                 }
                 None => false,
@@ -132,8 +132,8 @@ impl LiveLook {
         ed.extend(base);
         // Its bold face, found by family name (the editor's, else the interface's).
         let fam = if ed_ok { Some(editor_font.to_string()) } else { fonts::resolve(ui_font).map(|(f, _)| f) };
-        let bold_ok = fam.and_then(|f| fonts::file_for_style(&f, "Bold")).and_then(|p| std::fs::read(p).ok()).map(|bytes| {
-            defs.font_data.insert("editor-bold".into(), Arc::new(egui::FontData::from_owned(bytes)));
+        let bold_ok = fam.and_then(|f| fonts::file_for_style(&f, "Bold")).and_then(|p| fonts::data(&p)).map(|data| {
+            defs.font_data.insert("editor-bold".into(), data);
         });
         let mut bold = ed.clone();
         if bold_ok.is_some() {
@@ -202,9 +202,9 @@ impl LiveLook {
             self.fonts_set = true;
             let mut defs = egui::FontDefinitions::default();
             if let Some((_, path)) = fonts::resolve("")
-                && let Ok(bytes) = std::fs::read(&path)
+                && let Some(data) = fonts::data(&path)
             {
-                defs.font_data.insert("ui-font".into(), Arc::new(egui::FontData::from_owned(bytes)));
+                defs.font_data.insert("ui-font".into(), data);
                 defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "ui-font".into());
             }
             ctx.set_fonts(defs);

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A `rivet-memory` module shows the memory each running Rivet app uses, largest first.
+
 ## 0.1.0
 
 - **rivetfetch, a new program**: this computer at a glance in the terminal, beside Rivet the

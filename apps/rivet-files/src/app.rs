@@ -449,8 +449,8 @@ type MonoFont = Option<(String, PathBuf, Arc<Vec<u8>>)>;
 
 fn load_mono(choice: &str) -> MonoFont {
     let (name, path) = crate::fonts::resolve_mono(choice)?;
-    let bytes = std::fs::read(&path).ok()?;
-    Some((name, path, Arc::new(bytes)))
+    let bytes = rivet_kit::mem::shared_file(&path)?;
+    Some((name, path, bytes))
 }
 
 /// The pixel size icons are rendered at: the next of a few fixed steps, so dragging the zoom
@@ -828,8 +828,8 @@ impl RivetApp {
         self.applied_font = Some(key);
         let mut defs = egui::FontDefinitions::default();
         if let Some((name, path)) = crate::fonts::resolve(&self.s.ui_font)
-            && let Ok(bytes) = std::fs::read(&path) {
-                defs.font_data.insert("ui-font".into(), Arc::new(egui::FontData::from_owned(bytes)));
+            && let Some(data) = crate::fonts::data(&path) {
+                defs.font_data.insert("ui-font".into(), data);
                 defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "ui-font".into());
                 self.font_name = name;
             }
@@ -860,7 +860,7 @@ impl RivetApp {
         };
         let mono_path: Option<(String, PathBuf)> = mono.as_ref().map(|(n, p, _)| (n.clone(), p.clone()));
         if let Some((name, _, bytes)) = &mono {
-            defs.font_data.insert("mono-font".into(), Arc::new(egui::FontData::from_owned(bytes.as_ref().clone())));
+            defs.font_data.insert("mono-font".into(), Arc::new(egui::FontData::from_blob(bytes.clone(), 0)));
             defs.families.entry(egui::FontFamily::Monospace).or_default().insert(0, "mono-font".into());
             if self.s.terminal {
                 defs.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "mono-font".into());
@@ -951,7 +951,7 @@ impl RivetApp {
     fn entry_texture(&mut self, ctx: &egui::Context, e: &Entry, px: f32) -> Option<egui::TextureHandle> {
         // Terminal mode shows glyphs in the file list; pictures are seen in Peek and Preview.
         if self.s.show_thumbnails && !self.s.terminal && px >= 32.0 && !e.is_dir && thumbs::thumbnailable(&e.mime)
-            && let Some(t) = self.thumbs.get(&e.path, e.size, &e.mime, e.modified) {
+            && let Some(t) = self.thumbs.get(&e.path, e.size, &e.mime, e.modified, (px * ctx.pixels_per_point()).ceil() as u32) {
                 return Some(t);
             }
         self.entry_icon(ctx, e, px, false)

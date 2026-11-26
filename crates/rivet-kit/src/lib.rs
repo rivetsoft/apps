@@ -5,6 +5,9 @@ pub mod scale;
 pub mod soft;
 pub mod wldrop;
 
+/// Memory hygiene: the allocator's setup, trims, byte-budgeted caches, memory readouts.
+pub use rivet_mem as mem;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};

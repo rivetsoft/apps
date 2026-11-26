@@ -13,6 +13,7 @@ name = "rivetfetch"
 path = "src/main.rs"
 
 [dependencies]
+rivet-mem = { path = "../../crates/rivet-mem" }
 rivet-xdg = { path = "../../crates/rivet-xdg" }
 # uname, statvfs and isatty.
 libc = "0.2.191"

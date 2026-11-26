@@ -2495,6 +2495,7 @@ name = "rivet-fetch"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "rivet-mem",
  "rivet-xdg",
  "wayland-client",
 ]
@@ -2526,6 +2527,7 @@ dependencies = [
  "image",
  "libc",
  "raw-window-handle",
+ "rivet-mem",
  "wayland-backend",
  "wayland-client",
 ]
@@ -2537,6 +2539,7 @@ dependencies = [
  "eframe",
  "image",
  "resvg",
+ "rivet-mem",
  "rivet-xdg",
  "skrifa",
 ]
@@ -2549,7 +2552,15 @@ dependencies = [
  "image",
  "png",
  "rivet-look",
+ "rivet-mem",
  "rivet-xdg",
+]
+
+[[package]]
+name = "rivet-mem"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

@@ -1,0 +1,11 @@
+[package]
+name = "rivet-mem"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Memory hygiene shared by the Rivet apps: the allocator's settings, handing freed memory back, caches kept to a size in bytes, file bytes read once per process, and how much memory a process uses"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+libc = "0.2.191"

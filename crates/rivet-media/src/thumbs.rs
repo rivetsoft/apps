@@ -10,6 +10,7 @@
 //! All on background threads; the view asks with [`Thumbnailer::get`] and repaints when ready.
 
 use eframe::egui;
+use rivet_mem::ByteCache;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,21 +31,29 @@ struct Job {
     path: PathBuf,
     mime: String,
     mtime: Option<SystemTime>,
+    /// The texture's size: the thumbnail is made at full size for the shared cache, and kept
+    /// in memory only as big as it is shown.
+    px: u32,
 }
 
 pub struct Thumbnailer {
     tx: Sender<Job>,
-    rx: Receiver<(PathBuf, Option<SystemTime>, Option<egui::ColorImage>)>,
+    rx: Receiver<(PathBuf, Option<SystemTime>, u32, Option<egui::ColorImage>)>,
     pending: HashSet<PathBuf>,
-    /// Finished thumbnails: the texture, when it was last asked for, and the file's modified
-    /// time it was made from (a newer file gets a new thumbnail).
-    done: HashMap<PathBuf, (Option<egui::TextureHandle>, u64, Option<SystemTime>)>,
-    tick: u64,
+    /// Finished thumbnails: the texture, the file's modified time it was made from (a newer
+    /// file gets a new thumbnail), and the size it was made for (a bigger zoom gets a bigger one).
+    done: ByteCache<PathBuf, (Option<egui::TextureHandle>, Option<SystemTime>, u32)>,
 }
 
-/// Thumbnails kept in memory (the least recently shown go first; they come back from the disk
-/// cache quickly when needed again).
-const KEEP: usize = 800;
+/// Memory the thumbnails shown may take: about 500 at full size, or a folder of 3,000 photos at
+/// Rivet Files' default zoom. The least recently shown go first; they come back from the disk
+/// cache quickly.
+const BUDGET: usize = 128 << 20;
+/// The sizes textures are made at: the next one up from the size shown, so changing the zoom
+/// doesn't make new textures at every step.
+const STEPS: [u32; 3] = [64, 128, THUMB_PX];
+/// What a failed thumbnail costs to remember (its key and slot).
+const MISSING: usize = 256;
 
 /// Pictures Rivet decodes itself.
 pub fn can_thumbnail(mime: &str) -> bool {
@@ -70,46 +79,46 @@ impl Thumbnailer {
                 let job = { wrx.lock().unwrap_or_else(|e| e.into_inner()).recv() };
                 let Ok(job) = job else { break };
                 let img = thumbnail(&job);
-                if wtx.send((job.path, job.mtime, img)).is_err() {
+                if wtx.send((job.path, job.mtime, job.px, img)).is_err() {
                     break;
                 }
                 ctx.request_repaint();
             });
         }
-        Self { tx, rx, pending: HashSet::new(), done: HashMap::new(), tick: 0 }
+        Self { tx, rx, pending: HashSet::new(), done: ByteCache::new(BUDGET) }
     }
 
     pub fn poll(&mut self, ctx: &egui::Context) {
-        while let Ok((p, mtime, img)) = self.rx.try_recv() {
+        while let Ok((p, mtime, px, img)) = self.rx.try_recv() {
             self.pending.remove(&p);
+            let bytes = img.as_ref().map_or(MISSING, |i| i.pixels.len() * 4 + MISSING);
             let tex = img.map(|i| ctx.load_texture(format!("thumb:{}", p.display()), i, egui::TextureOptions::LINEAR));
-            self.tick += 1;
-            self.done.insert(p, (tex, self.tick, mtime));
-        }
-        if self.done.len() > KEEP + KEEP / 4 {
-            let mut ages: Vec<u64> = self.done.values().map(|(_, t, _)| *t).collect();
-            ages.sort_unstable();
-            let cut = ages[ages.len() - KEEP];
-            self.done.retain(|_, (_, t, _)| *t >= cut);
+            self.done.insert(p, (tex, mtime, px), bytes);
         }
     }
 
-    pub fn get(&mut self, path: &Path, size: u64, mime: &str, mtime: Option<SystemTime>) -> Option<egui::TextureHandle> {
-        self.tick += 1;
-        if let Some((t, used, made_from)) = self.done.get_mut(path) {
-            // Still the same file: keep it (even while a new one is being made).
-            *used = self.tick;
-            if *made_from == mtime || self.pending.contains(path) {
+    /// Memory the thumbnails held take now.
+    pub fn bytes(&self) -> usize {
+        self.done.bytes()
+    }
+
+    /// The thumbnail of `path` for showing `px` physical pixels wide, when it's ready.
+    pub fn get(&mut self, path: &Path, size: u64, mime: &str, mtime: Option<SystemTime>, px: u32) -> Option<egui::TextureHandle> {
+        let key = path.to_path_buf();
+        let px = STEPS.iter().copied().find(|&s| s >= px).unwrap_or(THUMB_PX);
+        if let Some((t, made_from, made_px)) = self.done.get(&key) {
+            // Still the same file, big enough: keep it (even while a new one is being made).
+            if (*made_from == mtime && *made_px >= px) || self.pending.contains(path) {
                 return t.clone();
             }
         }
         let ours = can_thumbnail(mime);
         if (!ours || size <= MAX_FILE) && !self.pending.contains(path) {
             self.pending.insert(path.to_path_buf());
-            let _ = self.tx.send(Job { path: path.to_path_buf(), mime: mime.to_string(), mtime });
+            let _ = self.tx.send(Job { path: path.to_path_buf(), mime: mime.to_string(), mtime, px });
         }
-        // A changed file keeps its old thumbnail until the new one is ready.
-        self.done.get(path).and_then(|(t, _, _)| t.clone())
+        // A changed file, or a bigger zoom, keeps the old thumbnail until the new one is ready.
+        self.done.peek(&key).and_then(|(t, _, _)| t.clone())
     }
 
 }
@@ -128,7 +137,7 @@ fn thumbnail(job: &Job) -> Option<egui::ColorImage> {
     // 1. The shared cache (the right size first, then bigger, then smaller).
     for dir in ["large", "x-large", "xx-large", "normal"] {
         if let Some(img) = read_cached(&cache.join(dir).join(&name), mtime) {
-            return Some(to_color_image(&backdrop(img, &job.mime)));
+            return Some(to_color_image(&fit(backdrop(img, &job.mime), job.px)));
         }
     }
     // Tried before and failed (and the file hasn't changed since).
@@ -149,7 +158,7 @@ fn thumbnail(job: &Job) -> Option<egui::ColorImage> {
             None => write_png(&cache.join("fail/rivet-files").join(&name), &egui::ColorImage::new([1, 1], vec![egui::Color32::TRANSPARENT]), &uri, mtime),
         }
     }
-    made.map(|i| to_color_image(&backdrop(i, &job.mime)))
+    made.map(|i| to_color_image(&fit(backdrop(i, &job.mime), job.px)))
 }
 
 /// Font samples are black on transparent: show them on white, as other apps do.
@@ -160,6 +169,14 @@ fn backdrop(img: image::RgbaImage, mime: &str) -> image::RgbaImage {
     let mut out = image::RgbaImage::from_pixel(img.width(), img.height(), image::Rgba([255, 255, 255, 255]));
     image::imageops::overlay(&mut out, &img, 0, 0);
     out
+}
+
+/// The thumbnail at the size it's shown, when that's smaller.
+fn fit(img: image::RgbaImage, px: u32) -> image::RgbaImage {
+    if img.width() <= px && img.height() <= px {
+        return img;
+    }
+    image::DynamicImage::ImageRgba8(img).thumbnail(px, px).to_rgba8()
 }
 
 fn make_picture(path: &Path) -> Option<image::RgbaImage> {
