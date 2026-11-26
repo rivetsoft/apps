@@ -63,8 +63,22 @@ pub struct Heap {
 pub fn heap() -> Option<Heap> {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     {
-        let m = unsafe { libc::mallinfo2() };
-        Some(Heap { used: m.uordblks + m.hblkhd, free: m.fordblks })
+        // mallinfo2 is glibc 2.33 and later, and the portable builds link against 2.31, so it's
+        // looked up when the program runs. Older glibc has only mallinfo, whose counts are
+        // 32-bit (they wrap past 4 GB).
+        type Mallinfo2 = unsafe extern "C" fn() -> libc::mallinfo2;
+        static MALLINFO2: std::sync::OnceLock<Option<Mallinfo2>> = std::sync::OnceLock::new();
+        let found = *MALLINFO2.get_or_init(|| {
+            let sym = unsafe { libc::dlsym(libc::RTLD_DEFAULT, c"mallinfo2".as_ptr()) };
+            (!sym.is_null()).then(|| unsafe { std::mem::transmute::<*mut libc::c_void, Mallinfo2>(sym) })
+        });
+        if let Some(mallinfo2) = found {
+            let m = unsafe { mallinfo2() };
+            return Some(Heap { used: m.uordblks + m.hblkhd, free: m.fordblks });
+        }
+        #[allow(deprecated)]
+        let m = unsafe { libc::mallinfo() };
+        Some(Heap { used: m.uordblks as u32 as usize + m.hblkhd as u32 as usize, free: m.fordblks as u32 as usize })
     }
     #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
     None
