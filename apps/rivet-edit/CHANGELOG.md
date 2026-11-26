@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2
 
 - **Large files stay quick**: an open file no longer costs time on every frame in proportion to
   its size, typing holds far less memory, and a window left alone with a file open stays idle
