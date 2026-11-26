@@ -52,7 +52,7 @@ Releasing
 Building
   appimage [APP]                   dist/Rivet_Files-VERSION-ARCH.AppImage, or that app's (needs
                                    squashfs-tools)
-  portable                         Release binary linked against glibc 2.31 (via Zig)
+  portable                         Release binary (dist profile) linked against glibc 2.31 (via Zig)
   portable-bin                     Print the path of that binary
   check-glibc --max V FILE…        Fail if FILE needs a GLIBC symbol newer than V
 
