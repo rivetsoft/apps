@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - The window no longer redraws itself every second while you leave it alone; a color picked
   from the panel still shows in its history within a second.
