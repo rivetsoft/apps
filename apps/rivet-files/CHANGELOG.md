@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 
 - **Big folders sort faster**: sorting 100,000 files by name or type takes about a tenth of the time it did when they were made in no particular order, as in most real folders, so changing the sort or typing in the filter keeps up.
 - **Smoother with many files selected**: right-clicking a large selection no longer slows the window down, and Peek reads an item's owner, group and dates once instead of on every frame, so it stays quick on network folders.

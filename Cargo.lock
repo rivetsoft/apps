@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "rivet"
-version = "0.10.0"
+version = "0.11.0"
 dependencies = [
  "async-io",
  "chrono",
@@ -2428,7 +2428,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-calendar"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "chrono",
  "eframe",
@@ -2441,7 +2441,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-color"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "rivet-kit",
@@ -2462,7 +2462,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-edit"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "arboard",
  "chrono",
@@ -2501,7 +2501,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-ftp"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "eframe",
@@ -2554,7 +2554,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-notes"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "chrono",
  "eframe",
@@ -2566,7 +2566,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-shell"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "calloop 0.14.5",
  "calloop-wayland-source 0.4.1",
@@ -2587,7 +2587,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-snip"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "image",
@@ -2609,7 +2609,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-terminal"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "arboard",
  "eframe",
@@ -2621,7 +2621,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-vice"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "rivet-archive",
@@ -2632,7 +2632,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-welcome"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "eframe",
  "libc",

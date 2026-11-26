@@ -17,6 +17,7 @@ case "${RIVET_APP:-files}" in
     files | rivet-files | rivet) ;;
     *) exec sh ./utilities/lib/release-app.sh "$@" ;;
 esac
+. ./utilities/lib/apps.sh
 APP=apps/rivet-files   # Rivet Files: its version, changelog, desktop file and icons
 
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' $APP/Cargo.toml | head -1)
@@ -70,8 +71,9 @@ rm -rf "$STAGE"
 ./utilities/lib/appimage.sh
 APPIMAGE="dist/Rivet_Files-$VERSION-$ARCH.AppImage"
 
-# Release notes = this version's CHANGELOG section.
-awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 > "dist/notes-$VERSION.md"
+# Release notes = the README's screenshot, then this version's CHANGELOG section.
+release_shot "$APP/README.md" "$TAG" > "dist/notes-$VERSION.md"
+awk -v v="## $VERSION" '$0 ~ "^## " { p = (index($0, v) == 1) } p' "$APP/CHANGELOG.md" | tail -n +2 >> "dist/notes-$VERSION.md"
 cat >> "dist/notes-$VERSION.md" <<EOF
 
 ### Install
