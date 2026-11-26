@@ -1,6 +1,6 @@
 [package]
 name = "rivet-notes"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Markdown notes in plain folders (vaults), with frontmatter and tags, built on Rivet's core"
