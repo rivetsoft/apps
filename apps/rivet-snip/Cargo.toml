@@ -1,6 +1,6 @@
 [package]
 name = "rivet-snip"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Clip and mark up screenshots: crop, arrows, boxes, text, numbered steps and blur, then copy or save"
