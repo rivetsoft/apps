@@ -28,7 +28,8 @@ app, or `--workspace` for everything.
 | Crate | What it holds |
 | --- | --- |
 | `rivet-look` | The shared look: live desktop colours, fonts, icon themes, Rivet's own icons, code colours, the egui theme, in-app windows. |
-| `rivet-kit` | Checks and screenshots: the software renderer that draws a window in memory. Built optimised even in debug builds, so put pixel-heavy code here. |
+| `rivet-kit` | Checks and screenshots: the software renderer that draws a window in memory. Built optimised even in debug builds, so put pixel-heavy code here. Re-exports `rivet-mem` as `rivet_kit::mem`. |
+| `rivet-mem` | Memory hygiene with no interface: the allocator's setup (call `alloc::setup()` first in `main`), handing freed memory back, caches kept to a size in bytes, file bytes read once per process, and how much memory a process uses. Numbers in `docs/memory.md`. |
 | `rivet-xdg` | Desktop plumbing with no interface: XDG folders, bookmarks, drives, file types, default apps, launching, the trash, secrets in the keyring. |
 | `rivet-media` | Previews: pictures, video frames, audio, text, thumbnails, the light box. |
 | `rivet-term` | The terminal: a shell in a pseudo-terminal, drawn as an egui widget. |
@@ -53,6 +54,7 @@ No app depends on another app; they only depend on crates. Who uses what:
 | Crate | Used by |
 | --- | --- |
 | `rivet-look`, `rivet-kit`, `rivet-xdg` | every app |
+| `rivet-mem` | through `rivet-kit`, `rivet-look` and `rivet-media`; Fetch directly. `alloc::setup()`: Shell, Files, Terminal |
 | `rivet-media` | Files, FTP, Shell |
 | `rivet-term` | Terminal (and meant for Edit's panel) |
 | `rivet-connections` | FTP |

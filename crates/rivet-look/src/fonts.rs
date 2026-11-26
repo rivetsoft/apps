@@ -1,9 +1,11 @@
 //! UI fonts: the desktop's font (from GTK settings / gsettings), any installed family
 //! (found with fontconfig's command-line tools — no library linked), and a size.
 
-use std::path::PathBuf;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crate::places;
 
@@ -104,8 +106,32 @@ pub fn families() -> Vec<String> {
     v
 }
 
+/// A font file ready for egui, shared by the whole process: every egui context that loads the
+/// same file (Rivet Shell has one per surface) uses the one copy of its bytes.
+pub fn data(path: &Path) -> Option<Arc<eframe::egui::FontData>> {
+    let bytes = rivet_mem::shared_file(path)?;
+    Some(Arc::new(eframe::egui::FontData::from_blob(bytes, 0)))
+}
+
+/// fontconfig's answers, kept for the life of the process: every egui context asks the same
+/// questions, and each answer is a program run. Only finds are kept, so a font installed while
+/// the app runs is still found.
+fn remembered(question: String, ask: impl FnOnce() -> Option<(String, PathBuf)>) -> Option<(String, PathBuf)> {
+    static ANSWERS: Mutex<Option<HashMap<String, (String, PathBuf)>>> = Mutex::new(None);
+    if let Some(a) = ANSWERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).get(&question) {
+        return Some(a.clone());
+    }
+    let a = ask()?;
+    ANSWERS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(HashMap::new).insert(question, a.clone());
+    Some(a)
+}
+
 /// The file for a family's regular face.
 pub fn file_for(family: &str) -> Option<PathBuf> {
+    remembered(format!("regular:{family}"), || Some((String::new(), ask_file_for(family)?))).map(|(_, p)| p)
+}
+
+fn ask_file_for(family: &str) -> Option<PathBuf> {
     let pattern = format!("{family}:style=Regular");
     let out = run("fc-match", &["-f", "%{family[0]}|%{file}", &pattern])?;
     let (got, file) = out.split_once('|')?;
@@ -119,6 +145,10 @@ pub fn file_for(family: &str) -> Option<PathBuf> {
 
 /// The file for a family's face in a style ("Bold"), when it has one.
 pub fn file_for_style(family: &str, style: &str) -> Option<PathBuf> {
+    remembered(format!("{style}:{family}"), || Some((String::new(), ask_file_for_style(family, style)?))).map(|(_, p)| p)
+}
+
+fn ask_file_for_style(family: &str, style: &str) -> Option<PathBuf> {
     let pattern = format!("{family}:style={style}");
     let out = run("fc-match", &["-f", "%{family[0]}|%{style[0]}|%{file}", &pattern])?;
     let mut it = out.splitn(3, '|');
@@ -151,10 +181,12 @@ pub fn resolve_mono(choice: &str) -> Option<(String, PathBuf)> {
         && let Some(p) = file_for(choice) {
             return Some((choice.to_string(), p));
         }
-    let out = run("fc-match", &["-f", "%{family[0]}|%{file}", "monospace:style=Regular"])?;
-    let (fam, file) = out.split_once('|')?;
-    let p = PathBuf::from(file.trim());
-    p.is_file().then(|| (fam.to_string(), p))
+    remembered("system monospace".into(), || {
+        let out = run("fc-match", &["-f", "%{family[0]}|%{file}", "monospace:style=Regular"])?;
+        let (fam, file) = out.split_once('|')?;
+        let p = PathBuf::from(file.trim());
+        p.is_file().then(|| (fam.to_string(), p))
+    })
 }
 
 /// Fallback when fontconfig's tools are missing: look for a few common files.
@@ -183,19 +215,19 @@ pub fn resolve(choice: &str) -> Option<(String, PathBuf)> {
         && let Some(p) = file_for(choice) {
             return Some((choice.to_string(), p));
         }
-    if let Some((fam, _)) = desktop_font()
+    if let Some((fam, _)) = desktop_font_cached()
         && let Some(p) = file_for(&fam) {
             return Some((fam, p));
         }
-    if let Some(p) = file_for("sans-serif").or_else(common_sans) {
+    remembered("system sans".into(), || {
+        let p = file_for("sans-serif").or_else(common_sans)?;
         // Its family name (as fontconfig knows it), so its bold face can be found too.
         let name = run("fc-scan", &["-f", "%{family[0]}", &p.to_string_lossy()])
             .map(|n| n.trim().to_string())
             .filter(|n| !n.is_empty())
             .unwrap_or_else(|| p.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Sans".into()));
-        return Some((name, p));
-    }
-    None
+        Some((name, p))
+    })
 }
 
 /// Finds a font for any character the app's fonts don't have (an emoji or a symbol in a

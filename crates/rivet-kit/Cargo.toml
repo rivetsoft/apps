@@ -13,5 +13,6 @@ fast_image_resize = "6.1.0"
 image = { version = "0.25", default-features = false, features = ["png"] }
 libc = "0.2.191"
 raw-window-handle = "0.6"
+rivet-mem = { path = "../rivet-mem" }
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"

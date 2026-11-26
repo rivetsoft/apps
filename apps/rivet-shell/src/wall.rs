@@ -441,7 +441,7 @@ impl Gallery {
 
     /// A picture's thumbnail, once it's ready.
     pub fn thumb(&mut self, p: &Picture) -> Option<egui::TextureHandle> {
-        self.thumbs.as_mut()?.get(&p.path, p.size, p.mime(), p.mtime)
+        self.thumbs.as_mut()?.get(&p.path, p.size, p.mime(), p.mtime, 256)
     }
 }
 

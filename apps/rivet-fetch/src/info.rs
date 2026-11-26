@@ -23,7 +23,7 @@ impl Fact {
 }
 
 /// Every module, in the order shown when the settings don't choose.
-pub const MODULES: [(&str, &str); 24] = [
+pub const MODULES: [(&str, &str); 25] = [
     ("title", "user and host name"),
     ("separator", "a line under the title"),
     ("os", "the system's name and version"),
@@ -47,6 +47,7 @@ pub const MODULES: [(&str, &str); 24] = [
     ("battery", "the battery's charge"),
     ("locale", "the language setting"),
     ("rivet", "which Rivet apps are installed"),
+    ("rivet-memory", "memory each running Rivet app uses"),
     ("colors", "the terminal's 16 colours"),
 ];
 
@@ -86,6 +87,7 @@ pub fn gather(module: &str, gtk: &Gtk) -> Vec<Fact> {
         "battery" => battery(),
         "locale" => one("Locale", ["LC_ALL", "LANG"].iter().find_map(|k| std::env::var(k).ok().filter(|v| !v.is_empty()))),
         "rivet" => one("Rivet", rivet()),
+        "rivet-memory" => one("Rivet memory", rivet_memory()),
         _ => Vec::new(),
     }
 }
@@ -122,6 +124,7 @@ fn demo(module: &str) -> Vec<Fact> {
         "battery" => vec![Fact { key: "Battery".into(), value: "[Discharging]".into(), percent: Some(86.0), after: None }],
         "locale" => one("Locale", "en_US.UTF-8"),
         "rivet" => one("Rivet", "Files, Shell, Edit, Terminal, Notes, FTP, Snip (Shell running)"),
+        "rivet-memory" => one("Rivet memory", "Shell 118.40 MiB, Files 86.12 MiB, Terminal 61.03 MiB"),
         _ => Vec::new(),
     }
 }
@@ -691,6 +694,28 @@ fn rivet() -> Option<String> {
         s.push_str(" (Shell running)");
     }
     Some(s)
+}
+
+/// The memory the running Rivet apps use, largest first. Each app's processes are added up
+/// (its shell plugin included), counting memory they share with other programs in proportion.
+fn rivet_memory() -> Option<String> {
+    const MORE: [(&str, &str); 3] = [("rivet-calendar", "Calendar"), ("rivet-color", "Color"), ("rivet-vice", "Vice")];
+    let mut apps: Vec<(&str, u64)> = Vec::new();
+    for e in std::fs::read_dir("/proc").ok()?.flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else { continue };
+        let Some(comm) = read(e.path().join("comm")) else { continue };
+        let Some((_, name)) = RIVET_APPS.iter().chain(MORE.iter()).find(|(bin, _)| *bin == comm) else { continue };
+        let Some(u) = rivet_mem::Usage::of(pid) else { continue };
+        match apps.iter_mut().find(|(n, _)| n == name) {
+            Some((_, b)) => *b += u.pss,
+            None => apps.push((name, u.pss)),
+        }
+    }
+    if apps.is_empty() {
+        return None;
+    }
+    apps.sort_by_key(|(_, b)| std::cmp::Reverse(*b));
+    Some(apps.iter().map(|(n, b)| format!("{n} {}", bytes(*b))).collect::<Vec<_>>().join(", "))
 }
 
 #[cfg(test)]
