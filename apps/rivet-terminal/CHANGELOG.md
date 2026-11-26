@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.2
 
 - Closing a tab or pane with a long scrollback now gives its memory back to the system, so
   Rivet Terminal shrinks again instead of staying at its largest size.
