@@ -176,6 +176,7 @@ Grab the latest Rivet Files release (tags `vX.Y.Z`; the Rivet FTP and Rivet Note
 - **From source** — `utilities/rivet-dev install` (builds a release and adds Rivet to your app launcher)
 - **Flatpak** — a `.flatpak` bundle is attached to GitHub releases once CI has built it.
   It is not on Flathub until that submission is done; the manifest and the steps are in [packaging/README.md](packaging/README.md).
+  The app id is `io.github.rivetsoft.rivet-files`. Bundles up to 0.10.0 used `io.github.ulinaaron.rivet-files`; [moving from the old id](packaging/README.md#moving-from-the-old-id) takes two commands and no copying.
   Inside the sandbox, home, other disks, Trash and `~/.config` theme files are the real ones. Host `/usr` and `/etc` are under **Host system files** (`/run/host`).
 - **Arch Linux** — PKGBUILDs for `rivet-files-bin` (the release tarball) and `rivet-files` (built from the git tag) are in `packaging/aur`. They are not in the AUR until published; see [packaging/README.md](packaging/README.md).
 

@@ -71,7 +71,7 @@ else
 fi
 
 # App metadata (software centers show these): add this release at the top of <releases>.
-META=$APP/packaging/flatpak/io.github.ulinaaron.rivet-files.metainfo.xml
+META=$APP/packaging/flatpak/io.github.rivetsoft.rivet-files.metainfo.xml
 if [ -f "$META" ] && ! grep -q "<release version=\"$NEW\"" "$META"; then
     sed -i "0,/<releases>/s//<releases>\n    <release version=\"$NEW\" date=\"$(date +%Y-%m-%d)\"\/>/" "$META"
 fi

@@ -4,14 +4,15 @@ Name=Rivet Files
 GenericName=File Manager
 Comment=Browse and organize your files
 Exec=rivet %U
-Icon=io.github.ulinaaron.rivet-files
+Icon=io.github.rivetsoft.rivet-files
 Terminal=false
 StartupNotify=true
-StartupWMClass=io.github.ulinaaron.rivet-files
+StartupWMClass=io.github.rivetsoft.rivet-files
 Categories=System;FileTools;FileManager;
 MimeType=inode/directory;
 Keywords=folder;files;explorer;browser;manager;
 Actions=new-window;home;
+X-Flatpak-RenamedFrom=io.github.ulinaaron.rivet-files.desktop;
 
 [Desktop Action new-window]
 Name=New Window
