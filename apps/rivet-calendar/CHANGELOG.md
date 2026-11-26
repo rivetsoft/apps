@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - The panel's Calendar plugin and the window sit idle when nothing changes: a store of tens of
   thousands of events no longer costs a steady few percent of a core. Events saved by another
