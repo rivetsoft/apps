@@ -1,6 +1,6 @@
 [package]
 name = "rivet-shell"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 description = "A desktop shell for Wayland compositors (niri, Hyprland, Sway and others with the layer-shell protocol): panel, dock, desktop widgets, wallpaper with matugen colours, and settings, in the Rivet apps' look"
