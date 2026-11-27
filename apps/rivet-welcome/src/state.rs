@@ -33,7 +33,9 @@ impl Row {
     /// Rivet Welcome running without being installed: the release that would install it.
     pub fn install_copy(&self) -> Option<&(Release, Version)> {
         let i = self.installed.as_ref()?;
-        (i.running != Running::No).then_some(self.latest.as_ref()).flatten()
+        (i.running != Running::No)
+            .then_some(self.latest.as_ref())
+            .flatten()
     }
 
     pub fn is_welcome(&self) -> bool {
@@ -41,8 +43,9 @@ impl Row {
     }
 }
 
-/// Every app, with what's installed (each program is asked its version, side by side).
-pub fn rows(releases: &[Release]) -> Vec<Row> {
+/// Every app, with what's installed (each program is asked its version, side by side). `pre`:
+/// offer alpha versions of apps that have a full release too (the setting).
+pub fn rows(releases: &[Release], pre: bool) -> Vec<Row> {
     let entries = catalog::with_discovered(releases);
     let found: Vec<Option<Installed>> = std::thread::scope(|s| {
         let hs: Vec<_> = entries
@@ -55,7 +58,7 @@ pub fn rows(releases: &[Release]) -> Vec<Row> {
         .into_iter()
         .zip(found)
         .map(|(entry, installed)| {
-            let latest = catalog::latest(&entry, releases).map(|(r, v)| (r.clone(), v));
+            let latest = catalog::latest(&entry, releases, pre).map(|(r, v)| (r.clone(), v));
             Row {
                 entry,
                 installed,
@@ -86,7 +89,7 @@ mod tests {
     fn row(id: &str, installed: Option<(&str, bool)>) -> Row {
         let list = parse(include_str!("../data/demo-releases.json")).unwrap();
         let entry = catalog::known().into_iter().find(|e| e.id == id).unwrap();
-        let latest = catalog::latest(&entry, &list).map(|(r, v)| (r.clone(), v));
+        let latest = catalog::latest(&entry, &list, false).map(|(r, v)| (r.clone(), v));
         let installed = installed.map(|(v, ours)| Installed {
             path: "/x".into(),
             version: Version::parse(v),
@@ -116,7 +119,11 @@ mod tests {
         w.installed.as_mut().unwrap().running = Running::AppImage;
         assert!(w.installable().is_none() && w.update().is_none());
         assert!(w.install_copy().is_some());
-        assert!(row("files", Some(("0.6.0", false))).install_copy().is_none());
+        assert!(
+            row("files", Some(("0.6.0", false)))
+                .install_copy()
+                .is_none()
+        );
         let rows = [
             row("files", Some(("0.6.0", true))),
             row("notes", Some(("0.1.0", true))),

@@ -557,10 +557,13 @@ pub fn run() -> ExitCode {
     let mut next_check = Instant::now();
     let mut retries = 0;
     let mut watched_at = Instant::now();
+    let mut restart = false;
     // What's in the cache already, first (the check may take a while, or fail).
     if let Some((list, _)) = releases::load_cached() {
         let tx = tx.clone();
-        std::thread::spawn(move || tx.send(Cmd::Rows(state::rows(&list))));
+        std::thread::spawn(move || {
+            tx.send(Cmd::Rows(state::rows(&list, Settings::load().prereleases)))
+        });
     }
     loop {
         let wait = next_check
@@ -655,7 +658,7 @@ pub fn run() -> ExitCode {
                 let r = releases::check();
                 let ok = r.as_ref().map(|_| ()).map_err(Clone::clone);
                 if let Ok(list) = r {
-                    let _ = tx.send(Cmd::Rows(state::rows(&list)));
+                    let _ = tx.send(Cmd::Rows(state::rows(&list, Settings::load().prereleases)));
                 }
                 let _ = tx.send(Cmd::Checked(ok));
             });
@@ -673,12 +676,20 @@ pub fn run() -> ExitCode {
                     break;
                 }
             }
+            // Rivet Welcome was updated (here, in the window or from a terminal): the tray
+            // starts again as the new version once nothing is installing.
+            if local::replaced() && st.lock().map(|g| g.busy.is_none()).unwrap_or(false) {
+                restart = true;
+                break;
+            }
             let now = stamp(&rows);
             if now != seen && st.lock().map(|g| g.busy.is_none()).unwrap_or(false) {
                 seen = now;
                 if let Some((list, _)) = releases::load_cached() {
                     let tx = tx.clone();
-                    std::thread::spawn(move || tx.send(Cmd::Rows(state::rows(&list))));
+                    std::thread::spawn(move || {
+                        tx.send(Cmd::Rows(state::rows(&list, Settings::load().prereleases)))
+                    });
                 }
             }
         }
@@ -690,6 +701,13 @@ pub fn run() -> ExitCode {
         "UnregisterStatusNotifierItem",
         &(item_name.as_str(),),
     );
+    // Removed rather than updated: nothing to start again, so it stays gone.
+    if restart && let Some(exe) = local::this_exe().filter(|p| p.is_file()) {
+        use std::os::unix::process::CommandExt;
+        drop(conn);
+        let err = std::process::Command::new(exe).arg("--tray").exec();
+        eprintln!("rivet-welcome: couldn't start the new tray: {err}");
+    }
     ExitCode::SUCCESS
 }
 
@@ -763,7 +781,7 @@ fn notify(conn: &Connection, summary: &str, body: &str, notice: &Arc<Mutex<u32>>
 
 /// The window, as its own program (it says so and quits when one is open already).
 pub fn open_window() {
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = local::this_exe() {
         let entry = crate::catalog::known()
             .into_iter()
             .find(|e| e.kind == crate::catalog::Kind::Welcome);
