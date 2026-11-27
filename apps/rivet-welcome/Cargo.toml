@@ -1,6 +1,6 @@
 [package]
 name = "rivet-welcome"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Install and update the Rivet apps from their GitHub releases, with a tray icon that checks for new ones"

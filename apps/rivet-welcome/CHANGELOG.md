@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - **Stable versions first.** An app with a stable release is updated to its next stable release,
   and its alpha versions are left out. Turn on "Offer alpha versions of stable apps" in Settings
