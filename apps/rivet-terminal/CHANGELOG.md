@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.3
 
 - Memory freed by a closed window or pane goes back to the system once all of them have closed,
   and again whenever Rivet Terminal sits idle with memory to spare.
