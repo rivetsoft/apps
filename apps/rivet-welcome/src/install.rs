@@ -140,6 +140,16 @@ pub fn lock(id: &str) -> Result<Lock, String> {
     Ok(Lock(f))
 }
 
+impl Drop for Lock {
+    fn drop(&mut self) {
+        // A program another thread is starting holds a copy of the file until it runs, and a
+        // copy keeps the lock. Unlocking lets it go for every copy at once, so the app is free
+        // the moment this is dropped.
+        // SAFETY: flock on a file descriptor this Lock owns.
+        unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
 fn work_dir(e: &Entry) -> PathBuf {
     rivet_xdg::places::cache_home().join(format!("rivet-welcome/downloads/{}", e.id))
 }
