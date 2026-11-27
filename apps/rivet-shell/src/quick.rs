@@ -73,6 +73,9 @@ fn toggles(m: &Model) -> Vec<Toggle> {
     if let Some((_, muted)) = st.mic {
         t.push(Toggle { title: "Microphone", sub: if muted { "Muted" } else { "On" }.into(), on: !muted, glyph: |p, c, col, on| glyph::mic(p, c, col, !on), act: Act::MicMute });
     }
+    if let Some(on) = m.status.workspaces.iter().find(|w| w.focused).and_then(|w| w.floating) {
+        t.push(Toggle { title: "Floating Windows", sub: if on { "On for this workspace" } else { "Off" }.into(), on, glyph: glyph::floating, act: Act::FloatingLayout });
+    }
     let dark = m.s.color_mode == Mode::Dark;
     t.push(Toggle { title: "Dark Style", sub: if dark { "On" } else { "Off" }.into(), on: dark, glyph: |p, c, col, _| glyph::contrast(p, c, col), act: Act::DarkStyle(!dark) });
     t

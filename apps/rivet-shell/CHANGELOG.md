@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Floating windows in quick settings**: under Softcore, the Floating Windows switch floats the
+  windows of the workspace you are on or puts them back in columns, and shows which one it is
+  as you move between workspaces.
+
 ## 0.1.2
 
 - **A sub panel's handle is easy to hit**: the whole space from the panel above it to just past

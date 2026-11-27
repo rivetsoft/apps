@@ -158,6 +158,15 @@ pub fn cup(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
     }
 }
 
+/// A window over another (floating windows): the front one filled when it is on.
+pub fn floating(p: &egui::Painter, c: Pos2, col: Color32, on: bool) {
+    let back = egui::Rect::from_min_size(c + Vec2::new(-7.0, -7.0), Vec2::new(9.5, 8.0));
+    let front = egui::Rect::from_min_size(c + Vec2::new(-2.5, -1.0), Vec2::new(9.5, 8.0));
+    p.rect_stroke(back, 1.5, Stroke::new(1.5, col), egui::StrokeKind::Middle);
+    p.rect_filled(front.expand(1.5), 2.5, if on { col } else { Color32::TRANSPARENT });
+    p.rect_stroke(front, 1.5, Stroke::new(1.5, col), egui::StrokeKind::Middle);
+}
+
 pub fn bolt(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
     let pts = vec![c + Vec2::new(1.5, -8.0), c + Vec2::new(-5.0, 1.0), c + Vec2::new(-0.5, 1.0), c + Vec2::new(-1.5, 8.0), c + Vec2::new(5.0, -1.0), c + Vec2::new(0.5, -1.0), c + Vec2::new(1.5, -8.0)];
     p.add(Shape::line(pts, Stroke::new(1.5, col)));

@@ -328,6 +328,8 @@ pub enum Act {
     NightLight(bool),
     Dnd(bool),
     KeepAwake(bool),
+    /// Float the windows of the workspace with the focus, or put them back in columns.
+    FloatingLayout,
     NextProfile,
     DarkStyle(bool),
     Pin(String),
