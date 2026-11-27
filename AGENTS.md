@@ -24,6 +24,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-calendar` | `rivet-calendar` | A calendar kept in plain `.ics` folders (the vdir layout vdirsyncer and khal use): day, week, month and agenda views, an event editor, repeating events. Its shell plugin gives the panel calendar its events. Unreleased; built from source. |
 | `apps/rivet-color` | `rivet-color` | The color picker: picks a color from the screen with its own loupe over a held-still screen (grim and layer-shell; else niri, hyprpicker, slurp or the portal) and copies it, with its shades, harmonies and contrast, a history and palettes kept as GIMP palette files. Its shell plugin puts the last color on the panel and `@color` in the launcher. Early alpha, released as pre-releases. |
 | `apps/rivet-view` | `rivet-view` | The picture viewer: opens a picture and steps through its folder in Files' order, with zoom, turning (saved losslessly where it can be), slideshows, camera details and animations. Rivet Files hands pictures to it. Held back from release (`HOLD=1`); built from source. |
+| `apps/rivet-docs` | `rivet-docs` | The document reader: PDFs (through PDFium, loaded at run time), comic books and pictures, continuous or a page at a time, with thumbnails, the outline, search, text selection, links, dark pages and the last page per file. Held back from release (`HOLD=1`); built from source. |
 | `apps/rivet-fetch` | `rivetfetch` | A fastfetch-style summary of the computer in the terminal, beside the mascot drawn from his pixel art. No window, so it uses `rivet-xdg` but not `rivet-look` or `rivet-kit`. Unreleased; built from source. |
 
 | Crate | What it holds |
@@ -37,7 +38,8 @@ app, or `--workspace` for everything.
 | `rivet-connections` | Saved server connections, shared by Rivet FTP's window, its command line and plain `ssh`. |
 | `rivet-git` | Git with no interface, by running the `git` program. |
 | `rivet-cal` | Calendars with no interface: the `.ics` folders, reading and writing iCalendar without losing what isn't used, repeating events, the occurrences in a span of days, subscribed feeds, and CalDAV, Google (CalDAV with a browser sign-in) and Microsoft (Graph) accounts synced both ways, all through `curl`. |
-| `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files and Vice. |
+| `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files, Vice and rivet-doc. |
+| `rivet-doc` | Page-based documents with no interface: PDFs through PDFium (pdfium-render, bound at run time; `utilities/lib/pdfium.sh` fetches the pinned library), comic archives and pictures, with text, links, the outline, search and dark pages, all on one worker thread because PDFium can't be called from two at once. |
 
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
 Longer write-ups are in `docs/`. Rivet Shell's plugin API is in `apps/rivet-shell/PLUGINS.md`.
@@ -55,12 +57,13 @@ No app depends on another app; they only depend on crates. Who uses what:
 | Crate | Used by |
 | --- | --- |
 | `rivet-look`, `rivet-kit`, `rivet-xdg` | every app |
-| `rivet-mem` | through `rivet-kit`, `rivet-look` and `rivet-media`; Fetch directly. `alloc::setup()`: Shell, Files, Terminal, View |
+| `rivet-mem` | through `rivet-kit`, `rivet-look` and `rivet-media`; Fetch directly. `alloc::setup()`: Shell, Files, Terminal, View, Docs |
 | `rivet-media` | Files, FTP, Shell, View |
 | `rivet-term` | Terminal (and meant for Edit's panel) |
 | `rivet-connections` | FTP |
 | `rivet-git` | Edit (and meant for a Git app of its own) |
 | `rivet-cal` | Calendar |
+| `rivet-doc` | Docs (and meant for Files' Peek and PDF thumbnails) |
 
 What "the same in every app" means in practice is a module of `rivet-look`:
 

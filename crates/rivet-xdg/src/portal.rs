@@ -21,6 +21,8 @@ pub enum Pick {
     Icon,
     /// An archive: a zip, a tar of any kind, a 7z and the like.
     Archive,
+    /// Something to read: a PDF, a comic or a picture.
+    Document,
 }
 
 /// Asks the picker; `Ok(None)` when it was cancelled.
@@ -42,6 +44,18 @@ pub fn choose(kind: Pick, title: &str, start: Option<&Path>) -> Result<Option<Pa
         const ENDS: [&str; 22] = ["zip", "jar", "7z", "rar", "tar", "tar.gz", "tgz", "tar.xz", "txz", "tar.bz2", "tbz2", "tar.zst", "tzst", "gz", "xz", "bz2", "zst", "iso", "cab", "deb", "rpm", "lz"];
         let pats: Vec<(u32, String)> = ENDS.iter().flat_map(|e| [(0u32, format!("*.{e}")), (0u32, format!("*.{}", e.to_uppercase()))]).collect();
         opts.insert("filters", Value::from(vec![Value::from(("Archives".to_string(), pats)), Value::from(("All files".to_string(), vec![(0u32, "*".to_string())]))]));
+    } else if kind == Pick::Document {
+        let ends = |list: &[&str]| -> Vec<(u32, String)> { list.iter().flat_map(|e| [(0u32, format!("*.{e}")), (0u32, format!("*.{}", e.to_uppercase()))]).collect() };
+        let mut all = ends(&["pdf", "cbz", "cbr", "cb7"]);
+        all.push((1, "application/pdf".to_string()));
+        opts.insert(
+            "filters",
+            Value::from(vec![
+                Value::from(("Documents and comics".to_string(), all)),
+                Value::from(("Pictures".to_string(), ends(&["png", "jpg", "jpeg", "webp", "gif", "bmp"]))),
+                Value::from(("All files".to_string(), vec![(0u32, "*".to_string())])),
+            ]),
+        );
     } else {
         let mut pats: Vec<(u32, String)> = ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.JPG", "*.JPEG", "*.PNG", "*.WEBP"].iter().map(|g| (0u32, g.to_string())).collect();
         pats.extend(["image/jpeg", "image/png", "image/webp"].iter().map(|m| (1u32, m.to_string())));
@@ -143,4 +157,45 @@ pub fn pick_color() -> Result<Option<[f64; 3]>, String> {
     }
     let color = results.get("color").and_then(|v| v.try_clone().ok()).and_then(|v| <(f64, f64, f64)>::try_from(v).ok());
     Ok(color.map(|(r, g, b)| [r, g, b]))
+}
+
+/// Whether the desktop can print for an app (xdg-desktop-portal's Print). Blocking.
+pub fn can_print() -> bool {
+    let Ok(conn) = Connection::session() else { return false };
+    Proxy::new(&conn, DEST, PATH, "org.freedesktop.portal.Print").ok().and_then(|p| p.get_property::<u32>("version").ok()).is_some()
+}
+
+/// Print a PDF through the desktop's print dialog (xdg-desktop-portal's Print): the dialog
+/// chooses the printer, the pages and the copies, then the file is printed as it is.
+/// `Ok(false)` when the dialog was cancelled. Blocking: call it from a thread.
+pub fn print_pdf(path: &Path, title: &str) -> Result<bool, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("couldn't read {} ({e})", path.display()))?;
+    let conn = Connection::session().map_err(|e| format!("no session bus ({e})"))?;
+    let printer = Proxy::new(&conn, DEST, PATH, "org.freedesktop.portal.Print").map_err(|e| e.to_string())?;
+    // First the dialog, which answers with a token for what was chosen in it.
+    let (token, mut answers) = request(&conn)?;
+    let mut opts: HashMap<&str, Value> = HashMap::new();
+    opts.insert("handle_token", Value::from(token.as_str()));
+    opts.insert("modal", Value::from(true));
+    let none: HashMap<&str, Value> = HashMap::new();
+    let _: OwnedObjectPath = printer.call("PreparePrint", &("", title, &none, &none, opts)).map_err(|e| format!("the desktop can't print for an app (xdg-desktop-portal): {e}"))?;
+    let msg = answers.next().ok_or("the print dialog gave no answer")?;
+    let (code, results): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize().map_err(|e| e.to_string())?;
+    if code != 0 {
+        return Ok(false);
+    }
+    let chosen = results.get("token").and_then(|v| v.try_clone().ok()).and_then(|v| u32::try_from(v).ok());
+    // Then the file itself, handed over open.
+    let (token, mut answers) = request(&conn)?;
+    let mut opts: HashMap<&str, Value> = HashMap::new();
+    opts.insert("handle_token", Value::from(token.as_str()));
+    opts.insert("modal", Value::from(true));
+    if let Some(t) = chosen {
+        opts.insert("token", Value::from(t));
+    }
+    let fd = zbus::zvariant::Fd::from(&file);
+    let _: OwnedObjectPath = printer.call("Print", &("", title, fd, opts)).map_err(|e| format!("the print didn't start: {e}"))?;
+    let msg = answers.next().ok_or("the printer gave no answer")?;
+    let (code, _): (u32, HashMap<String, OwnedValue>) = msg.body().deserialize().map_err(|e| e.to_string())?;
+    Ok(code == 0)
 }

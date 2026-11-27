@@ -16,6 +16,14 @@ else
 fi
 DEST="${XDG_BIN_HOME:-$HOME/.local/bin}"
 install -Dm755 "$SRC" "$DEST/$BIN_NAME"
+# Libraries the program loads from beside it (Rivet Docs' PDFium): lib/ next to the program's
+# folder. A release archive carries them; from source they are downloaded.
+if [ -d ./lib ] && [ "$SRC" = "./$BIN_NAME" ]; then
+    mkdir -p "$DEST/../lib"
+    cp -R ./lib/. "$DEST/../lib/"
+elif [ "$BIN_NAME" = rivet-docs ] && [ -f utilities/lib/pdfium.sh ]; then
+    sh utilities/lib/pdfium.sh "$DEST/../lib/rivet-docs"
+fi
 # A program for the terminal (rivetfetch) has no launcher entry.
 if [ -n "${RIVET_INSTALL_LAUNCHER-@LAUNCHER@}" ]; then
     "$DEST/$BIN_NAME" --install-desktop-entry

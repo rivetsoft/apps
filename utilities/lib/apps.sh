@@ -14,7 +14,7 @@
 # Every app that is released, in the order the release commands go through them. An app with
 # HOLD=1 below is held back: `release-all`, `ship all` and `live all` pass over it and Rivet
 # Welcome doesn't offer it, while naming it (`ship view`) still works. See docs/releasing.md.
-ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch view welcome"
+ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch view docs welcome"
 
 app_select() {
     # STABLE=1: published as a full release, not a pre-release (Rivet Welcome badges
@@ -22,6 +22,8 @@ app_select() {
     # HOLD=1: not ready to go out; commands that go through every app pass over it.
     STABLE=
     HOLD=
+    # Libraries the release carries beside the program (pdfium: utilities/lib/pdfium.sh).
+    BUNDLE=
     case "${1:-files}" in
         files | rivet-files | rivet)
             APP_ID=files PKG=rivet BIN=rivet TITLE="Rivet Files" TAG_PREFIX=v DIST_NAME=rivet-files STABLE=1 ;;
@@ -49,6 +51,8 @@ app_select() {
             APP_ID=fetch TITLE="Rivet Fetch" BIN=rivetfetch ;;
         view | rivet-view)
             APP_ID=view TITLE="Rivet View" HOLD=1 ;;
+        docs | rivet-docs)
+            APP_ID=docs TITLE="Rivet Docs" HOLD=1 BUNDLE=pdfium ;;
         *)
             echo "Unknown app: $1 (one of: $ALL_APPS)" >&2
             return 1 ;;

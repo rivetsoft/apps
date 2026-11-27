@@ -1,0 +1,17 @@
+[package]
+name = "rivet-doc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Page-based documents for the Rivet apps, with no interface: PDFs through PDFium, comic archives and pictures, page by page, with their text, links and outline"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+# PDFium is loaded when a PDF is first opened, from beside the program or the system: nothing
+# links at build time. The pinned API is the build utilities/lib/pdfium.sh downloads.
+pdfium-render = { version = "0.9.6", default-features = false, features = ["pdfium_8125", "thread_safe"] }
+# Comic book archives (.cbz). Other comic archives go through the system's tools.
+zip = { version = "9", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
+rivet-archive = { path = "../rivet-archive" }

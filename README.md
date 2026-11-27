@@ -179,6 +179,16 @@ desktop's accent. Choose what it shows and in what order.
 
 ![rivetfetch in Rivet Terminal, beside the mascot](docs/screenshots/rivet-fetch-wide.png)
 
+### <img src="apps/rivet-docs/data/rivet-docs.svg" width="32" alt=""> Rivet Docs
+
+A reader for PDFs and comics: one long scroll or a page at a time, thumbnails and the outline in
+the sidebar, search, text to select and copy, dark pages in the desktop's colors, and the page
+you left each file at.
+**Just started:** not released yet; build it from source.
+[More about Rivet Docs](apps/rivet-docs/README.md)
+
+![Rivet Docs reading a field guide, with the page thumbnails beside it](docs/screenshots/rivet-docs-wide.png)
+
 > **About the alphas.** Rivet FTP, Rivet Notes and Rivet Color are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
 

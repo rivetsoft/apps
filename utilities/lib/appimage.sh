@@ -39,6 +39,10 @@ strip -o "$APPDIR/usr/bin/$BIN" "$RIVET_BIN"
 # winit dlopens these; ldd on rivet does not see them. Ubuntu 22.04 builds,
 # so the bundle itself does not need glibc 2.43.
 ./utilities/lib/bundle-runtime-libs.sh "$APPDIR/usr/lib"
+# PDFium for Rivet Docs, which opens it from usr/lib/rivet-docs by its full path.
+if [ "$BUNDLE" = pdfium ]; then
+    sh ./utilities/lib/pdfium.sh "$APPDIR/usr/lib/$BIN" "$APPDIR/usr/share/licenses/$BIN/pdfium"
+fi
 cp "$APP/data/$DESKTOP" "$APPDIR/$DESKTOP"
 cp "$APP/data/$DESKTOP" "$APPDIR/usr/share/applications/"
 cp "$APP/data/$DIST_NAME.svg" "$APPDIR/$DIST_NAME.svg"
@@ -74,7 +78,7 @@ ROOT=$(pwd)
 # shellcheck disable=SC1091
 . ./utilities/lib/ensure-zigbuild.sh
 set -- "$APPDIR/usr/bin/$BIN"
-for lib in "$APPDIR"/usr/lib/lib*.so.*; do
+for lib in "$APPDIR"/usr/lib/lib*.so.* "$APPDIR"/usr/lib/*/lib*.so; do
     [ -f "$lib" ] || continue
     set -- "$@" "$lib"
 done
