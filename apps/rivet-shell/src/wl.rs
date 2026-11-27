@@ -224,6 +224,9 @@ pub struct Shell {
     tx: Sender<Msg>,
     palette_watch: Vec<(PathBuf, Option<SystemTime>)>,
     recolor_until: Option<Instant>,
+    /// Whether the desktop wants things to move (GTK's `gtk-enable-animations`): off, panels
+    /// and docks appear and go at once instead of sliding.
+    animate: bool,
     last_minute: u32,
     bg_key: (u32, u64, Option<(u32, bool)>),
     /// What the panel's system item shows, across and down a panel.
@@ -401,6 +404,7 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         tx,
         palette_watch: palette_files(),
         recolor_until: None,
+        animate: rivet_look::palette::animations_enabled(),
         last_minute: 99,
         bg_key: (0, 0, None),
         system_shown: Default::default(),
@@ -1265,6 +1269,7 @@ impl Shell {
         // The colour files' dates only (reading them again is the surfaces' job, when they change).
         if self.palette_watch.iter().any(|(p, t)| mtime(p) != *t) {
             self.palette_watch = palette_files();
+            self.animate = rivet_look::palette::animations_enabled();
             // Borders that follow the accent follow the new colours.
             self.apply_comp();
             // Each surface checks the colours as it draws (every 2 s): keep drawing for a moment.
@@ -1626,6 +1631,7 @@ impl Shell {
         let popup_on = self.popup.as_ref().filter(|_| !menu).map(|p| p.output.clone());
         let (s, apps, running) = (&self.s, &self.apps, &self.prev_status.running);
         let workspaces = &self.prev_status.workspaces;
+        let animate = self.animate;
         // The panel a popup was opened from: a sub panel stays for its own popups only.
         let popup_from = self.popup.as_ref().filter(|_| !menu).and_then(|p| p.panel);
         // Hosts with a sub panel in view (by screen): a host that hides stays out with it.
@@ -1689,7 +1695,7 @@ impl Shell {
             let target = if show { 0.0 } else { 1.0 };
             if sf.slide != target && !sf.collapsed {
                 let step = now.duration_since(sf.slide_at).as_secs_f32().min(0.05) / DOCK_SLIDE;
-                sf.slide = if target > sf.slide { (sf.slide + step).min(1.0) } else { (sf.slide - step).max(0.0) };
+                sf.slide = if !animate { target } else if target > sf.slide { (sf.slide + step).min(1.0) } else { (sf.slide - step).max(0.0) };
                 sf.dirty = true;
                 sf.repaint_at = Some(now + Duration::from_millis(16));
             }
@@ -2040,6 +2046,12 @@ impl Shell {
         // A dock or a panel on its way in or out keeps moving.
         if matches!(kind, Kind::Dock | Kind::Panel) && surf.slide > 0.0 && !surf.collapsed {
             surf.repaint_at = Some(Instant::now() + Duration::from_millis(16));
+        }
+        // A pointer resting on a rolled-up sub panel's handle, or on its host's side, is looked
+        // at again when the rest is long enough to open it, whatever this frame asked for.
+        let rest = [surf.entered.filter(|_| surf.hovered && surf.collapsed), surf.reveal_at];
+        if let Some(due) = rest.into_iter().flatten().map(|t| t + SUB_DWELL).filter(|t| *t > Instant::now()).min() {
+            surf.repaint_at = Some(surf.repaint_at.map_or(due, |r| r.min(due)));
         }
         // A popup that joined a panel (or moved along it): the panel opens its outline there.
         if kind == Kind::Popup && self.popup.as_ref().and_then(|p| p.join) != join_was {
@@ -2476,6 +2488,11 @@ impl PointerHandler for Shell {
                         // Look again once the pointer has rested (a sub panel's edge).
                         s.repaint_at = Some(Instant::now() + SUB_DWELL);
                     }
+                    // Coming to rest where it came in, on the side sub panels roll out from.
+                    let full = Rect::from_min_size(Pos2::ZERO, Vec2::new(s.size.0 as f32, s.size.1 as f32));
+                    if s.kind == Kind::Panel && crate::panels::on_reveal_side(&self.s.panels, s.idx, full, pos) {
+                        s.reveal_at = Some(Instant::now());
+                    }
                     if let Some(p) = &self.pointer {
                         let _ = p.set_cursor(&self.conn, CursorIcon::Default);
                     }
@@ -2505,6 +2522,15 @@ impl PointerHandler for Shell {
                 }
                 PointerEventKind::Press { button, .. } | PointerEventKind::Release { button, .. } => {
                     let pressed = matches!(e.kind, PointerEventKind::Press { .. });
+                    // A click on a rolled-up sub panel's handle opens it straight away.
+                    let sub = self.s.panels.get(s.idx).and_then(|p| p.sub.as_ref()).filter(|x| x.reveal && !x.stay);
+                    if pressed && s.kind == Kind::Panel && s.collapsed && let Some(sub) = sub {
+                        s.summon = Some(Instant::now() + Duration::from_secs_f32(sub.secs));
+                        s.shut = false;
+                        s.left_at = None;
+                        s.dirty = true;
+                        continue;
+                    }
                     let b = match button {
                         0x110 => egui::PointerButton::Primary,
                         0x111 => egui::PointerButton::Secondary,
