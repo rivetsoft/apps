@@ -11,13 +11,17 @@
 # Rivet Welcome reads the same names from GitHub (apps/rivet-welcome/src/catalog.rs), and a test
 # there checks that it lists every app here: change both together.
 
-# Every app that is released, in the order the release commands go through them.
-ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch welcome"
+# Every app that is released, in the order the release commands go through them. An app with
+# HOLD=1 below is held back: `release-all`, `ship all` and `live all` pass over it and Rivet
+# Welcome doesn't offer it, while naming it (`ship view`) still works. See docs/releasing.md.
+ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch view welcome"
 
 app_select() {
     # STABLE=1: published as a full release, not a pre-release (Rivet Welcome badges
     # pre-releases "Alpha"). Rivet Files is always "latest"; the others never are.
+    # HOLD=1: not ready to go out; commands that go through every app pass over it.
     STABLE=
+    HOLD=
     case "${1:-files}" in
         files | rivet-files | rivet)
             APP_ID=files PKG=rivet BIN=rivet TITLE="Rivet Files" TAG_PREFIX=v DIST_NAME=rivet-files STABLE=1 ;;
@@ -43,6 +47,8 @@ app_select() {
             APP_ID=color TITLE="Rivet Color" ;;
         fetch | rivet-fetch | rivetfetch)
             APP_ID=fetch TITLE="Rivet Fetch" BIN=rivetfetch ;;
+        view | rivet-view)
+            APP_ID=view TITLE="Rivet View" HOLD=1 ;;
         *)
             echo "Unknown app: $1 (one of: $ALL_APPS)" >&2
             return 1 ;;

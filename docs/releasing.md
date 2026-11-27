@@ -119,10 +119,26 @@ Rivet Welcome 0.4.0 and older (which never offer an edge build). Later versions 
 commit. When someone goes back from Edge to Stable or Alpha, the release replaces the
 edge build, though its number is lower.
 
+## Holding an app back
+
+An app that is built and listed but not ready to go out has `HOLD=1` on its line in
+`app_select` (`utilities/lib/apps.sh`). Rivet View is held this way.
+
+- `utilities/rivet-dev release-all`, `ship all` and `live all` pass over it, and say so.
+- Naming it still works: `ship view`, `live view`, `release view`, or `release-all --only view`.
+- Rivet Welcome knows it (`held: true` in `catalog.rs`) but never offers it, even when a
+  release of it turns up. Its test `every_released_app_is_known` checks that the apps held
+  there are the ones with `HOLD=1`.
+- CI still builds its portable release, so it keeps building the way a release would.
+
+To let it go out, remove `HOLD=1` from `apps.sh` and `held: true` from `catalog.rs` in the
+same pull request, with a line in Rivet Welcome's changelog.
+
 ## Adding a new app to the releases
 
 1. Give it `data/<dist>.desktop` and `data/<dist>.svg`, a `CHANGELOG.md` with `## Unreleased`,
    and `--version` and `--install-desktop-entry` options (as the other apps have).
-2. Add it to `ALL_APPS` and `app_select` in `utilities/lib/apps.sh`.
+2. Add it to `ALL_APPS` and `app_select` in `utilities/lib/apps.sh`, with `HOLD=1` until it's
+   ready to go out (see above), and to the CI's portable-release list.
 3. Add it to `known()` in Rivet Welcome's `catalog.rs`, with a changelog line in Rivet Welcome.
 4. Add it to the website's `src/data/apps.ts` in rivetsoft/rivetsoft.github.io.

@@ -1,0 +1,20 @@
+# Changelog
+
+## Unreleased
+
+- **Rivet View, a new app**: open a picture and step through the rest of its folder with the
+  arrow keys, in the order Rivet Files shows them. The pictures on either side are read ahead,
+  so the next one is there at once.
+- **Zoom** to fit, to 100%, or anywhere between with the wheel or a pinch; double-click goes
+  between fitting and 100%. Drag to move around a picture bigger than the window.
+- **Turn and flip** a picture to look at it. Rivet View asks before saving it turned; a JPEG
+  keeps every pixel, since only the note saying which way is up changes.
+- **Slideshow** fills the screen and moves on every few seconds. Animated GIF, WebP and PNG
+  pictures play.
+- **Details** in a side panel: the picture's size and kind, and the camera, lens, exposure and
+  place it was taken, when the camera wrote them down.
+- **Copy**, **Open With**, **Set as Wallpaper** (with Rivet Shell running) and **Move to
+  Trash**, with Undo.
+- Opens PNG, JPEG, WebP, GIF, TIFF, BMP, ICO, TGA, QOI and SVG pictures, and the preview inside
+  camera raw files. HEIC, AVIF and JPEG XL open with libheif's tools, ImageMagick or ffmpeg
+  installed.

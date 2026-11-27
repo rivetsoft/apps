@@ -531,3 +531,31 @@ the saved picture itself. Nothing of the original is left under it in the file. 
 at least 8 pixels across; very large text may still be guessed at from its shape, so cover
 generously.
 
+## Rivet View
+
+### Stepping, zooming and turning
+
+Location: `apps/rivet-view/src/gui.rs`; the picture stage is `crates/rivet-media/src/stage.rs`.
+
+- The folder's order: Rivet Files passes the sort it shows (name, size, kind or changed, either
+  way round) when it opens a picture in Rivet View. Opened any other way, it is by name, with
+  numbers counted as numbers. Hidden pictures are left out unless the one opened is hidden.
+- Zoom: the wheel and a pinch zoom around the pointer, from fitting the window up to 3200%.
+  "Fit" never enlarges a picture past its own size. Double-click goes between fitting and 100%.
+- Turned for viewing: the bar over the picture offers Save and Turn Back. Moving to another
+  picture, or opening one, asks "Save the turned picture?" with Save Turned and Leave As It Was.
+  A JPEG changes only its orientation note; PNG, WebP, TIFF, BMP, QOI, TGA and PNM are written
+  again with the same pixels, without camera details; the rest can't be saved turned.
+- Set as Wallpaper shows only while Rivet Shell runs in the session.
+- Move to Trash puts the picture in the desktop's trash; Undo on the note puts it back where it
+  was, unless another file has taken its name.
+- HEIC, AVIF and JPEG XL open through a program that reads them: libheif's heif-dec (or
+  heif-convert), djxl for JPEG XL, ImageMagick, or ffmpeg, tried in that order.
+
+### Rivet Files: Open in Rivet View
+
+Location: `apps/rivet-files/src/app/views.rs`, the right-click menu, and `open_entry` in `app.rs`.
+
+- Shown for one selected picture when the `rivet-view` program is beside Rivet Files' own or on
+  the path, and Rivet View isn't already the app Open uses. When it is, Open passes the folder's
+  sort to it.

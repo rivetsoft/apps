@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       app:
-        description: "The app to build (files, notes, edit, terminal, ftp, snip, shell, vice, calendar, color, fetch, welcome)"
+        description: "The app to build (files, notes, edit, terminal, ftp, snip, shell, vice, calendar, color, fetch, view, welcome)"
         required: true
 
 permissions:

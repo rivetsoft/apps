@@ -1322,6 +1322,7 @@ dependencies = [
  "moxcms",
  "num-traits",
  "png",
+ "qoi",
  "tiff",
  "zune-core",
  "zune-jpeg",
@@ -1445,6 +1446,15 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "kamadak-exif"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8772c92c0f41c4a672cbdee6728253e5ae8fcc1c5eb5c6c676579565684bbf68"
+dependencies = [
+ "mutate_once",
 ]
 
 [[package]]
@@ -1600,6 +1610,12 @@ dependencies = [
  "num-traits",
  "pxfm",
 ]
+
+[[package]]
+name = "mutate_once"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13d2233c9842d08cfe13f9eac96e207ca6a2ea10b80259ebe8ad0268be27d2af"
 
 [[package]]
 name = "naga"
@@ -2250,6 +2266,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
+name = "qoi"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f6d64c71eb498fe9eae14ce4ec935c555749aef511cca85b5568910d6e48001"
+dependencies = [
+ "bytemuck",
+]
+
+[[package]]
 name = "quick-error"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2550,7 +2575,9 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "image",
+ "kamadak-exif",
  "png",
+ "resvg",
  "rivet-look",
  "rivet-mem",
  "rivet-xdg",
@@ -2639,6 +2666,20 @@ dependencies = [
  "rivet-archive",
  "rivet-kit",
  "rivet-look",
+ "rivet-xdg",
+]
+
+[[package]]
+name = "rivet-view"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+ "kamadak-exif",
+ "libc",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-media",
  "rivet-xdg",
 ]
 
