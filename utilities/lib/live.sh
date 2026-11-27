@@ -4,7 +4,7 @@
 #
 #   utilities/rivet-dev live notes             publish the draft of Rivet Notes' version on main
 #   utilities/rivet-dev live notes edit        several apps
-#   utilities/rivet-dev live all               every app with a draft for its version on main
+#   utilities/rivet-dev live all               every app with a draft for its version on main, except held ones
 #
 # Rivet Files' release becomes the repository's latest; the others never do. Apps that aren't
 # STABLE in apps.sh are pre-releases, which Rivet Welcome badges "Alpha". Publishing as a person
@@ -31,6 +31,10 @@ git fetch -q origin main
 published=
 for a in $LIST; do
     app_select "$a"
+    if [ -n "$ALL" ] && [ -n "$HOLD" ]; then
+        echo "$TITLE is held back (HOLD=1 in utilities/lib/apps.sh): skipped. Name it to go ahead."
+        continue
+    fi
     VERSION=$(git show "origin/main:$APP/Cargo.toml" | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
     TAG=$TAG_PREFIX$VERSION
     state=$(gh release view "$TAG" --json isDraft,assets -q '"\(.isDraft) \(.assets | length)"' 2>/dev/null || true)

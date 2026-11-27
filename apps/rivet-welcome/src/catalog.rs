@@ -35,6 +35,8 @@ pub struct Entry {
     /// What "Open" runs the program with.
     pub open_args: Vec<String>,
     pub icon: Option<&'static str>,
+    /// Held back from release (HOLD=1 in utilities/lib/apps.sh): known here, never offered.
+    pub held: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,6 +64,7 @@ fn entry(
             Vec::new()
         },
         icon: Some(icon),
+        held: false,
     }
 }
 
@@ -158,6 +161,19 @@ pub fn known() -> Vec<Entry> {
             Kind::App,
             include_str!("../../rivet-calendar/data/rivet-calendar.svg"),
         ),
+        Entry {
+            held: true,
+            ..entry(
+                "view",
+                "Rivet View",
+                "rivet-view",
+                "rivet-view",
+                "rivet-view-v",
+                "Look through the pictures in a folder, with zoom, slideshows and camera details.",
+                Kind::App,
+                include_str!("../../rivet-view/data/rivet-view.svg"),
+            )
+        },
         entry(
             "fetch",
             "Rivet Fetch",
@@ -305,7 +321,8 @@ fn title_from(stem: &str) -> String {
         .join(" ")
 }
 
-/// The known apps, then any others the releases have (newest first, once each).
+/// The known apps, then any others the releases have (newest first, once each). Held apps
+/// are left out, even when a release of one turns up.
 pub fn with_discovered(releases: &[Release]) -> Vec<Entry> {
     let mut out = known();
     for r in releases {
@@ -336,11 +353,13 @@ pub fn with_discovered(releases: &[Release]) -> Vec<Entry> {
             kind: Kind::App,
             open_args: Vec::new(),
             icon: None,
+            held: false,
         };
         if archive(&e, r).is_some() {
             out.push(e);
         }
     }
+    out.retain(|e| !e.held);
     out
 }
 
@@ -553,7 +572,7 @@ mod tests {
         );
         assert!(sum.is_some());
         // An edge release is never taken for an app of its own.
-        assert_eq!(with_discovered(&list).len(), known().len());
+        assert_eq!(with_discovered(&list).len(), known().iter().filter(|e| !e.held).count());
     }
 
     /// Every app utilities/rivet-dev releases is listed here by name, under the tag, archive and
@@ -587,6 +606,12 @@ mod tests {
             );
         }
         assert_eq!(k.len(), line.trim_matches('"').split_whitespace().count());
+        // Held apps (HOLD=1 on their line in apps.sh) are the ones held here.
+        let held: Vec<&str> = script.lines().filter(|l| l.contains("HOLD=1")).filter_map(|l| l.split("APP_ID=").nth(1)?.split_whitespace().next()).collect();
+        for e in &k {
+            assert_eq!(e.held, held.contains(&e.id.as_str()), "{} held", e.id);
+        }
+        assert!(with_discovered(&[]).iter().all(|e| !e.held));
     }
 
     #[test]

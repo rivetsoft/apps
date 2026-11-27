@@ -49,6 +49,8 @@ pub struct Preview {
     pub facts: Vec<(String, String)>,
     pub text: Option<String>,
     pub duration: Option<f64>,
+    /// A picture's own size in pixels (the image may be smaller).
+    pub dims: Option<[u32; 2]>,
     /// A note when a preview isn't possible ("Install ffmpeg to preview videos").
     pub note: Option<String>,
 }
@@ -82,6 +84,7 @@ fn image_preview(path: &Path, size: u64, px: u32) -> Preview {
         return p;
     }
     if let Ok((w, h)) = image::image_dimensions(path) {
+        p.dims = Some([w, h]);
         p.facts.push(("Dimensions".into(), format!("{w} × {h} pixels")));
     }
     if size > MAX_IMAGE_FILE {

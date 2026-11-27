@@ -13,7 +13,8 @@
 #   --yes         release every app that has changes, with the suggested version, no questions
 #   --only LIST   only these apps, e.g. --only edit,terminal
 #
-# For each app (every one in ALL_APPS, utilities/lib/apps.sh) it shows the version, the last release and
+# For each app (every one in ALL_APPS, utilities/lib/apps.sh, except those held back with HOLD=1
+# unless --only names them) it shows the version, the last release and
 # the changes since. Apps with no changes since their last release are skipped. Then it asks:
 # release (with the suggested version, or one you type), skip, or stop. Releasing runs the
 # usual `bump` and `release` for that app, so each keeps its own version, changelog and tags.
@@ -99,6 +100,11 @@ released=
 skipped=
 for a in $APPS; do
     app_select "$a"
+    # A held app goes out only when it's named with --only.
+    if [ -n "$HOLD" ] && [ -z "$ONLY" ]; then
+        say "$TITLE is held back (HOLD=1 in utilities/lib/apps.sh): skipped."
+        continue
+    fi
     version=$(app_version)
     last=$(git describe --tags --abbrev=0 --match "$TAG_PREFIX[0-9]*" 2>/dev/null || true)
     if [ -n "$last" ]; then
