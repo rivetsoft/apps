@@ -39,7 +39,7 @@ START=85000
 END=120000
 title=Deep
 EOF
-    ff -f lavfi -i "mandelbrot=size=640x360:rate=10:maxiter=400:start_scale=3:end_scale=0.01:end_pts=120,scale=1280:720:flags=lanczos" \
+    ff -f lavfi -i "mandelbrot=size=640x360:rate=10:maxiter=400:start_scale=3:end_scale=0.01:end_pts=1200,scale=1280:720:flags=lanczos" \
         -f lavfi -i "aevalsrc=0.15*sin(2*PI*220*t)+0.1*sin(2*PI*330*t)*(0.6+0.4*sin(2*PI*0.25*t)):s=48000:d=120" \
         -f lavfi -i "aevalsrc=0.15*sin(2*PI*247*t)+0.1*sin(2*PI*370*t)*(0.6+0.4*sin(2*PI*0.2*t)):s=48000:d=120" \
         -i "$T/chapters.txt" -t 120 -map 0:v -map 1:a -map 2:a -map_metadata 3 -map_chapters 3 \
@@ -66,10 +66,13 @@ L="$OUT/Cellular Life.webm"
     -f lavfi -i "aevalsrc=0.08*sin(2*PI*196*t)*lt(t-floor(t)\,0.15):s=48000:d=30" -t 30 \
     -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -b:v 1M -pix_fmt yuv420p -c:a libopus -b:a 64k "$L"
 
-# A cover: the Rivet colors as gradients, drawn by ffmpeg.
-cover() { ff -f lavfi -i "gradients=s=600x600:c0=$1:c1=$2:c2=$3:x0=0:y0=0:x1=600:y1=600:nb_colors=3:seed=$4" -frames:v 1 "$5"; }
+# A cover: ripples over a corner-to-corner blend of two Rivet colors (red green blue, twice).
+cover() {
+    c() { echo "lerp($1\\,$2\\,(X+Y)/(W+H))*(0.82+0.18*sin(hypot(X-W*0.72\\,Y-H*0.28)/28))"; }
+    ff -f lavfi -i "color=black:s=600x600,format=rgb24,geq=r='$(c "$1" "$4")':g='$(c "$2" "$5")':b='$(c "$3" "$6")'" -frames:v 1 "$7"
+}
 song() {
-    # title, file, track number, seconds, expression, cover colors and seed (or none)
+    # title, file, track number, seconds, expression, cover colors (or none)
     out="$OUT/Music/$2"
     [ -f "$out" ] && return 0
     if [ "$6" = none ]; then
@@ -82,7 +85,7 @@ song() {
             -metadata title="$1" -metadata artist="Rivet Sample Band" -metadata album="Tide Tables" -metadata track="$3" "$out"
     fi
 }
-song "Low Tide" "01 Low Tide.flac" 1 154 "0.12*sin(2*PI*196*t)*(0.5+0.5*sin(2*PI*0.1*t))+0.08*sin(2*PI*294*t)+0.05*sin(2*PI*392*t)*lt(t-floor(t)\,0.3)" "0xd53f8c 0x0084b8 0xfff270 7"
-song "Harbor Lights" "02 Harbor Lights.flac" 2 96 "0.1*sin(2*PI*262*t)+0.08*sin(2*PI*330*t)*(0.5+0.5*sin(2*PI*0.5*t))+0.06*sin(2*PI*392*t)" "0x0084b8 0x24121b 0xd53f8c 3"
+song "Low Tide" "01 Low Tide.flac" 1 154 "0.12*sin(2*PI*196*t)*(0.5+0.5*sin(2*PI*0.1*t))+0.08*sin(2*PI*294*t)+0.05*sin(2*PI*392*t)*lt(t-floor(t)\,0.3)" "213 63 140 0 132 184"
+song "Harbor Lights" "02 Harbor Lights.flac" 2 96 "0.1*sin(2*PI*262*t)+0.08*sin(2*PI*330*t)*(0.5+0.5*sin(2*PI*0.5*t))+0.06*sin(2*PI*392*t)" "0 132 184 36 18 27"
 song "Morning Bell" "03 Morning Bell.opus" 3 64 "0.2*sin(2*PI*523*t)*exp(-3*(t-2*floor(t/2)))" none
 echo "$OUT"

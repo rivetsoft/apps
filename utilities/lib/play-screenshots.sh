@@ -29,7 +29,7 @@ export HOME="$T/home" TMPDIR="$T" XDG_CONFIG_HOME="$T/config" XDG_DATA_HOME="$T/
 export RIVET_SHOT_SIZE=1280x800 RIVET_PLAY_SAMPLE="$SAMPLES"
 
 # The first picture has the Subtitles menu open (PLAY_MENU_CLICK moves the click).
-RIVET_PLAY_SCENE=video RIVET_PLAY_CLICK=${PLAY_MENU_CLICK:-1007,754} "$BIN/rivet-play" --screenshot "$OUT/rivet-play-wide.png"
+RIVET_PLAY_SCENE=video RIVET_PLAY_CLICK=${PLAY_MENU_CLICK:-934,757} "$BIN/rivet-play" --screenshot "$OUT/rivet-play-wide.png"
 RIVET_PLAY_SCENE=audio "$BIN/rivet-play" --screenshot "$OUT/rivet-play-music-wide.png"
 RIVET_PLAY_SCENE=seek "$BIN/rivet-play" --screenshot "$OUT/rivet-play-seek-wide.png"
 RIVET_PLAY_SCENE=queue "$BIN/rivet-play" --screenshot "$OUT/rivet-play-queue-wide.png"
