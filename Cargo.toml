@@ -12,6 +12,7 @@
 #   apps/rivet-color   Rivet Color (picks colors from the screen; shades, harmonies, palettes)
 #   apps/rivet-view    Rivet View (looks through the pictures in a folder)
 #   apps/rivet-docs    Rivet Docs (reads PDFs and comics; the documents are crates/rivet-doc)
+#   apps/rivet-play    Rivet Play (video and music player, through libmpv loaded at run time)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.

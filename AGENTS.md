@@ -21,6 +21,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-welcome` | `rivet-welcome` | Installs and updates the apps; a tray icon. |
 | `apps/rivet-snip` | `rivet-snip` | Clips and marks up screenshots. A compositor hands it the picture as a file or on standard input; `rivet-snip capture` takes one itself anywhere else. Unreleased; built from source. |
 | `apps/rivet-vice` | `rivet-vice` | The archive manager: opens an archive, shows what is in it, extracts all or some of it and makes new ones. Rivet Files' right-click menu opens an archive in it. Unreleased; built from source. |
+| `apps/rivet-play` | `rivet-play` | The video and music player: a queue of files, folders and playlists, seek previews, tracks and subtitles, resume, MPRIS. Plays through libmpv, loaded at run time (`rivet-media`'s `mpv` feature). Unreleased; built from source. |
 | `apps/rivet-calendar` | `rivet-calendar` | A calendar kept in plain `.ics` folders (the vdir layout vdirsyncer and khal use): day, week, month and agenda views, an event editor, repeating events. Its shell plugin gives the panel calendar its events. Unreleased; built from source. |
 | `apps/rivet-color` | `rivet-color` | The color picker: picks a color from the screen with its own loupe over a held-still screen (grim and layer-shell; else niri, hyprpicker, slurp or the portal) and copies it, with its shades, harmonies and contrast, a history and palettes kept as GIMP palette files. Its shell plugin puts the last color on the panel and `@color` in the launcher. Early alpha, released as pre-releases. |
 | `apps/rivet-view` | `rivet-view` | The picture viewer: opens a picture and steps through its folder in Files' order, with zoom, turning (saved losslessly where it can be), slideshows, camera details and animations. Rivet Files hands pictures to it. Held back from release (`HOLD=1`); built from source. |
@@ -33,7 +34,7 @@ app, or `--workspace` for everything.
 | `rivet-kit` | Checks and screenshots: the software renderer that draws a window in memory. Built optimised even in debug builds, so put pixel-heavy code here. Re-exports `rivet-mem` as `rivet_kit::mem`. |
 | `rivet-mem` | Memory hygiene with no interface: the allocator's setup (call `alloc::setup()` first in `main`), handing freed memory back, caches kept to a size in bytes, file bytes read once per process, and how much memory a process uses. Numbers in `docs/memory.md`. |
 | `rivet-xdg` | Desktop plumbing with no interface: XDG folders, bookmarks, drives, file types, default apps, launching, the trash, secrets in the keyring. |
-| `rivet-media` | Previews: pictures, video frames, audio, text, thumbnails, the light box; full-size pictures with their frames and camera details (`picture`), and the stage that zooms and turns them (`stage`), shared by View and the light box. |
+| `rivet-media` | Previews: pictures, video frames, audio, text, thumbnails, the light box; full-size pictures with their frames and camera details (`picture`), and the stage that zooms and turns them (`stage`), shared by View and the light box. With the `mpv` feature, playback through libmpv, loaded at run time, drawn into an OpenGL texture. |
 | `rivet-term` | The terminal: a shell in a pseudo-terminal, drawn as an egui widget. |
 | `rivet-connections` | Saved server connections, shared by Rivet FTP's window, its command line and plain `ssh`. |
 | `rivet-git` | Git with no interface, by running the `git` program. |
@@ -57,8 +58,8 @@ No app depends on another app; they only depend on crates. Who uses what:
 | Crate | Used by |
 | --- | --- |
 | `rivet-look`, `rivet-kit`, `rivet-xdg` | every app |
-| `rivet-mem` | through `rivet-kit`, `rivet-look` and `rivet-media`; Fetch directly. `alloc::setup()`: Shell, Files, Terminal, View, Docs |
-| `rivet-media` | Files, FTP, Shell, View |
+| `rivet-mem` | through `rivet-kit`, `rivet-look` and `rivet-media`; Fetch directly. `alloc::setup()`: Shell, Files, Terminal, View, Docs, Play |
+| `rivet-media` | Files, FTP, Shell, View, Play (with `mpv`) |
 | `rivet-term` | Terminal (and meant for Edit's panel) |
 | `rivet-connections` | FTP |
 | `rivet-git` | Edit (and meant for a Git app of its own) |

@@ -2683,6 +2683,7 @@ dependencies = [
  "eframe",
  "image",
  "kamadak-exif",
+ "libc",
  "png",
  "resvg",
  "rivet-look",
@@ -2707,6 +2708,19 @@ dependencies = [
  "rivet-look",
  "rivet-xdg",
  "serde_json",
+]
+
+[[package]]
+name = "rivet-play"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "raw-window-handle",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-media",
+ "rivet-xdg",
+ "zbus",
 ]
 
 [[package]]

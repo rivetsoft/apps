@@ -151,6 +151,19 @@ pub fn known() -> Vec<Entry> {
             Kind::App,
             include_str!("../../rivet-vice/data/rivet-vice.svg"),
         ),
+        Entry {
+            held: true,
+            ..entry(
+                "play",
+                "Rivet Play",
+                "rivet-play",
+                "rivet-play",
+                "rivet-play-v",
+                "Play videos and music from files and folders, with a queue, subtitles and resume.",
+                Kind::App,
+                include_str!("../../rivet-play/data/rivet-play.svg"),
+            )
+        },
         entry(
             "calendar",
             "Rivet Calendar",

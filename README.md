@@ -160,6 +160,16 @@ from the right-click menu.
 
 ![Rivet Vice inside a trip archive, with folders of photos, maps and notes](docs/screenshots/rivet-vice-wide.png)
 
+### <img src="apps/rivet-play/data/rivet-play.svg" width="32" alt=""> Rivet Play
+
+A video and music player: files, folders and playlists in a queue, a frame from anywhere on the
+seek bar, audio tracks and subtitles, and each file started where you left it. Media keys and
+Rivet Shell's player controls work with it. It plays through libmpv, which it loads from the
+system. **Unreleased; built from source.**
+[More about Rivet Play](apps/rivet-play/README.md)
+
+![Rivet Play showing a video with its controls and the seek bar](docs/screenshots/rivet-play-wide.png)
+
 ### <img src="apps/rivet-calendar/data/rivet-calendar.svg" width="32" alt=""> Rivet Calendar
 
 A calendar kept in plain `.ics` folders that vdirsyncer and khal share: month, week, day and

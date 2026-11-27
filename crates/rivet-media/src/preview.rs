@@ -55,7 +55,8 @@ pub struct Preview {
     pub note: Option<String>,
 }
 
-fn has(bin: &str) -> bool {
+/// Whether a program is on the PATH.
+pub fn has(bin: &str) -> bool {
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).any(|d| d.join(bin).is_file())).unwrap_or(false)
 }
 
@@ -242,7 +243,7 @@ fn media_preview(path: &Path, video: bool, px: u32) -> Preview {
 }
 
 /// One frame as a picture, scaled to at most `px` wide (ffmpeg keeps the shape and rotation).
-fn frame_at(path: &Path, secs: f64, px: u32) -> Option<egui::ColorImage> {
+pub fn frame_at(path: &Path, secs: f64, px: u32) -> Option<egui::ColorImage> {
     let out = Command::new("ffmpeg")
         .args(["-v", "error", "-nostdin", "-ss", &format!("{secs:.2}"), "-i"])
         .arg(path)

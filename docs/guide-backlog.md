@@ -559,3 +559,32 @@ Location: `apps/rivet-files/src/app/views.rs`, the right-click menu, and `open_e
 - Shown for one selected picture when the `rivet-view` program is beside Rivet Files' own or on
   the path, and Rivet View isn't already the app Open uses. When it is, Open passes the folder's
   sort to it.
+
+## Rivet Play
+
+### Keep on top
+
+From `gui.rs`, the Keep on Top button's tooltip.
+
+Keep on Top shows the video in a small window of its own with no frame: drag it to move it,
+click it to pause, double-click it or press Escape to go back. On X11 it stays above other
+windows by itself. Wayland doesn't let a window ask for that, so the small window has its own
+app id, `rivet-play-pip`, for a compositor rule (the README lists Softcore's, Hyprland's,
+niri's and Sway's).
+
+### Preferences: languages and hardware decoding
+
+From `gui.rs`, Preferences.
+
+Audio and subtitle languages are codes such as `en`, `eng` or `fr`, first choice first; a file
+says which language each track is in, and the first that matches is chosen when a file opens.
+Hardware decoding uses the graphics card (VA-API) for the formats it knows; a driver that gets
+it wrong shows blocks, green frames or a black picture, which turning it off fixes.
+
+### Resume
+
+From `gui.rs`, "Started from …" and Preferences.
+
+Rivet Play keeps the place in files over a minute long, once past the first 30 seconds and
+until the last 5%. The places are kept for the newest 500 files, under a key made from the
+file's path and size, so a file replaced by another starts from the top.

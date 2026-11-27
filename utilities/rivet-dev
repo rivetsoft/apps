@@ -80,6 +80,7 @@ Docs and checks
   ftp-screenshots                  Regenerate Rivet FTP's screenshots (demo server, no network)
   edit-screenshots                 Regenerate Rivet Edit's screenshots (demo project)
   app-screenshots                  Regenerate Snip, Vice, Calendar, Color, Fetch and Docs' pictures
+  play-screenshots                 Regenerate Rivet Play's pictures (sample media it makes)
   flatpak-sources                  Add new crates from Cargo.lock to the Flatpak's offline list
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
   qa                               Open every dialog and mode looking for crashes, then run the
@@ -128,6 +129,7 @@ case "$cmd" in
     ftp-screenshots) exec sh "$LIB/ftp-screenshots.sh" "$@" ;;
     edit-screenshots) exec sh "$LIB/edit-screenshots.sh" "$@" ;;
     app-screenshots) exec sh "$LIB/app-screenshots.sh" "$@" ;;
+    play-screenshots) exec sh "$LIB/play-screenshots.sh" "$@" ;;
     flatpak-sources) exec python3 "$LIB/flatpak-sources-sync.py" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
     qa)            exec sh "$LIB/qa.sh" "$@" ;;
