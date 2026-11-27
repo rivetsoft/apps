@@ -10,6 +10,7 @@ GitHub wiki; links into the code (`../…`) would then need to become full GitHu
 
 - [Development](development.md): building, checking, releasing, and the repository layout
 - [Releasing](releasing.md): from a changelog to a download in Rivet Welcome and on the website
+- [From alpha to stable](stability.md): the bar an app meets to be stable, and how to promote it
 - [Shared crates](shared-crates.md): which code the apps share, and the order of the move
 
 ## Rivet Shell (just started)

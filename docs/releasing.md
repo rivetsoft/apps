@@ -18,7 +18,8 @@ Softcore is released from its own repository and has no AppImage; it isn't cover
 
 Notes, Edit, Terminal and Files are full releases. The rest are pre-releases, which Rivet
 Welcome badges "Alpha" and the website calls alpha: `STABLE` in
-[`utilities/lib/apps.sh`](../utilities/lib/apps.sh) decides.
+[`utilities/lib/apps.sh`](../utilities/lib/apps.sh) decides. [stability.md](stability.md) is
+the bar an app meets to become stable, and how to promote it.
 
 The portable build is the program linked for glibc 2.31, with its desktop file, icon, README,
 changelog, licenses and an `install.sh`. **Rivet Welcome installs from it**, so its contract is:
