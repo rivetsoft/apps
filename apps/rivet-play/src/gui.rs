@@ -344,7 +344,7 @@ impl PlayApp {
         let sample = std::env::var_os("RIVET_PLAY_SAMPLE").map(PathBuf::from).unwrap_or_default();
         let files = queue::expand(&[sample], mime_db());
         let kind = |p: &PathBuf| mime_db().guess_by_name(p).unwrap_or_default();
-        let video = files.iter().position(|p| kind(p).starts_with("video/"));
+        let video = files.iter().position(|p| p.file_stem().is_some_and(|s| s == "Mandelbrot Zoom")).or_else(|| files.iter().position(|p| kind(p).starts_with("video/")));
         let audio = files.iter().position(|p| kind(p).starts_with("audio/"));
         self.queue.add(files.clone());
         let t = |id: i64, kind: &str, title: Option<&str>, lang: Option<&str>, selected: bool| Track { id, kind: kind.into(), title: title.map(String::from), lang: lang.map(String::from), selected, ..Track::default() };
@@ -677,6 +677,11 @@ impl PlayApp {
         for c in cmds {
             self.command(c, ctx);
         }
+    }
+
+    /// Files dropped on the window. Read in `ui` only: while the window is hidden, `logic` sees
+    /// the last shown frame's input again and would open them over and over.
+    fn dropped(&mut self, ctx: &egui::Context) {
         let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect::<Vec<_>>());
         if !dropped.is_empty() {
             let play = self.queue.is_empty() || self.ended;
@@ -1629,15 +1634,22 @@ impl eframe::App for PlayApp {
         }
     }
 
+    /// Playback goes on with the window hidden or the screen locked, when no frame is drawn:
+    /// mpv's events, the desktop's player controls and the screen kept awake are handled here,
+    /// which eframe still calls then.
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.poll(ctx);
+        self.tick(ctx);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let choice = Choice { mode: Mode::System, accent: [0x35, 0x84, 0xe4], follow_desktop_colors: true, text_size: 0.0 };
         let live = self.live();
         self.look.frame(&ctx, &choice, live);
         let accent = self.look.accent(&choice);
-        self.poll(&ctx);
+        self.dropped(&ctx);
         self.shortcuts(&ctx);
-        self.tick(&ctx);
         let v = ctx.global_style().visuals.clone();
         let view = self.view();
         if self.show_queue && view != View::Audio {
