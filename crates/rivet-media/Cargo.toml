@@ -7,6 +7,10 @@ description = "Previews shared by the Rivet apps: picture, video, audio and text
 license = "MIT OR Apache-2.0"
 publish = false
 
+[features]
+# Playback through libmpv, loaded at run time (src/mpv.rs), for Rivet Play.
+mpv = ["dep:libc"]
+
 [dependencies]
 rivet-look = { path = "../rivet-look" }
 rivet-mem = { path = "../rivet-mem" }
@@ -18,3 +22,4 @@ kamadak-exif = "0.6"
 # Drawing SVG pictures at the size they're shown (already used by rivet-look for icons).
 resvg = { version = "0.50.0", default-features = false }
 png = "0.18"
+libc = { version = "0.2.191", optional = true }

@@ -14,7 +14,7 @@
 # Every app that is released, in the order the release commands go through them. An app with
 # HOLD=1 below is held back: `release-all`, `ship all` and `live all` pass over it and Rivet
 # Welcome doesn't offer it, while naming it (`ship view`) still works. See docs/releasing.md.
-ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch view welcome"
+ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch view play welcome"
 
 app_select() {
     # STABLE=1: published as a full release, not a pre-release (Rivet Welcome badges
@@ -45,10 +45,14 @@ app_select() {
             APP_ID=calendar TITLE="Rivet Calendar" ;;
         color | rivet-color)
             APP_ID=color TITLE="Rivet Color" ;;
+        play | rivet-play)
+            APP_ID=play TITLE="Rivet Play" ;;
         fetch | rivet-fetch | rivetfetch)
             APP_ID=fetch TITLE="Rivet Fetch" BIN=rivetfetch ;;
         view | rivet-view)
             APP_ID=view TITLE="Rivet View" HOLD=1 ;;
+        play | rivet-play)
+            APP_ID=play TITLE="Rivet Play" HOLD=1 ;;
         *)
             echo "Unknown app: $1 (one of: $ALL_APPS)" >&2
             return 1 ;;

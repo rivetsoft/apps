@@ -21,6 +21,10 @@ pub enum Pick {
     Icon,
     /// An archive: a zip, a tar of any kind, a 7z and the like.
     Archive,
+    /// A video or audio file, or a playlist.
+    Media,
+    /// A subtitle file.
+    Subtitles,
 }
 
 /// Asks the picker; `Ok(None)` when it was cancelled.
@@ -42,6 +46,13 @@ pub fn choose(kind: Pick, title: &str, start: Option<&Path>) -> Result<Option<Pa
         const ENDS: [&str; 22] = ["zip", "jar", "7z", "rar", "tar", "tar.gz", "tgz", "tar.xz", "txz", "tar.bz2", "tbz2", "tar.zst", "tzst", "gz", "xz", "bz2", "zst", "iso", "cab", "deb", "rpm", "lz"];
         let pats: Vec<(u32, String)> = ENDS.iter().flat_map(|e| [(0u32, format!("*.{e}")), (0u32, format!("*.{}", e.to_uppercase()))]).collect();
         opts.insert("filters", Value::from(vec![Value::from(("Archives".to_string(), pats)), Value::from(("All files".to_string(), vec![(0u32, "*".to_string())]))]));
+    } else if kind == Pick::Media {
+        let pats: Vec<(u32, String)> = ["video/*", "audio/*", "application/vnd.apple.mpegurl"].iter().map(|m| (1u32, m.to_string())).collect();
+        opts.insert("filters", Value::from(vec![Value::from(("Videos and music".to_string(), pats)), Value::from(("All files".to_string(), vec![(0u32, "*".to_string())]))]));
+    } else if kind == Pick::Subtitles {
+        const ENDS: [&str; 6] = ["srt", "ass", "ssa", "vtt", "sub", "sup"];
+        let pats: Vec<(u32, String)> = ENDS.iter().flat_map(|e| [(0u32, format!("*.{e}")), (0u32, format!("*.{}", e.to_uppercase()))]).collect();
+        opts.insert("filters", Value::from(vec![Value::from(("Subtitles".to_string(), pats)), Value::from(("All files".to_string(), vec![(0u32, "*".to_string())]))]));
     } else {
         let mut pats: Vec<(u32, String)> = ["*.jpg", "*.jpeg", "*.png", "*.webp", "*.JPG", "*.JPEG", "*.PNG", "*.WEBP"].iter().map(|g| (0u32, g.to_string())).collect();
         pats.extend(["image/jpeg", "image/png", "image/webp"].iter().map(|m| (1u32, m.to_string())));
@@ -143,4 +154,34 @@ pub fn pick_color() -> Result<Option<[f64; 3]>, String> {
     }
     let color = results.get("color").and_then(|v| v.try_clone().ok()).and_then(|v| <(f64, f64, f64)>::try_from(v).ok());
     Ok(color.map(|(r, g, b)| [r, g, b]))
+}
+
+/// While this is kept, the desktop doesn't dim, lock or turn off the screen for being idle
+/// (xdg-desktop-portal's Inhibit). Dropping it lets the screen sleep again.
+pub struct IdleInhibit {
+    conn: Connection,
+    handle: OwnedObjectPath,
+}
+
+impl Drop for IdleInhibit {
+    fn drop(&mut self) {
+        if let Ok(request) = Proxy::new(&self.conn, DEST, self.handle.as_str(), "org.freedesktop.portal.Request") {
+            let _: Result<(), _> = request.call("Close", &());
+        }
+    }
+}
+
+/// Keep the screen awake, saying why (the desktop may show `reason`). Blocking: call it from a
+/// thread. An error means the desktop has no way to be asked, and the screen sleeps as usual.
+pub fn inhibit_idle(reason: &str) -> Result<IdleInhibit, String> {
+    // The flag for "idle" in the Inhibit portal (1 logout, 2 user switch, 4 suspend, 8 idle).
+    const IDLE: u32 = 8;
+    let conn = Connection::session().map_err(|e| format!("no session bus ({e})"))?;
+    let (token, _answers) = request(&conn)?;
+    let mut opts: HashMap<&str, Value> = HashMap::new();
+    opts.insert("handle_token", Value::from(token.as_str()));
+    opts.insert("reason", Value::from(reason));
+    let inhibit = Proxy::new(&conn, DEST, PATH, "org.freedesktop.portal.Inhibit").map_err(|e| e.to_string())?;
+    let handle: OwnedObjectPath = inhibit.call("Inhibit", &("", IDLE, opts)).map_err(|e| format!("the desktop can't keep the screen awake for an app (xdg-desktop-portal): {e}"))?;
+    Ok(IdleInhibit { conn, handle })
 }

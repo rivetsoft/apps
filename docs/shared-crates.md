@@ -75,6 +75,8 @@ reads (show hidden, picker filter) removes both dependencies.
      Rivet View added full-size pictures (`picture`: frames, orientation, camera details) and
      the stage that zooms, moves and turns a picture (`stage`), which the light box now draws
      its pictures with, so Files' Preview and Rivet View behave the same.
+     Its `mpv` feature (playback through libmpv, loaded at run time) is Rivet Play's; the light
+     box could play with sound through it later.
    - ✅ **Natural sort** (`natural_cmp`) into `rivet_xdg::order`, so Rivet View steps through a
      folder in Files' order.
    - ✅ **`crash`** into rivet-xdg, with personal details taken out of every report, and the
