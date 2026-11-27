@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.1
 
 - **Thumbnails take less memory**: they're kept at the size they're shown, so a folder of 3,000
   photos keeps every thumbnail ready at the default zoom and scrolls back without loading them
