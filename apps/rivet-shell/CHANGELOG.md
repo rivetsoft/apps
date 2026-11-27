@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
 - **A sub panel's handle is easy to hit**: the whole space from the panel above it to just past
   the handle opens the sub panel, resting there opens it after a fifth of a second every time,
