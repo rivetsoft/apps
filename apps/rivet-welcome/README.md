@@ -26,6 +26,8 @@ pre-release while it earns a stable release ([the bar](../../docs/stability.md))
   has Check for Updates and Install Updates. It works with any tray that speaks
   StatusNotifierItem: Rivet Shell, KDE, waybar and others. Turn it off in Settings.
 
+![Rivet Welcome's settings: the tray, notifications, alpha versions and how often to look](../../docs/screenshots/welcome-settings-wide.png)
+
 ## From a terminal
 
 ```sh
