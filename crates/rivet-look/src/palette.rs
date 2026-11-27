@@ -445,6 +445,23 @@ pub fn prefers_dark() -> bool {
     true
 }
 
+/// Does the desktop want things to move (its GTK settings' `gtk-enable-animations`; yes when
+/// it doesn't say)? Off, a panel that slides should appear and go at once.
+pub fn animations_enabled() -> bool {
+    let c = places::config_home();
+    for f in ["gtk-4.0/settings.ini", "gtk-3.0/settings.ini"] {
+        if let Ok(t) = std::fs::read_to_string(c.join(f)) {
+            for l in t.lines() {
+                if let Some(v) = l.trim().strip_prefix("gtk-enable-animations") {
+                    let v = v.trim_start_matches([' ', '=']).trim();
+                    return !(v == "0" || v == "false");
+                }
+            }
+        }
+    }
+    true
+}
+
 /// The palette matugen produced most recently, learned from its own output files,
 /// with the time of the newest output. Every file involved is added to `watched`.
 fn matugen_palette(watched: &mut Vec<PathBuf>) -> Option<(Palette, SystemTime)> {

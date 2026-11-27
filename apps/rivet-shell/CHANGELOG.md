@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A sub panel's handle is easy to hit**: the whole space from the panel above it to just past
+  the handle opens the sub panel, resting there opens it after a fifth of a second every time,
+  and clicking the handle opens it at once. With animations turned off in your desktop's
+  settings, panels and docks appear and go without sliding.
 - **Less memory**: after a long session of changing wallpapers and opening popups, Rivet Shell holds
   about 46 MB instead of 108 MB, and it starts at 45 MB instead of 64 MB. Every panel and popup
   shares one copy of the interface font.

@@ -803,18 +803,21 @@ pub fn pointer_rect(panels: &[PanelCfg], idx: usize, full: Rect, hidden: bool, o
     // A drawer's surface begins under its host's bar: its strip is past the host's own surface
     // (the bar's corners, then the room the host keeps), where the pointer reaches it.
     let skip = host_of(panels, idx).filter(|_| p.drawer()).map_or(0.0, |h| p.lead + panels[h].gap());
-    // Pausing on the handle opens it, wherever the handle's been put.
+    // With a handle drawn, the pointer reaches it anywhere from where the host's bar ends to a
+    // little past the handle, so the handle and the space around it are easy to hit.
     let thick = if p.vertical() { full.width() } else { full.height() };
-    let strip = handle_rect(panels, idx, full, output).map_or(SUB_STRIP, |r| {
-        let far = match p.edge {
-            Edge::Top => r.bottom() - full.top(),
-            Edge::Bottom => full.bottom() - r.top(),
-            Edge::Left => r.right() - full.left(),
-            Edge::Right => full.right() - r.left(),
+    let (start, end) = handle_rect(panels, idx, full, output).map_or((skip, skip + SUB_STRIP), |r| {
+        let (near, far) = match p.edge {
+            Edge::Top => (r.top() - full.top(), r.bottom() - full.top()),
+            Edge::Bottom => (full.bottom() - r.bottom(), full.bottom() - r.top()),
+            Edge::Left => (r.left() - full.left(), r.right() - full.left()),
+            Edge::Right => (full.right() - r.right(), full.right() - r.left()),
         };
-        (far + 3.0 - skip).max(SUB_STRIP)
+        let host_end = host_of(panels, idx).map_or(0.0, |h| reach(panels, h, output) - panels[h].gap() - sub_start(panels, idx, output));
+        (host_end.clamp(0.0, skip).min(near), (far + 8.0).max(skip + SUB_STRIP))
     });
-    p.pointer_rect_for(full, bar_rect(panels, idx, full), length, hidden, skip, strip.min((thick - skip).max(0.0)))
+    let end = end.min(thick);
+    p.pointer_rect_for(full, bar_rect(panels, idx, full), length, hidden, start, (end - start).max(0.0))
 }
 
 /// How far from its edge panel `idx` ends (panels on the same edge stack in order, the first
@@ -951,8 +954,11 @@ mod tests {
         // (No reach under the host's corners yet: its surface begins where the host's bar ends.)
         let strip = Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, ps[i].height()));
         assert_eq!(handle_rect(&ps, i, strip, "").map(|r| (r.left(), r.top(), r.width(), r.height())), Some((MARGIN + 12.0, 20.0, 80.0, 3.0)));
-        // The strip that takes the pointer reaches past the handle.
-        assert_eq!(pointer_rect(&ps, i, strip, true, "").map(|r| (r.top(), r.bottom())), Some((MARGIN, 26.0)));
+        // The strip that takes the pointer runs from the host's bar to a little past the handle,
+        // so the whole handle can be pointed at.
+        let hit = pointer_rect(&ps, i, strip, true, "").unwrap();
+        assert_eq!((hit.top(), hit.bottom()), (0.0, 31.0));
+        assert!(hit.contains_rect(handle_rect(&ps, i, strip, "").unwrap()));
         ps[i].sub.as_mut().unwrap().handle.show = false;
         assert_eq!(handle_rect(&ps, i, strip, ""), None);
         // A drawer: its bar begins where the host's ends, with no room between, and its surface
