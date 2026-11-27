@@ -1,5 +1,5 @@
 //! The order a person expects names in: "photo 2" before "photo 10", case left aside. Rivet
-//! Files sorts folders this way, and Rivet View steps through a folder in the same order.
+//! Files sorts folders this way, and Rivet Long Shot steps through a folder in the same order.
 
 /// Natural sort: "file2" before "file10", case-insensitive.
 pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {

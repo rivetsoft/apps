@@ -8,7 +8,7 @@ use std::sync::mpsc::Receiver;
 use std::time::{Instant, SystemTime};
 
 use crate::fsops;
-// Natural sort is shared with Rivet View, which steps through a folder in this order.
+// Natural sort is shared with Rivet Long Shot, which steps through a folder in this order.
 pub use rivet_xdg::order::natural_cmp;
 use rivet_xdg::order::natural_cmp_bytes;
 use crate::mime::MimeDb;

@@ -1,4 +1,4 @@
-//! The picture stage shared by Rivet View and the light box (Rivet Files' and Rivet FTP's
+//! The picture stage shared by Rivet Long Shot and the light box (Rivet Files' and Rivet FTP's
 //! Preview): a picture fitted to its space, zoomed with the wheel, a pinch or a double-click,
 //! moved by dragging, and turned or flipped as it is drawn (nothing is written to the file).
 //!

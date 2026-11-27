@@ -16,7 +16,7 @@ Rivet developer utilities
 Usage: utilities/rivet-dev <command> [APP] [options]
 
 APP is files (the default), notes, edit, terminal, ftp, snip, shell, vice, calendar, color,
-fetch, view or welcome, for the commands marked [APP]. Each app has its own version, changelog and
+fetch, longshot, reader, cinema or welcome, for the commands marked [APP]. Each app has its own version, changelog and
 release tags: vX.Y.Z for Rivet Files, rivet-APP-vX.Y.Z for the rest (rivet-notes-v0.4.1).
 How a release goes, step by step: docs/releasing.md.
 
@@ -59,7 +59,7 @@ Building
   portable                         Release binary (dist profile) linked against glibc 2.31 (via Zig)
   portable-bin                     Print the path of that binary
   check-glibc --max V FILE…        Fail if FILE needs a GLIBC symbol newer than V
-  pdfium                           Download the pinned PDFium where target/*/rivet-docs finds it
+  pdfium                           Download the pinned PDFium where target/*/rivet-reader finds it
 
 Using your build
   install [APP] [--default|--uninstall]
@@ -79,8 +79,8 @@ Docs and checks
                                    in the colors matugen makes from it (needs matugen)
   ftp-screenshots                  Regenerate Rivet FTP's screenshots (demo server, no network)
   edit-screenshots                 Regenerate Rivet Edit's screenshots (demo project)
-  app-screenshots                  Regenerate Snip, Vice, Calendar, Color, Fetch and Docs' pictures
-  play-screenshots                 Regenerate Rivet Play's pictures (sample media it makes)
+  app-screenshots                  Regenerate Snip, Vice, Calendar, Color, Long Shot, Fetch and Reader' pictures
+  cinema-screenshots                 Regenerate Rivet Cinema's pictures (sample media it makes)
   flatpak-sources                  Add new crates from Cargo.lock to the Flatpak's offline list
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
   qa                               Open every dialog and mode looking for crashes, then run the
@@ -116,7 +116,7 @@ case "$cmd" in
     portable)      exec sh "$LIB/portable-build.sh" "$@" ;;
     portable-bin)  exec sh "$LIB/portable-bin.sh" "$@" ;;
     check-glibc)   exec sh "$LIB/check-glibc.sh" "$@" ;;
-    pdfium)        exec sh "$LIB/pdfium.sh" "$HERE/../target/lib/rivet-docs" "$@" ;;
+    pdfium)        exec sh "$LIB/pdfium.sh" "$HERE/../target/lib/rivet-reader" "$@" ;;
     install)
         case "${RIVET_APP:-files}" in
             files) exec sh "$LIB/install.sh" "$@" ;;
@@ -129,7 +129,7 @@ case "$cmd" in
     ftp-screenshots) exec sh "$LIB/ftp-screenshots.sh" "$@" ;;
     edit-screenshots) exec sh "$LIB/edit-screenshots.sh" "$@" ;;
     app-screenshots) exec sh "$LIB/app-screenshots.sh" "$@" ;;
-    play-screenshots) exec sh "$LIB/play-screenshots.sh" "$@" ;;
+    cinema-screenshots) exec sh "$LIB/cinema-screenshots.sh" "$@" ;;
     flatpak-sources) exec python3 "$LIB/flatpak-sources-sync.py" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
     qa)            exec sh "$LIB/qa.sh" "$@" ;;

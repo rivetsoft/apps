@@ -2,7 +2,7 @@
 //! the Rivet apps. ← / → (or the side arrows) step through its items; Esc, Space or a click
 //! outside closes it; Return opens the file.
 //!
-//! Pictures are drawn on the stage Rivet View uses (`crate::stage`): the wheel or a pinch zooms,
+//! Pictures are drawn on the stage Rivet Long Shot uses (`crate::stage`): the wheel or a pinch zooms,
 //! a double-click goes between fitting and 100%, and a zoomed picture can be dragged.
 //!
 //! The app gives it the items, the colors and the open button's label, and gets back

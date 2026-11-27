@@ -1136,11 +1136,11 @@ impl RivetApp {
             return;
         }
         let native = matches!(e.mime.as_str(), "application/x-executable" | "application/x-pie-executable" | "application/x-sharedlib");
-        let view = launch::default_app(&self.apps, &e.mime).filter(|a| a.id == "rivet-view.desktop" && !places::in_flatpak()).cloned();
+        let view = launch::default_app(&self.apps, &e.mime).filter(|a| a.id == "rivet-longshot.desktop" && !places::in_flatpak()).cloned();
         let res = if e.is_executable() && native {
             launch::run_executable(&e.path)
         } else if let Some(view) = view {
-            // Rivet View steps through the folder in the order it's shown here.
+            // Rivet Long Shot steps through the folder in the order it's shown here.
             let mut argv = launch::exec_args(&view, std::slice::from_ref(&e.path));
             argv.splice(1..1, self.view_order());
             launch::spawn(Path::new(&argv[0]), &argv[1..])
@@ -1153,7 +1153,7 @@ impl RivetApp {
         }
     }
 
-    /// How this folder is sorted, as Rivet View is told it (`--sort size --desc`).
+    /// How this folder is sorted, as Rivet Long Shot is told it (`--sort size --desc`).
     pub(crate) fn view_order(&self) -> Vec<String> {
         let key = match self.s.sort {
             crate::settings::SortKey::Name => "name",
@@ -1168,20 +1168,20 @@ impl RivetApp {
         v
     }
 
-    /// Rivet View, the picture viewer, when it is installed: beside this program, else on the
+    /// Rivet Long Shot, the picture viewer, when it is installed: beside this program, else on the
     /// path. Looked for once.
-    pub(crate) fn rivet_view() -> Option<&'static Path> {
+    pub(crate) fn rivet_longshot() -> Option<&'static Path> {
         static FOUND: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-        FOUND.get_or_init(|| launch::rivet_program("rivet-view")).as_deref()
+        FOUND.get_or_init(|| launch::rivet_program("rivet-longshot")).as_deref()
     }
 
-    /// Open a picture in Rivet View, which steps through the rest of the folder in this order.
+    /// Open a picture in Rivet Long Shot, which steps through the rest of the folder in this order.
     pub(crate) fn open_in_view(&mut self, path: &Path) {
-        let Some(view) = Self::rivet_view() else { return };
+        let Some(view) = Self::rivet_longshot() else { return };
         let mut args = self.view_order();
         args.push(path.to_string_lossy().to_string());
         if let Err(e) = launch::spawn(view, &args) {
-            self.message("Could not open Rivet View", &e);
+            self.message("Could not open Rivet Long Shot", &e);
         }
     }
 

@@ -7,7 +7,7 @@ cargo build
 OUT="docs/screenshots"
 mkdir -p "$OUT"
 
-T="$(mktemp -d /tmp/rivet-docs-XXXXXX)"
+T="$(mktemp -d /tmp/rivet-reader-XXXXXX)"
 H="$T/you"
 for d in Desktop Documents Downloads Music Pictures Public Templates Videos Projects; do mkdir -p "$H/$d"; done
 for f in notes.txt todo.md install.sh backup.tar.gz; do : > "$H/$f"; done

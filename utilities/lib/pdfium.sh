@@ -1,5 +1,5 @@
 #!/bin/sh
-# Put PDFium, the PDF engine Rivet Docs loads when it opens a PDF, in DEST: DEST/libpdfium.so,
+# Put PDFium, the PDF engine Rivet Reader loads when it opens a PDF, in DEST: DEST/libpdfium.so,
 # and its licenses in DEST/licenses/pdfium/ (or LICENSES_DEST when that is set).
 #
 #   utilities/lib/pdfium.sh DEST [LICENSES_DEST]
