@@ -75,7 +75,10 @@ pub fn demo_radios() -> crate::radio::Radios {
 }
 
 pub fn demo_status() -> Status {
-    let ws = |k: &str, active: bool, busy: bool| Workspace { key: k.into(), label: k.into(), active, busy, output: String::new() };
+    // RIVET_SHELL_FLOATING=on|off: the workspace in view says whether it floats its windows,
+    // as Softcore's do, so quick settings shows its switch.
+    let floating = std::env::var("RIVET_SHELL_FLOATING").ok().map(|v| v == "on");
+    let ws = |k: &str, active: bool, busy: bool| Workspace { key: k.into(), label: k.into(), active, busy, output: String::new(), focused: active, floating: floating.filter(|_| active) };
     Status {
         workspaces: vec![ws("1", false, true), ws("2", true, true), ws("3", false, true), ws("4", false, false)],
         running: vec!["rivet-files".into(), "rivet-terminal".into()],

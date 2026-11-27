@@ -89,6 +89,11 @@ pub struct Workspace {
     /// Has windows (where the compositor says).
     pub busy: bool,
     pub output: String,
+    /// The one the compositor's actions go to: in view on the display with the focus.
+    pub focused: bool,
+    /// Its windows float instead of sitting in columns, where the compositor can do both and
+    /// says which (Softcore). None elsewhere.
+    pub floating: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -409,7 +414,8 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
                 .map(|w| {
                     let idx = s(w, "idx");
                     let name = w.get("name").and_then(Value::as_str).map(String::from);
-                    Workspace { label: name.unwrap_or_else(|| idx.clone()), key: idx, active: b(w, "is_active"), busy: w.get("active_window_id").is_some_and(|x| !x.is_null()), output: s(w, "output") }
+                    let floating = w.get("layout").and_then(Value::as_str).map(|l| l == "floating");
+                    Workspace { label: name.unwrap_or_else(|| idx.clone()), key: idx, active: b(w, "is_active"), busy: w.get("active_window_id").is_some_and(|x| !x.is_null()), output: s(w, "output"), focused: b(w, "is_focused"), floating }
                 })
                 .collect()
         }
@@ -421,7 +427,7 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
                 .filter(|w| w.get("id").and_then(Value::as_i64).is_some_and(|i| i > 0))
                 .map(|w| {
                     let id = s(w, "id");
-                    Workspace { label: s(w, "name"), active: actives.contains(&id), key: id, busy: w.get("windows").and_then(Value::as_u64).unwrap_or(0) > 0, output: s(w, "monitor") }
+                    Workspace { label: s(w, "name"), active: actives.contains(&id), key: id, busy: w.get("windows").and_then(Value::as_u64).unwrap_or(0) > 0, output: s(w, "monitor"), focused: false, floating: None }
                 })
                 .collect()
         }
@@ -434,14 +440,14 @@ fn workspaces(c: Compositor) -> Vec<Workspace> {
                     let out = s(m, "monitor");
                     m.get("tags").and_then(Value::as_array).cloned().unwrap_or_default().into_iter().map(move |t| {
                         let i = s(&t, "index");
-                        Workspace { label: i.clone(), key: i, active: b(&t, "is_active"), busy: t.get("client_count").and_then(Value::as_u64).unwrap_or(0) > 0, output: out.clone() }
+                        Workspace { label: i.clone(), key: i, active: b(&t, "is_active"), busy: t.get("client_count").and_then(Value::as_u64).unwrap_or(0) > 0, output: out.clone(), focused: false, floating: None }
                     })
                 })
                 .collect()
         }
         Compositor::Sway => {
             let Some(Value::Array(list)) = json("swaymsg", &["-t", "get_workspaces", "-r"]) else { return Vec::new() };
-            list.iter().map(|w| Workspace { key: s(w, "num"), label: s(w, "name"), active: b(w, "visible"), busy: true, output: s(w, "output") }).collect()
+            list.iter().map(|w| Workspace { key: s(w, "num"), label: s(w, "name"), active: b(w, "visible"), busy: true, output: s(w, "output"), focused: false, floating: None }).collect()
         }
         Compositor::Other => Vec::new(),
     };
@@ -706,6 +712,13 @@ pub fn focus_workspace(c: Compositor, key: &str) {
         Compositor::Mango => spawn("mmsg", &["dispatch", &format!("view,{key},0")]),
         Compositor::Sway => spawn("swaymsg", &["workspace", "number", key]),
         Compositor::Other => {}
+    }
+}
+
+/// Float the windows of the workspace with the focus, or put them back in columns.
+pub fn toggle_floating(c: Compositor) {
+    if c == Compositor::Softcore {
+        spawn(c.msg(), &["msg", "action", "toggle-workspace-floating"]);
     }
 }
 

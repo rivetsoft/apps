@@ -2168,6 +2168,7 @@ impl Shell {
             }
             Act::NightLight(on) => self.night.set(on, self.s.night_kelvin),
             Act::KeepAwake(on) => self.set_awake(on),
+            Act::FloatingLayout => sys::toggle_floating(self.comp),
             Act::Dnd(on) => {
                 self.event("dnd", &[("on", if on { "true" } else { "false" })]);
                 self.dnd = on;
