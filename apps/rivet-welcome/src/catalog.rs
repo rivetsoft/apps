@@ -187,6 +187,19 @@ pub fn known() -> Vec<Entry> {
                 include_str!("../../rivet-view/data/rivet-view.svg"),
             )
         },
+        Entry {
+            held: true,
+            ..entry(
+                "docs",
+                "Rivet Docs",
+                "rivet-docs",
+                "rivet-docs",
+                "rivet-docs-v",
+                "Read PDFs and comics, with thumbnails, the outline, search and dark pages.",
+                Kind::App,
+                include_str!("../../rivet-docs/data/rivet-docs.svg"),
+            )
+        },
         entry(
             "fetch",
             "Rivet Fetch",
