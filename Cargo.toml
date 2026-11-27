@@ -10,6 +10,7 @@
 #   apps/rivet-fetch   rivetfetch (the computer at a glance in the terminal)
 #   apps/rivet-calendar Rivet Calendar (events in plain .ics folders; the panel's calendar)
 #   apps/rivet-color   Rivet Color (picks colors from the screen; shades, harmonies, palettes)
+#   apps/rivet-docs    Rivet Docs (reads PDFs and comics; the documents are crates/rivet-doc)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.
@@ -33,6 +34,10 @@ opt-level = 3
 
 # Calendars of thousands of events (a work Google account) take seconds to read unoptimised.
 [profile.dev.package.rivet-cal]
+opt-level = 3
+
+# Dark pages recolor every pixel of a page, and comic pages are scaled here.
+[profile.dev.package.rivet-doc]
 opt-level = 3
 
 [profile.release]

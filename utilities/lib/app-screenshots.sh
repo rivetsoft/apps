@@ -1,10 +1,12 @@
 #!/bin/sh
-# Regenerate the README pictures of Rivet Snip, Vice, Calendar, Color and Fetch
+# Regenerate the README pictures of Rivet Snip, Vice, Calendar, Color, Fetch and Docs
 # (docs/screenshots/rivet-APP-wide.png) in the Rivet scheme, in a throwaway home with each app's
 # sample data, so they never show anyone's real files, events or desktop colors.
 set -e
 cd "$(dirname "$0")/../.."
-cargo build -q -p rivet-snip -p rivet-vice -p rivet-calendar -p rivet-color -p rivet-fetch -p rivet-terminal
+cargo build -q -p rivet-snip -p rivet-vice -p rivet-calendar -p rivet-color -p rivet-fetch -p rivet-terminal -p rivet-docs
+# Rivet Docs draws PDFs with PDFium, kept beside the program in target/lib.
+[ -f target/lib/rivet-docs/libpdfium.so ] || sh utilities/lib/pdfium.sh target/lib/rivet-docs
 OUT="$(pwd)/docs/screenshots"
 BIN="$(pwd)/target/debug"
 mkdir -p "$OUT"
@@ -34,6 +36,14 @@ export RIVET_SHOT_SIZE=1280x800
 RIVET_CALENDAR_VIEW=month "$BIN/rivet-calendar" --screenshot "$OUT/rivet-calendar-wide.png"
 "$BIN/rivet-color" --screenshot "$OUT/rivet-color-wide.png"
 
+# Rivet Docs with the sample field guide and comic (utilities/lib/docs-samples.py).
+python3 utilities/lib/docs-samples.py "$T/docs" >/dev/null
+GUIDE="$T/docs/Rivet Field Guide.pdf"
+RIVET_DOCS_FILE="$GUIDE" RIVET_DOCS_PAGE=3 RIVET_DOCS_SIDEBAR=pages RIVET_DOCS_DARK=off "$BIN/rivet-docs" --screenshot "$OUT/rivet-docs-wide.png"
+RIVET_DOCS_FILE="$GUIDE" RIVET_DOCS_PAGE=3 RIVET_DOCS_SIDEBAR=outline RIVET_DOCS_DARK=off RIVET_DOCS_FIND=panel "$BIN/rivet-docs" --screenshot "$OUT/rivet-docs-find-wide.png"
+RIVET_DOCS_FILE="$GUIDE" RIVET_DOCS_PAGE=8 RIVET_DOCS_SIDEBAR=pages RIVET_DOCS_DARK=on "$BIN/rivet-docs" --screenshot "$OUT/rivet-docs-dark-wide.png"
+RIVET_DOCS_FILE="$T/docs/Rivet at the Market.cbz" RIVET_DOCS_PAGE=4 RIVET_DOCS_VIEW=single RIVET_DOCS_SIDEBAR=pages "$BIN/rivet-docs" --screenshot "$OUT/rivet-docs-comic-wide.png"
+
 # rivetfetch in Rivet Terminal, with RIVET_FETCH_DEMO's made-up computer instead of this one.
 cat > "$T/fetch.sh" <<'EOF'
 #!/bin/bash
@@ -46,4 +56,4 @@ exec sleep 600
 EOF
 PATH="$BIN:$PATH" RIVET_FETCH_DEMO=1 RIVET_SHOT_AFTER=200 "$BIN/rivet-terminal" --screenshot "$OUT/rivet-fetch-wide.png" -e bash "$T/fetch.sh"
 rm -rf "$T"
-echo "Saved rivet-{snip,vice,calendar,color,fetch}-wide.png in $OUT"
+echo "Saved rivet-{snip,vice,calendar,color,fetch,docs,docs-find,docs-dark,docs-comic}-wide.png in $OUT"

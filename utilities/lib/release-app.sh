@@ -58,6 +58,11 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 strip -o "$STAGE/$BIN" "$BIN_PATH"
 ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/$BIN"
+# PDFium for Rivet Docs, beside the program, with its licenses.
+if [ "$BUNDLE" = pdfium ]; then
+    sh ./utilities/lib/pdfium.sh "$STAGE/lib/$BIN" "$STAGE/licenses/pdfium"
+    ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/lib/$BIN/libpdfium.so"
+fi
 cp "$APP/data/$DESKTOP" "$APP/data/$DIST_NAME.svg" "$APP/README.md" "$APP/CHANGELOG.md" LICENSE-MIT LICENSE-APACHE "$STAGE/"
 sed "s/@BIN@/$BIN/g; s/@TITLE@/$TITLE/g; s/@LAUNCHER@/$LAUNCHER/g" utilities/lib/install-app.sh > "$STAGE/install.sh"
 chmod +x "$STAGE/install.sh"
