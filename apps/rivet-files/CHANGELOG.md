@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Zoom in Preview**: the wheel or a pinch zooms a picture, a double-click goes between fitting
+  and 100%, and a zoomed picture can be dragged around.
+- **Open in Rivet View**: with Rivet View installed, a picture's right-click menu opens it there.
+  When Rivet View opens pictures, it steps through the folder in the order Rivet Files shows it.
+
 ## 0.11.1
 
 - **Thumbnails take less memory**: they're kept at the size they're shown, so a folder of 3,000

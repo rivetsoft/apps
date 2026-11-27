@@ -6,7 +6,7 @@
 #
 #   utilities/rivet-dev ship notes             tag rivet-notes-vVERSION and push it
 #   utilities/rivet-dev ship notes edit        several apps
-#   utilities/rivet-dev ship all               every app whose version isn't tagged yet
+#   utilities/rivet-dev ship all               every app whose version isn't tagged yet, except held ones
 #   utilities/rivet-dev ship all --dry-run     only say what it would tag
 #
 # The version is the one in the app's Cargo.toml on main, set by utilities/rivet-dev bump.
@@ -40,6 +40,10 @@ fi
 tagged=
 for a in $LIST; do
     app_select "$a"
+    if [ -n "$ALL" ] && [ -n "$HOLD" ]; then
+        echo "$TITLE is held back (HOLD=1 in utilities/lib/apps.sh): skipped. Name it to go ahead."
+        continue
+    fi
     VERSION=$(app_version)
     TAG=$TAG_PREFIX$VERSION
     if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null || [ -n "$(git ls-remote origin "refs/tags/$TAG")" ]; then

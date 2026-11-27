@@ -3,7 +3,7 @@ name = "rivet-media"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.88"
-description = "Previews shared by the Rivet apps: picture, video, audio and text loading, freedesktop thumbnails, and the full-window light box"
+description = "Previews shared by the Rivet apps: picture, video, audio and text loading, freedesktop thumbnails, the full-window light box, and the picture stage Rivet View shares with it"
 license = "MIT OR Apache-2.0"
 publish = false
 
@@ -12,5 +12,9 @@ rivet-look = { path = "../rivet-look" }
 rivet-mem = { path = "../rivet-mem" }
 rivet-xdg = { path = "../rivet-xdg" }
 eframe = { version = "0.37.0", default-features = false }
-image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
+image = { version = "0.25", default-features = false, features = ["bmp", "gif", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
+# Camera details (EXIF) for Rivet View's side panel. BSD-2-Clause.
+kamadak-exif = "0.6"
+# Drawing SVG pictures at the size they're shown (already used by rivet-look for icons).
+resvg = { version = "0.50.0", default-features = false }
 png = "0.18"

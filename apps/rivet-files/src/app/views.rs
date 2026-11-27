@@ -658,6 +658,17 @@ impl RivetApp {
             if Self::quick_viewable(e) && ui.add(egui::Button::new("Preview").shortcut_text("Space")).clicked() {
                 self.pending.push(Action::QuickView(e.path.clone()));
             }
+            // A picture, with Rivet View installed and not already what Open uses.
+            if sel.len() == 1
+                && rivet_media::picture::is_picture(&e.path)
+                && launch::default_app(&self.apps, &e.mime).is_none_or(|a| a.id != "rivet-view.desktop")
+                && Self::rivet_view().is_some()
+                && ui.button("Open in Rivet View").clicked()
+            {
+                let p = e.path.clone();
+                self.open_in_view(&p);
+                ui.close();
+            }
             if e.is_executable() && ui.button("Run").clicked() {
                 self.pending.push(Action::Run(e.path.clone()));
             }

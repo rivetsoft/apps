@@ -16,6 +16,8 @@
   <img src="apps/rivet-snip/data/rivet-snip.svg" width="88" alt="Rivet Snip icon">
   &nbsp;
   <img src="apps/rivet-color/data/rivet-color.svg" width="88" alt="Rivet Color icon">
+  &nbsp;
+  <img src="apps/rivet-view/data/rivet-view.svg" width="88" alt="Rivet View icon">
 </p>
 
 # Rivetsoft Apps
@@ -125,6 +127,17 @@ anywhere else `rivet-snip capture` takes one first.
 [More about Rivet Snip](apps/rivet-snip/README.md)
 
 ![Rivet Snip with a marked-up screenshot](docs/screenshots/rivet-snip-wide.png)
+
+### <img src="apps/rivet-view/data/rivet-view.svg" width="32" alt=""> Rivet View
+
+A picture viewer: open a picture and step through the rest of its folder in the order Rivet
+Files shows it, with the next one already read. Zoom with the wheel, a pinch or a double-click,
+turn and flip (a JPEG saved turned keeps every pixel), slideshows, camera details and animated
+GIF, WebP and PNG. Rivet Files hands pictures to it.
+**Just started:** not released yet; build it from source.
+[More about Rivet View](apps/rivet-view/README.md)
+
+![Rivet View with a photo of a lake and its camera details](docs/screenshots/rivet-view-wide.png)
 
 ### <img src="apps/rivet-color/data/rivet-color.svg" width="32" alt=""> Rivet Color
 

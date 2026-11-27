@@ -1,10 +1,10 @@
 #!/bin/sh
-# Regenerate the README pictures of Rivet Snip, Vice, Calendar, Color, Fetch and Docs
+# Regenerate the README pictures of Rivet Snip, Vice, Calendar, Color, View, Fetch and Docs
 # (docs/screenshots/rivet-APP-wide.png) in the Rivet scheme, in a throwaway home with each app's
 # sample data, so they never show anyone's real files, events or desktop colors.
 set -e
 cd "$(dirname "$0")/../.."
-cargo build -q -p rivet-snip -p rivet-vice -p rivet-calendar -p rivet-color -p rivet-fetch -p rivet-terminal -p rivet-docs
+cargo build -q -p rivet-snip -p rivet-vice -p rivet-calendar -p rivet-color -p rivet-view -p rivet-fetch -p rivet-terminal -p rivet-docs
 # Rivet Docs draws PDFs with PDFium, kept beside the program in target/lib.
 [ -f target/lib/rivet-docs/libpdfium.so ] || sh utilities/lib/pdfium.sh target/lib/rivet-docs
 OUT="$(pwd)/docs/screenshots"
@@ -35,6 +35,8 @@ export RIVET_SHOT_SIZE=1280x800
 "$BIN/rivet-vice" --screenshot "$OUT/rivet-vice-wide.png"
 RIVET_CALENDAR_VIEW=month "$BIN/rivet-calendar" --screenshot "$OUT/rivet-calendar-wide.png"
 "$BIN/rivet-color" --screenshot "$OUT/rivet-color-wide.png"
+# Rivet View makes its own sample pictures (in the throwaway home's Pictures) when given none.
+RIVET_VIEW_DETAILS=1 RIVET_VIEW_PICK=0 "$BIN/rivet-view" --screenshot "$OUT/rivet-view-wide.png"
 
 # Rivet Docs with the sample field guide and comic (utilities/lib/docs-samples.py).
 python3 utilities/lib/docs-samples.py "$T/docs" >/dev/null
@@ -56,4 +58,4 @@ exec sleep 600
 EOF
 PATH="$BIN:$PATH" RIVET_FETCH_DEMO=1 RIVET_SHOT_AFTER=200 "$BIN/rivet-terminal" --screenshot "$OUT/rivet-fetch-wide.png" -e bash "$T/fetch.sh"
 rm -rf "$T"
-echo "Saved rivet-{snip,vice,calendar,color,fetch,docs,docs-find,docs-dark,docs-comic}-wide.png in $OUT"
+echo "Saved rivet-{snip,vice,calendar,color,view,fetch,docs,docs-find,docs-dark,docs-comic}-wide.png in $OUT"

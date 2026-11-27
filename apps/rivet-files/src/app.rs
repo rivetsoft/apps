@@ -1136,10 +1136,52 @@ impl RivetApp {
             return;
         }
         let native = matches!(e.mime.as_str(), "application/x-executable" | "application/x-pie-executable" | "application/x-sharedlib");
-        let res = if e.is_executable() && native { launch::run_executable(&e.path) } else { launch::open_default(&self.apps, &e.mime, &e.path) };
+        let view = launch::default_app(&self.apps, &e.mime).filter(|a| a.id == "rivet-view.desktop" && !places::in_flatpak()).cloned();
+        let res = if e.is_executable() && native {
+            launch::run_executable(&e.path)
+        } else if let Some(view) = view {
+            // Rivet View steps through the folder in the order it's shown here.
+            let mut argv = launch::exec_args(&view, std::slice::from_ref(&e.path));
+            argv.splice(1..1, self.view_order());
+            launch::spawn(Path::new(&argv[0]), &argv[1..])
+        } else {
+            launch::open_default(&self.apps, &e.mime, &e.path)
+        };
         match res {
             Ok(()) => self.flash(&format!("Opening “{}”…", e.name)),
             Err(err) => self.message("Could not open file", &err),
+        }
+    }
+
+    /// How this folder is sorted, as Rivet View is told it (`--sort size --desc`).
+    pub(crate) fn view_order(&self) -> Vec<String> {
+        let key = match self.s.sort {
+            crate::settings::SortKey::Name => "name",
+            crate::settings::SortKey::Size => "size",
+            crate::settings::SortKey::Type => "type",
+            crate::settings::SortKey::Modified => "modified",
+        };
+        let mut v = vec!["--sort".to_string(), key.to_string()];
+        if self.s.sort_desc {
+            v.push("--desc".into());
+        }
+        v
+    }
+
+    /// Rivet View, the picture viewer, when it is installed: beside this program, else on the
+    /// path. Looked for once.
+    pub(crate) fn rivet_view() -> Option<&'static Path> {
+        static FOUND: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+        FOUND.get_or_init(|| launch::rivet_program("rivet-view")).as_deref()
+    }
+
+    /// Open a picture in Rivet View, which steps through the rest of the folder in this order.
+    pub(crate) fn open_in_view(&mut self, path: &Path) {
+        let Some(view) = Self::rivet_view() else { return };
+        let mut args = self.view_order();
+        args.push(path.to_string_lossy().to_string());
+        if let Err(e) = launch::spawn(view, &args) {
+            self.message("Could not open Rivet View", &e);
         }
     }
 
