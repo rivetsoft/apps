@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - A `rivet-memory` module shows the memory each running Rivet app uses, largest first.
 

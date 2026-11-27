@@ -2390,7 +2390,7 @@ dependencies = [
 
 [[package]]
 name = "rivet"
-version = "0.11.0"
+version = "0.11.1"
 dependencies = [
  "async-io",
  "chrono",
@@ -2492,7 +2492,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-fetch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "libc",
  "rivet-mem",
@@ -2577,7 +2577,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-shell"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "calloop 0.14.5",
  "calloop-wayland-source 0.4.1",
@@ -2621,7 +2621,7 @@ dependencies = [
 
 [[package]]
 name = "rivet-terminal"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "arboard",
  "eframe",

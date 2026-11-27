@@ -1,6 +1,6 @@
 [package]
 name = "rivet-fetch"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.88"
 description = "Shows this computer at a glance in the terminal, next to Rivet the mascot"
