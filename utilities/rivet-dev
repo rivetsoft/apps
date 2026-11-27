@@ -79,6 +79,9 @@ Docs and checks
   bench [--runs N] [--views …]     The 100,000-file benchmark (see the README)
   qa                               Open every dialog and mode looking for crashes, then run the
                                    common file workflows (all in a throwaway home folder)
+  welcome-e2e [--old FILE.tar.gz]  Rivet Welcome end to end: the last release updates itself to
+                                   this build, which installs, updates and removes apps against
+                                   a stand-in GitHub (a throwaway home folder, nothing published)
 
   help                             This text
 EOF
@@ -122,6 +125,7 @@ case "$cmd" in
     flatpak-sources) exec python3 "$LIB/flatpak-sources-sync.py" "$@" ;;
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
     qa)            exec sh "$LIB/qa.sh" "$@" ;;
+    welcome-e2e)   exec sh "$LIB/welcome-e2e.sh" "$@" ;;
     help|-h|--help) usage ;;
     *)
         echo "Unknown command: $cmd" >&2

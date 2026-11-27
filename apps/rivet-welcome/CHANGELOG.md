@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0
+
+- **Stable versions first.** An app with a stable release is updated to its next stable release,
+  and its alpha versions are left out. Turn on "Offer alpha versions of stable apps" in Settings
+  to get them too. An app with no stable release yet still gets its alpha versions.
+- **Every release is checked.** A download with no published SHA-256 sum is refused instead of
+  installed unchecked, and only the archive with the app's exact name is used.
+- **Downloads survive a bad connection.** A download that stops picks up where it left off,
+  with up to four tries, and one that stalls is stopped instead of hanging.
+- **Nothing is half-installed.** Before downloading, Rivet Welcome checks there's room on the
+  disk and that it can write to the folder the programs go in. If an app's installer fails, the
+  version you had before is put back.
+- **Clearer messages when something goes wrong**: a full disk, a release with a file missing,
+  or GitHub's limit on checks, with the time you can check again.
+- **Checks are lighter.** Every release is read, not only the newest hundred, and an unchanged
+  list costs nothing against GitHub's limit. Set `GITHUB_TOKEN` to raise the limit.
+- **Flatpak and system installs are labeled** with where they came from, and left for that
+  package manager to update.
+- Two Rivet Welcomes (the window and the tray, or two terminals) no longer work on the same app
+  at once.
+- After Rivet Welcome updates itself, the tray restarts as the new version, and launchers never
+  point at the old, deleted program. Removing Rivet Welcome also removes the tray's sign-in
+  entry.
+
 ## 0.3.1
 
 - An idle window follows desktop color changes right away.

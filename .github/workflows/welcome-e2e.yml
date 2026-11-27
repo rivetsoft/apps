@@ -1,0 +1,58 @@
+name: Rivet Welcome end to end
+
+# Rivet Welcome installs and updates every app, so a change to it, to what it reads from the
+# release scripts, or to the crates it's built from runs the whole path: an older release
+# updates itself to this build, which then installs, updates and removes apps against a
+# stand-in GitHub (utilities/lib/welcome-e2e.sh).
+on:
+  pull_request:
+    paths:
+      - "apps/rivet-welcome/**"
+      - "crates/rivet-xdg/**"
+      - "crates/rivet-look/**"
+      - "crates/rivet-kit/**"
+      - "crates/rivet-mem/**"
+      - "utilities/**"
+      - "Cargo.lock"
+      - ".github/workflows/welcome-e2e.yml"
+      - ".github/workflows/release.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/rivet-welcome/**"
+      - "crates/rivet-xdg/**"
+      - "crates/rivet-look/**"
+      - "crates/rivet-kit/**"
+      - "crates/rivet-mem/**"
+      - "utilities/**"
+      - "Cargo.lock"
+      - ".github/workflows/welcome-e2e.yml"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  welcome-e2e:
+    name: Rivet Welcome end to end
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: welcome-e2e
+
+      - name: Build Rivet Welcome
+        run: cargo build --locked -p rivet-welcome
+
+      # Reads the releases on GitHub once (the older Rivet Welcome to start from); everything
+      # else is the stand-in server on this runner.
+      - name: Older release updates itself, then installs, updates and removes apps
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RIVET_WELCOME_BIN: target/debug/rivet-welcome
+        run: ./utilities/rivet-dev welcome-e2e

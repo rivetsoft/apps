@@ -204,14 +204,13 @@ pub fn arch() -> &'static str {
     std::env::consts::ARCH
 }
 
-/// The archive for this computer in a release, and its checksum file when there is one.
+/// The archive for this computer in a release, and its checksum file when there is one. Only
+/// the archive named for this app and this release counts (`rivet-notes-0.2.0-x86_64-linux.tar.gz`
+/// in `rivet-notes-v0.2.0`): another archive that happens to be attached is never installed.
 pub fn archive<'a>(e: &Entry, r: &'a Release) -> Option<(&'a Asset, Option<&'a Asset>)> {
-    let tail = format!("-{}-linux.tar.gz", arch());
-    let a = r
-        .assets
-        .iter()
-        .find(|a| a.name.starts_with(&format!("{}-", e.dist)) && a.name.ends_with(&tail))
-        .or_else(|| r.assets.iter().find(|a| a.name.ends_with(&tail)))?;
+    let version = r.tag.strip_prefix(&e.tag_prefix)?;
+    let name = format!("{}-{version}-{}-linux.tar.gz", e.dist, arch());
+    let a = r.assets.iter().find(|a| a.name == name)?;
     let sum = r
         .assets
         .iter()
@@ -219,13 +218,25 @@ pub fn archive<'a>(e: &Entry, r: &'a Release) -> Option<(&'a Asset, Option<&'a A
     Some((a, sum))
 }
 
-/// The newest release of this entry that can be installed here.
-pub fn latest<'a>(e: &Entry, releases: &'a [Release]) -> Option<(&'a Release, Version)> {
-    releases
+/// The newest release of this entry that can be installed here. Pre-releases count when
+/// `pre` is on, and always for an app that has no full release yet (all it has is alpha).
+pub fn latest<'a>(e: &Entry, releases: &'a [Release], pre: bool) -> Option<(&'a Release, Version)> {
+    let mine: Vec<(&'a Release, Version)> = releases
         .iter()
         .filter_map(|r| Some((r, tag_version(&e.tag_prefix, &r.tag)?)))
         .filter(|(r, _)| archive(e, r).is_some())
-        .max_by(|a, b| a.1.cmp(&b.1))
+        .collect();
+    let newest = |stable_only: bool| {
+        mine.iter()
+            .filter(|(r, _)| !(stable_only && r.prerelease))
+            .max_by(|a, b| a.1.cmp(&b.1))
+            .cloned()
+    };
+    if pre {
+        newest(false)
+    } else {
+        newest(true).or_else(|| newest(false))
+    }
 }
 
 /// "Rivet Clock" from "rivet-clock" (when its release has no better name).
@@ -302,13 +313,139 @@ mod tests {
         let list = parse(include_str!("../data/demo-releases.json")).unwrap();
         let k = known();
         let files = k.iter().find(|e| e.id == "files").unwrap();
-        let (r, v) = latest(files, &list).unwrap();
+        let (r, v) = latest(files, &list, false).unwrap();
         assert_eq!(
             (r.tag.as_str(), v.to_string()),
             ("v0.7.0", "0.7.0".to_string())
         );
         let shell = k.iter().find(|e| e.id == "shell").unwrap();
-        assert!(latest(shell, &list).is_none());
+        assert!(latest(shell, &list, false).is_none());
+    }
+
+    fn release(tag: &str, pre: bool, assets: &[&str]) -> Release {
+        Release {
+            tag: tag.into(),
+            name: tag.into(),
+            prerelease: pre,
+            published: "2026-11-27T00:00:00Z".into(),
+            url: String::new(),
+            notes: String::new(),
+            assets: assets
+                .iter()
+                .map(|n| Asset {
+                    name: n.replace("ARCH", arch()),
+                    url: format!("https://example.com/{n}"),
+                    size: 10,
+                })
+                .collect(),
+        }
+    }
+
+    fn entry_of(id: &str) -> Entry {
+        known().into_iter().find(|e| e.id == id).unwrap()
+    }
+
+    #[test]
+    fn tags_of_every_kind() {
+        // Rivet Files' plain tags never take another app's, nor a word after the v.
+        assert_eq!(tag_version("v", "v0.11.0"), Version::parse("0.11.0"));
+        assert_eq!(
+            tag_version("v", "v1.0.0-rc.1"),
+            Version::parse("1.0.0-rc.1")
+        );
+        assert_eq!(tag_version("v", "rivet-welcome-v0.4.0"), None);
+        assert_eq!(tag_version("v", "vnext"), None);
+        // An app's prefix doesn't take a longer app's name that starts the same way.
+        assert_eq!(tag_version("rivet-edit-v", "rivet-editor-v1.0.0"), None);
+        assert_eq!(
+            tag_version("rivet-fetch-v", "rivet-fetch-v0.1.0"),
+            Version::parse("0.1.0")
+        );
+        assert_eq!(tag_version("rivet-notes-v", "rivet-notes-v"), None);
+        assert_eq!(
+            tag_version("rivet-notes-v", "rivet-notes-v0.4"),
+            Version::parse("0.4.0")
+        );
+    }
+
+    #[test]
+    fn archives_are_matched_by_exact_name() {
+        let notes = entry_of("notes");
+        let r = release(
+            "rivet-notes-v0.4.2",
+            false,
+            &[
+                "rivet-notes-0.4.2-ARCH-linux.tar.gz",
+                "rivet-notes-0.4.2-ARCH-linux.tar.gz.sha256",
+                "Rivet_Notes-0.4.2-ARCH.AppImage",
+            ],
+        );
+        let (a, sum) = archive(&notes, &r).unwrap();
+        assert_eq!(a.name, format!("rivet-notes-0.4.2-{}-linux.tar.gz", arch()));
+        assert_eq!(sum.unwrap().name, format!("{}.sha256", a.name));
+        // No checksum published: found, with nothing to check it against.
+        let r = release(
+            "rivet-notes-v0.4.2",
+            false,
+            &["rivet-notes-0.4.2-ARCH-linux.tar.gz"],
+        );
+        assert!(archive(&notes, &r).unwrap().1.is_none());
+        // Another app's archive, another version's, or another computer's is never taken.
+        for wrong in [
+            "rivet-edit-0.4.2-ARCH-linux.tar.gz",
+            "rivet-notes-0.4.1-ARCH-linux.tar.gz",
+            "rivet-notes-0.4.2-sparc-linux.tar.gz",
+            "rivet-notes-0.4.2-ARCH-linux.tar.xz",
+        ] {
+            let r = release("rivet-notes-v0.4.2", false, &[wrong]);
+            assert!(archive(&notes, &r).is_none(), "{wrong}");
+        }
+        // Rivet Files: plain tags, archives named rivet-files.
+        let files = entry_of("files");
+        let r = release("v0.11.0", false, &["rivet-files-0.11.0-ARCH-linux.tar.gz"]);
+        assert!(archive(&files, &r).is_some());
+        assert!(archive(&notes, &r).is_none());
+    }
+
+    #[test]
+    fn stable_releases_come_first() {
+        let ftp = entry_of("ftp");
+        let welcome = entry_of("welcome");
+        let list = vec![
+            release(
+                "rivet-welcome-v0.5.0-beta.1",
+                true,
+                &["rivet-welcome-0.5.0-beta.1-ARCH-linux.tar.gz"],
+            ),
+            release(
+                "rivet-welcome-v0.4.0",
+                false,
+                &["rivet-welcome-0.4.0-ARCH-linux.tar.gz"],
+            ),
+            release(
+                "rivet-welcome-v0.3.1",
+                true,
+                &["rivet-welcome-0.3.1-ARCH-linux.tar.gz"],
+            ),
+            release(
+                "rivet-ftp-v0.4.2",
+                true,
+                &["rivet-ftp-0.4.2-ARCH-linux.tar.gz"],
+            ),
+            release(
+                "rivet-ftp-v0.4.1",
+                true,
+                &["rivet-ftp-0.4.1-ARCH-linux.tar.gz"],
+            ),
+            // Newest, but its archive isn't up yet: not offered.
+            release("rivet-ftp-v0.5.0", true, &[]),
+        ];
+        let v = |e: &Entry, pre| latest(e, &list, pre).map(|(_, v)| v.to_string());
+        assert_eq!(v(&welcome, false).as_deref(), Some("0.4.0"));
+        assert_eq!(v(&welcome, true).as_deref(), Some("0.5.0-beta.1"));
+        // No full release yet: its newest alpha either way.
+        assert_eq!(v(&ftp, false).as_deref(), Some("0.4.2"));
+        assert_eq!(v(&ftp, true).as_deref(), Some("0.4.2"));
     }
 
     /// Every app utilities/rivet-dev releases is listed here by name, under the tag, archive and

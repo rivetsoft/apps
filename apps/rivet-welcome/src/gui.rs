@@ -129,7 +129,7 @@ impl WelcomeApp {
                     )
                 };
             }
-            app.rows = state::rows(&list);
+            app.rows = state::rows(&list, false);
             app.releases = list;
             app.loaded = true;
             app.checked = Some(SystemTime::now() - std::time::Duration::from_secs(180));
@@ -152,7 +152,7 @@ impl WelcomeApp {
         app.check();
         // The tray, when it's on (it quits at once if it's already running).
         if app.s.tray
-            && let Ok(exe) = std::env::current_exe()
+            && let Some(exe) = local::this_exe()
         {
             let _ = std::process::Command::new(exe)
                 .arg("--tray")
@@ -195,9 +195,9 @@ impl WelcomeApp {
             return;
         }
         let (tx, rx) = channel();
-        let (list, ctx) = (self.releases.clone(), self.ctx.clone());
+        let (list, ctx, pre) = (self.releases.clone(), self.ctx.clone(), self.s.prereleases);
         std::thread::spawn(move || {
-            let _ = tx.send(state::rows(&list));
+            let _ = tx.send(state::rows(&list, pre));
             ctx.request_repaint();
         });
         self.rows_rx = Some(rx);
@@ -711,17 +711,22 @@ impl WelcomeApp {
                                         .unwrap_or_default(),
                                 };
                                 let out = match latest {
-                                    Some((_, l)) if inst.version.as_ref().is_some_and(|v| v < l) => {
+                                    Some((_, l))
+                                        if inst.version.as_ref().is_some_and(|v| v < l) =>
+                                    {
                                         format!(" · {l} is out")
                                     }
                                     _ => String::new(),
                                 };
                                 ui.label(weak(format!("{have} · running from {from}{out}")));
                             } else if !inst.ours {
-                                ui.label(weak(format!(
-                                    "{have} · installed by your system ({})",
-                                    inst.path.display()
-                                )));
+                                let line = match inst.source() {
+                                    local::Source::Elsewhere => {
+                                        format!("{have} · {}, left as it is", inst.origin())
+                                    }
+                                    _ => format!("{have} · {}, updated there", inst.origin()),
+                                };
+                                ui.label(weak(line));
                             } else if let Some((_, new)) = row.update() {
                                 ui.label(
                                     RichText::new(format!("{have} installed · {new} is out"))
@@ -889,6 +894,12 @@ impl WelcomeApp {
                         ui.add_space(6.0);
                         ui.add_enabled(self.s.tray, egui::Checkbox::new(&mut self.s.notify, "Send a notification when updates are ready"));
                         ui.add_space(6.0);
+                        ui.checkbox(&mut self.s.prereleases, "Offer alpha versions of stable apps");
+                        ui.indent("pre-note", |ui| {
+                            ui.visuals_mut().indent_has_left_vline = false;
+                            ui.label(weak("Apps with no stable release yet always get their alpha versions."))
+                        });
+                        ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             ui.add_enabled_ui(self.s.tray, |ui| {
                                 ui.label("Look for updates");
@@ -939,13 +950,16 @@ impl WelcomeApp {
         });
         if self.s != before {
             self.s.save();
+            if self.s.prereleases != before.prereleases {
+                self.refresh_rows();
+            }
             if self.s.tray != before.tray && self.shot.is_none() {
                 if let Err(e) = settings::set_autostart(self.s.tray) {
                     self.error = Some(e);
                 }
                 // On: start it now. Off: it sees the settings change and goes.
                 if self.s.tray
-                    && let Ok(exe) = std::env::current_exe()
+                    && let Some(exe) = local::this_exe()
                 {
                     let _ = std::process::Command::new(exe)
                         .arg("--tray")

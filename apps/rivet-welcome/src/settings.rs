@@ -22,6 +22,9 @@ pub struct Settings {
     pub notify: bool,
     /// Look again every this many hours while signed in (0: only when the tray starts).
     pub check_hours: u32,
+    /// Offer alpha versions (GitHub pre-releases) of apps that have a full release too. An app
+    /// with no full release yet is offered its alpha either way.
+    pub prereleases: bool,
 }
 
 impl Default for Settings {
@@ -34,6 +37,7 @@ impl Default for Settings {
             tray: true,
             notify: true,
             check_hours: 6,
+            prereleases: false,
         }
     }
 }
@@ -74,6 +78,7 @@ impl Settings {
                 "tray" => s.tray = b,
                 "notify" => s.notify = b,
                 "check_hours" => s.check_hours = v.parse().unwrap_or(6),
+                "prereleases" => s.prereleases = b,
                 _ => {}
             }
         }
@@ -91,14 +96,22 @@ impl Settings {
         };
         let [r, g, b] = self.accent;
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\ntray={}\nnotify={}\ncheck_hours={}\n",
-            self.follow_desktop_colors, self.text_size, self.tray, self.notify, self.check_hours
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\ntray={}\nnotify={}\ncheck_hours={}\nprereleases={}\n",
+            self.follow_desktop_colors,
+            self.text_size,
+            self.tray,
+            self.notify,
+            self.check_hours,
+            self.prereleases
         );
         let p = path();
         if let Some(d) = p.parent() {
             let _ = std::fs::create_dir_all(d);
         }
-        let _ = std::fs::write(p, text);
+        let tmp = p.with_extension(format!("part-{}", std::process::id()));
+        if std::fs::write(&tmp, text).is_ok() && std::fs::rename(&tmp, &p).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
     }
 }
 
@@ -121,7 +134,7 @@ pub fn set_autostart(on: bool) -> Result<(), String> {
             _ => Ok(()),
         };
     }
-    let exe = std::env::current_exe().map_err(|e| format!("couldn't find this program: {e}"))?;
+    let exe = crate::local::this_exe().ok_or("couldn't find this program")?;
     let text = include_str!("../data/rivet-welcome-tray.desktop")
         .replace("Exec=rivet-welcome", &format!("Exec=\"{}\"", exe.display()));
     if let Some(d) = p.parent() {
@@ -137,6 +150,6 @@ mod tests {
     #[test]
     fn defaults_keep_the_tray() {
         let s = Settings::default();
-        assert!(s.tray && s.notify && s.check_hours == 6);
+        assert!(s.tray && s.notify && s.check_hours == 6 && !s.prereleases);
     }
 }

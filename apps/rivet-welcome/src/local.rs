@@ -38,6 +38,90 @@ pub fn bin_home() -> PathBuf {
         .unwrap_or_else(|| rivet_xdg::places::home().join(".local/bin"))
 }
 
+/// This program's file. When Rivet Welcome has updated itself, Linux calls the file it started
+/// from "… (deleted)": the new one now in its place is the one to point launchers at.
+pub fn this_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    match exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
+        Some(p) => Some(PathBuf::from(p)),
+        None => Some(exe),
+    }
+}
+
+/// The file this program started from has been replaced or removed since (an update).
+pub fn replaced() -> bool {
+    std::fs::read_link("/proc/self/exe").is_ok_and(|p| p.to_string_lossy().ends_with(" (deleted)"))
+}
+
+/// Where an install that isn't Rivet Welcome's came from, which says where to update it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Source {
+    Flatpak,
+    /// The system's own folders (/usr/bin): a distribution package or the AUR.
+    Package,
+    /// Anywhere else on PATH (/usr/local/bin, a build).
+    Elsewhere,
+}
+
+impl Installed {
+    pub fn source(&self) -> Source {
+        let p = self.path.to_string_lossy();
+        if p.contains("/flatpak/") {
+            Source::Flatpak
+        } else if ["/usr/bin/", "/bin/", "/usr/sbin/", "/usr/games/"]
+            .iter()
+            .any(|d| p.starts_with(d))
+        {
+            Source::Package
+        } else {
+            Source::Elsewhere
+        }
+    }
+
+    /// For someone deciding where to update it: "from Flatpak" and so on.
+    pub fn origin(&self) -> String {
+        match self.source() {
+            Source::Flatpak => "from Flatpak".into(),
+            Source::Package => "from your system's packages".into(),
+            Source::Elsewhere => format!(
+                "in {}",
+                self.path
+                    .parent()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_default()
+            ),
+        }
+    }
+
+    /// Why Rivet Welcome won't touch it, and where to update it instead.
+    pub fn left_alone(&self) -> String {
+        match self.source() {
+            Source::Flatpak => "it came from Flatpak, so update it there".into(),
+            Source::Package => "it came from your system's packages, so update it there".into(),
+            Source::Elsewhere => format!(
+                "it was installed in {} some other way, so Rivet Welcome leaves it as it is",
+                self.path
+                    .parent()
+                    .map(|d| d.display().to_string())
+                    .unwrap_or_default()
+            ),
+        }
+    }
+}
+
+/// The app as a Flatpak (Rivet Files is on Flathub as io.github.rivetsoft.rivet-files). Its
+/// program isn't on PATH under the app's name, so it's looked for where Flatpak exports it.
+fn flatpak(e: &Entry) -> Option<PathBuf> {
+    let id = format!("io.github.rivetsoft.{}", e.dist);
+    [
+        rivet_xdg::places::data_home().join("flatpak/exports/bin"),
+        PathBuf::from("/var/lib/flatpak/exports/bin"),
+    ]
+    .into_iter()
+    .map(|d| d.join(&id))
+    .find(|p| is_exe(p))
+}
+
 /// Is the install folder on PATH (so the apps run from a terminal too)?
 pub fn bin_home_on_path() -> bool {
     let home = bin_home();
@@ -141,6 +225,16 @@ pub fn detect(e: &Entry) -> Option<Installed> {
             running: Running::No,
         })
     });
+    // A Flatpak can take longer than the few seconds given to say its version: it's installed
+    // either way.
+    let found = found.or_else(|| {
+        flatpak(e).map(|path| Installed {
+            version: version_of(&path),
+            path,
+            ours: false,
+            running: Running::No,
+        })
+    });
     // Rivet Welcome is here even when it isn't installed: someone is looking at it.
     found.or_else(|| (e.kind == Kind::Welcome).then(this_program).flatten())
 }
@@ -190,19 +284,14 @@ pub fn open(e: &Entry, path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Take the app off this computer: its program in ~/.local/bin, the launcher entries that run
-/// it, and its icons. Settings and documents stay.
-pub fn remove(e: &Entry) -> Result<(), String> {
+/// The app's own files outside its program: the launcher entries that run it, and its icons.
+pub fn app_files(e: &Entry) -> Vec<PathBuf> {
     let bin = bin_home().join(&e.bin);
-    if bin.exists() {
-        std::fs::remove_file(&bin)
-            .map_err(|err| format!("couldn't remove {}: {err}", bin.display()))?;
-    }
     let data = rivet_xdg::places::data_home();
-    let apps = data.join("applications");
     let quoted = format!("\"{}\"", bin.display());
     let plain = bin.display().to_string();
-    if let Ok(dir) = std::fs::read_dir(&apps) {
+    let mut out = Vec::new();
+    if let Ok(dir) = std::fs::read_dir(data.join("applications")) {
         for f in dir.flatten() {
             let p = f.path();
             if p.extension().is_some_and(|x| x == "desktop")
@@ -213,29 +302,79 @@ pub fn remove(e: &Entry) -> Result<(), String> {
                             || l[5..].split_whitespace().next() == Some(plain.as_str()))
                 })
             {
-                let _ = std::fs::remove_file(&p);
+                out.push(p);
             }
         }
     }
-    let icons = data.join("icons/hicolor");
-    if let Ok(sizes) = std::fs::read_dir(&icons) {
+    if let Ok(sizes) = std::fs::read_dir(data.join("icons/hicolor")) {
         for s in sizes.flatten() {
             for ext in ["svg", "png"] {
-                let _ = std::fs::remove_file(s.path().join(format!("apps/{}.{ext}", e.dist)));
+                let p = s.path().join(format!("apps/{}.{ext}", e.dist));
+                if p.is_file() {
+                    out.push(p);
+                }
             }
         }
     }
+    out
+}
+
+/// Take the app's program, launcher entries and icons away (the caller holds its lock).
+pub fn clear(e: &Entry) -> Result<(), String> {
+    let files = app_files(e);
+    let bin = bin_home().join(&e.bin);
+    if bin.exists() {
+        std::fs::remove_file(&bin)
+            .map_err(|err| format!("couldn't remove {}: {err}", bin.display()))?;
+    }
+    for f in files {
+        let _ = std::fs::remove_file(f);
+    }
     let _ = Command::new("update-desktop-database")
-        .arg(&apps)
+        .arg(rivet_xdg::places::data_home().join("applications"))
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
     Ok(())
 }
 
+/// Take the app off this computer: its program in ~/.local/bin, the launcher entries that run
+/// it, and its icons. Settings and documents stay.
+pub fn remove(e: &Entry) -> Result<(), String> {
+    // Not while it's being installed or updated.
+    let _lock = crate::install::lock(&e.id)?;
+    clear(e)?;
+    // Rivet Welcome itself: the tray no longer starts at sign-in.
+    if e.kind == Kind::Welcome {
+        crate::settings::set_autostart(false)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn where_installs_came_from() {
+        let at = |p: &str| Installed {
+            path: p.into(),
+            version: None,
+            ours: false,
+            running: Running::No,
+        };
+        assert_eq!(at("/usr/bin/rivet").source(), Source::Package);
+        assert_eq!(
+            at("/var/lib/flatpak/exports/bin/io.github.rivetsoft.rivet-files").source(),
+            Source::Flatpak
+        );
+        assert_eq!(at("/usr/local/bin/rivet-shell").source(), Source::Elsewhere);
+        assert!(
+            at("/usr/local/bin/rivet-shell")
+                .origin()
+                .contains("/usr/local/bin")
+        );
+    }
 
     #[test]
     fn version_lines() {

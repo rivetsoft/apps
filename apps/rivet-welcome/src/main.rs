@@ -57,7 +57,7 @@ impl Raise {
 
 /// The launcher entry and icon, in the user's data folder, running this program.
 fn install_desktop_entry() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| format!("couldn't find this program: {e}"))?;
+    let exe = local::this_exe().ok_or("couldn't find this program")?;
     let data = rivet_xdg::places::data_home();
     let entry = data.join("applications/rivet-welcome.desktop");
     let icon = data.join("icons/hicolor/scalable/apps/rivet-welcome.svg");
@@ -94,7 +94,7 @@ fn releases_now() -> Vec<releases::Release> {
 
 fn cli_list() -> ExitCode {
     let list = releases_now();
-    for r in state::rows(&list) {
+    for r in state::rows(&list, settings::Settings::load().prereleases) {
         let have = match &r.installed {
             Some(i) => {
                 let v = i
@@ -107,7 +107,7 @@ fn cli_list() -> ExitCode {
                 } else if i.running != local::Running::No {
                     format!("{v} (running from {})", i.path.display())
                 } else {
-                    format!("{v} (system: {})", i.path.display())
+                    format!("{v} ({}: {})", i.origin(), i.path.display())
                 }
             }
             None => "-".into(),
@@ -138,7 +138,7 @@ fn cli_check() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let rows = state::rows(&list);
+    let rows = state::rows(&list, settings::Settings::load().prereleases);
     let ups = state::updates(&rows);
     if ups.is_empty() {
         println!("The Rivet apps are up to date.");
@@ -160,7 +160,7 @@ fn cli_check() -> ExitCode {
 /// Install (or update) these apps, or every update when `names` is empty.
 fn cli_install(names: &[String]) -> ExitCode {
     let list = releases_now();
-    let rows = state::rows(&list);
+    let rows = state::rows(&list, settings::Settings::load().prereleases);
     let todo: Vec<&state::Row> = if names.is_empty() {
         state::updates(&rows)
     } else {
@@ -190,11 +190,11 @@ fn cli_install(names: &[String]) -> ExitCode {
     for r in todo {
         if r.installed.as_ref().is_some_and(|i| !i.ours) && r.install_copy().is_none() {
             eprintln!(
-                "{}: installed by your system ({}); update it there",
+                "{}: not updated here, {}",
                 r.entry.title,
                 r.installed
                     .as_ref()
-                    .map(|i| i.path.display().to_string())
+                    .map(|i| i.left_alone())
                     .unwrap_or_default()
             );
             continue;
