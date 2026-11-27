@@ -3,6 +3,7 @@
 //! app is installable here the day it's released, before Rivet Welcome itself knows its name.
 
 use crate::releases::{Asset, Release, Version};
+use crate::settings::Channel;
 
 /// What sort of thing it is (changes what "Open" does and how it's described).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,6 +209,9 @@ pub fn arch() -> &'static str {
 /// the archive named for this app and this release counts (`rivet-notes-0.2.0-x86_64-linux.tar.gz`
 /// in `rivet-notes-v0.2.0`): another archive that happens to be attached is never installed.
 pub fn archive<'a>(e: &Entry, r: &'a Release) -> Option<(&'a Asset, Option<&'a Asset>)> {
+    if r.tag == edge_tag(e) {
+        return edge_archive(e, r).map(|(a, s, _)| (a, s));
+    }
     let version = r.tag.strip_prefix(&e.tag_prefix)?;
     let name = format!("{}-{version}-{}-linux.tar.gz", e.dist, arch());
     let a = r.assets.iter().find(|a| a.name == name)?;
@@ -218,9 +222,57 @@ pub fn archive<'a>(e: &Entry, r: &'a Release) -> Option<(&'a Asset, Option<&'a A
     Some((a, sum))
 }
 
-/// The newest release of this entry that can be installed here. Pre-releases count when
-/// `pre` is on, and always for an app that has no full release yet (all it has is alpha).
-pub fn latest<'a>(e: &Entry, releases: &'a [Release], pre: bool) -> Option<(&'a Release, Version)> {
+/// The rolling pre-release that holds an app's newest edge build (`rivet-notes-edge`), replaced
+/// every night from main. Its tag has no version in it, so Rivet Welcome 0.4.0 and older, which
+/// take only `PREFIX` + a version, never see it.
+pub fn edge_tag(e: &Entry) -> String {
+    format!("{}-edge", e.dist)
+}
+
+/// The edge build in an edge release: its archive (`rivet-notes-0.4.1-edge.20261127.gabc1234-
+/// x86_64-linux.tar.gz`), its checksum file, and the version from the archive's name. The
+/// newest, when a new one is going up beside the last.
+fn edge_archive<'a>(e: &Entry, r: &'a Release) -> Option<(&'a Asset, Option<&'a Asset>, Version)> {
+    let (head, tail) = (format!("{}-", e.dist), format!("-{}-linux.tar.gz", arch()));
+    let (a, v) = r
+        .assets
+        .iter()
+        .filter_map(|a| {
+            let v = Version::parse(a.name.strip_prefix(&head)?.strip_suffix(&tail)?)?;
+            v.edge().is_some().then_some((a, v))
+        })
+        .max_by(|x, y| x.1.cmp(&y.1))?;
+    let sum = r
+        .assets
+        .iter()
+        .find(|s| s.name == format!("{}.sha256", a.name));
+    Some((a, sum, v))
+}
+
+/// The version of this entry a release holds: from its tag, or an edge build's from its archive.
+pub fn release_version(e: &Entry, r: &Release) -> Option<Version> {
+    if r.tag == edge_tag(e) {
+        edge_archive(e, r).map(|(_, _, v)| v)
+    } else {
+        tag_version(&e.tag_prefix, &r.tag)
+    }
+}
+
+/// What this entry's channel offers. Stable: the newest full release, or the newest alpha of an
+/// app with no full release yet. Pre: the newest release. Edge: the edge build, or the newest
+/// release of an app that has no edge build.
+pub fn latest<'a>(
+    e: &Entry,
+    releases: &'a [Release],
+    channel: Channel,
+) -> Option<(&'a Release, Version)> {
+    if channel == Channel::Edge
+        && let Some(r) = releases.iter().find(|r| r.tag == edge_tag(e))
+        && let Some(v) = release_version(e, r)
+    {
+        return Some((r, v));
+    }
+    let pre = channel != Channel::Stable;
     let mine: Vec<(&'a Release, Version)> = releases
         .iter()
         .filter_map(|r| Some((r, tag_version(&e.tag_prefix, &r.tag)?)))
@@ -313,13 +365,13 @@ mod tests {
         let list = parse(include_str!("../data/demo-releases.json")).unwrap();
         let k = known();
         let files = k.iter().find(|e| e.id == "files").unwrap();
-        let (r, v) = latest(files, &list, false).unwrap();
+        let (r, v) = latest(files, &list, Channel::Stable).unwrap();
         assert_eq!(
             (r.tag.as_str(), v.to_string()),
             ("v0.7.0", "0.7.0".to_string())
         );
         let shell = k.iter().find(|e| e.id == "shell").unwrap();
-        assert!(latest(shell, &list, false).is_none());
+        assert!(latest(shell, &list, Channel::Stable).is_none());
     }
 
     fn release(tag: &str, pre: bool, assets: &[&str]) -> Release {
@@ -440,12 +492,68 @@ mod tests {
             // Newest, but its archive isn't up yet: not offered.
             release("rivet-ftp-v0.5.0", true, &[]),
         ];
-        let v = |e: &Entry, pre| latest(e, &list, pre).map(|(_, v)| v.to_string());
-        assert_eq!(v(&welcome, false).as_deref(), Some("0.4.0"));
-        assert_eq!(v(&welcome, true).as_deref(), Some("0.5.0-beta.1"));
+        let v = |e: &Entry, c| latest(e, &list, c).map(|(_, v)| v.to_string());
+        assert_eq!(v(&welcome, Channel::Stable).as_deref(), Some("0.4.0"));
+        assert_eq!(v(&welcome, Channel::Pre).as_deref(), Some("0.5.0-beta.1"));
         // No full release yet: its newest alpha either way.
-        assert_eq!(v(&ftp, false).as_deref(), Some("0.4.2"));
-        assert_eq!(v(&ftp, true).as_deref(), Some("0.4.2"));
+        assert_eq!(v(&ftp, Channel::Stable).as_deref(), Some("0.4.2"));
+        assert_eq!(v(&ftp, Channel::Pre).as_deref(), Some("0.4.2"));
+        // No edge build: the newest release.
+        assert_eq!(v(&welcome, Channel::Edge).as_deref(), Some("0.5.0-beta.1"));
+    }
+
+    #[test]
+    fn edge_builds_come_from_the_rolling_release() {
+        let notes = entry_of("notes");
+        let files = entry_of("files");
+        let list = vec![
+            release(
+                "rivet-notes-edge",
+                true,
+                &[
+                    "rivet-notes-0.4.1-edge.20261126.g1111111-ARCH-linux.tar.gz",
+                    "rivet-notes-0.4.1-edge.20261126.g1111111-ARCH-linux.tar.gz.sha256",
+                    "rivet-notes-0.4.1-edge.20261127.g2222222-ARCH-linux.tar.gz",
+                    "rivet-notes-0.4.1-edge.20261127.g2222222-ARCH-linux.tar.gz.sha256",
+                    "Rivet_Notes-0.4.1-edge.20261127.g2222222-ARCH.AppImage",
+                    // Not an edge build, so never taken from here.
+                    "rivet-notes-0.9.0-ARCH-linux.tar.gz",
+                ],
+            ),
+            release(
+                "rivet-notes-v0.4.0",
+                false,
+                &["rivet-notes-0.4.0-ARCH-linux.tar.gz"],
+            ),
+            release(
+                "rivet-files-edge",
+                true,
+                &["rivet-files-0.11.1-edge.20261127.g3333333-ARCH-linux.tar.gz"],
+            ),
+            release("v0.11.0", false, &["rivet-files-0.11.0-ARCH-linux.tar.gz"]),
+        ];
+        let v = |e: &Entry, c| latest(e, &list, c).map(|(_, v)| v.to_string());
+        assert_eq!(
+            v(&notes, Channel::Edge).as_deref(),
+            Some("0.4.1-edge.20261127.g2222222")
+        );
+        assert_eq!(v(&notes, Channel::Stable).as_deref(), Some("0.4.0"));
+        assert_eq!(v(&notes, Channel::Pre).as_deref(), Some("0.4.0"));
+        assert_eq!(
+            v(&files, Channel::Edge).as_deref(),
+            Some("0.11.1-edge.20261127.g3333333")
+        );
+        let (a, sum) = archive(&notes, &list[0]).unwrap();
+        assert_eq!(
+            a.name,
+            format!(
+                "rivet-notes-0.4.1-edge.20261127.g2222222-{}-linux.tar.gz",
+                arch()
+            )
+        );
+        assert!(sum.is_some());
+        // An edge release is never taken for an app of its own.
+        assert_eq!(with_discovered(&list).len(), known().len());
     }
 
     /// Every app utilities/rivet-dev releases is listed here by name, under the tag, archive and

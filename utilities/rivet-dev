@@ -48,6 +48,10 @@ Releasing
   push [--all]                     Send the branch you're on to GitHub (--all: every local
                                    branch) — no release (creates the GitHub repo the first time)
   aur-bump X.Y.Z                   Update the AUR PKGBUILDs for a published release
+  edge APP [--publish]             An edge build of this commit in dist/edge/, versioned
+                                   X.Y.Z-edge.DAY.gCOMMIT (--publish: into the app's rolling
+                                   pre-release, DIST-edge, for Rivet Welcome's Edge channel)
+  edge-changed                     The apps changed since their last edge build
 
 Building
   appimage [APP]                   dist/Rivet_Files-VERSION-ARCH.AppImage, or that app's (needs
@@ -126,6 +130,8 @@ case "$cmd" in
     bench)         exec python3 "$LIB/bench-100k.py" "$@" ;;
     qa)            exec sh "$LIB/qa.sh" "$@" ;;
     welcome-e2e)   exec sh "$LIB/welcome-e2e.sh" "$@" ;;
+    edge)          exec sh "$LIB/edge.sh" "$@" ;;
+    edge-changed)  exec sh "$LIB/edge.sh" --changed ;;
     help|-h|--help) usage ;;
     *)
         echo "Unknown command: $cmd" >&2

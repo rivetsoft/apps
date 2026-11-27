@@ -9,6 +9,29 @@ use rivet_look::theme::Mode;
 
 pub static NO_SAVE: AtomicBool = AtomicBool::new(false);
 
+/// Which versions to install.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Channel {
+    /// Full releases of the apps that have one, and alpha versions of the apps that don't.
+    #[default]
+    Stable,
+    /// Every release, alpha versions (GitHub pre-releases) included.
+    Pre,
+    /// The nightly builds of main (`rivet-notes-edge`), and the newest release of an app that
+    /// has none.
+    Edge,
+}
+
+impl Channel {
+    fn key(self) -> &'static str {
+        match self {
+            Channel::Stable => "stable",
+            Channel::Pre => "pre",
+            Channel::Edge => "edge",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub theme: Mode,
@@ -22,9 +45,7 @@ pub struct Settings {
     pub notify: bool,
     /// Look again every this many hours while signed in (0: only when the tray starts).
     pub check_hours: u32,
-    /// Offer alpha versions (GitHub pre-releases) of apps that have a full release too. An app
-    /// with no full release yet is offered its alpha either way.
-    pub prereleases: bool,
+    pub channel: Channel,
 }
 
 impl Default for Settings {
@@ -37,7 +58,7 @@ impl Default for Settings {
             tray: true,
             notify: true,
             check_hours: 6,
-            prereleases: false,
+            channel: Channel::Stable,
         }
     }
 }
@@ -48,10 +69,14 @@ pub fn path() -> PathBuf {
 
 impl Settings {
     pub fn load() -> Settings {
+        std::fs::read_to_string(path())
+            .map(|t| Settings::parse(&t))
+            .unwrap_or_default()
+    }
+
+    fn parse(text: &str) -> Settings {
         let mut s = Settings::default();
-        let Ok(text) = std::fs::read_to_string(path()) else {
-            return s;
-        };
+        let (mut channel, mut old_pre) = (None, false);
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
@@ -78,10 +103,24 @@ impl Settings {
                 "tray" => s.tray = b,
                 "notify" => s.notify = b,
                 "check_hours" => s.check_hours = v.parse().unwrap_or(6),
-                "prereleases" => s.prereleases = b,
+                "channel" => {
+                    channel = match v {
+                        "pre" => Some(Channel::Pre),
+                        "edge" => Some(Channel::Edge),
+                        "stable" => Some(Channel::Stable),
+                        _ => channel,
+                    }
+                }
+                // Rivet Welcome 0.4.0's switch, before there were channels.
+                "prereleases" => old_pre = b,
                 _ => {}
             }
         }
+        s.channel = channel.unwrap_or(if old_pre {
+            Channel::Pre
+        } else {
+            Channel::Stable
+        });
         s
     }
 
@@ -96,13 +135,13 @@ impl Settings {
         };
         let [r, g, b] = self.accent;
         let text = format!(
-            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\ntray={}\nnotify={}\ncheck_hours={}\nprereleases={}\n",
+            "theme={theme}\naccent=#{r:02x}{g:02x}{b:02x}\nfollow_desktop_colors={}\ntext_size={}\ntray={}\nnotify={}\ncheck_hours={}\nchannel={}\n",
             self.follow_desktop_colors,
             self.text_size,
             self.tray,
             self.notify,
             self.check_hours,
-            self.prereleases
+            self.channel.key()
         );
         let p = path();
         if let Some(d) = p.parent() {
@@ -150,6 +189,23 @@ mod tests {
     #[test]
     fn defaults_keep_the_tray() {
         let s = Settings::default();
-        assert!(s.tray && s.notify && s.check_hours == 6 && !s.prereleases);
+        assert!(s.tray && s.notify && s.check_hours == 6 && s.channel == Channel::Stable);
+    }
+
+    #[test]
+    fn channels_round_trip_and_0_4_0_settings_carry_over() {
+        for c in [Channel::Stable, Channel::Pre, Channel::Edge] {
+            let line = format!("channel={}", c.key());
+            assert_eq!(Settings::parse(&line).channel, c);
+        }
+        assert_eq!(Settings::parse("prereleases=true").channel, Channel::Pre);
+        assert_eq!(
+            Settings::parse("prereleases=false").channel,
+            Channel::Stable
+        );
+        assert_eq!(
+            Settings::parse("channel=edge\nprereleases=false").channel,
+            Channel::Edge
+        );
     }
 }

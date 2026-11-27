@@ -7,7 +7,8 @@
 # 1. The released Rivet Welcome before this one (from GitHub, read only, or --old) is installed
 #    the way a person does it, and updates itself to this build.
 # 2. This build installs two apps, updates one (over a connection that drops halfway), finds
-#    pre-releases only when asked, refuses a damaged download and one with no checksum, puts an
+#    pre-releases only when asked, follows the Edge channel's nightly builds by commit and goes
+#    back to the stable release, refuses a damaged download and one with no checksum, puts an
 #    app back when its installer fails, says when GitHub's limit is used up, leaves an app
 #    installed elsewhere alone, waits its turn behind another Rivet Welcome, and removes an app
 #    and then itself.
@@ -144,6 +145,16 @@ publish() {
         mv "$SRV/releases.txt.new" "$SRV/releases.txt"
     )
 }
+# The rolling edge release of an app, holding one build: publish_edge APP VERSION
+publish_edge() {
+    (
+        app_select "$1"
+        name="$DIST_NAME-$2-$ARCH-linux.tar.gz"
+        { echo "$DIST_NAME-edge pre $name $name.sha256"; grep -v "^$DIST_NAME-edge " "$SRV/releases.txt" || true; } > "$SRV/releases.txt.new"
+        mv "$SRV/releases.txt.new" "$SRV/releases.txt"
+    )
+}
+setting() { mkdir -p "$XDG_CONFIG_HOME/rivet-welcome"; echo "$1" > "$XDG_CONFIG_HOME/rivet-welcome/settings"; }
 count() { grep -cF -- "$1" "$SRV/log" || true; }
 
 python3 utilities/lib/welcome-e2e-server.py "$SRV" "$WORK/port" &
@@ -200,6 +211,10 @@ expect_entry rivet-welcome rivet-welcome
 step "The old Rivet Welcome updates itself to $NEWV"
 pack welcome "$NEWV" "$NEW"
 publish welcome "$NEWV" stable
+# An edge build of Rivet Welcome is up too, numbered above this one: older versions, which know
+# nothing of edge builds, must pass it by.
+WELCOME_EDGE="$NEWV.1-edge.20261127.gfeed123"
+pack welcome "$WELCOME_EDGE" "$(fake welcome "$WELCOME_EDGE")"; publish_edge welcome "$WELCOME_EDGE"
 # Older versions read the list from a file (RIVET_WELCOME_RELEASES); the downloads still come
 # from the stand-in server.
 curl -fsS "$BASE/all" > "$WORK/releases.json"
@@ -256,6 +271,39 @@ set +e; rivet-welcome check; code=$?; set -e
 [ $code = 2 ] || fail "with pre-releases on, 0.3.0-beta.1 should be offered (check said $code)"
 ok "with pre-releases on: 0.3.0-beta.1 is offered"
 echo prereleases=false > "$XDG_CONFIG_HOME/rivet-welcome/settings"
+
+# ---------------------------------------------------------------------------------------------
+step "Edge: nightly builds by commit, then back to Stable"
+EDGE1=0.3.1-edge.20261126.g1111111
+EDGE2=0.3.1-edge.20261127.g2222222
+pack notes "$EDGE1" "$(fake notes "$EDGE1")"; publish_edge notes "$EDGE1"
+setting channel=edge
+set +e; rivet-welcome check; code=$?; set -e
+[ $code = 2 ] || fail "on Edge, the edge build should be offered (check said $code)"
+rivet-welcome install notes
+expect_version rivet-notes "$EDGE1"
+expect_entry rivet-notes rivet-notes
+# The next night's build: an update, told apart by its commit.
+pack notes "$EDGE2" "$(fake notes "$EDGE2")"; publish_edge notes "$EDGE2"
+rivet-welcome check | grep -q "Rivet Notes: edge build 1111111 from 2026-11-26 → edge build 2222222 from 2026-11-27" \
+    || fail "check didn't offer the next edge build by its commit and day"
+rivet-welcome install notes
+expect_version rivet-notes "$EDGE2"
+rivet-welcome install notes | grep -q "already installed" || fail "the same edge build was installed again"
+ok "the same commit isn't installed twice"
+# Rivet Edit has no edge build: Edge gives it its newest release.
+expect_version rivet-edit 0.1.0
+rivet-welcome list | grep "^edit " | grep -q "released 0.1.0$" || fail "Rivet Edit, with no edge build, wasn't offered its release"
+ok "an app with no edge build follows its releases"
+# Back to Stable: the release replaces the edge build, though its number is lower.
+setting channel=stable
+set +e; rivet-welcome check; code=$?; set -e
+[ $code = 2 ] || fail "back on Stable, the release should replace the edge build (check said $code)"
+rivet-welcome install notes
+expect_version rivet-notes 0.2.0
+expect_entry rivet-notes rivet-notes
+rivet-welcome check || fail "after going back to Stable there's still something to update"
+ok "back on Stable at 0.2.0, up to date"
 
 # ---------------------------------------------------------------------------------------------
 step "An installer that fails puts the previous version back"

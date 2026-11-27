@@ -21,7 +21,7 @@ use crate::catalog::Kind;
 use crate::install::{self, Progress, Stage};
 use crate::local::{self, Running};
 use crate::releases::{self, Release};
-use crate::settings::{self, Settings};
+use crate::settings::{self, Channel, Settings};
 use crate::state::{self, Row};
 
 pub const ICON_SVG: &str = include_str!("../data/rivet-welcome.svg");
@@ -129,7 +129,7 @@ impl WelcomeApp {
                     )
                 };
             }
-            app.rows = state::rows(&list, false);
+            app.rows = state::rows(&list, Channel::Stable);
             app.releases = list;
             app.loaded = true;
             app.checked = Some(SystemTime::now() - std::time::Duration::from_secs(180));
@@ -195,9 +195,9 @@ impl WelcomeApp {
             return;
         }
         let (tx, rx) = channel();
-        let (list, ctx, pre) = (self.releases.clone(), self.ctx.clone(), self.s.prereleases);
+        let (list, ctx, channel) = (self.releases.clone(), self.ctx.clone(), self.s.channel);
         std::thread::spawn(move || {
-            let _ = tx.send(state::rows(&list, pre));
+            let _ = tx.send(state::rows(&list, channel));
             ctx.request_repaint();
         });
         self.rows_rx = Some(rx);
@@ -668,6 +668,7 @@ impl WelcomeApp {
                                 .color(v.strong_text_color()),
                         );
                         let (pill, color) = match &row.latest {
+                            Some((_, v)) if v.edge().is_some() => ("Edge", st.danger),
                             Some((r, _)) if r.prerelease => ("Alpha", st.warning),
                             Some(_) => ("Stable", st.success),
                             None => ("Not released yet", v.weak_text_color()),
@@ -699,7 +700,7 @@ impl WelcomeApp {
                             let have = inst
                                 .version
                                 .as_ref()
-                                .map(|v| v.to_string())
+                                .map(|v| v.label())
                                 .unwrap_or_else(|| "Installed".into());
                             if inst.running != Running::No {
                                 let from = match inst.running {
@@ -714,7 +715,7 @@ impl WelcomeApp {
                                     Some((_, l))
                                         if inst.version.as_ref().is_some_and(|v| v < l) =>
                                     {
-                                        format!(" · {l} is out")
+                                        format!(" · {} is out", l.label())
                                     }
                                     _ => String::new(),
                                 };
@@ -728,16 +729,20 @@ impl WelcomeApp {
                                 };
                                 ui.label(weak(line));
                             } else if let Some((_, new)) = row.update() {
+                                let line = if row.leaves_edge() {
+                                    format!("{have} installed · {new} replaces it")
+                                } else {
+                                    format!("{have} installed · {} is out", new.label())
+                                };
                                 ui.label(
-                                    RichText::new(format!("{have} installed · {new} is out"))
-                                        .font(fonts::ui_font(12.0))
-                                        .color(accent),
+                                    RichText::new(line).font(fonts::ui_font(12.0)).color(accent),
                                 );
                             } else if let Some((_, l)) = latest
                                 && inst.version.as_ref().is_some_and(|v| v > l)
                             {
                                 ui.label(weak(format!(
-                                    "{have} · newer than the latest release ({l})"
+                                    "{have} · newer than the latest release ({})",
+                                    l.label()
                                 )));
                             } else {
                                 ui.label(weak(format!("{have} · up to date")));
@@ -747,10 +752,12 @@ impl WelcomeApp {
                             let size = crate::catalog::archive(&row.entry, r)
                                 .map(|(a, _)| install::size(a.size))
                                 .unwrap_or_default();
-                            ui.label(weak(format!(
-                                "{ver} · released {} · {size}",
-                                releases::day(&r.published)
-                            )));
+                            let line = if ver.edge().is_some() {
+                                format!("{} · {size}", ver.label())
+                            } else {
+                                format!("{ver} · released {} · {size}", releases::day(&r.published))
+                            };
+                            ui.label(weak(line));
                         }
                         (None, None) => {
                             ui.label(weak("Build it from source for now (see the README)".into()));
@@ -795,7 +802,12 @@ impl WelcomeApp {
                         });
                     }
                     if let Some((_, new)) = row.update() {
-                        if primary(ui, &format!("Update to {new}")) {
+                        let verb = if row.leaves_edge() {
+                            "Switch to"
+                        } else {
+                            "Update to"
+                        };
+                        if primary(ui, &format!("{verb} {}", new.short())) {
                             *act = Some(Act::Install(i));
                         }
                     } else if row.installed.is_none()
@@ -894,10 +906,19 @@ impl WelcomeApp {
                         ui.add_space(6.0);
                         ui.add_enabled(self.s.tray, egui::Checkbox::new(&mut self.s.notify, "Send a notification when updates are ready"));
                         ui.add_space(6.0);
-                        ui.checkbox(&mut self.s.prereleases, "Offer alpha versions of stable apps");
-                        ui.indent("pre-note", |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Versions");
+                            for (c, label) in [(Channel::Stable, "Stable"), (Channel::Pre, "Alpha"), (Channel::Edge, "Edge")] {
+                                ui.selectable_value(&mut self.s.channel, c, label);
+                            }
+                        });
+                        ui.indent("channel-note", |ui| {
                             ui.visuals_mut().indent_has_left_vline = false;
-                            ui.label(weak("Apps with no stable release yet always get their alpha versions."))
+                            ui.label(weak(match self.s.channel {
+                                Channel::Stable => "Apps with no stable version yet get their alpha versions.",
+                                Channel::Pre => "Alpha versions of every app, as soon as they're out.",
+                                Channel::Edge => "A build of each app's newest code, made every night. It can break, so keep backups of what you use it with.",
+                            }))
                         });
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
@@ -950,7 +971,7 @@ impl WelcomeApp {
         });
         if self.s != before {
             self.s.save();
-            if self.s.prereleases != before.prereleases {
+            if self.s.channel != before.channel {
                 self.refresh_rows();
             }
             if self.s.tray != before.tray && self.shot.is_none() {

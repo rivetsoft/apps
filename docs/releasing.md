@@ -89,6 +89,36 @@ the tag with `git tag -d` if you don't ship it).
 in one go, and `release-all` walks through every app the same way. They make the same files with
 the same names; prefer the workflow, which builds every release on the same system.
 
+## Edge builds
+
+An edge build is an app as it is on `main`, for people who want the newest code every day
+through Rivet Welcome's Edge channel (Settings → Versions → Edge). It isn't a release: no
+version is bumped, nothing goes in the changelog, and the website never lists it.
+
+| Thing | An edge build of Rivet Notes |
+| --- | --- |
+| Version | `0.4.3-edge.20261127.gabc1234`: the next patch version, the commit's day (UTC) and the commit. `--version` says it, so you can tell exactly which build is installed. |
+| Where | One rolling GitHub pre-release per app, tagged `rivet-notes-edge` (`rivet-files-edge` for Files), never the latest. Each build replaces the last one's files. |
+| Files | The portable archive and the AppImage with their `.sha256`, named like a release's: `rivet-notes-0.4.3-edge.20261127.gabc1234-x86_64-linux.tar.gz`. |
+| Notes | The commit, the day, and the app's `## Unreleased` changelog notes. |
+
+[The Edge builds workflow](../.github/workflows/edge.yml) runs every night at 07:23 UTC. It
+builds each app whose folder, crates, `Cargo.toml` or `Cargo.lock` changed since its last edge
+build (`utilities/rivet-dev edge-changed` lists them), with the same release scripts and checks
+as the Release workflow, then publishes it. Actions → Edge builds → Run workflow builds the apps
+named, or every changed app, at once.
+
+On a computer, `utilities/rivet-dev edge notes` builds the same files in `dist/edge/` without
+touching your branch (it works in a throwaway worktree), and `--publish` puts them in
+`rivet-notes-edge`.
+
+Edge tags have no `-v` in them, which keeps them out of everything that reads releases by
+`PREFIX` + version: the Release workflow, the AUR and Flatpak workflows, the website, and
+Rivet Welcome 0.4.0 and older (which never offer an edge build). Later versions look for
+`DIST-edge` by name, take the version from the archive's name, and tell edge builds apart by
+commit. When someone goes back from Edge to Stable or Alpha, the release replaces the
+edge build, though its number is lower.
+
 ## Adding a new app to the releases
 
 1. Give it `data/<dist>.desktop` and `data/<dist>.svg`, a `CHANGELOG.md` with `## Unreleased`,

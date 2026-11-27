@@ -562,7 +562,7 @@ pub fn run() -> ExitCode {
     if let Some((list, _)) = releases::load_cached() {
         let tx = tx.clone();
         std::thread::spawn(move || {
-            tx.send(Cmd::Rows(state::rows(&list, Settings::load().prereleases)))
+            tx.send(Cmd::Rows(state::rows(&list, Settings::load().channel)))
         });
     }
     loop {
@@ -658,7 +658,7 @@ pub fn run() -> ExitCode {
                 let r = releases::check();
                 let ok = r.as_ref().map(|_| ()).map_err(Clone::clone);
                 if let Ok(list) = r {
-                    let _ = tx.send(Cmd::Rows(state::rows(&list, Settings::load().prereleases)));
+                    let _ = tx.send(Cmd::Rows(state::rows(&list, Settings::load().channel)));
                 }
                 let _ = tx.send(Cmd::Checked(ok));
             });
@@ -688,7 +688,7 @@ pub fn run() -> ExitCode {
                 if let Some((list, _)) = releases::load_cached() {
                     let tx = tx.clone();
                     std::thread::spawn(move || {
-                        tx.send(Cmd::Rows(state::rows(&list, Settings::load().prereleases)))
+                        tx.send(Cmd::Rows(state::rows(&list, Settings::load().channel)))
                     });
                 }
             }
@@ -718,7 +718,7 @@ fn update_all(todo: Vec<Row>, tx: Sender<Cmd>) {
         let Some((rel, v)) = r.update() else { continue };
         let _ = tx.send(Cmd::Busy(Some(format!("Updating {}…", r.entry.title))));
         match crate::install::run(&r.entry, rel, &|_| {}) {
-            Ok(_) => ok.push(format!("{} {v}", r.entry.title)),
+            Ok(_) => ok.push(format!("{} {}", r.entry.title, v.short())),
             Err(e) => failed.push(format!("{}: {e}", r.entry.title)),
         }
     }

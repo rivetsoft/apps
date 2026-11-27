@@ -49,6 +49,36 @@ impl Version {
             .collect::<Option<Vec<_>>>()?;
         Some(Version { nums, pre })
     }
+
+    /// An edge build's day and commit, from `0.4.1-edge.20261127.gabc1234` (the nightly build
+    /// of main that utilities/lib/edge.sh makes): `("2026-11-27", "abc1234")`.
+    pub fn edge(&self) -> Option<(String, &str)> {
+        let (day, commit) = self
+            .pre
+            .as_deref()?
+            .strip_prefix("edge.")?
+            .split_once('.')?;
+        let commit = commit.strip_prefix('g').filter(|c| !c.is_empty())?;
+        (day.len() == 8 && day.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| format!("{}-{}-{}", &day[..4], &day[4..6], &day[6..]))
+            .map(|d| (d, commit))
+    }
+
+    /// As a person reads it: `0.7.0`, or `edge build abc1234 from 2026-11-27`.
+    pub fn label(&self) -> String {
+        match self.edge() {
+            Some((day, commit)) => format!("edge build {commit} from {day}"),
+            None => self.to_string(),
+        }
+    }
+
+    /// As short as a button needs: `0.7.0`, or `edge abc1234`.
+    pub fn short(&self) -> String {
+        match self.edge() {
+            Some((_, commit)) => format!("edge {commit}"),
+            None => self.to_string(),
+        }
+    }
 }
 
 impl std::fmt::Display for Version {
@@ -511,6 +541,24 @@ pub fn day(published: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn edge_builds_say_their_commit_and_day() {
+        let v = Version::parse("0.4.1-edge.20261127.gabc1234").unwrap();
+        assert_eq!(v.edge(), Some(("2026-11-27".to_string(), "abc1234")));
+        assert_eq!(v.label(), "edge build abc1234 from 2026-11-27");
+        assert_eq!(v.short(), "edge abc1234");
+        assert!(v > Version::parse("0.4.0").unwrap() && v < Version::parse("0.4.1").unwrap());
+        for s in [
+            "0.4.0",
+            "0.4.1-beta.1",
+            "0.4.1-edge.2026.gabc",
+            "0.4.1-edge.20261127.abc1234",
+        ] {
+            let v = Version::parse(s).unwrap();
+            assert_eq!((v.edge(), v.label()), (None, s.to_string()), "{s}");
+        }
+    }
 
     #[test]
     fn versions_compare() {

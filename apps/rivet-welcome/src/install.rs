@@ -152,8 +152,7 @@ const INSTALLER_TIME: Duration = Duration::from_secs(300);
 
 /// The whole job, blocking. `set` hears each stage. The installed version when it worked.
 pub fn run(e: &Entry, r: &Release, set: &dyn Fn(Stage)) -> Result<Version, String> {
-    let want = catalog::tag_version(&e.tag_prefix, &r.tag)
-        .ok_or("that release isn't one of this app's")?;
+    let want = catalog::release_version(e, r).ok_or("that release isn't one of this app's")?;
     let (asset, sum) = catalog::archive(e, r).ok_or_else(|| {
         format!(
             "{} has no download for this computer ({}), so nothing was installed",
