@@ -62,7 +62,7 @@ jobs:
       fail-fast: false
       matrix:
         # Every app in ALL_APPS (utilities/lib/apps.sh); Rivet Welcome's catalog test checks that list.
-        app: [files, notes, edit, terminal, ftp, snip, shell, vice, calendar, color, fetch, view, docs, play, welcome]
+        app: [files, notes, edit, terminal, ftp, snip, shell, vice, calendar, color, fetch, longshot, reader, cinema, welcome]
     steps:
       - uses: actions/checkout@v4
 

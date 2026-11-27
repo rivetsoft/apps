@@ -2551,6 +2551,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivet-cinema"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "raw-window-handle",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-media",
+ "rivet-xdg",
+ "zbus",
+]
+
+[[package]]
 name = "rivet-color"
 version = "0.1.1"
 dependencies = [
@@ -2579,17 +2592,6 @@ dependencies = [
  "pdfium-render",
  "rivet-archive",
  "zip",
-]
-
-[[package]]
-name = "rivet-docs"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "rivet-doc",
- "rivet-kit",
- "rivet-look",
- "rivet-xdg",
 ]
 
 [[package]]
@@ -2665,6 +2667,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "rivet-longshot"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "image",
+ "kamadak-exif",
+ "libc",
+ "rivet-kit",
+ "rivet-look",
+ "rivet-media",
+ "rivet-xdg",
+]
+
+[[package]]
 name = "rivet-look"
 version = "0.1.0"
 dependencies = [
@@ -2711,16 +2727,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "rivet-play"
+name = "rivet-reader"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "raw-window-handle",
+ "rivet-doc",
  "rivet-kit",
  "rivet-look",
- "rivet-media",
  "rivet-xdg",
- "zbus",
 ]
 
 [[package]]
@@ -2787,20 +2801,6 @@ dependencies = [
  "rivet-archive",
  "rivet-kit",
  "rivet-look",
- "rivet-xdg",
-]
-
-[[package]]
-name = "rivet-view"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "image",
- "kamadak-exif",
- "libc",
- "rivet-kit",
- "rivet-look",
- "rivet-media",
  "rivet-xdg",
 ]
 

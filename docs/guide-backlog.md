@@ -531,14 +531,14 @@ the saved picture itself. Nothing of the original is left under it in the file. 
 at least 8 pixels across; very large text may still be guessed at from its shape, so cover
 generously.
 
-## Rivet View
+## Rivet Long Shot
 
 ### Stepping, zooming and turning
 
-Location: `apps/rivet-view/src/gui.rs`; the picture stage is `crates/rivet-media/src/stage.rs`.
+Location: `apps/rivet-longshot/src/gui.rs`; the picture stage is `crates/rivet-media/src/stage.rs`.
 
 - The folder's order: Rivet Files passes the sort it shows (name, size, kind or changed, either
-  way round) when it opens a picture in Rivet View. Opened any other way, it is by name, with
+  way round) when it opens a picture in Rivet Long Shot. Opened any other way, it is by name, with
   numbers counted as numbers. Hidden pictures are left out unless the one opened is hidden.
 - Zoom: the wheel and a pinch zoom around the pointer, from fitting the window up to 3200%.
   "Fit" never enlarges a picture past its own size. Double-click goes between fitting and 100%.
@@ -552,15 +552,15 @@ Location: `apps/rivet-view/src/gui.rs`; the picture stage is `crates/rivet-media
 - HEIC, AVIF and JPEG XL open through a program that reads them: libheif's heif-dec (or
   heif-convert), djxl for JPEG XL, ImageMagick, or ffmpeg, tried in that order.
 
-### Rivet Files: Open in Rivet View
+### Rivet Files: Open in Rivet Long Shot
 
 Location: `apps/rivet-files/src/app/views.rs`, the right-click menu, and `open_entry` in `app.rs`.
 
-- Shown for one selected picture when the `rivet-view` program is beside Rivet Files' own or on
-  the path, and Rivet View isn't already the app Open uses. When it is, Open passes the folder's
+- Shown for one selected picture when the `rivet-longshot` program is beside Rivet Files' own or on
+  the path, and Rivet Long Shot isn't already the app Open uses. When it is, Open passes the folder's
   sort to it.
 
-## Rivet Play
+## Rivet Cinema
 
 ### Keep on top
 
@@ -569,7 +569,7 @@ From `gui.rs`, the Keep on Top button's tooltip.
 Keep on Top shows the video in a small window of its own with no frame: drag it to move it,
 click it to pause, double-click it or press Escape to go back. On X11 it stays above other
 windows by itself. Wayland doesn't let a window ask for that, so the small window has its own
-app id, `rivet-play-pip`, for a compositor rule (the README lists Softcore's, Hyprland's,
+app id, `rivet-cinema-pip`, for a compositor rule (the README lists Softcore's, Hyprland's,
 niri's and Sway's).
 
 ### Preferences: languages and hardware decoding
@@ -585,6 +585,6 @@ it wrong shows blocks, green frames or a black picture, which turning it off fix
 
 From `gui.rs`, "Started from …" and Preferences.
 
-Rivet Play keeps the place in files over a minute long, once past the first 30 seconds and
+Rivet Cinema keeps the place in files over a minute long, once past the first 30 seconds and
 until the last 5%. The places are kept for the newest 500 files, under a key made from the
 file's path and size, so a file replaced by another starts from the top.

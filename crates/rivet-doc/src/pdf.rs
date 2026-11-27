@@ -1,5 +1,5 @@
 //! PDFs, through PDFium. PDFium is loaded when the first PDF opens, from the first of: the file
-//! RIVET_PDFIUM names, a copy beside the program (lib/rivet-docs/libpdfium.so next to or above
+//! RIVET_PDFIUM names, a copy beside the program (lib/rivet-reader/libpdfium.so next to or above
 //! its folder, where the release archive, the AppImage and `rivet-dev pdfium` put it), or the
 //! system's own. Everything here runs on the worker thread.
 
@@ -29,8 +29,8 @@ fn bundled() -> Vec<PathBuf> {
         out.push(p);
     }
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
-        out.push(dir.join("../lib/rivet-docs").join(LIB));
-        out.push(dir.join("lib/rivet-docs").join(LIB));
+        out.push(dir.join("../lib/rivet-reader").join(LIB));
+        out.push(dir.join("lib/rivet-reader").join(LIB));
     }
     out
 }

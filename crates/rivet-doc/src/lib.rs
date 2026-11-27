@@ -1,6 +1,6 @@
 //! Page-based documents with no interface: PDFs (through PDFium), comic archives (.cbz, .cbr,
 //! .cb7) and single pictures, all as pages of a known size that can be drawn at any size, with
-//! the text on them, their links and the document's outline. Rivet Docs is the window around
+//! the text on them, their links and the document's outline. Rivet Reader is the window around
 //! it; Rivet Files can use it for previews.
 //!
 //! PDFium is not safe to call from two threads at once, so every document lives on one thread,
@@ -244,7 +244,7 @@ pub fn open(path: &Path, password: Option<&str>) -> Result<Box<dyn Document>, Op
 pub(crate) fn scratch_dir(tag: &str) -> PathBuf {
     let cache = std::env::var_os("XDG_CACHE_HOME").map(PathBuf::from).filter(|p| p.is_absolute()).unwrap_or_else(|| PathBuf::from(std::env::var_os("HOME").unwrap_or_default()).join(".cache"));
     static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    cache.join("rivet-docs").join(format!("{tag}-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)))
+    cache.join("rivet-reader").join(format!("{tag}-{}-{}", std::process::id(), NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)))
 }
 
 /// Names in the order a person counts them: "page 2" before "page 10".

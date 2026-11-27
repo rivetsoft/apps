@@ -158,8 +158,8 @@ unsafe fn sym<T: Copy>(lib: *mut c_void, name: &CStr) -> Option<T> {
 }
 
 fn load() -> Option<Lib> {
-    // RIVET_PLAY_NO_MPV=1 behaves as if it weren't installed, to see that message.
-    if std::env::var_os("RIVET_PLAY_NO_MPV").is_some() {
+    // RIVET_CINEMA_NO_MPV=1 behaves as if it weren't installed, to see that message.
+    if std::env::var_os("RIVET_CINEMA_NO_MPV").is_some() {
         return None;
     }
     let lib = [c"libmpv.so.2", c"libmpv.so.1", c"libmpv.so"].into_iter().map(|n| unsafe { libc::dlopen(n.as_ptr(), libc::RTLD_NOW | libc::RTLD_LOCAL) }).find(|h| !h.is_null())?;

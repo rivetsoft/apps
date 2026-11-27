@@ -58,7 +58,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE"
 strip -o "$STAGE/$BIN" "$BIN_PATH"
 ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/$BIN"
-# PDFium for Rivet Docs, beside the program, with its licenses.
+# PDFium for Rivet Reader, beside the program, with its licenses.
 if [ "$BUNDLE" = pdfium ]; then
     sh ./utilities/lib/pdfium.sh "$STAGE/lib/$BIN" "$STAGE/licenses/pdfium"
     ./utilities/lib/check-glibc.sh --max "$GLIBC_MAX_VERSION" "$STAGE/lib/$BIN/libpdfium.so"

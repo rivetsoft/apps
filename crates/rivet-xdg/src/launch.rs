@@ -315,7 +315,7 @@ fn spawn_detached(args: &[String], cwd: Option<&Path>) -> Result<(), String> {
     Ok(())
 }
 
-/// Another Rivet program (`rivet-vice`, `rivet-view`), when it is installed: beside this program
+/// Another Rivet program (`rivet-vice`, `rivet-longshot`), when it is installed: beside this program
 /// (the same build or package), else on the path.
 pub fn rivet_program(name: &str) -> Option<PathBuf> {
     let beside = std::env::current_exe().ok().and_then(|p| std::fs::canonicalize(p).ok()).and_then(|p| p.parent().map(|d| d.join(name)));

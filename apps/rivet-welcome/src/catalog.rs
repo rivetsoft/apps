@@ -154,14 +154,14 @@ pub fn known() -> Vec<Entry> {
         Entry {
             held: true,
             ..entry(
-                "play",
-                "Rivet Play",
-                "rivet-play",
-                "rivet-play",
-                "rivet-play-v",
+                "cinema",
+                "Rivet Cinema",
+                "rivet-cinema",
+                "rivet-cinema",
+                "rivet-cinema-v",
                 "Play videos and music from files and folders, with a queue, subtitles and resume.",
                 Kind::App,
-                include_str!("../../rivet-play/data/rivet-play.svg"),
+                include_str!("../../rivet-cinema/data/rivet-cinema.svg"),
             )
         },
         entry(
@@ -177,27 +177,27 @@ pub fn known() -> Vec<Entry> {
         Entry {
             held: true,
             ..entry(
-                "view",
-                "Rivet View",
-                "rivet-view",
-                "rivet-view",
-                "rivet-view-v",
+                "longshot",
+                "Rivet Long Shot",
+                "rivet-longshot",
+                "rivet-longshot",
+                "rivet-longshot-v",
                 "Look through the pictures in a folder, with zoom, slideshows and camera details.",
                 Kind::App,
-                include_str!("../../rivet-view/data/rivet-view.svg"),
+                include_str!("../../rivet-longshot/data/rivet-longshot.svg"),
             )
         },
         Entry {
             held: true,
             ..entry(
-                "docs",
-                "Rivet Docs",
-                "rivet-docs",
-                "rivet-docs",
-                "rivet-docs-v",
+                "reader",
+                "Rivet Reader",
+                "rivet-reader",
+                "rivet-reader",
+                "rivet-reader-v",
                 "Read PDFs and comics, with thumbnails, the outline, search and dark pages.",
                 Kind::App,
-                include_str!("../../rivet-docs/data/rivet-docs.svg"),
+                include_str!("../../rivet-reader/data/rivet-reader.svg"),
             )
         },
         entry(

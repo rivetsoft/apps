@@ -17,7 +17,7 @@
   &nbsp;
   <img src="apps/rivet-color/data/rivet-color.svg" width="88" alt="Rivet Color icon">
   &nbsp;
-  <img src="apps/rivet-view/data/rivet-view.svg" width="88" alt="Rivet View icon">
+  <img src="apps/rivet-longshot/data/rivet-longshot.svg" width="88" alt="Rivet Long Shot icon">
 </p>
 
 # Rivetsoft Apps
@@ -128,16 +128,16 @@ anywhere else `rivet-snip capture` takes one first.
 
 ![Rivet Snip with a marked-up screenshot](docs/screenshots/rivet-snip-wide.png)
 
-### <img src="apps/rivet-view/data/rivet-view.svg" width="32" alt=""> Rivet View
+### <img src="apps/rivet-longshot/data/rivet-longshot.svg" width="32" alt=""> Rivet Long Shot
 
 A picture viewer: open a picture and step through the rest of its folder in the order Rivet
 Files shows it, with the next one already read. Zoom with the wheel, a pinch or a double-click,
 turn and flip (a JPEG saved turned keeps every pixel), slideshows, camera details and animated
 GIF, WebP and PNG. Rivet Files hands pictures to it.
 **Just started:** not released yet; build it from source.
-[More about Rivet View](apps/rivet-view/README.md)
+[More about Rivet Long Shot](apps/rivet-longshot/README.md)
 
-![Rivet View with a photo of a lake and its camera details](docs/screenshots/rivet-view-wide.png)
+![Rivet Long Shot with a photo of a lake and its camera details](docs/screenshots/rivet-longshot-wide.png)
 
 ### <img src="apps/rivet-color/data/rivet-color.svg" width="32" alt=""> Rivet Color
 
@@ -160,15 +160,15 @@ from the right-click menu.
 
 ![Rivet Vice inside a trip archive, with folders of photos, maps and notes](docs/screenshots/rivet-vice-wide.png)
 
-### <img src="apps/rivet-play/data/rivet-play.svg" width="32" alt=""> Rivet Play
+### <img src="apps/rivet-cinema/data/rivet-cinema.svg" width="32" alt=""> Rivet Cinema
 
 A video and music player: files, folders and playlists in a queue, a frame from anywhere on the
 seek bar, audio tracks and subtitles, and each file started where you left it. Media keys and
 Rivet Shell's player controls work with it. It plays through libmpv, which it loads from the
 system. **Unreleased; built from source.**
-[More about Rivet Play](apps/rivet-play/README.md)
+[More about Rivet Cinema](apps/rivet-cinema/README.md)
 
-![Rivet Play showing a video with its controls and the seek bar](docs/screenshots/rivet-play-wide.png)
+![Rivet Cinema showing a video with its controls and the seek bar](docs/screenshots/rivet-cinema-wide.png)
 
 ### <img src="apps/rivet-calendar/data/rivet-calendar.svg" width="32" alt=""> Rivet Calendar
 
@@ -189,15 +189,15 @@ desktop's accent. Choose what it shows and in what order.
 
 ![rivetfetch in Rivet Terminal, beside the mascot](docs/screenshots/rivet-fetch-wide.png)
 
-### <img src="apps/rivet-docs/data/rivet-docs.svg" width="32" alt=""> Rivet Docs
+### <img src="apps/rivet-reader/data/rivet-reader.svg" width="32" alt=""> Rivet Reader
 
 A reader for PDFs and comics: one long scroll or a page at a time, thumbnails and the outline in
 the sidebar, search, text to select and copy, dark pages in the desktop's colors, and the page
 you left each file at.
 **Just started:** not released yet; build it from source.
-[More about Rivet Docs](apps/rivet-docs/README.md)
+[More about Rivet Reader](apps/rivet-reader/README.md)
 
-![Rivet Docs reading a field guide, with the page thumbnails beside it](docs/screenshots/rivet-docs-wide.png)
+![Rivet Reader reading a field guide, with the page thumbnails beside it](docs/screenshots/rivet-reader-wide.png)
 
 > **About the alphas.** Rivet FTP, Rivet Notes and Rivet Color are young: things may still change or break.
 > Their releases are marked as pre-releases. Use them on servers and notes you have backups of.

@@ -122,10 +122,10 @@ edge build, though its number is lower.
 ## Holding an app back
 
 An app that is built and listed but not ready to go out has `HOLD=1` on its line in
-`app_select` (`utilities/lib/apps.sh`). Rivet View is held this way.
+`app_select` (`utilities/lib/apps.sh`). Rivet Long Shot is held this way.
 
 - `utilities/rivet-dev release-all`, `ship all` and `live all` pass over it, and say so.
-- Naming it still works: `ship view`, `live view`, `release view`, or `release-all --only view`.
+- Naming it still works: `ship longshot`, `live longshot`, `release longshot`, or `release-all --only longshot`.
 - Rivet Welcome knows it (`held: true` in `catalog.rs`) but never offers it, even when a
   release of it turns up. Its test `every_released_app_is_known` checks that the apps held
   there are the ones with `HOLD=1`.
