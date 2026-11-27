@@ -1,0 +1,111 @@
+name: Edge builds
+
+# Every night, each app that changed since its last edge build is built from main by the same
+# scripts as a release and put in its rolling pre-release, DIST-edge (rivet-notes-edge), in place
+# of the last build: what Rivet Welcome's Edge channel installs (utilities/lib/edge.sh,
+# docs/releasing.md). Run by hand, it builds the apps named, or every app that changed.
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+    inputs:
+      apps:
+        description: "Apps to build, separated by spaces (notes edit), or empty for every app changed since its last edge build"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: edge
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Which apps changed
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.plan.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: List them
+        id: plan
+        env:
+          APPS: ${{ inputs.apps }}
+        run: |
+          set -eu
+          . utilities/lib/apps.sh
+          if [ -n "$APPS" ]; then
+            for a in $APPS; do is_app "$a" || { echo "::error::$a isn't an app (one of: $ALL_APPS)"; exit 1; }; done
+            list=$APPS
+          else
+            list=$(./utilities/rivet-dev edge-changed)
+          fi
+          echo "Edge builds for: ${list:-nothing}"
+          echo "apps=$(printf '%s\n' $list | python3 -c 'import json, sys; print(json.dumps(sys.stdin.read().split()))')" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Edge build of ${{ matrix.app }}
+    needs: plan
+    if: needs.plan.outputs.apps != '[]'
+    # The same system as the releases (glibc 2.35), which the portable builds are checked on.
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: edge-${{ matrix.app }}
+
+      - name: Cache Zig and bundled library packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/rivet-build
+          key: rivet-zig-0.15.1-zigbuild-0.24.1-xkb-jammy
+
+      - name: Install packaging tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends binutils squashfs-tools curl ca-certificates xz-utils shared-mime-info librsvg2-bin libpam0g-dev libxkbcommon-dev
+
+      - name: Build it
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          ./utilities/rivet-dev edge ${{ matrix.app }}
+
+      # What Rivet Welcome will do with it: check the sums, unpack, install, ask the version.
+      - name: Check the downloads
+        run: |
+          set -eu
+          . utilities/lib/apps.sh
+          app_select ${{ matrix.app }}
+          cd dist/edge
+          sha256sum -c ./*.sha256
+          v=$(ls ./*-linux.tar.gz | sed "s|^./$DIST_NAME-||; s|-$(uname -m)-linux.tar.gz$||")
+          case "$v" in *-edge.*) ;; *) echo "::error::$v isn't an edge version"; exit 1 ;; esac
+          home=$(mktemp -d)
+          mkdir "$home/unpacked"
+          tar -xzf ./*-linux.tar.gz -C "$home/unpacked"
+          (cd "$home"/unpacked/*/ && HOME=$home XDG_BIN_HOME=$home/bin XDG_DATA_HOME=$home/share sh ./install.sh)
+          "$home/bin/$BIN" --version | tee /dev/stderr | grep -qF "$v"
+          APPIMAGE_EXTRACT_AND_RUN=1 ./*.AppImage --version | grep -qF "$v"
+          ls -l
+
+      - name: Publish it
+        run: ./utilities/rivet-dev edge ${{ matrix.app }} --publish

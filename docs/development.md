@@ -71,6 +71,19 @@ Every app can draw itself into a PNG without a display (`--screenshot out.png`),
 rebuilds the pictures in `docs/screenshots/` from throwaway sample data. `utilities/rivet-dev help` lists
 every developer task; the scripts behind it are in `utilities/lib/`.
 
+## Setting up a computer
+
+Besides Rust, a computer that releases or pushes needs:
+
+- **A git identity**: `git config --global user.name` and `user.email`, the same as on your other
+  computers, so commits and release tags are yours.
+- **An SSH remote**, `git@github.com:rivetsoft/apps.git`. GitHub refuses a push over HTTPS that
+  changes anything in `.github/workflows/` unless the token has the `workflow` scope; SSH has no
+  such limit. To stay on HTTPS, run `gh auth refresh -h github.com -s workflow` once.
+- **squashfs-tools** for AppImages (`sudo dnf install squashfs-tools`, `sudo apt install
+  squashfs-tools`). Zig and cargo-zigbuild for the portable builds are downloaded by the build
+  scripts on first use, into `~/.cache/rivet-build`.
+
 ## Releasing
 
 Each app is released on its own, with its own version, changelog and tags: `v0.10.0` for Rivet

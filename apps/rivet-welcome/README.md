@@ -14,9 +14,12 @@ pre-release while it earns a stable release ([the bar](../../docs/stability.md))
   checks it against the `.sha256` published with it, and runs the `install.sh` inside: the
   program goes in `~/.local/bin` and the app in your launcher. No password. Removing takes the
   program and its launcher entry and icon; settings and documents stay.
-- **Stable versions first.** An app with a stable release is offered only its stable releases;
-  turn on "Offer alpha versions of stable apps" in Settings for the rest. An app with no stable
-  release yet is offered its alpha versions.
+- **Stable, alpha or edge.** Settings → Versions decides what's offered. Stable: an app's
+  stable releases, or its alpha versions while it has no stable release yet. Alpha: every
+  release, alpha versions included. Edge: a build of each app's newest code from `main`, made
+  every night, shown by its commit and day (`edge build abc1234 from 2026-11-27`); an app with
+  no edge build gets its newest release. Going back from Edge replaces the edge builds with
+  the channel's releases, though their numbers are lower.
 - **Leaves other installs alone.** An app installed by Flatpak, a package (AUR, a
   distribution) or a build in `/usr/local/bin` is shown with its version and where it came
   from, but not updated or removed here.
@@ -26,7 +29,7 @@ pre-release while it earns a stable release ([the bar](../../docs/stability.md))
   has Check for Updates and Install Updates. It works with any tray that speaks
   StatusNotifierItem: Rivet Shell, KDE, waybar and others. Turn it off in Settings.
 
-![Rivet Welcome's settings: the tray, notifications, alpha versions and how often to look](../../docs/screenshots/welcome-settings-wide.png)
+![Rivet Welcome's settings: the tray, notifications, which versions to install and how often to look](../../docs/screenshots/welcome-settings-wide.png)
 
 ## From a terminal
 

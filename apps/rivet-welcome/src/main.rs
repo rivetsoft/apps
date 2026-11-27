@@ -94,7 +94,7 @@ fn releases_now() -> Vec<releases::Release> {
 
 fn cli_list() -> ExitCode {
     let list = releases_now();
-    for r in state::rows(&list, settings::Settings::load().prereleases) {
+    for r in state::rows(&list, settings::Settings::load().channel) {
         let have = match &r.installed {
             Some(i) => {
                 let v = i
@@ -138,7 +138,7 @@ fn cli_check() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let rows = state::rows(&list, settings::Settings::load().prereleases);
+    let rows = state::rows(&list, settings::Settings::load().channel);
     let ups = state::updates(&rows);
     if ups.is_empty() {
         println!("The Rivet apps are up to date.");
@@ -149,9 +149,9 @@ fn cli_check() -> ExitCode {
             let have = i
                 .version
                 .as_ref()
-                .map(|v| v.to_string())
+                .map(|v| v.label())
                 .unwrap_or_else(|| "?".into());
-            println!("{}: {have} → {v}", r.entry.title);
+            println!("{}: {have} → {}", r.entry.title, v.label());
         }
     }
     ExitCode::from(2)
@@ -160,7 +160,7 @@ fn cli_check() -> ExitCode {
 /// Install (or update) these apps, or every update when `names` is empty.
 fn cli_install(names: &[String]) -> ExitCode {
     let list = releases_now();
-    let rows = state::rows(&list, settings::Settings::load().prereleases);
+    let rows = state::rows(&list, settings::Settings::load().channel);
     let todo: Vec<&state::Row> = if names.is_empty() {
         state::updates(&rows)
     } else {
@@ -207,12 +207,12 @@ fn cli_install(names: &[String]) -> ExitCode {
         if r.install_copy().is_none()
             && r.installed.as_ref().and_then(|i| i.version.as_ref()) == Some(v)
         {
-            println!("{} {v} is already installed.", r.entry.title);
+            println!("{} {} is already installed.", r.entry.title, v.label());
             continue;
         }
-        println!("Installing {} {v}…", r.entry.title);
+        println!("Installing {} {}…", r.entry.title, v.label());
         match install::run(&r.entry, rel, &|_| {}) {
-            Ok(v) => println!("Installed {} {v}.", r.entry.title),
+            Ok(v) => println!("Installed {} {}.", r.entry.title, v.label()),
             Err(e) => {
                 eprintln!("{}: {e}", r.entry.title);
                 failed = true;

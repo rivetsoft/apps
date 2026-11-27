@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Edge versions.** Choose Stable, Alpha or Edge under Versions in Settings. Edge installs a
+  build of each app's newest code, made every night, and shows which commit and day it's from.
+  Going back to Stable or Alpha replaces the edge builds with the releases, even though their
+  version numbers are lower. "Offer alpha versions of stable apps" from 0.4.0 carries over as
+  Alpha.
+
 ## 0.4.0
 
 - **Stable versions first.** An app with a stable release is updated to its next stable release,
