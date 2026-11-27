@@ -27,11 +27,7 @@ pub fn extract(archive: &Path, into: &Path, progress: &Progress) -> Result<PathB
 pub fn vice() -> Option<&'static Path> {
     static FOUND: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
     FOUND
-        .get_or_init(|| {
-            let beside = std::env::current_exe().ok().and_then(|p| std::fs::canonicalize(p).ok()).and_then(|p| p.parent().map(|d| d.join("rivet-vice")));
-            let on_path = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join("rivet-vice")).find(|c| c.is_file()));
-            beside.filter(|p| p.is_file()).or(on_path)
-        })
+        .get_or_init(|| rivet_xdg::launch::rivet_program("rivet-vice"))
         .as_deref()
 }
 

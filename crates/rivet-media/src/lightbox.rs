@@ -2,6 +2,9 @@
 //! the Rivet apps. ← / → (or the side arrows) step through its items; Esc, Space or a click
 //! outside closes it; Return opens the file.
 //!
+//! Pictures are drawn on the stage Rivet View uses (`crate::stage`): the wheel or a pinch zooms,
+//! a double-click goes between fitting and 100%, and a zoomed picture can be dragged.
+//!
 //! The app gives it the items, the colors and the open button's label, and gets back
 //! `Event`s: it decides what opening, choosing an app or closing means.
 
@@ -15,6 +18,7 @@ use rivet_look::theme::{paint_tex, r_lg, r_md, status};
 use rivet_look::{fonts, palette};
 
 use crate::preview::{self, Kind, Player, Preview};
+use crate::stage::{Shown, Stage};
 
 /// Pictures in the light box are loaded up to this size (longest edge, pixels).
 const QUICK_PX: u32 = 2048;
@@ -71,6 +75,8 @@ pub struct LightBox {
     video_pos: f64,
     /// The coloured text: for this file, in these theme colours.
     highlighted: Option<(PathBuf, highlight::Colors, egui::text::LayoutJob)>,
+    /// Where a picture is zoomed and moved to.
+    stage: Stage,
 }
 
 /// Whether the light box can show something for this kind of file.
@@ -96,7 +102,7 @@ fn human_size(n: u64) -> String {
 impl LightBox {
     pub fn new(items: Vec<Item>, idx: usize) -> LightBox {
         let (tx, rx) = channel();
-        LightBox { idx: idx.min(items.len().saturating_sub(1)), items, cache: HashMap::new(), tx, rx, player: None, video_pos: 0.0, highlighted: None }
+        LightBox { idx: idx.min(items.len().saturating_sub(1)), items, cache: HashMap::new(), tx, rx, player: None, video_pos: 0.0, highlighted: None, stage: Stage::default() }
     }
 
     pub fn current(&self) -> &Item {
@@ -129,6 +135,7 @@ impl LightBox {
         self.idx = to;
         self.player = None;
         self.video_pos = 0.0;
+        self.stage.reset();
     }
 
     /// Ask for a file's preview (once) on a background thread.
@@ -148,7 +155,7 @@ impl LightBox {
 
     fn poll(&mut self, ctx: &egui::Context) {
         while let Ok((path, mut p)) = self.rx.try_recv() {
-            let tex = p.image.take().map(|img| ctx.load_texture(format!("quick:{}", path.display()), img, egui::TextureOptions::LINEAR));
+            let tex = p.image.take().map(|img| ctx.load_texture(format!("quick:{}", path.display()), img, crate::stage::TEXTURE_OPTIONS));
             self.cache.insert(path, Some(Loaded { preview: p, tex }));
         }
         // Keep only the files around the current one.
@@ -205,6 +212,7 @@ impl LightBox {
         let facts: Vec<(String, String)> = loaded.map(|l| l.preview.facts.clone()).unwrap_or_default();
         let text = loaded.and_then(|l| l.preview.text.clone());
         let duration = loaded.and_then(|l| l.preview.duration).unwrap_or(0.0);
+        let dims = loaded.and_then(|l| l.preview.dims);
         let loading = loaded.is_none();
 
         // Muted inline video: pick up decoded frames.
@@ -232,6 +240,7 @@ impl LightBox {
         };
         let needs_highlight = text.is_some() && highlighted.is_none();
 
+        let stage = &mut self.stage;
         egui::Area::new(egui::Id::unique("quick-view")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
             let v = ui.visuals().clone();
             ui.set_min_size(screen.size());
@@ -318,12 +327,18 @@ impl LightBox {
             }
 
             // ---- the stage
-            let stage = Rect::from_min_max(Pos2::new(screen.left() + 84.0, top.bottom() + 6.0), Pos2::new(screen.right() - 84.0, screen.bottom() - 60.0));
-            if let Some(t) = &tex {
+            let stage_rect = Rect::from_min_max(Pos2::new(screen.left() + 84.0, top.bottom() + 6.0), Pos2::new(screen.right() - 84.0, screen.bottom() - 60.0));
+            if let Some(t) = &tex
+                && kind == Kind::Image
+            {
+                let [w, h] = t.size();
+                let size = dims.unwrap_or([w as u32, h as u32]);
+                stage.show(ui, stage_rect, Shown { texture: t, size, alpha: false, vector: false });
+            } else if let Some(t) = &tex {
                 let ppp = ui.ctx().pixels_per_point();
                 let size = t.size_vec2() / ppp;
-                let scale = (stage.width() / size.x).min(stage.height() / size.y).min(1.0);
-                let r = Rect::from_center_size(stage.center(), size * scale);
+                let scale = (stage_rect.width() / size.x).min(stage_rect.height() / size.y).min(1.0);
+                let r = Rect::from_center_size(stage_rect.center(), size * scale);
                 // The picture itself doesn't close the light box.
                 let iresp = ui.interact(r, egui::Id::unique("quick-image"), Sense::click());
                 egui::Image::from_texture(t).corner_radius(r_md()).paint_at(ui, r);
@@ -346,8 +361,8 @@ impl LightBox {
                     }
                 }
             } else if let Some(job) = &highlighted {
-                let w = stage.width().min(900.0);
-                let card = Rect::from_center_size(stage.center(), Vec2::new(w, stage.height()));
+                let w = stage_rect.width().min(900.0);
+                let card = Rect::from_center_size(stage_rect.center(), Vec2::new(w, stage_rect.height()));
                 // Solid underneath: the theme's panel colour can be see-through.
                 ui.painter().rect_filled(card, r_lg(), v.extreme_bg_color);
                 ui.painter().rect_filled(card, r_lg(), code_bg);
@@ -357,9 +372,9 @@ impl LightBox {
                     ui.add(egui::Label::new(job.clone()).wrap_mode(egui::TextWrapMode::Extend));
                 });
             } else if loading || needs_highlight {
-                ui.put(Rect::from_center_size(stage.center(), Vec2::splat(32.0)), egui::Spinner::new().size(32.0).color(white));
+                ui.put(Rect::from_center_size(stage_rect.center(), Vec2::splat(32.0)), egui::Spinner::new().size(32.0).color(white));
             } else {
-                ui.painter().text(stage.center(), egui::Align2::CENTER_CENTER, "No preview for this file", fonts::ui_font(14.0), dim);
+                ui.painter().text(stage_rect.center(), egui::Align2::CENTER_CENTER, "No preview for this file", fonts::ui_font(14.0), dim);
             }
 
             // ---- side arrows
@@ -368,7 +383,7 @@ impl LightBox {
                 if target < 0 || target >= n as i32 {
                     continue;
                 }
-                let r = Rect::from_center_size(Pos2::new(x, stage.center().y), Vec2::splat(48.0));
+                let r = Rect::from_center_size(Pos2::new(x, stage_rect.center().y), Vec2::splat(48.0));
                 let resp = ui.interact(r, egui::Id::unique(("quick-arrow", dir)), Sense::click());
                 ui.painter().circle_filled(r.center(), 24.0, if resp.hovered() { Color32::from_white_alpha(52) } else { Color32::from_white_alpha(22) });
                 let c = r.center() + Vec2::new(-3.0 * dir as f32, 0.0);

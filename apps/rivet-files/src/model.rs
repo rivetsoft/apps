@@ -8,6 +8,9 @@ use std::sync::mpsc::Receiver;
 use std::time::{Instant, SystemTime};
 
 use crate::fsops;
+// Natural sort is shared with Rivet View, which steps through a folder in this order.
+pub use rivet_xdg::order::natural_cmp;
+use rivet_xdg::order::natural_cmp_bytes;
 use crate::mime::MimeDb;
 use crate::places;
 use crate::settings::{Settings, SortKey};
@@ -519,47 +522,6 @@ pub fn inspect_all(paths: Vec<PathBuf>, db: &MimeDb) -> Vec<Entry> {
     })
 }
 
-/// Natural sort: "file2" before "file10", case-insensitive.
-pub fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    natural_cmp_lower(&a.trim_start_matches('.').to_lowercase(), &b.trim_start_matches('.').to_lowercase())
-}
-
-/// `natural_cmp` for names already lowered and trimmed, without allocating: a sort makes
-/// millions of these. Comparing UTF-8 bytes orders characters as comparing them would.
-pub fn natural_cmp_lower(a: &str, b: &str) -> std::cmp::Ordering {
-    natural_cmp_bytes(a.as_bytes(), b.as_bytes())
-}
-
-fn natural_cmp_bytes(a: &[u8], b: &[u8]) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() && j < b.len() {
-        if a[i].is_ascii_digit() && b[j].is_ascii_digit() {
-            let (si, sj) = (i, j);
-            while i < a.len() && a[i].is_ascii_digit() {
-                i += 1;
-            }
-            while j < b.len() && b[j].is_ascii_digit() {
-                j += 1;
-            }
-            let na = &a[si..i][a[si..i].iter().take_while(|&&c| c == b'0').count()..];
-            let nb = &b[sj..j][b[sj..j].iter().take_while(|&&c| c == b'0').count()..];
-            let o = na.len().cmp(&nb.len()).then(na.cmp(nb));
-            if o != Ordering::Equal {
-                return o;
-            }
-        } else {
-            let o = a[i].cmp(&b[j]);
-            if o != Ordering::Equal {
-                return o;
-            }
-            i += 1;
-            j += 1;
-        }
-    }
-    (i < a.len()).cmp(&(j < b.len()))
-}
-
 /// Recursive name search below `root`, streamed back in batches.
 pub fn spawn_search(root: PathBuf, query: String, show_hidden: bool, ctx: eframe::egui::Context) -> Receiver<Vec<PathBuf>> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -613,7 +575,7 @@ mod tests {
     #[test]
     fn natural_order_without_allocating() {
         use std::cmp::Ordering::*;
-        let c = super::natural_cmp_lower;
+        let c = rivet_xdg::order::natural_cmp_lower;
         assert_eq!(c("a01", "a1"), Equal);
         assert_eq!(c("a007b", "a7c"), Less);
         assert_eq!(c("v2.10", "v2.9"), Greater);

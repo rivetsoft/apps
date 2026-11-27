@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Zoom in Preview**: the wheel or a pinch zooms a picture, a double-click goes between fitting
+  and 100%, and a zoomed picture can be dragged around.
+
 ## 0.4.2
 
 - An idle window follows desktop color changes right away.

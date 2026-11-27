@@ -72,6 +72,11 @@ reads (show hidden, picker filter) removes both dependencies.
    - ✅ **rivet-kit**: the in-memory screenshot renderer, and a `Shot` helper that gives any
      app `--screenshot FILE.png`.
    - ✅ **rivet-media**: `preview` and `thumbs`, plus the light box (`lightbox`), used by both apps.
+     Rivet View added full-size pictures (`picture`: frames, orientation, camera details) and
+     the stage that zooms, moves and turns a picture (`stage`), which the light box now draws
+     its pictures with, so Files' Preview and Rivet View behave the same.
+   - ✅ **Natural sort** (`natural_cmp`) into `rivet_xdg::order`, so Rivet View steps through a
+     folder in Files' order.
    - ✅ **`crash`** into rivet-xdg, with personal details taken out of every report, and the
      window that shows one into `rivet_look::crash`. Files and Notes use them.
    - Next: rivet-fs and rivet-clip.

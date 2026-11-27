@@ -315,6 +315,22 @@ fn spawn_detached(args: &[String], cwd: Option<&Path>) -> Result<(), String> {
     Ok(())
 }
 
+/// Another Rivet program (`rivet-vice`, `rivet-view`), when it is installed: beside this program
+/// (the same build or package), else on the path.
+pub fn rivet_program(name: &str) -> Option<PathBuf> {
+    let beside = std::env::current_exe().ok().and_then(|p| std::fs::canonicalize(p).ok()).and_then(|p| p.parent().map(|d| d.join(name)));
+    let on_path = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|d| d.join(name)).find(|c| c.is_file()));
+    beside.filter(|p| p.is_file()).or(on_path)
+}
+
+/// Start a program with these arguments, apart from this one: it isn't waited on here, and its
+/// output goes nowhere.
+pub fn spawn(program: &Path, args: &[String]) -> Result<(), String> {
+    let mut argv = vec![program.to_string_lossy().to_string()];
+    argv.extend(args.iter().cloned());
+    spawn_detached(&argv, None)
+}
+
 /// Open a web address or folder with the desktop's default handler.
 pub fn open_url(url: &str) -> Result<(), String> {
     spawn_detached(&["xdg-open".into(), url.to_string()], None)
