@@ -773,14 +773,16 @@ mod tests {
 
     #[test]
     fn runs_plugins() {
-        use std::os::unix::fs::PermissionsExt;
         let root = std::env::temp_dir().join(format!("rivet-shell-plugins-{}", std::process::id()));
         let make = |id: &str, conf: &str, script: &str| {
             let d = root.join(id);
             std::fs::create_dir_all(&d).unwrap();
             std::fs::write(d.join("plugin.conf"), conf).unwrap();
-            std::fs::write(d.join("run.sh"), script).unwrap();
-            std::fs::set_permissions(d.join("run.sh"), std::fs::Permissions::from_mode(0o755)).unwrap();
+            // Written by another process: a program forked meanwhile by any thread here would
+            // hold a copy of our handle until it runs its own, and running a file still open for
+            // writing fails with "Text file busy". The writer's handle never leaves it.
+            let ok = Command::new("sh").args(["-c", "printf '%s' \"$1\" > run.sh && chmod 755 run.sh", "sh", script]).current_dir(&d).status().unwrap();
+            assert!(ok.success());
         };
         make("poller", "name=Poller\nexec=./run.sh\ninterval=600\n", "#!/bin/sh\necho \"$RIVET_EVENT $RIVET_BUTTON\"\necho tip\n");
         make("streamer", "name=Streamer\nexec=./run.sh\nmode=stream\nevents=lock\n", "#!/bin/sh\necho '{\"text\":\"up\",\"icon\":\"x\"}'\nwhile read -r line; do case \"$line\" in *lock*) echo '{\"text\":\"locked\"}';; esac; done\n");

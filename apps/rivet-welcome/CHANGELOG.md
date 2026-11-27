@@ -7,6 +7,8 @@
   Going back to Stable or Alpha replaces the edge builds with the releases, even though their
   version numbers are lower. "Offer alpha versions of stable apps" from 0.4.0 carries over as
   Alpha.
+- **No false "busy" message.** Installing, updating or removing an app right after the last job
+  on it finished no longer sometimes says another Rivet Welcome is working on it.
 
 ## 0.4.0
 
