@@ -19,7 +19,7 @@ rivet-look = { path = "../../crates/rivet-look" }
 rivet-media = { path = "../../crates/rivet-media", features = ["mpv"] }
 # File types, folders, the file picker and keeping the screen awake, through the portal.
 rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
-eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
 # The display mpv shares for hardware decoding.
 raw-window-handle = "0.6"
 # MPRIS, so media keys and the panel's player controls reach it.

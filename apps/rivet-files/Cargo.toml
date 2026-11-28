@@ -16,7 +16,7 @@ rivet-media = { path = "../../crates/rivet-media" }
 # Compress and Extract: the archive tools, shared with Rivet Vice.
 rivet-archive = { path = "../../crates/rivet-archive" }
 chrono = "0.4.45"
-eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
 image = { version = "0.25", default-features = false, features = ["bmp", "gif", "jpeg", "png", "webp"] }
 libc = "0.2.191"
 skrifa = "0.44.0"

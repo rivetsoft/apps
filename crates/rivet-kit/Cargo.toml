@@ -16,3 +16,9 @@ raw-window-handle = "0.6"
 rivet-mem = { path = "../rivet-mem" }
 wayland-backend = { version = "0.3", features = ["client_system"] }
 wayland-client = "0.31"
+
+[dev-dependencies]
+# The shared controls the accessibility check walks (tests/access.rs).
+rivet-look = { path = "../rivet-look" }
+# The tests build alone (eframe needs a windowing backend to compile).
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "wayland", "x11"] }

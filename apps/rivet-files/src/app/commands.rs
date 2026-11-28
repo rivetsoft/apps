@@ -1,5 +1,6 @@
 //! Quick Actions (Ctrl+Shift+P): every menu command and view option in one searchable list.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Id, Key, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
 use super::chrome::fuzzy_score;
@@ -360,6 +361,12 @@ impl RivetApp {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 for (i, row) in rows.iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
+                    let resp = resp.role(Role::ListBoxOption, format!("{}: {}", row.group, row.label)).selected(i == qa.sel);
+                    let resp = if row.keys.is_empty() { resp } else { resp.described(row.keys.to_string()) };
+                    let resp = match row.state {
+                        Some(on) => resp.toggled(on),
+                        None => resp,
+                    };
                     if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
                         qa.sel = i;
                     }

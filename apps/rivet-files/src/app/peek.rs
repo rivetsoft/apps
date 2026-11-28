@@ -2,6 +2,7 @@
 //! of the selected item (or the current folder). Pictures show big, videos play
 //! inline (muted), music shows its cover, text files show their first lines.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
@@ -282,6 +283,7 @@ impl RivetApp {
             let aspect = tw as f32 / th.max(1) as f32;
             let h = (width / aspect).min(max_h).max(60.0);
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, h), if kind == Kind::Video { Sense::click() } else { Sense::hover() });
+            let resp = if kind == Kind::Video { resp.role(Role::Button, "Play the video") } else { resp };
             ui.painter().rect_filled(rect, r_md(), card_fill);
             let img_w = (h * aspect).min(width);
             let img_rect = Rect::from_center_size(rect.center(), Vec2::new(img_w, img_w / aspect));
@@ -491,7 +493,8 @@ impl RivetApp {
     /// A small grip under the preview: drag it to make the preview taller or shorter
     /// (double-click resets it).
     fn peek_grip(&mut self, ui: &mut egui::Ui, width: f32) {
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(width, 12.0), Sense::click_and_drag());
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(width, 12.0), Sense::CLICK | Sense::DRAG);
+        let resp = resp.role(Role::Splitter, "Resize the preview");
         let resp = resp.on_hover_cursor(egui::CursorIcon::ResizeVertical).on_hover_text("Drag to resize the preview · double-click to reset");
         let v = ui.visuals();
         let col = if resp.hovered() || resp.dragged() { v.selection.bg_fill } else { v.weak_text_color().gamma_multiply(0.45) };
@@ -565,7 +568,7 @@ impl RivetApp {
                 let chevron_w = if split { 30.0 } else { 0.0 };
                 let main_r = Rect::from_min_max(r.min, Pos2::new(r.right() - chevron_w, r.bottom()));
                 let chev_r = Rect::from_min_max(Pos2::new(main_r.right(), r.top()), r.max);
-                let resp = ui.interact(main_r, ui.scope_id().with("peek-open"), Sense::click());
+                let resp = ui.interact(main_r, ui.scope_id().with("peek-open"), Sense::click()).role(Role::Button, label.as_str());
                 // The "glassy" selected-tile look (accent tint + soft accent border), like the
                 // active toolbar buttons; app icons stay readable on it.
                 let under = ui.visuals().panel_fill;
@@ -579,7 +582,7 @@ impl RivetApp {
                 }
                 let fg = v.text_color();
                 if split {
-                    let cresp = ui.interact(chev_r, ui.scope_id().with("peek-open-with"), Sense::click());
+                    let cresp = ui.interact(chev_r, ui.scope_id().with("peek-open-with"), Sense::click()).role(Role::Button, "Open with another application");
                     if cresp.hovered() {
                         ui.painter().rect_filled(chev_r, egui::CornerRadius { nw: 0, sw: 0, ne: rad, se: rad }, hover);
                     }
@@ -691,6 +694,7 @@ impl RivetApp {
         let mut seek: Option<f64> = None;
         ui.horizontal(|ui| {
             let (br, bresp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+            let bresp = bresp.role(Role::Button, if playing { "Pause" } else { "Play" });
             if bresp.hovered() {
                 ui.painter().rect_filled(br, r_sm(), v.widgets.hovered.weak_bg_fill);
             }
@@ -709,6 +713,20 @@ impl RivetApp {
             let tw = ui.painter().layout_no_wrap(time.clone(), egui::FontId::proportional(11.5), col).size().x;
             let bar_w = (ui.available_width() - tw - 12.0).max(30.0);
             let (bar, bar_resp) = ui.allocate_exact_size(Vec2::new(bar_w, 22.0), Sense::click_and_drag());
+            let bar_resp = bar_resp.role(Role::Slider, "Position");
+            bar_resp.ctx.accesskit_node_builder(bar_resp.id, |n| {
+                n.set_numeric_value(self.peek.video_pos);
+                n.set_min_numeric_value(0.0);
+                n.set_max_numeric_value(duration);
+                n.set_value(time.clone());
+            });
+            // With the keyboard on the bar, the arrows go 5 seconds back or forward.
+            if bar_resp.has_focus() {
+                let (back, fwd) = ui.input(|i| (i.key_pressed(egui::Key::ArrowLeft), i.key_pressed(egui::Key::ArrowRight)));
+                if back || fwd {
+                    seek = Some((self.peek.video_pos + if fwd { 5.0 } else { -5.0 }).clamp(0.0, duration));
+                }
+            }
             let track = Rect::from_center_size(bar.center(), Vec2::new(bar.width(), 4.0));
             ui.painter().rect_filled(track, 2.0, v.widgets.inactive.bg_fill);
             let frac = if duration > 0.0 { (self.peek.video_pos / duration).clamp(0.0, 1.0) as f32 } else { 0.0 };

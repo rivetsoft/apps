@@ -4,6 +4,7 @@
 
 use rivet_xdg::places;
 
+pub mod a11y;
 pub mod builtin_icons;
 pub mod crash;
 pub mod fonts;

@@ -8,7 +8,8 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-# The desktop's file picker, through the portal (needs a D-Bus library).
+# The desktop's file picker and its contrast and motion settings, through the portal (needs a
+# D-Bus library).
 portal = ["dep:zbus"]
 
 [dependencies]

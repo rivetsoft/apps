@@ -8,6 +8,7 @@ use super::{r_lg, r_sm, r_xs, accent_color, fmt_time, paint_tex, Action, DragFil
 use crate::fsops;
 use crate::launch;
 use crate::model::{Entry, Location};
+use rivet_look::a11y::{Access, Role};
 use crate::settings::{SortKey, ViewMode};
 
 /// What the item menu needs to know about the selection, worked out once per selection rather
@@ -24,6 +25,20 @@ pub(super) struct MenuSel {
 type Expanded = (Rect, Option<egui::TextureHandle>, Rect, Color32, Arc<egui::Galley>, Pos2, Color32, bool, Entry);
 
 impl RivetApp {
+    /// A file as a screen reader reads it: its name, whether it's a folder, and whether it's
+    /// selected. The one under the keyboard is the file list's active descendant, so moving
+    /// with the arrows reads each file reached.
+    pub(super) fn item_access(&self, resp: egui::Response, e: &Entry, selected: bool, vi: usize) -> egui::Response {
+        let resp = resp.role(Role::ListBoxOption, e.name.as_str()).selected(selected);
+        let resp = if e.is_dir { resp.described("Folder") } else { resp };
+        if self.tab().cursor == Some(vi)
+            && let Some(list) = self.file_list_focus
+        {
+            resp.ctx.accesskit_node_builder(list, |n| n.set_active_descendant(resp.id.accesskit_id()));
+        }
+        resp
+    }
+
     pub(super) fn file_area(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) -> usize {
         let bg = ctx.global_style().visuals.extreme_bg_color;
         let mut cols = 1;
@@ -94,6 +109,8 @@ impl RivetApp {
         // (In split view only the active pane takes the keyboard.)
         if active {
             let anchor = ui.interact(ui.max_rect(), egui::Id::unique("file-list-focus"), Sense::FOCUSABLE);
+            let anchor = anchor.role(Role::ListBox, "Files");
+            rivet_look::a11y::ring_inside(ui.ctx(), anchor.id);
             ui.memory_mut(|m| {
                 m.set_focus_lock_filter(anchor.id, egui::EventFilter { tab: false, horizontal_arrows: true, vertical_arrows: true, escape: false })
             });
@@ -277,6 +294,7 @@ impl RivetApp {
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
                 let resp = ui.interact(item, Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = self.item_access(resp, &e, selected, vi);
                 let v = ui.visuals().clone();
                 let icon_rect = Rect::from_center_size(Pos2::new(item.center().x, item.top() + 4.0 + z / 2.0), Vec2::splat(z));
                 let text_pos = Pos2::new(item.center().x, icon_rect.bottom() + 6.0);
@@ -441,6 +459,7 @@ impl RivetApp {
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
                 let resp = ui.interact(hit, Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = self.item_access(resp, &e, selected, vi);
                 // Rows are inset and rounded like every other item.
                 let pill = row.shrink2(Vec2::new(4.0, 0.0));
                 if selected {
@@ -546,6 +565,7 @@ impl RivetApp {
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
                 let resp = ui.interact(item, Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = self.item_access(resp, &e, selected, vi);
                 let v = ui.visuals().clone();
                 if selected {
                     ui.painter().rect_filled(item, r_sm(), v.selection.bg_fill);

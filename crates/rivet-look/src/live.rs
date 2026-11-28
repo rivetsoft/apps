@@ -209,6 +209,7 @@ impl LiveLook {
             }
             ctx.set_fonts(defs);
         }
+        crate::a11y::setup(ctx, live);
         let now = ctx.input(|i| i.time);
         if live {
             // Watched also when not following: a palette chosen in Rivet is taken up all the same.
@@ -231,7 +232,7 @@ impl LiveLook {
         let accent = self.accent(c);
         let pal = if self.has_own() { self.own_palette(ctx, c.mode) } else { palette::shown(self.palette.as_ref(), c.follow_desktop_colors) }.cloned();
         let pal = pal.as_ref();
-        let key = format!("{:?}{accent:?}{pal:?}{size}", c.mode);
+        let key = format!("{:?}{accent:?}{pal:?}{size}{}", c.mode, crate::a11y::generation());
         if self.key.as_ref() == Some(&key) {
             return;
         }

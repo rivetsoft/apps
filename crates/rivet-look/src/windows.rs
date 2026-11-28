@@ -3,6 +3,7 @@
 
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 
+use crate::a11y::{Access, Role};
 use crate::theme::paint_tex;
 
 pub struct WinState {
@@ -50,7 +51,7 @@ pub fn show<R>(ctx: &egui::Context, st: &mut WinState, chrome: &Chrome, area: Re
 
     let style = ctx.global_style();
     let frame = egui::Frame::window(&style).inner_margin(egui::Margin::ZERO);
-    let mut w = egui::Window::new("").id(id).title_bar(false).collapsible(false).movable(false).frame(frame).constrain_to(area);
+    let mut w = egui::Window::new(chrome.title.as_str()).id(id).title_bar(false).collapsible(false).movable(false).frame(frame).constrain_to(area);
     w = if st.maximized {
         w.fixed_rect(area).resizable(false)
     } else if st.shaded {
@@ -68,7 +69,8 @@ pub fn show<R>(ctx: &egui::Context, st: &mut WinState, chrome: &Chrome, area: Re
     let r = w.show(ctx, |ui| {
         ui.set_min_width(if maximized { area.width() } else { size.x.min(area.width()) });
         // ---- title bar
-        let (hrect, hresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HEADER_H), Sense::click_and_drag());
+        let (hrect, hresp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), HEADER_H), Sense::DRAG);
+        let hresp = hresp.role(Role::TitleBar, chrome.title.as_str());
         let v = ui.visuals().clone();
         let fg = v.text_color();
         if let Some(t) = &chrome.icon {
@@ -114,7 +116,7 @@ pub fn show<R>(ctx: &egui::Context, st: &mut WinState, chrome: &Chrome, area: Re
                 1 => if maximized { "Restore" } else { "Maximize" },
                 _ => "Close",
             };
-            if resp.on_hover_text(tip).clicked() {
+            if resp.role(Role::Button, tip).on_hover_text(tip).clicked() {
                 match kind {
                     0 => toggle_shade = true,
                     1 => toggle_max = true,

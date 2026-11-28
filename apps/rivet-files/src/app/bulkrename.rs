@@ -1,6 +1,7 @@
 //! The Bulk Rename window: pick a method (insert, date/time, numbering, remove, search &
 //! replace, case), set it up, and see every new name before anything changes.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Id, Key, Vec2};
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -79,7 +80,7 @@ impl RivetApp {
                 ui.label(egui::RichText::new(format!("Rename {} items", st.items.len())).heading());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let (r, resp) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
-                    let resp = resp.on_hover_text("Close (Esc)");
+                    let resp = resp.role(Role::Button, "Close").on_hover_text("Close (Esc)");
                     let fg = if resp.hovered() {
                         ui.painter().circle_filled(r.center(), 13.0, danger);
                         super::StatusColors::on(danger)
@@ -114,6 +115,7 @@ impl RivetApp {
                 for (i, m) in Mode::ALL.iter().enumerate() {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 32.0), egui::Sense::click());
                     let sel = rl.mode == *m;
+                    let resp = resp.role(Role::Tab, m.label()).selected(sel);
                     if sel {
                         let (fill, stroke) = super::selected_tile(&v, card);
                         ui.painter().rect_filled(r, super::r_sm(), fill);

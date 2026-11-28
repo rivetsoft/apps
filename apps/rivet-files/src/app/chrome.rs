@@ -8,6 +8,7 @@ use super::{r_md, r_sm, accent_color, paint_tex, Action, Dialog, DragFiles, Rive
 use crate::fsops;
 use crate::model::{self, Location};
 use crate::places;
+use rivet_look::a11y::{Access, Role};
 use crate::settings::{SortKey, ToolItem, ViewMode};
 
 /// Extra side padding for the top-level menu bar items.
@@ -126,7 +127,8 @@ impl RivetApp {
                         // The remaining space is the drag handle, with the title centred.
                         let btn_w = 3.0 * 32.0;
                         let avail = ui.available_width() - btn_w;
-                        let (rect, resp) = ui.allocate_exact_size(Vec2::new(avail.max(10.0), 24.0), Sense::click_and_drag());
+                        let (rect, resp) = ui.allocate_exact_size(Vec2::new(avail.max(10.0), 24.0), Sense::CLICK | Sense::DRAG);
+                        let resp = resp.role(Role::TitleBar, self.last_title.as_str());
                         let full = ui.max_rect();
                         ui.painter().with_clip_rect(rect).text(
                             Pos2::new(full.center().x.max(rect.left() + 80.0), rect.center().y),
@@ -159,6 +161,12 @@ impl RivetApp {
         ];
         for (names, kind) in items {
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(28.0, 24.0), Sense::click());
+            let resp = resp.role(Role::Button, match kind {
+                0 => "Minimize",
+                1 if max => "Restore",
+                1 => "Maximize",
+                _ => "Close",
+            });
             let hovered = resp.hovered();
             let fg = ui.visuals().text_color();
             if hovered {
@@ -616,7 +624,7 @@ impl RivetApp {
         let split = layout.iter().position(|t| *t == ToolItem::PathBar).unwrap_or(layout.len());
         let (left, right) = (layout[..split].to_vec(), layout[(split + 1).min(layout.len())..].to_vec());
         // Right-click on empty toolbar space to customize it.
-        let bg = ui.interact(ui.max_rect(), Id::unique("toolbar-bg"), Sense::click());
+        let bg = ui.interact(ui.max_rect(), Id::unique("toolbar-bg"), Sense::CLICK).role(Role::Toolbar, "Toolbar");
         bg.context_menu(|ui| {
             Self::comfy_menu(ui);
             if ui.button("Customize Toolbar…").clicked() {
@@ -861,7 +869,7 @@ impl RivetApp {
         let area = ui.max_rect();
         // Dragging across it (even starting on a folder button) does too, so the path can
         // be selected and copied like text.
-        let bg = ui.interact(area, Id::unique("crumbs-bg"), Sense::click_and_drag());
+        let bg = ui.interact(area, Id::unique("crumbs-bg"), Sense::CLICK | Sense::DRAG).role(Role::Button, "Type a location");
         if bg.hovered() {
             // Lift the bar a touch on hover instead of drawing an outline.
             ui.painter().rect_filled(area.expand(4.0), r_md(), ui.visuals().text_color().gamma_multiply(0.05));
@@ -1091,7 +1099,7 @@ impl RivetApp {
                 _ => (&mut app.s.list_zoom, 16.0..=64.0),
             };
             ui.spacing_mut().slider_width = 110.0;
-            if ui.add(egui::Slider::new(val, range).show_value(false)).changed() {
+            if ui.add(egui::Slider::new(val, range).show_value(false)).accessible_name("Zoom").changed() {
                 app.dirty_settings = true;
             }
         };
@@ -1197,6 +1205,7 @@ impl RivetApp {
         ui.add_space(10.0);
         let open = !self.collapsed.contains(text);
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0 * crate::fonts::scale().max(1.0)), Sense::click());
+        let resp = resp.role(Role::Button, text).expanded(open);
         let col = if resp.hovered() { ui.visuals().strong_text_color() } else { ui.visuals().text_color() };
         let c = Pos2::new(rect.left() + 12.0, rect.center().y);
         let pts = if open {
@@ -1228,6 +1237,11 @@ impl RivetApp {
         let grow = (isz - 16.0).max(0.0);
         let h = if usage.is_some() { 38.0 * sc + grow } else { 32.0 * sc + grow };
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+        let resp = resp.role(Role::ListBoxOption, label).selected(active);
+        let resp = match usage {
+            Some(u) => resp.described(format!("{:.0}% full", u * 100.0)),
+            None => resp,
+        };
         let v = ui.visuals().clone();
         let accent = accent_color(&self.s);
         // The current place: the selected tile used across the apps (a soft fill, an accent edge).
@@ -1272,7 +1286,7 @@ impl RivetApp {
         let mut eject_clicked = false;
         if eject {
             let er = Rect::from_center_size(Pos2::new(rect.right() - 17.0, icon_rect.center().y), Vec2::splat(20.0));
-            let eresp = ui.interact(er, resp.id.with("eject"), Sense::click()).on_hover_text("Eject");
+            let eresp = ui.interact(er, resp.id.with("eject"), Sense::click()).role(Role::Button, "Eject").on_hover_text("Eject");
             if eresp.hovered() {
                 ui.painter().circle_filled(er.center(), 10.0, v.widgets.hovered.bg_fill);
             }
@@ -1449,6 +1463,9 @@ impl RivetApp {
         for (p, depth) in rows {
             let isz = self.s.sidebar_icon;
             let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0 * crate::fonts::scale().max(1.0) + (isz - 16.0).max(0.0)), Sense::click());
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| p.display().to_string());
+            let resp = resp.role(Role::TreeItem, name).selected(current.as_deref() == Some(p.as_path())).expanded(self.tree_expanded.contains(&p));
+            resp.ctx.accesskit_node_builder(resp.id, |n| n.set_level(depth + 1));
             let active = current.as_deref() == Some(p.as_path());
             let v = ui.visuals().clone();
             // The current folder: the selected tile used across the apps.

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Screen readers and the keyboard**: Orca and other screen readers can read the window's
+  buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
+  the keyboard. With higher contrast or less motion asked for in the desktop's settings, edges
+  and secondary text get stronger and animations stop.
+
 ## 0.1.1
 
 - The panel's Calendar plugin and the window sit idle when nothing changes: a store of tens of
