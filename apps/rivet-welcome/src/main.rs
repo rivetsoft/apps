@@ -1,14 +1,12 @@
 //! Rivet Welcome: installs and updates the Rivet apps from their GitHub releases, and keeps a
 //! tray icon that looks for new ones.
 
-mod catalog;
 mod gui;
-mod install;
-mod local;
-mod releases;
 mod settings;
-mod state;
 mod tray;
+
+// The engine, shared with rivetctl.
+use rivet_install::{catalog, install, local, releases, state};
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -268,6 +266,11 @@ fn cli_remove(names: &[String]) -> ExitCode {
 }
 
 fn main() -> ExitCode {
+    rivet_install::set_host(rivet_install::Host {
+        title: "Rivet Welcome",
+        version: env!("CARGO_PKG_VERSION"),
+        app: "welcome",
+    });
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut screenshot = None;
     if let Some(i) = args.iter().position(|a| a == "--screenshot") {

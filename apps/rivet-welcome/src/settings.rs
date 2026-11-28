@@ -9,28 +9,9 @@ use rivet_look::theme::Mode;
 
 pub static NO_SAVE: AtomicBool = AtomicBool::new(false);
 
-/// Which versions to install.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Channel {
-    /// Full releases of the apps that have one, and alpha versions of the apps that don't.
-    #[default]
-    Stable,
-    /// Every release, alpha versions (GitHub pre-releases) included.
-    Pre,
-    /// The nightly builds of main (`rivet-notes-edge`), and the newest release of an app that
-    /// has none.
-    Edge,
-}
-
-impl Channel {
-    fn key(self) -> &'static str {
-        match self {
-            Channel::Stable => "stable",
-            Channel::Pre => "pre",
-            Channel::Edge => "edge",
-        }
-    }
-}
+/// Which versions to install: the channel every app follows (rivet-install keeps it, and each
+/// app's own).
+pub use rivet_install::channel::Channel;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
@@ -64,7 +45,7 @@ impl Default for Settings {
 }
 
 pub fn path() -> PathBuf {
-    rivet_xdg::places::config_home().join("rivet-welcome/settings")
+    rivet_install::channel::settings_path()
 }
 
 impl Settings {
@@ -76,7 +57,6 @@ impl Settings {
 
     fn parse(text: &str) -> Settings {
         let mut s = Settings::default();
-        let (mut channel, mut old_pre) = (None, false);
         for line in text.lines() {
             let Some((k, v)) = line.split_once('=') else {
                 continue;
@@ -103,24 +83,11 @@ impl Settings {
                 "tray" => s.tray = b,
                 "notify" => s.notify = b,
                 "check_hours" => s.check_hours = v.parse().unwrap_or(6),
-                "channel" => {
-                    channel = match v {
-                        "pre" => Some(Channel::Pre),
-                        "edge" => Some(Channel::Edge),
-                        "stable" => Some(Channel::Stable),
-                        _ => channel,
-                    }
-                }
-                // Rivet Welcome 0.4.0's switch, before there were channels.
-                "prereleases" => old_pre = b,
                 _ => {}
             }
         }
-        s.channel = channel.unwrap_or(if old_pre {
-            Channel::Pre
-        } else {
-            Channel::Stable
-        });
+        // With Rivet Welcome 0.4.0's switch, before there were channels.
+        s.channel = rivet_install::channel::from_settings(text);
         s
     }
 

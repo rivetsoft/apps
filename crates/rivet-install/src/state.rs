@@ -2,9 +2,9 @@
 //! counts.
 
 use crate::catalog::{self, Entry, Kind};
+use crate::channel::Channel;
 use crate::local::{self, Installed, Running};
 use crate::releases::{Release, Version};
-use crate::settings::Channel;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
@@ -12,6 +12,10 @@ pub struct Row {
     pub installed: Option<Installed>,
     /// The newest release that can be installed here.
     pub latest: Option<(Release, Version)>,
+    /// The channel it follows: its own, or the one for every app.
+    pub channel: Channel,
+    /// It has a channel of its own (`rivetctl channel`).
+    pub own_channel: bool,
 }
 
 impl Row {
@@ -63,9 +67,18 @@ impl Row {
 }
 
 /// Every app, with what's installed (each program is asked its version, side by side), and what
-/// the channel (the setting) offers.
+/// its channel offers: its own, else `channel` (the setting).
 pub fn rows(releases: &[Release], channel: Channel) -> Vec<Row> {
-    let entries = catalog::with_discovered(releases);
+    rows_of(catalog::with_discovered(releases), releases, channel)
+}
+
+/// The same, held apps included (`rivetctl --held`).
+pub fn rows_held(releases: &[Release], channel: Channel) -> Vec<Row> {
+    rows_of(catalog::discovered(releases, true), releases, channel)
+}
+
+fn rows_of(entries: Vec<Entry>, releases: &[Release], channel: Channel) -> Vec<Row> {
+    let own = crate::channel::own();
     let found: Vec<Option<Installed>> = std::thread::scope(|s| {
         let hs: Vec<_> = entries
             .iter()
@@ -77,11 +90,15 @@ pub fn rows(releases: &[Release], channel: Channel) -> Vec<Row> {
         .into_iter()
         .zip(found)
         .map(|(entry, installed)| {
+            let mine = own.get(&entry.id).copied();
+            let channel = mine.unwrap_or(channel);
             let latest = catalog::latest(&entry, releases, channel).map(|(r, v)| (r.clone(), v));
             Row {
                 entry,
                 installed,
                 latest,
+                channel,
+                own_channel: mine.is_some(),
             }
         })
         .collect()
@@ -106,7 +123,10 @@ mod tests {
     use crate::releases::parse;
 
     fn row(id: &str, installed: Option<(&str, bool)>) -> Row {
-        let list = parse(include_str!("../data/demo-releases.json")).unwrap();
+        let list = parse(include_str!(
+            "../../../apps/rivet-welcome/data/demo-releases.json"
+        ))
+        .unwrap();
         let entry = catalog::known().into_iter().find(|e| e.id == id).unwrap();
         let latest = catalog::latest(&entry, &list, Channel::Stable).map(|(r, v)| (r.clone(), v));
         let installed = installed.map(|(v, ours)| Installed {
@@ -119,6 +139,8 @@ mod tests {
             entry,
             installed,
             latest,
+            channel: Channel::Stable,
+            own_channel: false,
         }
     }
 

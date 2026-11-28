@@ -16,9 +16,8 @@ path = "src/main.rs"
 rivet-kit = { path = "../../crates/rivet-kit" }
 rivet-look = { path = "../../crates/rivet-look" }
 rivet-xdg = { path = "../../crates/rivet-xdg" }
+# Installing and updating: the catalog, releases, channels, the install itself and its lock.
+rivet-install = { path = "../../crates/rivet-install" }
 eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
-# The releases list (GitHub's API answers in JSON).
-serde_json = "1"
-libc = "0.2.191"
 # The tray icon (StatusNotifierItem and its dbusmenu) and notifications.
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }

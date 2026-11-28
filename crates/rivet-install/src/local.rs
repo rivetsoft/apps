@@ -99,11 +99,12 @@ impl Installed {
             Source::Flatpak => "it came from Flatpak, so update it there".into(),
             Source::Package => "it came from your system's packages, so update it there".into(),
             Source::Elsewhere => format!(
-                "it was installed in {} some other way, so Rivet Welcome leaves it as it is",
+                "it was installed in {} some other way, so {} leaves it as it is",
                 self.path
                     .parent()
                     .map(|d| d.display().to_string())
-                    .unwrap_or_default()
+                    .unwrap_or_default(),
+                crate::host().title
             ),
         }
     }
@@ -194,7 +195,7 @@ fn pretend(e: &Entry) -> Option<Option<Installed>> {
             // `welcome=appimage`: Rivet Welcome as it is when run from an AppImage.
             "appimage" => Installed {
                 path: "/home/you/Rivet_Welcome.AppImage".into(),
-                version: Version::parse(env!("CARGO_PKG_VERSION")),
+                version: Version::parse(crate::host().version),
                 ours: false,
                 running: Running::AppImage,
             },
@@ -235,8 +236,9 @@ pub fn detect(e: &Entry) -> Option<Installed> {
             running: Running::No,
         })
     });
-    // Rivet Welcome is here even when it isn't installed: someone is looking at it.
-    found.or_else(|| (e.kind == Kind::Welcome).then(this_program).flatten())
+    // The program using this (Rivet Welcome, rivetctl) is here even when it isn't installed:
+    // someone is using it.
+    found.or_else(|| (e.id == crate::host().app).then(this_program).flatten())
 }
 
 /// This program as it is running now: the AppImage it came in, or the file itself.
@@ -248,7 +250,7 @@ fn this_program() -> Option<Installed> {
     };
     Some(Installed {
         path,
-        version: Version::parse(env!("CARGO_PKG_VERSION")),
+        version: Version::parse(crate::host().version),
         ours: false,
         running,
     })
@@ -346,7 +348,13 @@ pub fn remove(e: &Entry) -> Result<(), String> {
     clear(e)?;
     // Rivet Welcome itself: the tray no longer starts at sign-in.
     if e.kind == Kind::Welcome {
-        crate::settings::set_autostart(false)?;
+        let p = rivet_xdg::places::config_home().join("autostart/rivet-welcome-tray.desktop");
+        match std::fs::remove_file(&p) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+                return Err(format!("couldn't remove {}: {err}", p.display()));
+            }
+            _ => {}
+        }
     }
     Ok(())
 }

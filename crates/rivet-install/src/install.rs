@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 use crate::catalog::{self, Entry};
 use crate::local;
 use crate::releases::{Asset, Release, Version};
+use std::io::{Read, Seek, Write};
 
 /// Where a job is.
 #[derive(Clone, Debug, PartialEq)]
@@ -97,7 +98,7 @@ pub fn start(e: &Entry, r: &Release, wake: impl Fn() + Send + 'static) -> Progre
     let p: Progress = Arc::new(Mutex::new(Stage::Downloading { got: 0, total: 0 }));
     let (e, r, p2) = (e.clone(), r.clone(), p.clone());
     std::thread::Builder::new()
-        .name("rivet-welcome install".into())
+        .name("rivet-install".into())
         .spawn(move || {
             let set = |s: Stage| {
                 if let Ok(mut g) = p2.lock() {
@@ -119,24 +120,41 @@ pub fn start(e: &Entry, r: &Release, wake: impl Fn() + Send + 'static) -> Progre
 /// when the program holding it ends however it ends.
 pub struct Lock(#[allow(dead_code)] std::fs::File);
 
-/// The app's lock, or why it can't be had (another Rivet Welcome is working on that app).
+/// The app's lock, or why it can't be had (another Rivet Welcome, or rivetctl, is working on
+/// that app). The lock file names the program holding it, so the other can say who.
 pub fn lock(id: &str) -> Result<Lock, String> {
     let dir = rivet_xdg::places::cache_home().join("rivet-welcome/locks");
     std::fs::create_dir_all(&dir)
         .map_err(|err| format!("couldn't make {}: {err}", dir.display()))?;
-    let f = std::fs::OpenOptions::new()
+    let mut f = std::fs::OpenOptions::new()
         .create(true)
         .truncate(false)
+        .read(true)
         .write(true)
         .open(dir.join(format!("{id}.lock")))
         .map_err(|err| format!("couldn't make its lock file: {err}"))?;
     // SAFETY: flock on a file descriptor this File owns.
     if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-        return Err(
-            "another Rivet Welcome is installing or removing it right now; try again when that's done"
-                .into(),
-        );
+        let mut holder = String::new();
+        let _ = f.read_to_string(&mut holder);
+        // Rivet Welcome 0.4 and older leave the file empty.
+        let holder = match holder.trim() {
+            "" => "Rivet Welcome",
+            h => h,
+        };
+        let who = if holder == crate::host().title {
+            format!("another {holder}")
+        } else {
+            holder.to_string()
+        };
+        return Err(format!(
+            "{who} is installing or removing it right now; try again when that's done"
+        ));
     }
+    let _ = f
+        .set_len(0)
+        .and_then(|()| f.rewind())
+        .and_then(|()| f.write_all(crate::host().title.as_bytes()));
     Ok(Lock(f))
 }
 
@@ -264,8 +282,9 @@ fn device(p: &Path) -> Option<u64> {
 fn room(cache: &Path, bin_dir: &Path, archive: u64) -> Result<(), String> {
     let not_yours = || {
         format!(
-            "{} isn't yours to change, so nothing was installed. Rivet Welcome installs apps for you alone, in a folder you own",
-            bin_dir.display()
+            "{} isn't yours to change, so nothing was installed. {} installs apps for you alone, in a folder you own",
+            bin_dir.display(),
+            crate::host().title
         )
     };
     std::fs::create_dir_all(bin_dir).map_err(|_| not_yours())?;
@@ -367,7 +386,7 @@ fn fetch_once(url: &str, part: &Path, total: u64, set: &dyn Fn(Stage)) -> Result
         "-w",
         "%{http_code}",
         "-A",
-        concat!("rivet-welcome/", env!("CARGO_PKG_VERSION")),
+        &crate::agent(),
     ]);
     if have > 0 {
         cmd.args(["-C", "-"]);
@@ -686,6 +705,36 @@ mod tests {
         assert!(lock(&id).is_err());
         drop(first);
         assert!(lock(&id).is_ok());
+    }
+
+    /// A program forked while the lock is held (curl, tar, the installer) keeps a copy of the
+    /// lock file until it starts; the lock still goes the moment it's dropped (apps#29).
+    #[test]
+    fn locks_go_though_a_forked_child_holds_a_copy() {
+        let id = format!("test-fork-{}", std::process::id());
+        let first = lock(&id).unwrap();
+        let busy = lock(&id).err().unwrap();
+        assert!(
+            busy.starts_with("another Rivet Welcome is installing"),
+            "{busy}"
+        );
+        // SAFETY: the child only calls async-signal-safe functions, and never returns here.
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0);
+        if pid == 0 {
+            unsafe {
+                libc::sleep(30);
+                libc::_exit(0)
+            };
+        }
+        drop(first);
+        let again = lock(&id);
+        // SAFETY: the child forked above, waited for so it doesn't linger.
+        unsafe {
+            libc::kill(pid, libc::SIGKILL);
+            libc::waitpid(pid, std::ptr::null_mut(), 0);
+        }
+        assert!(again.is_ok(), "{:?}", again.err());
     }
 
     #[test]
