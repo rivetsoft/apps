@@ -275,4 +275,20 @@ mod tests {
         setup(&ctx, false);
         assert!(menu_frames(&ctx, vec![key(Key::F10, egui::Modifiers::SHIFT)]));
     }
+    #[test]
+    fn high_contrast_strengthens_the_theme() {
+        let look = crate::theme::Look { mode: crate::theme::Mode::Dark, accent: egui::Color32::from_rgb(0x35, 0x84, 0xe4), palette: None, terminal: false };
+        let ctx = egui::Context::default();
+        set_prefs(false, false);
+        crate::theme::apply(&ctx, &look);
+        let plain = ctx.style_of(egui::Theme::Dark).visuals.clone();
+        set_prefs(true, true);
+        crate::theme::apply(&ctx, &look);
+        let strong = ctx.style_of(egui::Theme::Dark);
+        set_prefs(false, false);
+        assert_ne!(plain.text_color(), strong.visuals.text_color());
+        assert_ne!(plain.weak_text_color(), strong.visuals.weak_text_color());
+        assert_ne!(plain.widgets.inactive.bg_stroke, strong.visuals.widgets.inactive.bg_stroke);
+        assert_eq!(strong.animation_time, 0.0);
+    }
 }
