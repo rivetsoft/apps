@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Qt apps in the theme's colors**: with qt6ct installed, Qt apps such as Ladybird, Qt
+  Designer and KDE apps take the same colors as Rivet's apps and change with the wallpaper,
+  open ones within a few seconds. It's on the Applications page, on by default. If qt6ct already
+  has colors of its own chosen, Use These Colors switches it to Rivet's and leaves the rest of
+  its settings alone. Flatpak Qt apps keep their own colors.
 - **The login screen is its own program now**: Rivet Greeter. Rivet Shell still leaves your
   wallpaper and look for it whenever they change, and the lock screen looks just as it did.
   `rivet-shell greeter` keeps working for now by running `rivet-greeter` with the same words, so

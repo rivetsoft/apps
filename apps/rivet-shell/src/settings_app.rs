@@ -649,6 +649,7 @@ impl eframe::App for SettingsApp {
                             Page::Appearance => self.appearance_page(ui),
                         Page::Applications => {
                             self.themed_apps_section(ui);
+                            self.qt_apps_section(ui);
                             self.browser_colors_section(ui);
                         }
                         Page::Network => self.network_page(ui),

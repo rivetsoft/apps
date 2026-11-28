@@ -14,6 +14,7 @@ pub mod icons;
 pub mod mdi;
 pub mod nerd;
 pub mod palette;
+pub mod qt;
 pub mod quick;
 pub mod schemes;
 pub mod tabdrag;

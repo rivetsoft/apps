@@ -170,7 +170,34 @@ editors"; the work is `apps/rivet-shell/src/themed.rs`.
   is harmless; remove it by hand to be tidy.
 - Colors set later in a program's own settings file win over Rivet's in kitty (the include
   comes last when Rivet adds it, so Rivet's win there unless more is added below).
-- Not covered yet: GTK and Qt apps, VS Code, Neovim, Helix, Firefox and Discord.
+- Not covered yet: GTK apps, VS Code, Neovim, Helix, Firefox and Discord. Qt apps have a card of
+  their own (below).
+
+### Applications: Qt apps
+
+Location: `apps/rivet-shell/src/settings_app/themed_apps.rs`, Applications, "Qt apps"; the
+colors and the files are `crates/rivet-look/src/qt.rs`.
+
+- Qt apps (Ladybird's window, Qt Designer, KDE apps outside Plasma) take the theme's colors
+  through qt6ct, and Qt 5 apps through qt5ct. Install qt6ct (`sudo dnf install qt6ct`,
+  `sudo apt install qt6ct`, `sudo pacman -S qt6ct`); without it the card says so.
+- On by default. Rivet keeps its own scheme, `rivet-colors.conf`, in `~/.config/qt6ct` and
+  `~/.config/qt5ct`, made from the same colors as Rivet's apps, and writes it again when the
+  wallpaper's colors change. Open Qt apps change about three seconds later.
+- qt6ct's own settings (`qt6ct.conf`) are written only when there are none yet. When there are,
+  Use These Colors sets its color scheme to Rivet's and leaves everything else (style, fonts,
+  icons) as it was. A scheme chosen in qt6ct afterwards wins.
+- Qt apps load qt6ct only when the session names it (`QT_QPA_PLATFORMTHEME=qt5ct`, which qt6ct
+  also answers to). Softcore does that for what it starts, and Rivet Shell for apps from the
+  launcher and dock and for apps D-Bus and systemd start, on any compositor. A platform theme the
+  session already names stays. Never under KDE Plasma, whose own settings color Qt apps.
+- Apps started before it was on take it when they start again. Turning it off takes the scheme
+  away; Qt apps already started with qt6ct show qt6ct's own colors until the next sign-in.
+- Flatpak Qt apps don't get the colors: Flatpak's Qt runtimes don't include qt6ct. They still
+  follow dark or light and, where the app asks for it, the accent (Ladybird's Flatpak does).
+- Qt apps that draw their own window colors keep them. Ladybird's tabs, toolbar and menus are its own
+  design; from the desktop it takes dark or light and the accent. Its toolbar can keep the old
+  color after a live dark-to-light switch until the window is opened again (a Ladybird bug).
 
 ### Browser colors
 
