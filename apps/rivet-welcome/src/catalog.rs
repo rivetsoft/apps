@@ -200,6 +200,21 @@ pub fn known() -> Vec<Entry> {
                 include_str!("../../rivet-reader/data/rivet-reader.svg"),
             )
         },
+        // A login screen needs a one-time setup as root and greetd's settings changed, so even
+        // once it's released it isn't an install like the others.
+        Entry {
+            held: true,
+            ..entry(
+                "greeter",
+                "Rivet Greeter",
+                "rivet-greeter",
+                "rivet-greeter",
+                "rivet-greeter-v",
+                "A login screen for greetd in Rivet Shell's look, over the wallpaper you chose last.",
+                Kind::Command,
+                include_str!("../../rivet-greeter/data/rivet-greeter.svg"),
+            )
+        },
         entry(
             "fetch",
             "Rivet Fetch",

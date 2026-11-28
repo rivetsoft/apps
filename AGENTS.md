@@ -26,6 +26,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-color` | `rivet-color` | The color picker: picks a color from the screen with its own loupe over a held-still screen (grim and layer-shell; else niri, hyprpicker, slurp or the portal) and copies it, with its shades, harmonies and contrast, a history and palettes kept as GIMP palette files. Its shell plugin puts the last color on the panel and `@color` in the launcher. Early alpha, released as pre-releases. |
 | `apps/rivet-longshot` | `rivet-longshot` | The picture viewer: opens a picture and steps through its folder in Files' order, with zoom, turning (saved losslessly where it can be), slideshows, camera details and animations. Rivet Files hands pictures to it. Held back from release (`HOLD=1`); built from source. |
 | `apps/rivet-reader` | `rivet-reader` | The document reader: PDFs (through PDFium, loaded at run time), comic books and pictures, continuous or a page at a time, with thumbnails, the outline, search, text selection, links, dark pages and the last page per file. Held back from release (`HOLD=1`); built from source. |
+| `apps/rivet-greeter` | `rivet-greeter` | The login screen for greetd: Rivet Shell's lock screen (`rivet-lockscreen`) over the wallpaper and look each person's session leaves in `/var/lib/rivet-greeter`, in cage, Sway or Softcore. `--setup` makes that folder; `sync` fills it from a desktop without Rivet Shell. Signs in through greetd, so no PAM of its own. Held back from release (`HOLD=1`); built from source. |
 | `apps/rivet-fetch` | `rivetfetch` | A fastfetch-style summary of the computer in the terminal, beside the mascot drawn from his pixel art. No window, so it uses `rivet-xdg` but not `rivet-look` or `rivet-kit`. Unreleased; built from source. |
 
 | Crate | What it holds |
@@ -40,6 +41,7 @@ app, or `--workspace` for everything.
 | `rivet-git` | Git with no interface, by running the `git` program. |
 | `rivet-cal` | Calendars with no interface: the `.ics` folders, reading and writing iCalendar without losing what isn't used, repeating events, the occurrences in a span of days, subscribed feeds, and CalDAV, Google (CalDAV with a browser sign-in) and Microsoft (Graph) accounts synced both ways, all through `curl`. |
 | `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files, Vice and rivet-doc. |
+| `rivet-lockscreen` | What Rivet Shell's lock screen and Rivet Greeter share: the screen's face and look, the Wayland program that shows it (session lock, layer or one full-screen window), and the `/var/lib/rivet-greeter` folder each session leaves its wallpaper and look in, with its trust rules. Checking the password is left to the program (PAM, greetd). |
 | `rivet-doc` | Page-based documents with no interface: PDFs through PDFium (pdfium-render, bound at run time; `utilities/lib/pdfium.sh` fetches the pinned library), comic archives and pictures, with text, links, the outline, search and dark pages, all on one worker thread because PDFium can't be called from two at once. |
 
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
@@ -64,6 +66,7 @@ No app depends on another app; they only depend on crates. Who uses what:
 | `rivet-connections` | FTP |
 | `rivet-git` | Edit (and meant for a Git app of its own) |
 | `rivet-cal` | Calendar |
+| `rivet-lockscreen` | Shell (its lock screen), Greeter |
 | `rivet-doc` | Reader (and meant for Files' Peek and PDF thumbnails) |
 
 What "the same in every app" means in practice is a module of `rivet-look`:

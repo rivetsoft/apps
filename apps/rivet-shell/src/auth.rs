@@ -1,5 +1,5 @@
-//! Checking the person's password with PAM, as the lock screen does (and as a greeter for greetd
-//! will, through greetd instead). PAM is called directly (libpam), on a thread of the caller's
+//! Checking the person's password with PAM, as the lock screen does (Rivet Greeter signs in
+//! through greetd instead). PAM is called directly (libpam), on a thread of the caller's
 //! choosing: it can take seconds (a wrong password waits on purpose).
 //!
 //! The PAM service is `rivet-shell` when /etc/pam.d/rivet-shell exists (for anyone who wants
@@ -112,17 +112,7 @@ pub fn service() -> &'static str {
     if std::path::Path::new("/etc/pam.d/rivet-shell").exists() { "rivet-shell" } else { "login" }
 }
 
-/// The login name of who's running this.
-pub fn login_name() -> String {
-    // The real user, not $USER (which anyone can set).
-    let uid = unsafe { libc::getuid() };
-    let pw = unsafe { libc::getpwuid(uid) };
-    if !pw.is_null() {
-        let name = unsafe { CStr::from_ptr((*pw).pw_name) };
-        return name.to_string_lossy().into_owned();
-    }
-    std::env::var("USER").unwrap_or_default()
-}
+pub use rivet_lockscreen::login_name;
 
 /// Whether `password` is `user`'s. Err holds what to tell them (PAM's own words when it had
 /// any). Blocks: a wrong password takes a couple of seconds.

@@ -287,18 +287,7 @@ pub fn dank16(colors: &serde_json::Value) -> serde_json::Value {
 
 /// A demo picture for screenshots (a soft gradient): checks never show the person's files.
 pub fn demo_png(dir: &Path) -> Option<PathBuf> {
-    let (w, h) = (640u32, 400u32);
-    let img = image::RgbaImage::from_fn(w, h, |x, y| {
-        let fx = x as f32 / w as f32;
-        let fy = y as f32 / h as f32;
-        let r = (40.0 + 120.0 * fx * (1.0 - fy)) as u8;
-        let g = (36.0 + 60.0 * fy) as u8;
-        let b = (70.0 + 110.0 * (1.0 - fx) + 40.0 * fy) as u8;
-        image::Rgba([r, g, b, 255])
-    });
-    let p = dir.join("demo-wallpaper.png");
-    img.save(&p).ok()?;
-    Some(p)
+    rivet_lockscreen::demo_wallpaper(dir)
 }
 
 // ------------------------------------------------------------------ choosing a picture

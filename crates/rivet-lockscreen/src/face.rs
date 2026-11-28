@@ -1,16 +1,17 @@
-//! The lock screen's face: the time and date, who's logged in, the password field, what PAM
-//! said, and suspend, restart and shut down. Drawn over the (blurred) wallpaper, the same on
-//! every screen. Kept apart from the Wayland side (lock.rs) so a greeter for greetd can show
-//! the same face.
+//! The screen's face: the time and date, who it is, the password field, what the password
+//! check said, and suspend, restart and shut down. Drawn over the (blurred) wallpaper, the same
+//! on every screen, by the lock screen and the login screen alike.
 
 use rivet_look::a11y::{Access, Role};
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Local;
-use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::{self, Align2, Color32, FontId, Galley, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::fonts::ui_font;
 
-use crate::glyph;
-use crate::ui::{one_line, ui_font};
+/// The login screen's hint while there's more than one account and nothing is typed.
+pub const ANOTHER: &str = "Press Tab to sign in as someone else";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LockAct {
@@ -25,6 +26,15 @@ impl LockAct {
             LockAct::Suspend => "Suspend",
             LockAct::Restart => "Restart",
             LockAct::ShutDown => "Shut Down",
+        }
+    }
+
+    /// What systemctl is asked to do.
+    pub fn systemctl(self) -> &'static str {
+        match self {
+            LockAct::Suspend => "suspend",
+            LockAct::Restart => "reboot",
+            LockAct::ShutDown => "poweroff",
         }
     }
 }
@@ -116,7 +126,7 @@ pub fn draw(ui: &mut egui::Ui, v: &View) -> Vec<LockAct> {
     let edge = if error { Color32::from_rgb(240, 110, 110) } else if v.busy { Color32::from_white_alpha(70) } else { v.accent };
     p.rect_stroke(field, FIELD_H / 2.0, Stroke::new(if error { 2.0 } else { 1.5 }, edge), egui::StrokeKind::Inside);
     if v.busy {
-        // Three dots taking turns while PAM answers.
+        // Three dots taking turns while the password is checked.
         let t = ui.input(|i| i.time) as f32;
         for i in 0..3 {
             let a = 0.35 + 0.65 * (((t * 4.0 - i as f32 * 0.6).sin() + 1.0) / 2.0);
@@ -134,7 +144,7 @@ pub fn draw(ui: &mut egui::Ui, v: &View) -> Vec<LockAct> {
             p.circle_filled(Pos2::new(x0 + i as f32 * 14.0, field.center().y), 4.5, white);
         }
     }
-    // Under it: what PAM said, or Caps Lock.
+    // Under it: what the check said, or Caps Lock.
     let mut y = field.bottom() + 22.0;
     if let Some((m, bad)) = v.message {
         let col = if bad { Color32::from_rgb(255, 150, 150) } else { soft };
@@ -185,6 +195,50 @@ fn time_part(fmt: &str) -> &'static str {
 
 fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     rivet_look::palette::mix(a, b, t)
+}
+
+/// Text on one line, cut with an ellipsis where it doesn't fit.
+fn one_line(p: &egui::Painter, text: &str, font: FontId, color: Color32, max_w: f32) -> Arc<Galley> {
+    let mut job = egui::text::LayoutJob::single_section(text.replace('\n', " "), egui::TextFormat { font_id: font, color, ..Default::default() });
+    job.wrap = egui::text::TextWrapping { max_width: max_w.max(10.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    p.layout_job(job)
+}
+
+/// The power buttons' symbols, drawn with lines (Rivet Shell draws the same ones elsewhere).
+pub mod glyph {
+    use eframe::egui::{self, Color32, Pos2, Shape, Stroke, Vec2};
+
+    fn arc(p: &egui::Painter, c: Pos2, r: f32, from: f32, to: f32, s: Stroke) {
+        let n = 14;
+        let pts: Vec<Pos2> = (0..=n)
+            .map(|i| {
+                let a = from + (to - from) * i as f32 / n as f32;
+                c + Vec2::new(a.cos(), a.sin()) * r
+            })
+            .collect();
+        p.add(Shape::line(pts, s));
+    }
+
+    pub fn power(p: &egui::Painter, c: Pos2, col: Color32) {
+        let s = Stroke::new(1.7, col);
+        use std::f32::consts::PI;
+        arc(p, c + Vec2::new(0.0, 1.0), 6.5, -PI / 2.0 + 0.7, 3.0 * PI / 2.0 - 0.7, s);
+        p.line_segment([c + Vec2::new(0.0, -7.0), c + Vec2::new(0.0, 0.5)], s);
+    }
+
+    pub fn moon(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
+        use std::f32::consts::PI;
+        let s = Stroke::new(1.7, col);
+        arc(p, c, 7.0, PI * 0.15, PI * 1.85, s);
+        arc(p, c + Vec2::new(3.6, -2.4), 5.2, PI * 0.42, PI * 1.25, s);
+    }
+
+    pub fn refresh(p: &egui::Painter, c: Pos2, col: Color32) {
+        use std::f32::consts::PI;
+        arc(p, c, 6.0, -PI * 0.3, PI * 1.45, Stroke::new(1.6, col));
+        let tip = c + Vec2::new((-PI * 0.3).cos(), (-PI * 0.3).sin()) * 6.0;
+        p.add(Shape::convex_polygon(vec![tip + Vec2::new(-3.6, -2.4), tip + Vec2::new(1.8, -3.6), tip + Vec2::new(0.6, 2.2)], col, Stroke::NONE));
+    }
 }
 
 #[cfg(test)]

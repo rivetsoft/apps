@@ -14,7 +14,7 @@
 # Every app that is released, in the order the release commands go through them. An app with
 # HOLD=1 below is held back: `release-all`, `ship all` and `live all` pass over it and Rivet
 # Welcome doesn't offer it, while naming it (`ship longshot`) still works. See docs/releasing.md.
-ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch longshot reader cinema welcome"
+ALL_APPS="files notes edit terminal ftp snip shell vice calendar color fetch longshot reader cinema greeter welcome"
 
 app_select() {
     # STABLE=1: published as a full release, not a pre-release (Rivet Welcome badges
@@ -55,6 +55,8 @@ app_select() {
             APP_ID=reader TITLE="Rivet Reader" HOLD=1 BUNDLE=pdfium ;;
         cinema | rivet-cinema)
             APP_ID=cinema TITLE="Rivet Cinema" HOLD=1 ;;
+        greeter | rivet-greeter)
+            APP_ID=greeter TITLE="Rivet Greeter" HOLD=1 ;;
         *)
             echo "Unknown app: $1 (one of: $ALL_APPS)" >&2
             return 1 ;;
@@ -71,14 +73,15 @@ app_select() {
     # Rivet Shell is started by the compositor; what goes in the launcher is its Settings window.
     DESKTOP=$DIST_NAME.desktop
     [ "$APP_ID" = shell ] && DESKTOP=rivet-shell-settings.desktop
-    # A program for the terminal (rivetfetch) gets no launcher entry when installed.
+    # A program for the terminal (rivetfetch) gets no launcher entry when installed, and neither
+    # does the login screen (greetd starts Rivet Greeter).
     LAUNCHER=1
-    [ "$APP_ID" = fetch ] && LAUNCHER=
-    # The glibc the release program is linked for. Rivet Shell links libxkbcommon itself (its
-    # keyboard handling), and Ubuntu 22.04's libxkbcommon needs glibc 2.33; the others load it
+    case "$APP_ID" in fetch | greeter) LAUNCHER= ;; esac
+    # The glibc the release program is linked for. Rivet Shell and Rivet Greeter link
+    # libxkbcommon themselves (their keyboard handling, rivet-lockscreen's for the greeter), and Ubuntu 22.04's libxkbcommon needs glibc 2.33; the others load it
     # at run time and keep 2.31 (ensure-zigbuild.sh). Both run on Ubuntu 22.04 and Debian 12.
     LINK_GLIBC=
-    [ "$APP_ID" = shell ] && LINK_GLIBC=2.33
+    case "$APP_ID" in shell | greeter) LINK_GLIBC=2.33 ;; esac
     return 0
 }
 

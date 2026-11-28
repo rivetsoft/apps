@@ -28,7 +28,6 @@ mod idle;
 mod ipc;
 mod launcher;
 mod lock;
-mod lock_ui;
 mod media_pop;
 mod notes;
 mod notes_pop;
@@ -74,8 +73,8 @@ Usage:
   rivet-shell ai                    AI plan usage, as the panel's AI item reads it
   rivet-shell lock                  Lock the screen (the shell does this itself when idle
                                     and before sleep); --preview shows it without locking
-  rivet-shell greeter               The lock screen as greetd's login screen, over the
-                                    wallpaper chosen last; --setup (with sudo) prepares it
+  rivet-shell greeter               The login screen moved to its own program: runs
+                                    rivet-greeter with the same words (rivet-greeter --help)
   rivet-shell msg COMMAND           Tell the running shell: launcher, control-center, calendar,
                                     power, network, bluetooth, ai, weather, sound, media,
                                     clipboard (each opens or closes it); clipboard N (copies
@@ -285,11 +284,7 @@ fn main() -> ExitCode {
             }
         },
         Some("settings") => settings_window(screenshot),
-        Some("greeter") => match (screenshot, args.iter().any(|a| a == "--setup")) {
-            (Some(p), _) => lock::screenshot(p),
-            (None, true) => greeter::setup(),
-            (None, false) => lock::greet(),
-        },
+        Some("greeter") => greeter::run(&args[1..]),
         Some("lock") => match screenshot {
             Some(p) => lock::screenshot(p),
             None => lock::run(args.iter().any(|a| a == "--preview")),

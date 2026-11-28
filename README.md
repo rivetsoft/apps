@@ -66,6 +66,16 @@ wallpaper, which it gives to matugen so every app's colors follow it. Settings i
 
 ![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.jpg)
 
+### <img src="apps/rivet-greeter/data/rivet-greeter.svg" width="32" alt=""> Rivet Greeter
+
+The login screen for greetd: Rivet Shell's lock screen, over the wallpaper and in the colors
+each person chose last. Rivet Shell leaves yours whenever it changes; `rivet-greeter sync` does
+it from any other desktop. Runs in cage, Sway or Softcore. **Just started:** not released yet;
+build it from source.
+[More about Rivet Greeter](apps/rivet-greeter/README.md)
+
+![Rivet Greeter: the time, who's signing in and the password field over a wallpaper](docs/screenshots/rivet-greeter-wide.png)
+
 ## The apps
 
 ### <img src="apps/rivet-files/data/rivet-files.svg" width="32" alt=""> Rivet Files

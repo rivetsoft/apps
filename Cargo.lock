@@ -2845,6 +2845,17 @@ name = "rivet-git"
 version = "0.1.0"
 
 [[package]]
+name = "rivet-greeter"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "rivet-kit",
+ "rivet-lockscreen",
+ "rivet-look",
+ "serde_json",
+]
+
+[[package]]
 name = "rivet-kit"
 version = "0.1.0"
 dependencies = [
@@ -2856,6 +2867,22 @@ dependencies = [
  "rivet-look",
  "rivet-mem",
  "wayland-backend",
+ "wayland-client",
+]
+
+[[package]]
+name = "rivet-lockscreen"
+version = "0.1.0"
+dependencies = [
+ "calloop 0.14.5",
+ "calloop-wayland-source 0.4.1",
+ "chrono",
+ "eframe",
+ "image",
+ "libc",
+ "rivet-kit",
+ "rivet-look",
+ "smithay-client-toolkit 0.20.0",
  "wayland-client",
 ]
 
@@ -2942,6 +2969,7 @@ dependencies = [
  "image",
  "libc",
  "rivet-kit",
+ "rivet-lockscreen",
  "rivet-look",
  "rivet-media",
  "rivet-xdg",

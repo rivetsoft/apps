@@ -16,7 +16,7 @@ Rivet developer utilities
 Usage: utilities/rivet-dev <command> [APP] [options]
 
 APP is files (the default), notes, edit, terminal, ftp, snip, shell, vice, calendar, color,
-fetch, longshot, reader, cinema or welcome, for the commands marked [APP]. Each app has its own version, changelog and
+fetch, longshot, reader, cinema, greeter or welcome, for the commands marked [APP]. Each app has its own version, changelog and
 release tags: vX.Y.Z for Rivet Files, rivet-APP-vX.Y.Z for the rest (rivet-notes-v0.4.1).
 How a release goes, step by step: docs/releasing.md.
 

@@ -389,12 +389,16 @@ From `clip.rs` and the Clipboard page (`settings_app.rs`, "Keep a history of wha
 
 ### Login screen (greetd)
 
-From `greeter.rs` and `rivet-shell greeter --setup`.
+From `apps/rivet-greeter` (`rivet-greeter --setup`, `rivet-greeter sync`) and Rivet Shell's
+`greeter.rs`.
 
-The login screen is the lock screen, run by greetd. greetd runs it as its own user, which can't
-read anyone's home folder, so each person's Rivet Shell leaves a copy of their wallpaper, their
-colors and clock, their name, their picture (`~/.face`) and their session in
-`/var/lib/rivet-greeter/LOGIN`, whenever the wallpaper or its colors change. The login screen
+The login screen is Rivet Greeter, which draws Rivet Shell's lock screen, run by greetd. greetd
+runs it as its own user, which can't read anyone's home folder, so each person's Rivet Shell
+leaves a copy of their wallpaper, their colors and clock, their name, their picture (`~/.face`)
+and their session in `/var/lib/rivet-greeter/LOGIN`, whenever the wallpaper or its colors
+change. On a desktop without Rivet Shell, `rivet-greeter sync --wallpaper PICTURE` leaves the
+same, with the desktop's colors. `rivet-shell greeter` (Rivet Shell 0.1.2's own greeter) runs
+Rivet Greeter for now. The login screen
 shows whoever changed theirs last; Tab (or the arrow keys) goes to the next account. The folder
 works like `/tmp`: anyone can add their own folder, nobody can change another's, and the login
 screen ignores a folder its owner didn't make. The session started is the one the person was

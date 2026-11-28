@@ -2,6 +2,9 @@
 
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Vec2};
 
+/// The lock screen's, drawn the same everywhere else.
+pub use rivet_lockscreen::glyph::{moon, power, refresh};
+
 fn arc(p: &egui::Painter, c: Pos2, r: f32, from: f32, to: f32, s: Stroke) {
     let n = 14;
     let pts: Vec<Pos2> = (0..=n)
@@ -21,12 +24,6 @@ pub fn grid(p: &egui::Painter, c: Pos2, col: Color32) {
     }
 }
 
-pub fn power(p: &egui::Painter, c: Pos2, col: Color32) {
-    let s = Stroke::new(1.7, col);
-    use std::f32::consts::PI;
-    arc(p, c + Vec2::new(0.0, 1.0), 6.5, -PI / 2.0 + 0.7, 3.0 * PI / 2.0 - 0.7, s);
-    p.line_segment([c + Vec2::new(0.0, -7.0), c + Vec2::new(0.0, 0.5)], s);
-}
 
 pub fn gear(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.7, col);
@@ -103,12 +100,6 @@ pub fn sun(p: &egui::Painter, c: Pos2, col: Color32) {
     }
 }
 
-pub fn moon(p: &egui::Painter, c: Pos2, col: Color32, _on: bool) {
-    use std::f32::consts::PI;
-    let s = Stroke::new(1.7, col);
-    arc(p, c, 7.0, PI * 0.15, PI * 1.85, s);
-    arc(p, c + Vec2::new(3.6, -2.4), 5.2, PI * 0.42, PI * 1.25, s);
-}
 
 /// A push pin, upright; filled when pinned.
 pub fn pin(p: &egui::Painter, c: Pos2, col: Color32, filled: bool) {
@@ -274,13 +265,6 @@ pub fn lock(p: &egui::Painter, c: Pos2, col: Color32) {
     }
 }
 
-/// Look again (a circling arrow).
-pub fn refresh(p: &egui::Painter, c: Pos2, col: Color32) {
-    use std::f32::consts::PI;
-    arc(p, c, 6.0, -PI * 0.3, PI * 1.45, Stroke::new(1.6, col));
-    let tip = c + Vec2::new((-PI * 0.3).cos(), (-PI * 0.3).sin()) * 6.0;
-    p.add(Shape::convex_polygon(vec![tip + Vec2::new(-3.6, -2.4), tip + Vec2::new(1.8, -3.6), tip + Vec2::new(0.6, 2.2)], col, Stroke::NONE));
-}
 
 pub fn wired(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.6, col);
