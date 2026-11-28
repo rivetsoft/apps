@@ -56,7 +56,7 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
         ui.label("Corners");
         ui.horizontal(|ui| {
             let mut r = now.radius;
-            if ui.add(egui::Slider::new(&mut r, 0.0..=24.0).step_by(1.0).fixed_decimals(0).suffix(" pt")).changed() {
+            if ui.add(egui::Slider::new(&mut r, 0.0..=24.0).step_by(1.0).fixed_decimals(0).suffix(" pt")).accessible_name("Corners").changed() {
                 own.radius = Some(r);
             }
             if reset(ui, own.radius.is_some(), parent_name, format!("{} pt", parent.radius)) {
@@ -67,7 +67,7 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
         ui.label("Opacity");
         ui.horizontal(|ui| {
             let mut o = now.opacity * 100.0;
-            if ui.add(egui::Slider::new(&mut o, 30.0..=100.0).step_by(1.0).fixed_decimals(0).suffix("%")).changed() {
+            if ui.add(egui::Slider::new(&mut o, 30.0..=100.0).step_by(1.0).fixed_decimals(0).suffix("%")).accessible_name("Opacity").changed() {
                 own.opacity = Some(o / 100.0);
             }
             if reset(ui, own.opacity.is_some(), parent_name, pct(parent.opacity)) {
@@ -78,7 +78,7 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
         ui.label("Outline");
         ui.horizontal(|ui| {
             let mut b = now.border;
-            super::controls::switch(ui, &mut b, "");
+            super::controls::switch(ui, &mut b, "").accessible_name("Outline");
             if b != now.border {
                 own.border = Some(b);
             }
@@ -122,7 +122,7 @@ fn editor(ui: &mut egui::Ui, id: &str, own: &mut Style, parent: Resolved, parent
             let tinted = now.fill != Role::Surface;
             ui.add_enabled_ui(tinted, |ui| {
                 let mut t = now.tint * 100.0;
-                if ui.add(egui::Slider::new(&mut t, 0.0..=100.0).step_by(5.0).fixed_decimals(0).suffix("%")).on_hover_text("How much of the background color the surface takes").changed() {
+                if ui.add(egui::Slider::new(&mut t, 0.0..=100.0).step_by(5.0).fixed_decimals(0).suffix("%")).accessible_name("Tint").on_hover_text("How much of the background color the surface takes").changed() {
                     own.tint = Some(t / 100.0);
                 }
                 if reset(ui, own.tint.is_some(), parent_name, pct(parent.tint)) {
@@ -209,7 +209,7 @@ impl SettingsApp {
                 ui.label(if side { "Width" } else { "Height" });
                 ui.horizontal(|ui| {
                     let mut v = p.bar() as u32;
-                    if ui.add(egui::Slider::new(&mut v, crate::panels::SIZE).suffix(" pt")).on_hover_text("Symbols and text keep their size.").changed() {
+                    if ui.add(egui::Slider::new(&mut v, crate::panels::SIZE).suffix(" pt")).accessible_name("Width or height").on_hover_text("Symbols and text keep their size.").changed() {
                         p.size = Some(v);
                     }
                     if p.size.is_some() && super::controls::reset(ui).clicked() {
@@ -220,7 +220,7 @@ impl SettingsApp {
                 ui.label("Between items");
                 ui.horizontal(|ui| {
                     let mut v = p.spacing() as u32;
-                    if ui.add(egui::Slider::new(&mut v, 0..=crate::panels::SPACING_MAX).suffix(" pt")).changed() {
+                    if ui.add(egui::Slider::new(&mut v, 0..=crate::panels::SPACING_MAX).suffix(" pt")).accessible_name("Between items").changed() {
                         p.spacing = Some(v);
                     }
                     if p.spacing.is_some() && super::controls::reset(ui).clicked() {
@@ -231,7 +231,7 @@ impl SettingsApp {
                 ui.label("From the screen's edge");
                 ui.horizontal(|ui| {
                     let mut o = p.off() as u32;
-                    if ui.add_enabled(floating, egui::Slider::new(&mut o, 0..=max).suffix(" pt")).on_hover_text("How far the panel floats from the screen's edges").on_disabled_hover_text("Edge-to-edge panels sit on the edge").changed() {
+                    if ui.add_enabled(floating, egui::Slider::new(&mut o, 0..=max).suffix(" pt")).accessible_name("From the screen's edge").on_hover_text("How far the panel floats from the screen's edges").on_disabled_hover_text("Edge-to-edge panels sit on the edge").changed() {
                         p.offset = Some(o);
                     }
                     if p.offset.is_some() && floating && super::controls::reset(ui).clicked() {
@@ -242,7 +242,7 @@ impl SettingsApp {
                 ui.label("Space before windows");
                 ui.horizontal(|ui| {
                     let mut g = p.gap() as u32;
-                    if ui.add(egui::Slider::new(&mut g, 0..=max).suffix(" pt")).changed() {
+                    if ui.add(egui::Slider::new(&mut g, 0..=max).suffix(" pt")).accessible_name("Space before windows").changed() {
                         p.gap = Some(g);
                     }
                     if p.gap.is_some() && super::controls::reset(ui).clicked() {

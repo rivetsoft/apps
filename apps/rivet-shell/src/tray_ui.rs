@@ -1,6 +1,7 @@
 //! The tray in the panel (apps' icons, in their colours or recoloured to the panel's) and the
 //! menu an icon opens (its app's own rows, submenus opened in place).
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::r_sm;
@@ -75,7 +76,7 @@ pub fn draw(ui: &mut egui::Ui, r: Rect, down: bool, idx: usize, m: &Model, tex: 
     for it in items {
         let slot = if down { Rect::from_min_size(Pos2::new(r.left(), x), Vec2::new(r.width(), SLOT)) } else { Rect::from_min_size(Pos2::new(x, r.top()), Vec2::new(SLOT, r.height())) };
         x += SLOT;
-        let resp = ui.interact(slot, egui::Id::unique(("tray", idx, &it.key)), Sense::click());
+        let resp = ui.interact(slot, egui::Id::unique(("tray", idx, &it.key)), Sense::click()).role(Role::Button, it.tooltip());
         let open = m.extra.tray.menu.as_ref().is_some_and(|mm| mm.0 == it.key);
         if resp.hovered() || open {
             p.rect_filled(slot.shrink2(if down { Vec2::new(2.0, 1.0) } else { Vec2::new(1.0, 5.0) }), hover_r, mix(v.panel_fill, v.text_color(), 0.09));
@@ -191,6 +192,7 @@ pub fn menu(ui: &mut egui::Ui, key: &str, path: &mut Vec<i32>, m: &mut Model) {
     };
     if !path.is_empty() {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(w, ROW), Sense::click());
+        let resp = resp.role(Role::MenuItem, "Open folder");
         if resp.hovered() {
             hover_fill(ui.painter(), r, &v);
         }

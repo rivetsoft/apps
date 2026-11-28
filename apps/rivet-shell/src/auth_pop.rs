@@ -78,7 +78,7 @@ pub fn popup(ui: &mut egui::Ui, typed: &mut String, round: &mut u64, m: &mut Mod
         ui.ctx().request_repaint_after(Duration::from_millis(50));
     } else {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field.shrink2(Vec2::new(12.0, 8.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-        let te = child.add(egui::TextEdit::singleline(typed).id(egui::Id::unique("auth-field")).password(!a.echo).frame(egui::Frame::NONE).font(ui_font(14.0)).hint_text(a.prompt.as_deref().unwrap_or("Password")).desired_width(f32::INFINITY));
+        let te = child.add(egui::TextEdit::singleline(typed).id(egui::Id::unique("auth-field")).password(!a.echo).frame(egui::Frame::NONE).font(ui_font(14.0)).hint_text(a.prompt.as_deref().unwrap_or("Password")).desired_width(f32::INFINITY)).accessible_name(a.prompt.as_deref().unwrap_or("Password"));
         if !te.has_focus() {
             te.request_focus();
         }

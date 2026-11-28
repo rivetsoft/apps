@@ -2,6 +2,7 @@
 //! under the item (Row), or large tiles in the middle of the screen (Grid). Lock and suspend
 //! happen at once; the rest ask for a second click, unless that's turned off.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_lg, r_md};
@@ -62,7 +63,7 @@ pub fn menu(ui: &mut egui::Ui, confirm: &mut Option<Power>, m: &mut Model) {
     let p = ui.painter().clone();
     let (style, ask, name) = (m.s.power_style, m.s.power_confirm, who(m));
     let mut click = |ui: &mut egui::Ui, r: Rect, pw: Power, label: &str, sure: bool| -> (bool, bool) {
-        let resp = ui.interact(r, egui::Id::unique(("power", label)), Sense::click());
+        let resp = ui.interact(r, egui::Id::unique(("power", label)), Sense::click()).role(Role::Button, label);
         let hot = resp.hovered();
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
             if sure && ask && *confirm != Some(pw) {

@@ -170,7 +170,7 @@ impl SettingsApp {
                                     pick = Some(e.address.clone());
                                 }
                             }
-                        });
+                        }).response.accessible_name("Exit node");
                         if let Some(address) = pick {
                             self.vpn.run(&ctx, "exit", move || vpn::set_exit(&address));
                         }
@@ -217,7 +217,7 @@ impl SettingsApp {
                     controls::rule(ui);
                 }
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.vpn.join).hint_text("Network ID").desired_width(190.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.vpn.join).hint_text("Network ID").desired_width(190.0)).accessible_name("Network ID");
                     let id = self.vpn.join.trim().to_lowercase();
                     if controls::button_if(ui, busy.is_none() && vpn::zerotier_id(&id), controls::Icon::Plus, "Join Network").clicked() {
                         switch = Some((format!("zerotier:{id}"), true));
@@ -250,7 +250,7 @@ impl SettingsApp {
                                 self.s.quick_vpn = key.clone();
                             }
                         }
-                    });
+                    }).response.accessible_name("The VPN block switches");
                     ui.end_row();
                 });
             });

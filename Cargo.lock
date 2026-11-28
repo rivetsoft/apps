@@ -2934,6 +2934,7 @@ dependencies = [
 name = "rivet-shell"
 version = "0.1.2"
 dependencies = [
+ "accesskit_unix",
  "calloop 0.14.5",
  "calloop-wayland-source 0.4.1",
  "chrono",

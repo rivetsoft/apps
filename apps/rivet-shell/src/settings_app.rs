@@ -2,6 +2,7 @@
 //! Preferences (a sidebar of pages, titled cards). Every change is saved at once; the running
 //! shell notices the file change and follows.
 
+use rivet_look::a11y::{Access, Role};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
@@ -583,7 +584,7 @@ impl eframe::App for SettingsApp {
                         }
                         for p in pages.iter().filter(|p| p.shown()) {
                             let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
-                            let resp = ui.interact(r, nav::page_id(*p), Sense::click());
+                            let resp = ui.interact(r, nav::page_id(*p), Sense::click()).role(Role::Button, p.label()).selected(self.page == *p && !self.home);
                             if self.focus_page == Some(*p) {
                                 self.focus_page = None;
                                 resp.request_focus();
@@ -798,7 +799,7 @@ impl SettingsApp {
                 ui.label("Takes");
                 ui.add_enabled_ui(self.s.wall_transition != Transition::None, |ui| {
                     let mut secs = self.s.wall_transition_ms as f32 / 1000.0;
-                    if ui.add(egui::Slider::new(&mut secs, 0.2..=3.0).step_by(0.1).suffix(" s")).changed() {
+                    if ui.add(egui::Slider::new(&mut secs, 0.2..=3.0).step_by(0.1).suffix(" s")).accessible_name("Takes").changed() {
                         self.s.wall_transition_ms = (secs * 1000.0).round() as u32;
                     }
                 });
@@ -951,16 +952,16 @@ impl SettingsApp {
                         for (p, l) in places {
                             ui.selectable_value(&mut s.note_place, p, l);
                         }
-                    });
+                    }).response.accessible_name("Where");
                     ui.end_row();
                     ui.label("Width");
                     panel_editor::segmented(ui, &mut s.note_width, &[(LaunchSize::Small, "Narrow"), (LaunchSize::Medium, "Medium"), (LaunchSize::Large, "Wide")]);
                     ui.end_row();
                     ui.label("Stays for");
-                    ui.add(egui::Slider::new(&mut s.note_secs, 2..=60).suffix(" s"));
+                    ui.add(egui::Slider::new(&mut s.note_secs, 2..=60).suffix(" s")).accessible_name("Stays for");
                     ui.end_row();
                     ui.label("At most");
-                    ui.add(egui::Slider::new(&mut s.note_max, 1..=8).suffix(" on screen"));
+                    ui.add(egui::Slider::new(&mut s.note_max, 1..=8).suffix(" on screen")).accessible_name("At most");
                     ui.end_row();
                 });
                 ui.add_space(6.0);
@@ -989,7 +990,7 @@ impl SettingsApp {
                     panel_editor::segmented(ui, &mut s.osd_color, &[(None, "Like Sliders"), (Some(Role::Primary), "Primary"), (Some(Role::Secondary), "Secondary"), (Some(Role::Tertiary), "Tertiary")]);
                     ui.end_row();
                     ui.label("Stays for");
-                    ui.add(egui::Slider::new(&mut s.osd_secs, 0.5..=5.0).step_by(0.5).fixed_decimals(1).suffix(" s"));
+                    ui.add(egui::Slider::new(&mut s.osd_secs, 0.5..=5.0).step_by(0.5).fixed_decimals(1).suffix(" s")).accessible_name("Stays for");
                     ui.end_row();
                 });
             });
@@ -997,7 +998,7 @@ impl SettingsApp {
         section(ui, "Night Light", &mut |ui| {
             grid(ui, "shell-night", &mut |ui| {
                 ui.label("Warmth");
-                ui.add(egui::Slider::new(&mut self.s.night_kelvin, 2500..=6000).step_by(100.0).suffix(" K"));
+                ui.add(egui::Slider::new(&mut self.s.night_kelvin, 2500..=6000).step_by(100.0).suffix(" K")).accessible_name("Warmth");
                 ui.end_row();
             });
             let tool = ["gammastep", "hyprsunset", "wlsunset"].into_iter().find(|t| crate::sys::has(t));
@@ -1035,7 +1036,7 @@ impl SettingsApp {
             ui.add_enabled_ui(self.s.dock, |ui| {
                 grid(ui, "shell-dock", &mut |ui| {
                     ui.label("Icon size");
-                    ui.add(egui::Slider::new(&mut self.s.dock_icon, 28.0..=80.0).step_by(2.0).suffix(" pt"));
+                    ui.add(egui::Slider::new(&mut self.s.dock_icon, 28.0..=80.0).step_by(2.0).suffix(" pt")).accessible_name("Icon size");
                     ui.end_row();
                     ui.label("Hide");
                     panel_editor::segmented(ui, &mut self.s.dock_hide, &[(DockHide::Never, "Never"), (DockHide::Auto, "Auto-Hide"), (DockHide::Smart, "Smart Hide")]);
@@ -1080,13 +1081,13 @@ impl SettingsApp {
                     };
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        if rivet_look::widgets::trash_button(ui).on_hover_text("Unpin").clicked() {
+                        if rivet_look::widgets::trash_button(ui).tip("Unpin").clicked() {
                             op = Some((i, 0));
                         }
-                        if rivet_look::widgets::arrow_button(ui, false, i + 1 < n).on_hover_text("Move Right").clicked() {
+                        if rivet_look::widgets::arrow_button(ui, false, i + 1 < n).role(Role::Button, "Move right").on_hover_text("Move Right").clicked() {
                             op = Some((i, 1));
                         }
-                        if rivet_look::widgets::arrow_button(ui, true, i > 0).on_hover_text("Move Left").clicked() {
+                        if rivet_look::widgets::arrow_button(ui, true, i > 0).role(Role::Button, "Move left").on_hover_text("Move Left").clicked() {
                             op = Some((i, -1));
                         }
                     });
@@ -1094,14 +1095,14 @@ impl SettingsApp {
             }
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.add_filter).hint_text("Find an app to pin…").desired_width(200.0));
+                ui.add(egui::TextEdit::singleline(&mut self.add_filter).hint_text("Find an app to pin…").desired_width(200.0)).accessible_name("Find an app to pin");
                 egui::ComboBox::from_id_salt("shell-dock-add").selected_text("Pin…").width(220.0).height(360.0).show_ui(ui, |ui| {
                     for (id, name) in &candidates {
                         if ui.selectable_label(false, name).clicked() {
                             add = Some(id.clone());
                         }
                     }
-                });
+                }).response.accessible_name("Pin an app");
             });
         });
         if let Some((i, d)) = op {

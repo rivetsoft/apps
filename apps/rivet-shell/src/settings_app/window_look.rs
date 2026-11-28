@@ -69,20 +69,20 @@ impl SettingsApp {
                 ui.add_space(10.0);
                 grid(ui, "window-look", &mut |ui| {
                     ui.label("Gaps between windows");
-                    ui.add(egui::Slider::new(&mut s.comp_gaps_in, 0..=32).suffix(" px"));
+                    ui.add(egui::Slider::new(&mut s.comp_gaps_in, 0..=32).suffix(" px")).accessible_name("Gaps between windows");
                     ui.end_row();
                     ui.label("Gaps at the screen's edges");
-                    ui.add(egui::Slider::new(&mut s.comp_gaps_out, 0..=64).suffix(" px"));
+                    ui.add(egui::Slider::new(&mut s.comp_gaps_out, 0..=64).suffix(" px")).accessible_name("Gaps at the screen's edges");
                     ui.end_row();
                     ui.label("Border");
-                    ui.add(egui::Slider::new(&mut s.comp_border, 0..=8).suffix(" px"));
+                    ui.add(egui::Slider::new(&mut s.comp_border, 0..=8).suffix(" px")).accessible_name("Border");
                     ui.end_row();
                     ui.label("Rounded corners");
-                    ui.add(egui::Slider::new(&mut s.comp_radius, 0..=24).suffix(" px"));
+                    ui.add(egui::Slider::new(&mut s.comp_radius, 0..=24).suffix(" px")).accessible_name("Rounded corners");
                     ui.end_row();
                     ui.label("Unfocused windows");
                     let mut pct = (s.comp_inactive_opacity * 100.0).round() as u32;
-                    if ui.add(egui::Slider::new(&mut pct, 50..=100).suffix("% opaque")).changed() {
+                    if ui.add(egui::Slider::new(&mut pct, 50..=100).suffix("% opaque")).accessible_name("Unfocused windows").changed() {
                         s.comp_inactive_opacity = pct as f32 / 100.0;
                     }
                     ui.end_row();

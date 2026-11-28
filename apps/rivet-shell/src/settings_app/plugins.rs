@@ -290,7 +290,7 @@ impl SettingsApp {
                 egui::Frame::NONE.fill(v.panel_fill).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(12, 10)).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        if super::controls::switch(ui, &mut on, "").changed() {
+                        if super::controls::switch(ui, &mut on, "").accessible_name(m.id.as_str()).changed() {
                             // Off: its item comes off the panels too.
                             turn_off(s, &m.id);
                             if on {
@@ -376,12 +376,12 @@ impl SettingsApp {
                                         }
                                         SettingKind::Text => {
                                             ui.label(&set.label);
-                                            ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint));
+                                            ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint)).accessible_name(set.label.as_str());
                                         }
                                         SettingKind::Folder => {
                                             ui.label(&set.label);
                                             ui.horizontal(|ui| {
-                                                ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint));
+                                                ui.add(egui::TextEdit::singleline(&mut value).desired_width(300.0).hint_text(&set.hint)).accessible_name(set.label.as_str());
                                                 if super::controls::button_if(ui, can_pick, super::controls::Icon::Folder, "Choose…").clicked() {
                                                     ask = Some((m.id.clone(), set.key.clone(), set.label.clone()));
                                                 }
@@ -454,7 +454,7 @@ impl SettingsApp {
                         label.on_hover_text(format!("Your command can read {}{values}", vars.join(", ")));
                     }
                     let mut cmd = hooks.iter().find(|(e, _)| e == name).map(|(_, c)| c.clone()).unwrap_or_default();
-                    if ui.add(egui::TextEdit::singleline(&mut cmd).desired_width(300.0).font(egui::TextStyle::Monospace).hint_text("a command")).changed() {
+                    if ui.add(egui::TextEdit::singleline(&mut cmd).desired_width(300.0).font(egui::TextStyle::Monospace).hint_text("a command")).accessible_name("Command").changed() {
                         hooks.retain(|(e, _)| e != name);
                         if !cmd.trim().is_empty() {
                             hooks.push((name.to_string(), cmd));

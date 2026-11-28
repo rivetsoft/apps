@@ -2,6 +2,7 @@
 //! Launcher), with sums answered as they're typed. On its own so it can grow (files, commands,
 //! plugins' results…): each kind of result is found from the query, then drawn by the view.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::quick;
@@ -208,6 +209,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     {
         let text = calc_text(answer);
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 52.0), Sense::click());
+        let resp = resp.role(Role::Button, format!("= {text}"));
         ui.painter().rect_filled(r, r_md(), accent.gamma_multiply(0.22));
         ui.painter().rect_stroke(r, r_md(), Stroke::new(1.0, accent.gamma_multiply(0.6)), egui::StrokeKind::Inside);
         ui.painter().text(Pos2::new(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, format!("= {text}"), ui_font(20.0), v.strong_text_color());
@@ -379,6 +381,10 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     ui.spacing_mut().item_spacing.x = 6.0;
                     for (j, a) in favs.iter().enumerate() {
                         let (r, resp) = ui.allocate_exact_size(tile, Sense::click());
+                        let resp = resp.role(Role::ListBoxOption, a.name.as_str()).selected(j == *sel).described("Favorite");
+                        if j == *sel {
+                            ui.ctx().accesskit_node_builder(egui::Id::unique("launcher-search"), |n| n.set_active_descendant(resp.id.accesskit_id()));
+                        }
                         mark(ui.painter(), r, j == *sel, resp.hovered());
                         let tex = kit.app_icon(ui.ctx(), a, icon);
                         if let (Some(at), Some(label)) = (draw_tile(ui.painter(), r, &a.name, tex, icon, &v, source_of(m.s, a)), source_of(m.s, a)) {
@@ -412,6 +418,10 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
             for (k, (_, a)) in ranked.iter().enumerate() {
                 let chosen = nf + k == *sel;
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), li + 14.0), Sense::click());
+                let resp = resp.role(Role::ListBoxOption, a.name().to_string()).selected(chosen);
+                if chosen {
+                    ui.ctx().accesskit_node_builder(egui::Id::unique("launcher-search"), |n| n.set_active_descendant(resp.id.accesskit_id()));
+                }
                 // Only what's in view is drawn (and only its icons made).
                 let shown = whole(ui, r);
                 // An app's star, at the end of its row: always on a favourite, else under the pointer.
@@ -479,6 +489,10 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
             egui::Grid::new("launcher-grid").spacing([6.0, 6.0]).show(ui, |ui| {
                 for (k, (_, a)) in ranked.iter().enumerate() {
                     let (r, resp) = ui.allocate_exact_size(tile, Sense::click());
+                    let resp = resp.role(Role::ListBoxOption, a.name().to_string()).selected(nf + k == *sel);
+                    if nf + k == *sel {
+                        ui.ctx().accesskit_node_builder(egui::Id::unique("launcher-search"), |n| n.set_active_descendant(resp.id.accesskit_id()));
+                    }
                     let shown = whole(ui, r);
                     if shown {
                         mark(ui.painter(), r, nf + k == *sel, resp.hovered());
@@ -600,7 +614,7 @@ fn package_tip(ui: &egui::Ui, at: Rect, id: &str, label: &str) {
 /// when it's clicked.
 fn star_button(ui: &mut egui::Ui, at: Pos2, on: bool, accent: Color32, v: &egui::Visuals, id: egui::Id) -> bool {
     let r = Rect::from_center_size(at, Vec2::splat(22.0));
-    let resp = ui.interact(r, id, Sense::click());
+    let resp = ui.interact(r, id, Sense::click()).role(Role::Button, if on { "Remove from favorites" } else { "Add to favorites" }).toggled(on);
     if resp.hovered() {
         hover_fill(ui.painter(), r, v);
     }

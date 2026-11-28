@@ -68,6 +68,8 @@ pub enum Msg {
     /// Downloads or the Trash changed (from the dock's own doing).
     PlacesChanged,
     Wake,
+    /// A screen reader started listening, or asked for something (see access.rs).
+    Access,
     Ipc(String),
     Wall { path: PathBuf, size: (u32, u32), pixels: Option<Vec<u8>> },
     Matugen(Result<(), String>),
@@ -115,6 +117,8 @@ struct Surf {
     waiting_frame: bool,
     repaint_at: Option<Instant>,
     ctx: egui::Context,
+    /// Its tree for a screen reader.
+    access: crate::access::SurfAccess,
     kit: Kit,
     tex: soft::Textures,
     pool: SlotPool,
@@ -590,6 +594,7 @@ impl Shell {
             None => (egui::Context::default(), Kit::new(true), soft::Textures::default(), Instant::now()),
         };
         Surf {
+            access: crate::access::SurfAccess::new(&self.tx),
             kind,
             idx,
             layer,
@@ -1063,6 +1068,11 @@ impl Shell {
     fn on_msg(&mut self, m: Msg) {
         match m {
             Msg::Wake => self.status_changed(),
+            Msg::Access => {
+                for s in &mut self.surfs {
+                    s.dirty = true;
+                }
+            }
             Msg::DragFiles(files, dropped) => self.drag_files(files, dropped),
             Msg::PlacesChanged => self.redraw_kinds(&[Kind::Dock, Kind::Popup]),
             Msg::LockKey { caps, on } => {
@@ -1896,6 +1906,7 @@ impl Shell {
         let (slide, collapsed) = (surf.slide, surf.collapsed);
         let mut plain = egui::Color32::from_rgb(30, 30, 34);
         let t_u0 = Instant::now();
+        surf.access.before(&surf.ctx, &mut raw);
         let out = surf.ctx.run_ui(raw, |ui| {
             surf.kit.face = match kind {
                 Kind::Panel => ui::Face::Panel(idx),
@@ -1977,6 +1988,17 @@ impl Shell {
             surf.layer.commit();
         }
         let mut out = out;
+        let name = match kind {
+            Kind::Background => "Desktop",
+            Kind::Panel => "Panel",
+            Kind::Dock => "Dock",
+            Kind::Popup => popup.as_ref().map(|p| crate::access::popup_name(&p.kind)).unwrap_or("Pop-up"),
+            Kind::Cards => "Notifications",
+            Kind::Osd => "Level",
+            Kind::Dim => "Screen dimming",
+            Kind::Corner => "Screen corner",
+        };
+        surf.access.after(&mut out.platform_output, name);
         let mut delta = std::mem::take(&mut out.textures_delta);
         surf.tex.update(&delta);
         delta.clear();

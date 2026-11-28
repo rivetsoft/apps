@@ -2,6 +2,7 @@
 //! colour (in the text's colour on the chosen page), and the line under a page's title.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::{fonts, palette, theme::r_md};
 
 use super::search;
@@ -159,7 +160,7 @@ pub(super) fn overview(ui: &mut egui::Ui, query: &mut String, accent: Color32) -
                 for (i, page) in row.iter().enumerate() {
                     let r = Rect::from_min_size(Pos2::new(left + i as f32 * TILE.x, line.top()), TILE).shrink(3.0);
                     let id = ui.scope_id().with(("overview", *page as u8));
-                    let resp = ui.interact(r, id, Sense::click());
+                    let resp = ui.interact(r, id, Sense::click()).role(Role::Button, page.label()).described(about(*page));
                     tiles.push((*page, r, id));
                     if resp.hovered() || resp.has_focus() {
                         ui.painter().rect_filled(r, r_md(), palette::mix(v.panel_fill, v.text_color(), 0.07));
@@ -229,7 +230,7 @@ pub(super) fn all_id() -> egui::Id {
 pub(super) fn all_settings(ui: &mut egui::Ui, side: Color32) -> egui::Response {
     let v = ui.visuals().clone();
     let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::hover());
-    let resp = ui.interact(r, all_id(), Sense::click());
+    let resp = ui.interact(r, all_id(), Sense::click()).role(Role::Button, "All Settings");
     if resp.hovered() {
         ui.painter().rect_filled(r, r_md(), palette::mix(side, v.text_color(), 0.07));
     }

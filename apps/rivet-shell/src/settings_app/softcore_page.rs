@@ -5,6 +5,7 @@
 //! changed by Softcore itself, so what was typed there by hand stays, and a change made by
 //! hand shows here a moment later. Softcore takes a change up by itself.
 
+use rivet_look::a11y::{Access, Role};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{LazyLock, Mutex};
@@ -189,7 +190,7 @@ fn fold(ui: &mut egui::Ui, title: &str, holds: &str, open: bool, body: &mut dyn 
     let v = ui.visuals().clone();
     let fill = v.faint_bg_color;
     let (r, resp) = ui.allocate_exact_size(egui::Vec2::new(ui.available_width(), 38.0), egui::Sense::click());
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = resp.role(Role::Button, title).expanded(open).on_hover_cursor(egui::CursorIcon::PointingHand);
     let p = ui.painter();
     // Closed, the title is the whole card; open, it sits over the card like the other pages'.
     if !open || resp.hovered() {
@@ -269,7 +270,7 @@ fn surface_tags(ui: &mut egui::Ui, now: &str, on_screen: &[String], typed: &mut 
                 if label != *name {
                     r.on_hover_text(*name);
                 }
-                if ui.add(egui::Button::new(egui::RichText::new("×").size(14.0).color(v.weak_text_color())).frame(false).min_size(egui::Vec2::splat(20.0))).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Remove").clicked() {
+                if ui.add(egui::Button::new(egui::RichText::new("×").size(14.0).color(v.weak_text_color())).frame(false).min_size(egui::Vec2::splat(20.0))).role(Role::Button, format!("Remove {label}")).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Remove").clicked() {
                     next = Some(picked.iter().filter(|n| *n != name).map(|n| n.to_string()).collect());
                 }
             });
@@ -297,7 +298,7 @@ fn surface_tags(ui: &mut egui::Ui, now: &str, on_screen: &[String], typed: &mut 
                 ui.label(egui::RichText::new("No other bars or docks are open. Type one's name.").size(12.5).color(ui.visuals().weak_text_color()));
             }
             ui.separator();
-            let r = ui.add(egui::TextEdit::singleline(typed).hint_text("A surface's name, then Enter").desired_width(ui.available_width()));
+            let r = ui.add(egui::TextEdit::singleline(typed).hint_text("A surface's name, then Enter").desired_width(ui.available_width())).accessible_name("Surface name");
             let name = typed.trim().to_string();
             if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !name.is_empty() && !name.contains(',') {
                 if !picked.contains(&name.as_str()) {
@@ -337,19 +338,19 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
         match &s.kind {
             Kind::Bool => {
                 let mut on = shown == "true";
-                if controls::switch(ui, &mut on, "").changed() {
+                if controls::switch(ui, &mut on, "").role(Role::Switch, s.key.as_str()).toggled(on).changed() {
                     change = Some(Some(on.to_string()));
                 }
             }
             Kind::Int { min, max } => {
                 let mut v = shown.parse::<i64>().unwrap_or(*min).clamp(*min, *max);
-                if ui.add(egui::Slider::new(&mut v, *min..=*max)).changed() {
+                if ui.add(egui::Slider::new(&mut v, *min..=*max)).accessible_name(s.key.as_str()).changed() {
                     page.edits.insert(s.key.clone(), v.to_string());
                 }
             }
             Kind::Float { min, max, step } => {
                 let mut v = shown.parse::<f64>().unwrap_or(*min).clamp(*min, *max);
-                if ui.add(egui::Slider::new(&mut v, *min..=*max).step_by(*step)).changed() {
+                if ui.add(egui::Slider::new(&mut v, *min..=*max).step_by(*step)).accessible_name(s.key.as_str()).changed() {
                     page.edits.insert(s.key.clone(), tidy(v, *step));
                 }
             }
@@ -410,7 +411,7 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
                                 change = Some(Some(hex(accent)));
                             }
                         }
-                    });
+                    }).response.accessible_name(s.key.as_str());
                     if auto {
                         return;
                     }
@@ -435,11 +436,11 @@ fn control(ui: &mut egui::Ui, s: &Setting, page: &mut Page, now: &softcore::Now,
                             change = Some(Some(c.clone()));
                         }
                     }
-                });
+                }).response.accessible_name(s.key.as_str());
             }
             Kind::Text => {
                 let mut text = shown.clone();
-                let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(230.0).hint_text(if s.default.is_empty() { "Not set" } else { s.default.as_str() }));
+                let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(230.0).hint_text(if s.default.is_empty() { "Not set" } else { s.default.as_str() })).accessible_name(s.key.as_str());
                 if r.changed() {
                     page.edits.insert(s.key.clone(), text.clone());
                 }
@@ -663,7 +664,7 @@ impl SettingsApp {
                     let (r, _) = ui.allocate_exact_size(egui::Vec2::new(150.0, 24.0), egui::Sense::hover());
                     ui.painter().with_clip_rect(r).text(r.left_center() + egui::Vec2::new(6.0, 0.0), egui::Align2::LEFT_CENTER, &b.keys, egui::TextStyle::Monospace.resolve(ui.style()), ui.visuals().text_color());
                     let mut text = page.edits.get(&key).cloned().unwrap_or_else(|| b.action.clone());
-                    let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width((ui.available_width() - 44.0).max(160.0)).font(egui::TextStyle::Monospace).hint_text("No action"));
+                    let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width((ui.available_width() - 44.0).max(160.0)).font(egui::TextStyle::Monospace).hint_text("No action")).accessible_name("Action");
                     if r.changed() {
                         page.edits.insert(key.clone(), text.clone());
                     }
@@ -673,7 +674,7 @@ impl SettingsApp {
                     {
                         changes.push((key.clone(), Some(typed.trim().to_string())));
                     }
-                    if controls::icon_button(ui, Icon::Trash).on_hover_text("Remove this binding").clicked() {
+                    if controls::icon_button(ui, Icon::Trash).tip("Remove this binding").clicked() {
                         changes.push((key.clone(), None));
                     }
                 });
@@ -686,8 +687,8 @@ impl SettingsApp {
             }
             controls::rule(ui);
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut page.new_keys).desired_width(150.0).font(egui::TextStyle::Monospace).hint_text("Mod+Shift+T"));
-                ui.add(egui::TextEdit::singleline(&mut page.new_action).desired_width((ui.available_width() - 90.0).max(160.0)).font(egui::TextStyle::Monospace).hint_text("spawn rivet-terminal"));
+                ui.add(egui::TextEdit::singleline(&mut page.new_keys).desired_width(150.0).font(egui::TextStyle::Monospace).hint_text("Mod+Shift+T")).accessible_name("Keys");
+                ui.add(egui::TextEdit::singleline(&mut page.new_action).desired_width((ui.available_width() - 90.0).max(160.0)).font(egui::TextStyle::Monospace).hint_text("spawn rivet-terminal")).accessible_name("Action");
                 let ready = !page.new_keys.trim().is_empty();
                 if controls::button_if(ui, ready, Icon::Plus, "Add").clicked() {
                     changes.push((format!("bind.{}", page.new_keys.trim()), Some(page.new_action.trim().to_string())));

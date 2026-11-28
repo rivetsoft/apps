@@ -1,6 +1,7 @@
 //! The notification cards in the corner and the on-screen display (`quick` has the quick
 //! settings).
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::r_md;
@@ -53,7 +54,7 @@ pub fn cards(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     for n in &m.extra.cards {
         let r = Rect::from_min_size(Pos2::new(full.left() + CARD_PAD, y), Vec2::new(full.width() - CARD_PAD * 2.0, card_height(n)));
         y = r.bottom() + CARD_GAP;
-        let resp = ui.interact(r, egui::Id::unique(("card", n.id)), Sense::click());
+        let resp = ui.interact(r, egui::Id::unique(("card", n.id)), Sense::click()).role(Role::Button, format!("{}: {}", n.app, n.summary)).described(n.body.as_str());
         crate::ui::surface(&p, r, &v, look.opacity, radius, look.border);
         if n.urgency >= 2 {
             p.rect_filled(Rect::from_min_size(r.min + Vec2::new(0.0, 14.0), Vec2::new(3.0, r.height() - 28.0)), 2.0, danger);
@@ -101,7 +102,7 @@ fn note_body(ui: &mut egui::Ui, p: &egui::Painter, n: &Note, r: Rect, m: &mut Mo
     }
     // Close.
     let xr = Rect::from_center_size(Pos2::new(r.right() - 6.0, r.top() + 7.0), Vec2::splat(20.0));
-    let xresp = ui.interact(xr, egui::Id::unique(("note-x", n.id, history)), Sense::click());
+    let xresp = ui.interact(xr, egui::Id::unique(("note-x", n.id, history)), Sense::click()).role(Role::Button, "Dismiss");
     if xresp.hovered() {
         p.circle_filled(xr.center(), 10.0, mix(v.panel_fill, v.text_color(), 0.12));
     }

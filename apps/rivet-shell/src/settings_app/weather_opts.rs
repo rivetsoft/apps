@@ -68,7 +68,7 @@ pub(super) fn options(ui: &mut egui::Ui, s: &mut Settings, width: f32) {
         let Ok(mut guard) = SEARCH.lock() else { return };
         let search = guard.get_or_insert_with(Search::default);
         ui.horizontal(|ui| {
-            let field = ui.add(egui::TextEdit::singleline(&mut search.query).hint_text("City or town").desired_width((width - 84.0).max(80.0)));
+            let field = ui.add(egui::TextEdit::singleline(&mut search.query).hint_text("City or town").desired_width((width - 84.0).max(80.0))).accessible_name("City or town");
             go = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             go |= controls::button_if(ui, !search.busy && !search.query.trim().is_empty(), controls::Icon::Forward, "Find").clicked();
         });

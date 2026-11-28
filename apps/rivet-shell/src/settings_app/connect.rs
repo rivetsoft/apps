@@ -270,7 +270,7 @@ impl SettingsApp {
             ui.horizontal(|ui| {
                 ui.add_space(34.0);
                 let Some((_, typed)) = self.conn.ask.as_mut() else { return };
-                let field = ui.add(egui::TextEdit::singleline(typed).password(true).hint_text("Password").desired_width(220.0));
+                let field = ui.add(egui::TextEdit::singleline(typed).password(true).hint_text("Password").desired_width(220.0)).accessible_name("Password");
                 if ask {
                     field.request_focus();
                 }

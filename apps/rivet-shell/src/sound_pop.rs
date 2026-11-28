@@ -2,6 +2,7 @@
 //! choose from, the same for the microphone, and each app playing with its own volume and the
 //! output it plays on. Read and changed through audio.rs.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 
@@ -59,7 +60,7 @@ fn key(t: Target) -> u64 {
 /// A volume slider, 0–100 (more than 100 shows full); Some(new value) while dragged.
 fn slider(ui: &mut egui::Ui, r: Rect, k: u64, value: u32, drag: &mut Option<(u64, u32)>, accent: Color32) -> Option<u32> {
     let v = ui.visuals().clone();
-    let resp = ui.interact(r, egui::Id::unique(("sound-slider", k)), Sense::click_and_drag());
+    let resp = ui.interact(r, egui::Id::unique(("sound-slider", k)), Sense::click_and_drag()).role(Role::Slider, "Volume").described(format!("{value}%"));
     let track = Rect::from_center_size(r.center(), Vec2::new(r.width() - 12.0, 4.0));
     let mut out = None;
     if resp.is_pointer_button_down_on()
@@ -148,7 +149,7 @@ fn device_rows(ui: &mut egui::Ui, list: &[Device], input: bool, accent: Color32,
         let (r, resp) = row(ui, d.default, &d.label, sub, None, 8.0);
         dev_glyph(ui.painter(), Pos2::new(r.left() + 17.0, r.center().y), d.kind, if d.default { accent } else { v.text_color() });
         let tip = if d.default { "In use" } else if input { "Use this microphone" } else { "Play sound here" };
-        if resp.on_hover_text(tip).clicked() && !d.default {
+        if resp.described(tip).on_hover_text(tip).clicked() && !d.default {
             acts.push(Act::Audio(Job::Default { input, name: d.name.clone() }));
         }
     }
@@ -237,7 +238,7 @@ pub fn popup(ui: &mut egui::Ui, drag: &mut Option<(u64, u32)>, m: &mut Model, ki
                     let next = &a.outputs[i.map(|i| (i + 1) % a.outputs.len()).unwrap_or(0)];
                     let g = one_line(&p, &cur, ui_font(11.5), v.text_color(), 110.0);
                     let cr = Rect::from_min_max(Pos2::new(r.right() - g.size().x - 16.0, r.top() + 4.0), Pos2::new(r.right(), r.top() + 24.0));
-                    let resp = ui.interact(cr, egui::Id::unique(("sound-app-out", s.index)), Sense::click());
+                    let resp = ui.interact(cr, egui::Id::unique(("sound-app-out", s.index)), Sense::click()).role(Role::Button, format!("Plays on {cur}"));
                     p.rect_filled(cr, 10.0, mix(v.panel_fill, v.text_color(), if resp.hovered() { 0.14 } else { 0.07 }));
                     p.galley(cr.center() - g.size() / 2.0, g, v.text_color());
                     let tip = format!("Plays on {cur} · click to move it to {}", next.label);

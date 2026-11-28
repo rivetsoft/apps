@@ -22,6 +22,8 @@ eframe = { version = "0.37.0", default-features = false, features = ["accesskit"
 # The shell's surfaces: wlr layer shell over Wayland, drawn in software into shared memory.
 smithay-client-toolkit = "0.20"
 wayland-client = "0.31"
+# Its surfaces in the screen reader's tree (eframe's adapter only covers its windows).
+accesskit_unix = "0.24.1"
 calloop = "0.14"
 calloop-wayland-source = "0.4"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }

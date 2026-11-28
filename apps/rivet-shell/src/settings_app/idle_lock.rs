@@ -30,7 +30,7 @@ fn time_combo(ui: &mut egui::Ui, id: &str, v: &mut u32) {
         for t in all {
             ui.selectable_value(v, t, time_label(t));
         }
-    });
+    }).response.accessible_name(match id { "idle-dim" => "Dim the screen", "idle-lock" => "Lock", "idle-off" => "Turn the screens off", _ => "Suspend" });
 }
 
 impl SettingsApp {
@@ -97,7 +97,7 @@ impl SettingsApp {
             } else {
                 grid(ui, "lock-cmd", &mut |ui| {
                     ui.label("Command");
-                    ui.add(egui::TextEdit::singleline(&mut s.lock_cmd).desired_width(260.0).font(egui::TextStyle::Monospace));
+                    ui.add(egui::TextEdit::singleline(&mut s.lock_cmd).desired_width(260.0).font(egui::TextStyle::Monospace)).accessible_name("Command");
                     ui.end_row();
                 });
                 hint(ui, "Use a locker that stays open until you unlock, so the shell knows the screen is locked. With swaylock, leave out -f.");

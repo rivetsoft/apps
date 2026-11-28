@@ -3,6 +3,7 @@
 //! section of quick settings, so it can grow other parts later (a calendar, say): each part is
 //! a block under the title, with its height counted in `height`.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_md, r_sm, selected_tile};
@@ -93,7 +94,7 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     if !notes.is_empty() {
         let g = p.layout_no_wrap("Clear All".into(), ui_font(12.5), fg);
         let br = Rect::from_min_max(Pos2::new(right - g.size().x - 20.0, r.top() + 5.0), Pos2::new(right, r.top() + 37.0));
-        let resp = ui.interact(br, egui::Id::unique("notes-clear"), Sense::click());
+        let resp = ui.interact(br, egui::Id::unique("notes-clear"), Sense::click()).role(Role::Button, "Clear All");
         p.rect_filled(br, r_sm(), mix(v.panel_fill, fg, if resp.hovered() { 0.12 } else { 0.06 }));
         p.galley(br.center() - g.size() / 2.0, g, if resp.hovered() { v.strong_text_color() } else { fg });
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -150,7 +151,7 @@ fn group_heading(ui: &mut egui::Ui, app: &str, list: &[&Note], acts: &mut Vec<Ac
     if resp.hovered() || ui.rect_contains_pointer(r) {
         let g = p.layout_no_wrap("Clear".into(), ui_font(12.0), v.text_color());
         let br = Rect::from_min_max(Pos2::new(r.right() - g.size().x - 16.0, r.top() + 4.0), Pos2::new(r.right(), r.bottom() - 2.0));
-        let bresp = ui.interact(br, egui::Id::unique(("notes-clear-app", app)), Sense::click());
+        let bresp = ui.interact(br, egui::Id::unique(("notes-clear-app", app)), Sense::click()).role(Role::Button, format!("Clear {app}"));
         if bresp.hovered() {
             ui.painter().rect_filled(br, r_sm(), mix(v.panel_fill, v.text_color(), 0.09));
         }
@@ -167,6 +168,7 @@ fn note_row(ui: &mut egui::Ui, n: &Note, m: &mut Model, kit: &mut Kit, accent: C
     let v = ui.visuals().clone();
     let weak = v.weak_text_color();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_height(ui.ctx(), n)), Sense::click());
+    let resp = resp.role(Role::ListBoxOption, n.summary.as_str());
     let p = ui.painter().clone();
     let opens = n.actions.iter().any(|(k, _)| k == "default");
     let hovered = resp.hovered() || ui.rect_contains_pointer(r);

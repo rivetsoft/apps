@@ -3,6 +3,7 @@
 //! widgets, drawn the same way; each board can be edited, where a widget is dragged to move it,
 //! dragged by its corner to resize it, put on every display or only this one, or taken away.
 
+use rivet_look::a11y::{Access, Role};
 use chrono::Local;
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
@@ -208,6 +209,7 @@ fn events(ui: &mut egui::Ui, r: Rect, m: &mut Model, accent: Color32) {
             c.painter().text(Pos2::new(dr.left() + 2.0, dr.center().y + 2.0), Align2::LEFT_CENTER, name, ui_font(11.5), v.weak_text_color());
         }
         let (row, resp) = c.allocate_exact_size(Vec2::new(w, 30.0), Sense::click());
+        let resp = resp.role(Role::Button, e.title.as_str()).described(e.time.as_str());
         if resp.hovered() {
             hover_fill(c.painter(), row, &v);
         }
@@ -266,7 +268,7 @@ fn apps(ui: &mut egui::Ui, r: Rect, m: &mut Model, kit: &mut Kit, query: &str, i
             if !ui.is_rect_visible(tr) {
                 continue;
             }
-            let resp = ui.interact(tr, egui::Id::unique(("board-app", idx, &a.id)), Sense::click());
+            let resp = ui.interact(tr, egui::Id::unique(("board-app", idx, &a.id)), Sense::click()).role(Role::Button, a.name.as_str());
             if resp.hovered() {
                 ui.painter().rect_filled(tr, r_md(), mix(v.panel_fill, v.text_color(), 0.08));
             }
@@ -348,7 +350,7 @@ fn chip(ui: &mut egui::Ui, at: Pos2, label: &str, id: egui::Id, strong: Option<C
     let v = ui.visuals().clone();
     let g = ui.painter().layout_no_wrap(label.to_string(), ui_font(12.5), v.text_color());
     let r = Rect::from_min_size(at, Vec2::new(g.size().x + 22.0, 28.0));
-    let resp = ui.interact(r, id, Sense::click());
+    let resp = ui.interact(r, id, Sense::click()).role(Role::Button, label);
     let fill = match strong {
         Some(a) => if resp.hovered() { mix(a, v.text_color(), 0.12) } else { a },
         None => mix(v.panel_fill, v.text_color(), if resp.hovered() { 0.16 } else { 0.08 }),
@@ -416,9 +418,9 @@ fn widgets(ui: &mut egui::Ui, board: Board, edit: bool, query: &str, m: &mut Mod
             continue;
         }
         // Over what it drew, so the widget itself takes the pointer and nothing in it does.
-        let body = ui.interact(r, egui::Id::unique(("board-move", idx)), Sense::click_and_drag());
+        let body = ui.interact(r, egui::Id::unique(("board-move", idx)), Sense::click_and_drag()).role(Role::GenericContainer, "Widget");
         let grip = Rect::from_min_max(r.max - Vec2::splat(GRIP), r.max);
-        let corner = ui.interact(grip, egui::Id::unique(("board-size", idx)), Sense::click_and_drag());
+        let corner = ui.interact(grip, egui::Id::unique(("board-size", idx)), Sense::click_and_drag()).role(Role::Button, "Resize widget");
         for (resp, resize) in [(&body, false), (&corner, true)] {
             if resp.drag_started() || resp.clicked() {
                 picked = Some(idx);
@@ -549,7 +551,7 @@ pub fn desktop_edit(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0.0, Color32::from_black_alpha(70));
     // A click on nothing lets go of the widget chosen.
-    if ui.interact(full, egui::Id::unique("board-back"), Sense::click()).clicked() {
+    if ui.interact(full, egui::Id::unique("board-back"), Sense::CLICK).role(Role::GenericContainer, "Desktop").clicked() {
         ui.ctx().data_mut(|d| d.remove::<usize>(picked_id()));
     }
     if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -566,7 +568,7 @@ pub fn hud(ui: &mut egui::Ui, edit: &mut bool, query: &mut String, m: &mut Model
     // The backdrop: what's under it blurred where the compositor can, and darkened.
     v.panel_fill = Color32::from_rgb(8, 8, 10);
     crate::ui::surface(ui.painter(), full, &v, 0.74, 0.0, false);
-    let back = ui.interact(full, egui::Id::unique("board-back"), Sense::click());
+    let back = ui.interact(full, egui::Id::unique("board-back"), Sense::CLICK).role(Role::GenericContainer, "Desktop");
     let esc = ui.input(|i| i.key_pressed(egui::Key::Escape));
     if *edit {
         if back.clicked() {
