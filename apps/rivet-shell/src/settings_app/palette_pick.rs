@@ -2,6 +2,7 @@
 //! colour code with) as the desktop's colours, for when matugen isn't making them from the
 //! wallpaper. The chosen one is written as a colour file that every Rivet app reads.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::schemes::{SCHEMES, Scheme};
@@ -86,7 +87,7 @@ impl SettingsApp {
                     let ink = if rivet_look::palette::luminance(accent) > 0.6 { Color32::BLACK } else { Color32::WHITE };
                     p.line(vec![c + Vec2::new(-3.2, 0.2), c + Vec2::new(-1.0, 2.4), c + Vec2::new(3.3, -2.4)], Stroke::new(1.6, ink));
                 }
-                let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                let resp = resp.role(Role::RadioButton, name).selected(on).on_hover_cursor(egui::CursorIcon::PointingHand);
                 let resp = if cut { resp.on_hover_text(name) } else { resp };
                 if resp.clicked() {
                     pick = Some(sc.map(|s| s.name).unwrap_or(""));

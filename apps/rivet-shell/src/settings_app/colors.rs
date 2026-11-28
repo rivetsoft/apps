@@ -1,6 +1,7 @@
 //! Appearance's Colors card: one choice of where the colours come from (the wallpaper, a
 //! built-in palette, or a style and accent of the shell's own) and that choice's settings.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use rivet_look::palette;
 use rivet_look::theme::{ACCENTS, Mode, r_lg, r_md};
@@ -154,11 +155,11 @@ impl SettingsApp {
                 for t in ["tonal-spot", "content", "expressive", "fidelity", "fruit-salad", "monochrome", "neutral", "rainbow", "vibrant"] {
                     ui.selectable_value(&mut self.s.scheme_type, format!("scheme-{t}"), scheme_name(t));
                 }
-            });
+            }).response.accessible_name("Scheme");
             ui.end_row();
             ui.label("Contrast");
             ui.horizontal(|ui| {
-                ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).on_hover_text("Lower for softer colors, higher for stronger ones. 0 keeps the scheme as designed.");
+                ui.add(egui::Slider::new(&mut self.s.matugen_contrast, -1.0..=1.0).step_by(0.05).fixed_decimals(2)).accessible_name("Contrast").on_hover_text("Lower for softer colors, higher for stronger ones. 0 keeps the scheme as designed.");
                 if self.s.matugen_contrast != 0.0 && super::controls::reset(ui).clicked() {
                     self.s.matugen_contrast = 0.0;
                 }
@@ -174,7 +175,7 @@ impl SettingsApp {
                         let own = self.s.has_own_wallpaper(&name);
                         ui.selectable_value(&mut self.s.matugen_screen, name.clone(), if own { format!("{name}'s Picture") } else { format!("{name} (Shows the Shared Picture)") });
                     }
-                });
+                }).response.accessible_name("Made from");
                 ui.end_row();
             }
             ui.label("Rivet apps");
@@ -203,6 +204,7 @@ impl SettingsApp {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 for (c, name) in ACCENTS {
                     let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+                    let resp = resp.role(Role::RadioButton, name).selected(self.s.accent == c);
                     ui.painter().circle_filled(r.center(), 9.0, Color32::from_rgb(c[0], c[1], c[2]));
                     if self.s.accent == c {
                         ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, ui.visuals().strong_text_color()));
@@ -250,6 +252,7 @@ impl SettingsApp {
                 // None in the list: the usual grey.
                 let col = c.map(|c| Color32::from_rgb(c[0], c[1], c[2])).unwrap_or(usual);
                 let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+                let resp = resp.role(Role::RadioButton, *name).selected(*slot == *c);
                 ui.painter().circle_filled(r.center(), 9.0, col);
                 ui.painter().circle_stroke(r.center(), 9.0, rim);
                 if *slot == *c {
@@ -262,7 +265,7 @@ impl SettingsApp {
             // Any other colour.
             ui.add_space(4.0);
             let mut c = slot.unwrap_or([usual.r(), usual.g(), usual.b()]);
-            if ui.color_edit_button_srgb(&mut c).on_hover_text("Any color").changed() {
+            if ui.color_edit_button_srgb(&mut c).tip("Any color").changed() {
                 *slot = Some(c);
             }
         });
@@ -279,6 +282,7 @@ fn role_pick(ui: &mut egui::Ui, salt: &str, slot: &mut Option<[u8; 3]>, made: Co
         ui.spacing_mut().item_spacing.x = 8.0;
         // From the accent: half the dot in the colour it makes, so it reads as "automatic".
         let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+        let resp = resp.role(Role::RadioButton, "From the accent").selected(slot.is_none());
         ui.painter().circle_stroke(r.center(), 8.5, Stroke::new(1.5, made));
         ui.painter().circle_filled(r.center(), 5.0, made);
         if slot.is_none() {
@@ -290,6 +294,7 @@ fn role_pick(ui: &mut egui::Ui, salt: &str, slot: &mut Option<[u8; 3]>, made: Co
         ui.add_space(4.0);
         for (c, name) in ACCENTS {
             let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+            let resp = resp.role(Role::RadioButton, name).selected(*slot == Some(c));
             ui.painter().circle_filled(r.center(), 9.0, Color32::from_rgb(c[0], c[1], c[2]));
             if *slot == Some(c) {
                 ui.painter().circle_stroke(r.center(), 11.0, ring);
@@ -301,7 +306,7 @@ fn role_pick(ui: &mut egui::Ui, salt: &str, slot: &mut Option<[u8; 3]>, made: Co
         }
         ui.add_space(4.0);
         let mut c = slot.unwrap_or([made.r(), made.g(), made.b()]);
-        if ui.push_id(salt, |ui| ui.color_edit_button_srgb(&mut c).on_hover_text("Any color")).inner.changed() {
+        if ui.push_id(salt, |ui| ui.color_edit_button_srgb(&mut c).tip("Any color")).inner.changed() {
             *slot = Some(c);
             chosen = true;
         }

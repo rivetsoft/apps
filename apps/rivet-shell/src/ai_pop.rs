@@ -1,6 +1,7 @@
 //! The AI Usage popup, opened from the panel's AI item: each provider's plan and limits, with a
 //! bar for each and when it resets, and whether Claude Code is running.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 
@@ -142,7 +143,7 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
                     let key = pin_key(pv.id, &win.name);
                     let pinned = m.s.ai_pins.contains(&key);
                     let pr = Rect::from_center_size(Pos2::new(r.right() - 11.0, r.center().y - 1.0), Vec2::splat(22.0));
-                    let presp = ui.interact(pr, egui::Id::unique(("ai-pin", &key)), Sense::click());
+                    let presp = ui.interact(pr, egui::Id::unique(("ai-pin", &key)), Sense::click()).role(Role::Button, "Pin to the panel").toggled(pinned);
                     if presp.hovered() {
                         p.rect_filled(pr, 5.0, mix(v.panel_fill, v.text_color(), 0.1));
                     }

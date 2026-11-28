@@ -3,6 +3,7 @@
 //! does something, and Reset is a quiet link. Sliders, lists and fields are egui's own.
 
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Response, Sense, Shape, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::fonts::ui_font;
 use rivet_look::palette::mix;
 use rivet_look::theme::r_sm;
@@ -101,6 +102,7 @@ fn pill(ui: &mut egui::Ui, icon: Icon, text: &str, kind: Kind) -> Response {
     let g = ui.painter().layout_no_wrap(text.to_string(), ui_font(13.0), Color32::PLACEHOLDER);
     let h = 28.0;
     let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 44.0, h), Sense::click());
+    let resp = resp.role(Role::Button, text);
     let on = ui.is_enabled();
     let w = if resp.is_pointer_button_down_on() { &v.widgets.active } else if resp.hovered() && on { &v.widgets.hovered } else { &v.widgets.inactive };
     let accent = v.selection.bg_fill;
@@ -163,6 +165,7 @@ pub(super) fn reset(ui: &mut egui::Ui) -> Response {
     let v = ui.visuals().clone();
     let g = ui.painter().layout_no_wrap("Reset".to_string(), ui_font(12.0), Color32::PLACEHOLDER);
     let (r, resp) = ui.allocate_exact_size(Vec2::new(g.size().x + 26.0, 24.0), Sense::click());
+    let resp = resp.role(Role::Button, "Reset");
     let col = if resp.hovered() { v.text_color() } else { v.weak_text_color() };
     if resp.hovered() {
         ui.painter().rect_filled(r, r_sm(), v.widgets.inactive.weak_bg_fill);
@@ -200,7 +203,7 @@ pub(super) fn switch(ui: &mut egui::Ui, on: &mut bool, text: impl ToString) -> R
     let text = text.to_string();
     let col = ui.visuals().text_color();
     let gap = if text.is_empty() { 0.0 } else { 10.0 };
-    let g = ui.painter().layout(text, egui::TextStyle::Body.resolve(ui.style()), col, (ui.available_width() - TRACK.x - gap).max(80.0));
+    let g = ui.painter().layout(text.clone(), egui::TextStyle::Body.resolve(ui.style()), col, (ui.available_width() - TRACK.x - gap).max(80.0));
     let (r, mut resp) = ui.allocate_exact_size(Vec2::new(TRACK.x + gap + g.size().x, g.size().y.max(24.0)), Sense::click());
     if resp.clicked() {
         *on = !*on;
@@ -208,6 +211,7 @@ pub(super) fn switch(ui: &mut egui::Ui, on: &mut bool, text: impl ToString) -> R
     }
     let track = Rect::from_min_size(Pos2::new(r.left(), r.top() + (24.0 - TRACK.y) / 2.0), TRACK);
     draw_switch(ui, track, *on, resp.id, resp.hovered());
+    let resp = resp.role(Role::Switch, text.as_str()).toggled(*on);
     ui.painter().galley(Pos2::new(track.right() + gap, r.top() + (24.0_f32.max(g.size().y) - g.size().y) / 2.0), g, col);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
@@ -222,8 +226,9 @@ pub(super) fn master(ui: &mut egui::Ui, on: &mut bool, text: impl ToString) -> R
         *on = !*on;
         resp.mark_changed();
     }
-    ui.painter().text(r.left_center(), Align2::LEFT_CENTER, text, ui_font(14.0), v.strong_text_color());
+    ui.painter().text(r.left_center(), Align2::LEFT_CENTER, text.as_str(), ui_font(14.0), v.strong_text_color());
     draw_switch(ui, Rect::from_center_size(Pos2::new(r.right() - TRACK.x / 2.0, r.center().y), TRACK), *on, resp.id, resp.hovered());
+    let resp = resp.role(Role::Switch, text).toggled(*on);
     resp.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
@@ -279,7 +284,7 @@ pub(super) fn command(ui: &mut egui::Ui, what: &str, cmd: &str) {
         let at: Option<f64> = ui.ctx().data(|d| d.get_temp(id));
         let now = ui.input(|i| i.time);
         let done = at.is_some_and(|t| now - t < 1.5);
-        if icon_button(ui, if done { Icon::Check } else { Icon::Copy }).on_hover_text("Copy").clicked() {
+        if icon_button(ui, if done { Icon::Check } else { Icon::Copy }).tip("Copy").clicked() {
             ui.ctx().copy_text(cmd.split(" | ").next().unwrap_or(cmd).to_string());
             ui.ctx().data_mut(|d| d.insert_temp(id, now));
         }

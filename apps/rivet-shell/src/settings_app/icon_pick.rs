@@ -50,7 +50,7 @@ impl SettingsApp {
                             let gone = self.s.icon_theme.clone();
                             ui.selectable_value(&mut self.s.icon_theme, gone.clone(), format!("{gone} (Not Installed)"));
                         }
-                    });
+                    }).response.accessible_name("Icon theme");
                     if !self.s.icon_theme.is_empty() && super::controls::reset(ui).clicked() {
                         self.s.icon_theme.clear();
                     }

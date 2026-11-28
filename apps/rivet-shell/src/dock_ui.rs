@@ -1,6 +1,7 @@
 //! The dock as a panel item: the same pinned apps (and open ones) as the dock, smaller, in a
 //! row in the panel. Pinning, unpinning and moving from either one changes both.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_xdg::launch::DesktopApp;
@@ -53,7 +54,7 @@ pub fn draw(ui: &mut egui::Ui, r: Rect, idx: usize, m: &Model, items: &Icons, ac
         let slot = Rect::from_min_size(Pos2::new(x, r.top()), Vec2::new(SLOT, r.height()));
         x += SLOT;
         let app = a.id.trim_end_matches(".desktop").to_string();
-        let resp = ui.interact(slot, egui::Id::unique(("panel-dock", idx, &a.id)), Sense::click());
+        let resp = ui.interact(slot, egui::Id::unique(("panel-dock", idx, &a.id)), Sense::click()).role(Role::Button, a.name.as_str());
         if resp.hovered() {
             p.rect_filled(slot.shrink2(Vec2::new(1.0, 2.0)), hover_r, mix(v.panel_fill, v.text_color(), 0.09));
         }

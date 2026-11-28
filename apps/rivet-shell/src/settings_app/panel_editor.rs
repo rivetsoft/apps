@@ -3,6 +3,7 @@
 //! as columns of items that are dragged to reorder them or move them between zones; "Add Item"
 //! offers the items not on the panel yet.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Id, LayerId, Order, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_lg, r_md, r_sm, selected_tile};
@@ -99,6 +100,7 @@ pub(super) fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, c
         // Named after this switch: two on a card can share a choice's name ("Left").
         let resp = ui.interact(cell, whole.id.with(("seg", text)), Sense::click());
         let on = *value == *val;
+        let resp = resp.role(Role::RadioButton, *text).selected(on);
         if on {
             ui.painter().rect_filled(cell, r_sm(), accent);
         } else if resp.hovered() {
@@ -125,6 +127,7 @@ impl SettingsApp {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
             for (i, p) in self.s.panels.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(168.0, 48.0), Sense::click());
+                let resp = resp.role(Role::Tab, title(&self.s.panels, i)).selected(i == sel).described(place(p));
                 if i == sel {
                     let (fill, stroke) = selected_tile(&v, v.panel_fill);
                     ui.painter().rect_filled(r, r_md(), fill);
@@ -152,6 +155,7 @@ impl SettingsApp {
                 }
             }
             let (r, resp) = ui.allocate_exact_size(Vec2::new(120.0, 48.0), Sense::click());
+            let resp = resp.role(Role::Button, "New Panel");
             let stroke = Stroke::new(1.0, if resp.hovered() { accent } else { mix(v.panel_fill, v.text_color(), 0.25) });
             ui.painter().rect_stroke(r, r_md(), stroke, egui::StrokeKind::Inside);
             ui.painter().text(r.center(), Align2::CENTER_CENTER, "+  New Panel", ui_font(13.0), if resp.hovered() { v.strong_text_color() } else { v.text_color() });
@@ -216,21 +220,21 @@ impl SettingsApp {
                     segmented(ui, &mut h.shape, &crate::panels::HandleShape::ALL);
                     ui.end_row();
                     ui.label("Length");
-                    ui.add(egui::Slider::new(&mut h.length, crate::panels::HANDLE_LENGTH).suffix(" pt"));
+                    ui.add(egui::Slider::new(&mut h.length, crate::panels::HANDLE_LENGTH).suffix(" pt")).accessible_name("Length");
                     ui.end_row();
                     ui.label("Thickness");
-                    ui.add(egui::Slider::new(&mut h.thick, crate::panels::HANDLE_THICK).suffix(" pt"));
+                    ui.add(egui::Slider::new(&mut h.thick, crate::panels::HANDLE_THICK).suffix(" pt")).accessible_name("Thickness");
                     ui.end_row();
                     ui.label("Placed");
                     let names = if edge.vertical() { ["Top", "Middle", "Bottom"] } else { ["Left", "Center", "Right"] };
                     segmented(ui, &mut h.along, &[(Along::Start, names[0]), (Along::Center, names[1]), (Along::End, names[2])]);
                     ui.end_row();
                     ui.label("From the panel");
-                    ui.add(egui::Slider::new(&mut h.offset, crate::panels::HANDLE_OFFSET).suffix(" pt")).on_hover_text("How far from the panel's bar it sits. Below zero, it sits over the bar's edge.");
+                    ui.add(egui::Slider::new(&mut h.offset, crate::panels::HANDLE_OFFSET).suffix(" pt")).accessible_name("From the panel").on_hover_text("How far from the panel's bar it sits. Below zero, it sits over the bar's edge.");
                     ui.end_row();
                     ui.label("Opacity");
                     let mut pct = (h.opacity * 100.0).round();
-                    if ui.add(egui::Slider::new(&mut pct, 15.0..=100.0).fixed_decimals(0).suffix("%")).changed() {
+                    if ui.add(egui::Slider::new(&mut pct, 15.0..=100.0).fixed_decimals(0).suffix("%")).accessible_name("Opacity").changed() {
                         h.opacity = pct / 100.0;
                     }
                     ui.end_row();
@@ -314,7 +318,7 @@ impl SettingsApp {
                     // Typed into a copy, and taken when it's done (its button follows the name).
                     let id = Id::unique(("shell-sub-name", sel));
                     let mut name = ui.ctx().data(|d| d.get_temp::<String>(id)).unwrap_or_else(|| sub.name.clone());
-                    let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(200.0));
+                    let resp = ui.add(egui::TextEdit::singleline(&mut name).desired_width(200.0)).accessible_name("Name");
                     if resp.lost_focus() {
                         ui.ctx().data_mut(|d| d.remove::<String>(id));
                         if name != sub.name {
@@ -330,7 +334,7 @@ impl SettingsApp {
                         for (i, name) in &hosts {
                             ui.selectable_value(&mut sub.host, Some(*i), name);
                         }
-                    });
+                    }).response.accessible_name("Attached to");
                     ui.end_row();
                     no_host = sub.host.is_none();
                 } else {
@@ -352,13 +356,13 @@ impl SettingsApp {
                         for s in names {
                             ui.selectable_value(&mut p.screen, s.clone(), s);
                         }
-                    });
+                    }).response.accessible_name("Screen");
                     ui.end_row();
                 }
                 ui.label("Length");
                 let mut len = p.length.clamp(MIN_LENGTH, 100);
                 let of = if p.vertical() { "the screen's height" } else { "the screen's width" };
-                if ui.add(egui::Slider::new(&mut len, MIN_LENGTH..=100).suffix("%")).on_hover_text(format!("How much of {of} the panel takes")).changed() {
+                if ui.add(egui::Slider::new(&mut len, MIN_LENGTH..=100).suffix("%")).accessible_name("Length").on_hover_text(format!("How much of {of} the panel takes")).changed() {
                     p.length = len;
                 }
                 ui.end_row();
@@ -393,7 +397,7 @@ impl SettingsApp {
                     ui.end_row();
                     if !sub.stay {
                         ui.label("Rolls up after");
-                        ui.add(egui::Slider::new(&mut sub.secs, crate::panels::SUB_SECS).step_by(0.5).suffix(" s")).on_hover_text("How long it stays once the pointer leaves it");
+                        ui.add(egui::Slider::new(&mut sub.secs, crate::panels::SUB_SECS).step_by(0.5).suffix(" s")).accessible_name("Rolls up after").on_hover_text("How long it stays once the pointer leaves it");
                         ui.end_row();
                     }
                 });
@@ -500,6 +504,7 @@ impl SettingsApp {
                         let mut rows: Vec<Rect> = Vec::new();
                         for (k, id) in panel.zones[z].iter().enumerate() {
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click_and_drag());
+                            let resp = resp.role(Role::ListBoxOption, label(id));
                             rows.push(r);
                             resp.dnd_set_drag_payload(Held(z, k));
                             let me = held == Some(Held(z, k));
@@ -532,7 +537,7 @@ impl SettingsApp {
                             let tip = ITEMS.iter().find(|x| x.0 == id || (size.is_some() && x.0 == "spacer")).map(|x| x.2).unwrap_or(if id.starts_with("sub:") { "Opens this sub panel" } else { "Not part of the shell yet" });
                             // Remove, and the item's options (a gear) when it has some, on the right.
                             let xr = Rect::from_center_size(Pos2::new(r.right() - 16.0, r.center().y), Vec2::splat(24.0));
-                            let x_resp = ui.interact(xr, ui.scope_id().with(("item-x", z, k)), Sense::click());
+                            let x_resp = ui.interact(xr, ui.scope_id().with(("item-x", z, k)), Sense::click()).role(Role::Button, format!("Remove {} from the panel", label(id)));
                             if resp.hovered() || x_resp.hovered() {
                                 if x_resp.hovered() {
                                     ui.painter().circle_filled(xr.center(), 11.0, mix(v.panel_fill, v.text_color(), 0.12));
@@ -563,7 +568,7 @@ impl SettingsApp {
                             // Its group: a chip with the group's number in its colours; a ring
                             // while the row is pointed at, to put it in one.
                             let gr = Rect::from_center_size(xr.center() - Vec2::new(52.0, 0.0), Vec2::splat(24.0));
-                            let g_resp = ui.interact(gr, ui.scope_id().with(("item-group", z, k)), Sense::click());
+                            let g_resp = ui.interact(gr, ui.scope_id().with(("item-group", z, k)), Sense::click()).role(Role::Button, format!("Group of {}", label(id)));
                             let mine = panel.group_of(id);
                             match mine.and_then(|g| panel.groups.get(g).map(|x| (g, x))) {
                                 Some((g, group)) => {
@@ -773,6 +778,7 @@ fn paints(ui: &mut egui::Ui, id: (usize, usize, &str), value: &mut Option<Paint>
         let v = ui.visuals().clone();
         for (p, name, col) in [(Paint::Surface, "Surface", v.panel_fill), (Paint::Primary, "Primary", colors.primary), (Paint::Secondary, "Secondary", colors.secondary), (Paint::Tertiary, "Tertiary", colors.tertiary)] {
             let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+            let resp = resp.role(Role::RadioButton, name).selected(*value == Some(p));
             ui.painter().circle_filled(r.center(), 8.5, col);
             ui.painter().circle_stroke(r.center(), 8.5, Stroke::new(1.0, mix(col, v.text_color(), 0.35)));
             if *value == Some(p) {
@@ -788,7 +794,7 @@ fn paints(ui: &mut egui::Ui, id: (usize, usize, &str), value: &mut Option<Paint>
             Some(Paint::Custom(c)) => *c,
             _ => [colors.primary.r(), colors.primary.g(), colors.primary.b()],
         };
-        let resp = ui.push_id(id, |ui| ui.color_edit_button_srgb(&mut rgb)).inner.on_hover_text("Any color");
+        let resp = ui.push_id(id, |ui| ui.color_edit_button_srgb(&mut rgb)).inner.tip("Any color");
         if custom {
             ui.painter().rect_stroke(resp.rect.expand(2.0), r_sm(), Stroke::new(2.0, v.strong_text_color()), egui::StrokeKind::Outside);
         }
@@ -832,6 +838,7 @@ impl SettingsApp {
                     let cut = text.elided;
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(text.size().x + 24.0, 30.0), Sense::click());
                     let on = i == g;
+                    let resp = resp.role(Role::RadioButton, format!("Group {}: {names}", i + 1)).selected(on);
                     let p = ui.painter();
                     p.rect_filled(r, r_md(), bg);
                     p.rect_stroke(r, r_md(), Stroke::new(1.0, mix(bg, v.text_color(), if resp.hovered() { 0.5 } else { 0.22 })), egui::StrokeKind::Inside);
@@ -879,7 +886,7 @@ impl SettingsApp {
                         }
                         if let Some(h) = group.height.as_mut() {
                             *h = (*h).clamp(crate::panels::GROUP_MIN, bar.max(crate::panels::GROUP_MIN));
-                            ui.add(egui::Slider::new(h, crate::panels::GROUP_MIN..=bar.max(crate::panels::GROUP_MIN)).suffix(" pt")).on_hover_text("At the panel's height, the group fills the panel edge to edge");
+                            ui.add(egui::Slider::new(h, crate::panels::GROUP_MIN..=bar.max(crate::panels::GROUP_MIN)).suffix(" pt")).accessible_name("Group height").on_hover_text("At the panel's height, the group fills the panel edge to edge");
                         }
                     });
                     ui.end_row();
@@ -894,7 +901,7 @@ impl SettingsApp {
                             for n in 0..=6 {
                                 ui.selectable_value(&mut group.show, n, text(n));
                             }
-                        });
+                        }).response.accessible_name("Group shows");
                         if group.show > 0 {
                             ui.label(egui::RichText::new("the rest fold behind an arrow").color(v.weak_text_color()).size(12.0));
                         }

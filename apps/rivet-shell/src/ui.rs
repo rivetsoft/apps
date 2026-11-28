@@ -3,6 +3,7 @@
 //! cards and the on-screen display. The same code draws them on the desktop (each on its own
 //! layer surface) and in screenshots (all on one picture).
 
+use rivet_look::a11y::{Access, Role};
 use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, Local, NaiveDate};
@@ -965,7 +966,11 @@ pub fn dock(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
             DockSlot::Trash => "@trash".into(),
         };
         let can_move = matches!(slot, DockSlot::App(_, true)) && pins.len() > 1;
-        let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &id)), if can_move { Sense::click_and_drag() } else { Sense::click() });
+        let resp = ui.interact(r.expand(2.0), egui::Id::unique(("dock", &id)), if can_move { Sense::click_and_drag() } else { Sense::click() }).role(Role::Button, match slot {
+            DockSlot::App(a, _) => a.name.clone(),
+            DockSlot::Downloads => "Downloads".into(),
+            DockSlot::Trash => "Trash".into(),
+        });
         if can_move && resp.drag_started() {
             // Where it was pressed, not where the pointer had got to when it counted as a drag.
             let grab = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos()).map_or(0.0, |p| p.x - r.center().x);
@@ -1125,6 +1130,7 @@ fn plugin_menu(ui: &mut egui::Ui, id: &str, m: &mut Model, kit: &mut Kit) {
             }
             let acts = !row.id.is_empty();
             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), if acts { Sense::click() } else { Sense::hover() });
+            let resp = if acts { resp.role(Role::MenuItem, row.label.as_str()) } else { resp };
             if acts && resp.hovered() {
                 hover_fill(ui.painter(), r, &v);
             }
@@ -1298,7 +1304,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         }
     };
     // Outside the card: close.
-    let back = ui.interact(full, egui::Id::unique("popup-back"), Sense::click());
+    let back = ui.interact(full, egui::Id::unique("popup-back"), Sense::CLICK).role(Role::Button, "Close");
     let outside = ui.input(|i| i.pointer.interact_pos().is_some_and(|p| !rect.contains(p)));
     // The password dialog stays through a click outside it (Esc or Cancel turns it away).
     let stays = matches!(pop.kind, PopupKind::Auth { .. });
@@ -1546,6 +1552,7 @@ pub(crate) fn calendar(ui: &mut egui::Ui, month: &mut i32, picked: &mut Option<N
         let date = first + chrono::Duration::days(d);
         let hit = Rect::from_center_size(c, Vec2::new(cw.min(34.0), ch - 2.0));
         let resp = ui.interact(hit, egui::Id::unique(("calendar-day", date)), if calendar { Sense::click() } else { Sense::hover() });
+        let resp = if calendar { resp.role(Role::Button, date.format("%A, %B %-d").to_string()).selected(date == today) } else { resp };
         let p = ui.painter();
         let col = if date == today {
             p.circle_filled(c, 13.0, accent);
@@ -1604,6 +1611,7 @@ pub(crate) fn calendar(ui: &mut egui::Ui, month: &mut i32, picked: &mut Option<N
     let mut open: Option<(String, String)> = None;
     for (pid, e) in list.iter().take(DAY_ROWS) {
         let (row, resp) = ui.allocate_exact_size(Vec2::new(r.width(), 30.0), Sense::click());
+        let resp = resp.role(Role::Button, e.title.as_str());
         if resp.hovered() {
             hover_fill(ui.painter(), row, &v);
         }
@@ -1651,6 +1659,7 @@ fn dock_menu(ui: &mut egui::Ui, app: &str, pinned: bool, m: &mut Model) {
     }
     for (label, act, enabled) in items {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), if enabled { Sense::click() } else { Sense::hover() });
+        let resp = if enabled { resp.role(Role::MenuItem, label) } else { resp };
         if enabled && resp.hovered() {
             hover_fill(ui.painter(), r, &v);
         }

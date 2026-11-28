@@ -3,6 +3,7 @@
 //! a result opens its page, scrolls to its card and outlines it for a moment; a panel item's
 //! options open its gear's card.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_md, r_sm, selected_tile};
@@ -260,13 +261,13 @@ pub fn field(ui: &mut egui::Ui, query: &mut String) -> egui::Response {
     let clear = !query.is_empty();
     let text_r = Rect::from_min_max(Pos2::new(r.left() + 28.0, r.top()), Pos2::new(r.right() - if clear { 26.0 } else { 8.0 }, r.bottom()));
     let edit = egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).hint_text("Search settings").font(egui::FontId::new(13.0, egui::FontFamily::Proportional)).align(egui::Align2::LEFT_CENTER).desired_width(text_r.width());
-    let resp = ui.put(text_r, edit);
+    let resp = ui.put(text_r, edit).accessible_name("Search settings");
     if resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
         query.clear();
     }
     if clear {
         let xr = Rect::from_center_size(Pos2::new(r.right() - 14.0, r.center().y), Vec2::splat(20.0));
-        let x_resp = ui.interact(xr, id.with("clear"), Sense::click());
+        let x_resp = ui.interact(xr, id.with("clear"), Sense::click()).role(Role::Button, "Clear search");
         if x_resp.hovered() {
             ui.painter().circle_filled(xr.center(), 9.0, mix(fill, v.text_color(), 0.12));
         }
@@ -315,6 +316,7 @@ pub fn results(ui: &mut egui::Ui, hits: &[&'static Entry], sel: &mut usize, keys
     for (k, en) in hits.iter().enumerate() {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 42.0), Sense::click());
         let on = chosen == Some(en.title);
+        let resp = resp.role(Role::ListBoxOption, en.title).selected(on).described(place(en));
         if on {
             let (fill, stroke) = selected_tile(&v, side);
             ui.painter().rect_filled(r, r_sm(), fill);

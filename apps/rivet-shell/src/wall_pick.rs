@@ -2,6 +2,7 @@
 //! pictures as a grid of thumbnails. It holds no settings: it's told the folder and the picture
 //! showing, and says what was asked for, so Settings and a panel item can both use it.
 
+use rivet_look::a11y::{Access, Role};
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
@@ -81,7 +82,7 @@ impl Picker {
                 if !ui.memory(|m| m.has_focus(id)) {
                     self.dir_text = wall::short(dir);
                 }
-                let r = ui.add(egui::TextEdit::singleline(&mut self.dir_text).id(id).desired_width(ui.available_width()).hint_text("~/Pictures/Wallpapers"));
+                let r = ui.add(egui::TextEdit::singleline(&mut self.dir_text).id(id).desired_width(ui.available_width()).hint_text("~/Pictures/Wallpapers")).accessible_name("Wallpaper folder");
                 // Taken when typing stops (the line under it says when there's no such folder).
                 if r.lost_focus() && !self.dir_text.trim().is_empty() {
                     out.dir = Some(wall::expand(&self.dir_text));
@@ -124,7 +125,7 @@ impl Picker {
             ui.label(egui::RichText::new(status).small().color(weak));
             if n > 12 {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Find by name…").desired_width(180.0));
+                    ui.add(egui::TextEdit::singleline(&mut self.filter).hint_text("Find by name…").desired_width(180.0)).accessible_name("Find by name");
                 });
             }
         });
@@ -160,6 +161,7 @@ impl Picker {
         egui::Grid::new("shell-walls").spacing([10.0, 10.0]).show(ui, |ui| {
             for (k, p) in shown.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(tw, th), Sense::click());
+                let resp = resp.role(Role::Button, p.name()).selected(now == p.path.to_string_lossy());
                 // Thumbnails only for what's on screen.
                 let visible = ui.is_rect_visible(r);
                 match if visible { self.gallery.thumb(p) } else { None } {

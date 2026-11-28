@@ -2,6 +2,7 @@
 //! Bluetooth tiles in quick settings): a title row with an on/off switch, the networks or
 //! devices as a list in the quick settings' look, and a way out to the full settings app.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_md, r_sm, selected_tile};
@@ -79,7 +80,7 @@ fn split(bt: &[BtDevice]) -> (Vec<&BtDevice>, Vec<&BtDevice>) {
 /// An on/off switch; true when clicked.
 fn switch(ui: &mut egui::Ui, r: Rect, id: &str, on: bool, accent: Color32) -> bool {
     let v = ui.visuals().clone();
-    let resp = ui.interact(r, egui::Id::unique(("conn-switch", id)), Sense::click());
+    let resp = ui.interact(r, egui::Id::unique(("conn-switch", id)), Sense::click()).role(Role::Switch, id).toggled(on);
     let p = ui.painter();
     let track = if on { accent } else { mix(v.panel_fill, v.text_color(), if resp.hovered() { 0.26 } else { 0.18 }) };
     p.rect_filled(r, r.height() / 2.0, track);
@@ -94,7 +95,7 @@ fn text_button(ui: &mut egui::Ui, row: Rect, right: f32, id: &str, label: &str) 
     let v = ui.visuals().clone();
     let g = ui.painter().layout_no_wrap(label.to_string(), ui_font(12.0), v.text_color());
     let br = Rect::from_min_max(Pos2::new(right - g.size().x - 16.0, row.center().y - 12.0), Pos2::new(right, row.center().y + 12.0));
-    let resp = ui.interact(br, egui::Id::unique(("conn-btn", id)), Sense::click());
+    let resp = ui.interact(br, egui::Id::unique(("conn-btn", id)), Sense::click()).role(Role::Button, label);
     ui.painter().rect_filled(br, r_sm(), mix(v.panel_fill, v.text_color(), if resp.hovered() { 0.14 } else { 0.08 }));
     ui.painter().galley(br.center() - g.size() / 2.0, g, if resp.hovered() { v.strong_text_color() } else { v.text_color() });
     (resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked(), br.left())
@@ -126,7 +127,7 @@ pub(crate) fn note(ui: &mut egui::Ui, text: &str) {
 pub(crate) fn row(ui: &mut egui::Ui, selected: bool, title: &str, sub: &str, sub_col: Option<Color32>, room_right: f32) -> (Rect, egui::Response) {
     let v = ui.visuals().clone();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click());
-    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let resp = resp.role(Role::ListBoxOption, title).selected(selected).described(sub).on_hover_cursor(egui::CursorIcon::PointingHand);
     let p = ui.painter();
     if selected {
         let (fill, stroke) = selected_tile(&v, v.panel_fill);
@@ -156,6 +157,7 @@ fn foot(ui: &mut egui::Ui, m: &mut Model, app: &str, label: &str) {
     }
     if has_app(m, app) {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), FOOT), Sense::click());
+        let resp = resp.role(Role::Button, "Open settings");
         let col = if resp.hovered() { v.strong_text_color() } else { v.text_color() };
         if resp.hovered() {
             ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 2.0)), r_sm(), mix(v.panel_fill, v.text_color(), 0.07));
@@ -264,7 +266,7 @@ fn password_row(ui: &mut egui::Ui, ask: &mut Option<(String, String)>, m: &mut M
     let field = Rect::from_min_max(Pos2::new(r.left() + 36.0, r.top() + 6.0), Pos2::new(r.right() - 64.0, r.bottom() - 6.0));
     ui.painter().rect_filled(field, r_md(), mix(v.panel_fill, v.text_color(), 0.07));
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(field.shrink2(Vec2::new(10.0, 6.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    let te = child.add(egui::TextEdit::singleline(pw).id(egui::Id::unique(("wifi-pw", ssid.as_str()))).password(true).frame(egui::Frame::NONE).font(ui_font(13.0)).hint_text("Password").desired_width(f32::INFINITY));
+    let te = child.add(egui::TextEdit::singleline(pw).id(egui::Id::unique(("wifi-pw", ssid.as_str()))).password(true).frame(egui::Frame::NONE).font(ui_font(13.0)).hint_text("Password").desired_width(f32::INFINITY)).accessible_name("Password");
     if !te.has_focus() {
         te.request_focus();
     }

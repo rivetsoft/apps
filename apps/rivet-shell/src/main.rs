@@ -1,6 +1,7 @@
 //! Rivet Shell: a panel, dock, desktop widgets and wallpaper for Wayland compositors, with
 //! settings, in the Rivet apps' look.
 
+mod access;
 mod ai;
 mod ai_pop;
 mod audio;

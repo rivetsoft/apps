@@ -3,6 +3,7 @@
 //! back on the clipboard; each can be pinned or removed, and Clear All takes the rest.
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::palette::mix;
 use rivet_look::theme::{r_md, r_sm};
 
@@ -51,7 +52,7 @@ pub fn popup(ui: &mut egui::Ui, sel: &mut Option<usize>, m: &mut Model, kit: &mu
     if list.len() > pinned {
         let g = p.layout_no_wrap("Clear All".into(), ui_font(12.5), fg);
         let br = Rect::from_min_max(Pos2::new(r.right() - g.size().x - 20.0, r.top() + 5.0), Pos2::new(r.right(), r.top() + 37.0));
-        let resp = ui.interact(br, egui::Id::unique("clip-clear"), Sense::click());
+        let resp = ui.interact(br, egui::Id::unique("clip-clear"), Sense::click()).role(Role::Button, "Clear All");
         p.rect_filled(br, r_sm(), mix(v.panel_fill, fg, if resp.hovered() { 0.12 } else { 0.06 }));
         p.galley(br.center() - g.size() / 2.0, g, if resp.hovered() { v.strong_text_color() } else { fg });
         let resp = if pinned > 0 { resp.on_hover_text("Pinned copies stay") } else { resp };
@@ -114,7 +115,8 @@ pub fn popup(ui: &mut egui::Ui, sel: &mut Option<usize>, m: &mut Model, kit: &mu
 fn row(ui: &mut egui::Ui, r: Rect, c: &Clip, chosen: bool, accent: Color32, kit: &mut Kit, acts: &mut Vec<Act>) {
     let v = ui.visuals().clone();
     let weak = v.weak_text_color();
-    let resp = ui.interact(r, egui::Id::unique(("clip-row", c.id)), Sense::click());
+    let resp = ui.interact(r, egui::Id::unique(("clip-row", c.id)), Sense::click()).role(Role::Button, c.line(80));
+    let resp = if c.pinned { resp.described("Pinned") } else { resp };
     let p = ui.painter().clone();
     let hovered = resp.hovered() || ui.rect_contains_pointer(r);
     p.rect_filled(r, r_md(), mix(v.panel_fill, v.text_color(), if hovered { 0.08 } else { 0.04 }));

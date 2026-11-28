@@ -69,7 +69,7 @@ impl State {
         let mut v = self.held.get(&key(t)).map_or(volume, |(v, _)| *v);
         // Up to 100%, or as far as it has already been pushed.
         let top = v.max(100);
-        if ui.add(egui::Slider::new(&mut v, 0..=top).suffix("%")).changed() {
+        if ui.add(egui::Slider::new(&mut v, 0..=top).suffix("%")).accessible_name("Volume").changed() {
             self.held.insert(key(t), (v, now));
             self.run(Job::Volume(t, v));
         }
@@ -102,7 +102,7 @@ impl State {
             ui.end_row();
             ui.label("Mute");
             let mut muted = d.muted;
-            if controls::switch(ui, &mut muted, "").changed() {
+            if controls::switch(ui, &mut muted, "").accessible_name("Mute").changed() {
                 self.run(Job::Mute(t));
             }
             ui.end_row();
@@ -137,7 +137,7 @@ impl SettingsApp {
                                         self.sound.run(Job::Move { app: app.index, device: d.index });
                                     }
                                 }
-                            });
+                            }).response.accessible_name("Plays on");
                         }
                     });
                     ui.end_row();

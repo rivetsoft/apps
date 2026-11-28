@@ -2,6 +2,7 @@
 //! way: a header (the item's symbol and name), then sections of picture tiles (each choice drawn
 //! as it shows in the panel), segmented switches and on/off rows.
 
+use rivet_look::a11y::{Access, Role};
 use chrono::format::{Item, StrftimeItems};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
@@ -64,7 +65,7 @@ fn tip(id: &str) -> &'static str {
 pub fn gear(ui: &mut egui::Ui, c: Pos2, salt: (usize, usize), id: &str, s: &mut Settings, accent: Color32, open: bool) {
     let v = ui.visuals().clone();
     let r = Rect::from_center_size(c, Vec2::splat(24.0));
-    let resp = ui.interact(r, ui.scope_id().with(("item-gear", salt)), Sense::click());
+    let resp = ui.interact(r, ui.scope_id().with(("item-gear", salt)), Sense::click()).role(Role::Button, "Item options");
     let popup = egui::Popup::from_toggle_button_response(&resp)
         .layout(egui::Layout::top_down(egui::Align::Min))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -185,6 +186,7 @@ fn toggle(ui: &mut egui::Ui, title: &str, sub: Option<&str>, value: &mut bool, a
     let v = ui.visuals().clone();
     let h = if sub.is_some() { 42.0 } else { 28.0 };
     let (r, resp) = ui.allocate_exact_size(Vec2::new(WIDTH, h), Sense::click());
+    let resp = resp.role(Role::Switch, title).toggled(*value).described(sub.unwrap_or_default());
     let p = ui.painter();
     if resp.hovered() {
         p.rect_filled(r.expand2(Vec2::new(6.0, 0.0)), r_sm(), mix(v.window_fill, v.text_color(), 0.06));
@@ -220,6 +222,7 @@ fn tiles<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, choices: &[(T, &
         for (val, name) in choices {
             let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 66.0), Sense::click());
             let on = *value == *val;
+            let resp = resp.role(Role::RadioButton, *name).selected(on);
             let p = ui.painter();
             if on {
                 let (fill, stroke) = selected_tile(&v, v.window_fill);
@@ -321,7 +324,7 @@ fn launcher(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
                     });
                     ui.data_mut(|d| d.insert_temp::<Asked>(key, Arc::new(Mutex::new(rx))));
                 }
-                ui.add(egui::TextEdit::singleline(&mut s.launcher_custom).hint_text("Icon name or picture").desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::singleline(&mut s.launcher_custom).hint_text("Icon name or picture").desired_width(f32::INFINITY)).accessible_name("Icon name or picture");
             });
             note(ui, "An icon name such as start-here, or a picture. It keeps its own colors.");
         }
@@ -337,6 +340,7 @@ fn clock(ui: &mut egui::Ui, s: &mut Settings) {
     for f in PRESETS {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(WIDTH, 30.0), Sense::click());
         let on = s.clock_format == f;
+        let resp = resp.role(Role::RadioButton, f.to_string()).selected(on);
         let p = ui.painter();
         if on {
             p.rect_filled(r.expand2(Vec2::new(6.0, 0.0)), r_sm(), mix(v.window_fill, accent, 0.14));
@@ -356,7 +360,7 @@ fn clock(ui: &mut egui::Ui, s: &mut Settings) {
     let key = egui::Id::unique("shell-clock-custom");
     let mut text = ui.ctx().data(|d| d.get_temp::<String>(key)).unwrap_or_else(|| s.clock_format.clone());
     let edit = egui::TextEdit::singleline(&mut text).desired_width(WIDTH).hint_text("%a %-d  %H:%M").font(egui::TextStyle::Monospace);
-    let resp = ui.add(edit);
+    let resp = ui.add(edit).accessible_name("Clock format");
     if resp.changed() && valid(&text) {
         s.clock_format = text.clone();
     }
@@ -383,12 +387,12 @@ fn media(ui: &mut egui::Ui, s: &mut Settings, accent: Color32) {
         for t in MediaText::ALL {
             ui.selectable_value(&mut s.media_text, t, t.label());
         }
-    });
+    }).response.accessible_name("Shows");
     if s.media_text != MediaText::None {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Widest").font(ui_font(13.0)));
-            ui.add(egui::Slider::new(&mut s.media_width, 80..=480).step_by(10.0).suffix(" pt"));
+            ui.add(egui::Slider::new(&mut s.media_width, 80..=480).step_by(10.0).suffix(" pt")).accessible_name("Widest");
         });
     }
     ui.add_space(4.0);
@@ -540,7 +544,7 @@ fn ai(ui: &mut egui::Ui, s: &mut Settings) {
         for (pid, pname) in crate::ai::PROVIDERS {
             ui.selectable_value(&mut s.ai_bar, pid.to_string(), format!("{pname}'s Most Used Limit"));
         }
-    });
+    }).response.accessible_name("With none pinned, show");
     note(
         ui,
         &format!("Claude, Codex and Grok use the sign-in from their own apps. For OpenRouter or DeepSeek, add your key to {} as OPENROUTER_API_KEY or DEEPSEEK_API_KEY.", crate::ai::env_file().display()),

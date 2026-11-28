@@ -1,6 +1,7 @@
 //! The dock's places: the Downloads list (the newest files, to open or drag somewhere) and
 //! the Trash's menu.
 
+use rivet_look::a11y::{Access, Role};
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -131,6 +132,7 @@ pub fn downloads(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     }
     for d in &list {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click_and_drag());
+        let resp = resp.role(Role::ListBoxOption, d.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
         if resp.hovered() {
             hover_fill(ui.painter(), r, &v);
         }
@@ -155,6 +157,7 @@ pub fn downloads(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     ui.add_space(6.0);
     if let Some(dir) = folder() {
         let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), FOOT - 10.0), Sense::click());
+        let resp = resp.role(Role::Button, "Open Downloads");
         if resp.hovered() {
             hover_fill(ui.painter(), r, &v);
         }

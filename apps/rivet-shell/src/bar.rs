@@ -2,6 +2,7 @@
 //! says how wide it wants to be and draws itself in the room it's given; an item the shell
 //! doesn't know (a plugin not installed yet) takes no room.
 
+use rivet_look::a11y::{Access, Role};
 use chrono::Local;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
@@ -94,7 +95,8 @@ impl Bar<'_, '_> {
     }
     /// A clickable slot with a hover fill.
     fn button(&self, ui: &mut egui::Ui, r: Rect, id: &str) -> egui::Response {
-        let resp = ui.interact(r, egui::Id::unique(("panel", self.idx, id)), Sense::click());
+        let name = if id.starts_with(GROUP_MORE) { "More items".to_string() } else { crate::panels::label(id) };
+        let resp = ui.interact(r, egui::Id::unique(("panel", self.idx, id)), Sense::click()).role(Role::Button, name);
         if resp.hovered() {
             ui.painter().rect_filled(r, self.hover_r, mix(self.v.panel_fill, self.v.text_color(), 0.09));
         }
@@ -392,7 +394,7 @@ fn media_item(ui: &mut egui::Ui, b: &mut Bar, r: Rect, id: &str) {
         for (k, (cmd, tip)) in [("next", "Next"), ("previous", "Previous")].into_iter().enumerate() {
             let br = Rect::from_center_size(Pos2::new(right - MEDIA_SKIP / 2.0, cy), Vec2::new(MEDIA_SKIP, b.cell.min(24.0)));
             right -= MEDIA_SKIP;
-            let sr = ui.interact(br, egui::Id::unique(("panel-media", b.idx, cmd)), Sense::click());
+            let sr = ui.interact(br, egui::Id::unique(("panel-media", b.idx, cmd)), Sense::click()).role(Role::Button, tip);
             if sr.hovered() {
                 p.rect_filled(br, b.hover_r, mix(b.v.panel_fill, fg, 0.16));
             }
@@ -1053,7 +1055,7 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
                 if if b.vert { pr.bottom() > r.bottom() + 0.5 } else { pr.right() > r.right() + 0.5 } {
                     break;
                 }
-                let resp = ui.interact(pr, egui::Id::unique(("ws", b.idx, &w.key, &w.output)), Sense::click());
+                let resp = ui.interact(pr, egui::Id::unique(("ws", b.idx, &w.key, &w.output)), Sense::click()).role(Role::Tab, format!("Workspace {label}")).selected(w.active);
                 let hot = resp.hovered();
                 match style {
                     WsStyle::Pills | WsStyle::Squares => {

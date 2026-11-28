@@ -2,6 +2,7 @@
 //! from, bars moving with the sound, how far in it is (click to jump), and previous, play or
 //! pause, and next.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::r_md;
@@ -77,7 +78,7 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
     if len > 0 {
         let row = Rect::from_min_size(Pos2::new(area.left(), y), Vec2::new(area.width(), PROGRESS));
         let track = Rect::from_min_max(Pos2::new(row.left(), row.top() + 4.0), Pos2::new(row.right(), row.top() + 8.0));
-        let resp = ui.interact(track.expand2(Vec2::new(0.0, 7.0)), egui::Id::unique("media-seek"), Sense::click());
+        let resp = ui.interact(track.expand2(Vec2::new(0.0, 7.0)), egui::Id::unique("media-seek"), Sense::click()).role(Role::Slider, "Position");
         p.rect_filled(track, 2.0, mix(v.panel_fill, v.text_color(), 0.14));
         let part = (pos as f32 / len as f32).clamp(0.0, 1.0);
         p.rect_filled(Rect::from_min_max(track.min, Pos2::new(track.left() + track.width() * part, track.bottom())), 2.0, accent);
@@ -103,7 +104,7 @@ pub fn popup(ui: &mut egui::Ui, m: &mut Model, kit: &mut Kit) {
         }
     }
     let br = Rect::from_center_size(c, Vec2::splat(CONTROLS));
-    let resp = ui.interact(br, egui::Id::unique("media-play"), Sense::click());
+    let resp = ui.interact(br, egui::Id::unique("media-play"), Sense::click()).role(Role::Button, if md.playing { "Pause" } else { "Play" });
     p.circle_filled(c, CONTROLS / 2.0, if resp.hovered() { mix(accent, v.text_color(), 0.12) } else { accent });
     glyph::play(&p, c + Vec2::new(if md.playing { 0.0 } else { 1.0 }, 0.0), !md.playing, on(accent));
     if resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if md.playing { "Pause" } else { "Play" }).clicked() {

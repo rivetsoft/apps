@@ -4,6 +4,7 @@
 //! accent tint with an accent edge, never a solid block), and what's playing as a plain row
 //! with toolbar buttons. (The notifications have their own panel: notes_pop.rs.)
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::palette::mix;
 use rivet_look::theme::{Mode, r_md, r_sm, selected_tile};
@@ -124,6 +125,7 @@ fn heading(ui: &mut egui::Ui, name: &str, extra: Option<(&str, Act)>, acts: &mut
     let v = ui.visuals().clone();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), FOLD), Sense::click());
     let open = !folded(ui.ctx(), name);
+    let resp = resp.role(Role::Button, name).expanded(open);
     let weak = v.weak_text_color();
     let col = if resp.hovered() { v.text_color() } else { weak };
     // ▸ / ▾
@@ -134,7 +136,7 @@ fn heading(ui: &mut egui::Ui, name: &str, extra: Option<(&str, Act)>, acts: &mut
     if let Some((label, act)) = extra {
         let g = ui.painter().layout_no_wrap(label.to_string(), ui_font(12.0), v.text_color());
         let br = Rect::from_min_max(Pos2::new(r.right() - g.size().x - 16.0, r.top() + 3.0), Pos2::new(r.right(), r.bottom() - 3.0));
-        let bresp = ui.interact(br, egui::Id::unique(("quick-head-btn", name)), Sense::click());
+        let bresp = ui.interact(br, egui::Id::unique(("quick-head-btn", name)), Sense::click()).role(Role::Button, label);
         if bresp.hovered() {
             ui.painter().rect_filled(br, r_sm(), mix(v.panel_fill, v.text_color(), 0.09));
         }
@@ -153,7 +155,7 @@ fn heading(ui: &mut egui::Ui, name: &str, extra: Option<(&str, Act)>, acts: &mut
 /// A toolbar-style button (a hover fill, like Rivet Files' toolbar), with a drawn symbol.
 pub fn tool_button(ui: &mut egui::Ui, r: Rect, id: &str, tip: &str, draw: &dyn Fn(&egui::Painter, Pos2, Color32)) -> bool {
     let v = ui.visuals().clone();
-    let resp = ui.interact(r, egui::Id::unique(("quick-tool", id)), Sense::click());
+    let resp = ui.interact(r, egui::Id::unique(("quick-tool", id)), Sense::click()).role(Role::Button, tip);
     if resp.hovered() {
         ui.painter().rect_filled(r, r_sm(), mix(v.panel_fill, v.text_color(), 0.09));
     }
@@ -166,6 +168,17 @@ pub fn tool_button(ui: &mut egui::Ui, r: Rect, id: &str, tip: &str, draw: &dyn F
 fn slider(ui: &mut egui::Ui, which: u8, value: u32, drag: &mut Option<(u8, u32)>, accent: Color32, width: f32) -> Option<u32> {
     let v = ui.visuals().clone();
     let (r, resp) = ui.allocate_exact_size(Vec2::new(width, 24.0), Sense::click_and_drag());
+    let resp = resp.role(Role::Slider, match which {
+        0 => "Volume",
+        1 => "Brightness",
+        _ => "Level",
+    });
+    resp.ctx.accesskit_node_builder(resp.id, |n| {
+        n.set_numeric_value(value as f64);
+        n.set_min_numeric_value(0.0);
+        n.set_max_numeric_value(100.0);
+        n.set_value(format!("{value}%"));
+    });
     let track = Rect::from_center_size(r.center(), Vec2::new(r.width() - 12.0, 4.0));
     let mut out = None;
     if resp.is_pointer_button_down_on()
@@ -282,7 +295,7 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                     let (row, _) = ui.allocate_exact_size(Vec2::new(w, TOGGLE + TGAP), Sense::hover());
                     for (k, t) in pair.iter().enumerate() {
                         let r = Rect::from_min_size(Pos2::new(row.left() + k as f32 * (tw + TGAP), row.top()), Vec2::new(tw, TOGGLE));
-                        let resp = ui.interact(r, egui::Id::unique(("quick-toggle", t.title)), Sense::click());
+                        let resp = ui.interact(r, egui::Id::unique(("quick-toggle", t.title)), Sense::click()).role(Role::Switch, t.title).toggled(t.on).described(t.sub.as_str());
                         // On: lit like a selected item in the apps; off: a quiet row.
                         if t.on {
                             // In the accent as every Rivet app's; in the toggles' own colour when they have one.
@@ -310,7 +323,7 @@ pub fn quick_settings(ui: &mut egui::Ui, drag: &mut Option<(u8, u32)>, m: &mut M
                         if more.is_some() || page.is_some() {
                             let tip = more.as_ref().map(|m| m.1).or(page.map(|p| p.1)).unwrap_or_default();
                             let mr = Rect::from_min_max(Pos2::new(r.right() - room - 2.0, r.top() + 6.0), Pos2::new(r.right() - 6.0, r.bottom() - 6.0));
-                            let mresp = ui.interact(mr, egui::Id::unique(("quick-more", t.title)), Sense::click());
+                            let mresp = ui.interact(mr, egui::Id::unique(("quick-more", t.title)), Sense::click()).role(Role::Button, tip);
                             if mresp.hovered() {
                                 ui.painter().rect_filled(mr, r_sm(), mix(v.panel_fill, fg, 0.10));
                             }

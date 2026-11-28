@@ -25,7 +25,7 @@ pub fn font_pick(ui: &mut egui::Ui, id: &str, value: &mut String, follow: &str) 
     let query_id = ui.make_persistent_id((id, "query"));
     egui::ComboBox::from_id_salt(id).selected_text(shown).width(240.0).height(320.0).show_ui(ui, |ui| {
         let mut query: String = ui.data_mut(|d| d.get_temp(query_id)).unwrap_or_default();
-        let edit = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search fonts").desired_width(f32::INFINITY));
+        let edit = ui.add(egui::TextEdit::singleline(&mut query).hint_text("Search fonts").desired_width(f32::INFINITY)).accessible_name("Search fonts");
         if !edit.has_focus() && query.is_empty() && ui.memory(|m| m.focused().is_none()) {
             edit.request_focus();
         }
@@ -48,7 +48,7 @@ pub fn font_pick(ui: &mut egui::Ui, id: &str, value: &mut String, follow: &str) 
         } else if !any {
             ui.weak("No font by that name.");
         }
-    });
+    }).response.accessible_name("Font");
     let changed = *value != before;
     if changed {
         ui.data_mut(|d| d.remove::<String>(query_id));

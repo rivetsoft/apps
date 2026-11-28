@@ -77,16 +77,16 @@ impl SettingsApp {
                 segmented(ui, &mut s.launch_size, &[(LaunchSize::Small, "Small"), (LaunchSize::Medium, "Medium"), (LaunchSize::Large, "Large")]);
                 ui.end_row();
                 ui.label("Icons");
-                ui.add(egui::Slider::new(&mut s.launch_icon, 24..=64).step_by(2.0).suffix(" pt"));
+                ui.add(egui::Slider::new(&mut s.launch_icon, 24..=64).step_by(2.0).suffix(" pt")).accessible_name("Icons");
                 ui.end_row();
                 // 0 leaves it to the size above.
                 let count = |v: f64, _: std::ops::RangeInclusive<usize>| if v < 1.0 { "From the size".to_string() } else { format!("{v:.0}") };
                 ui.label("Rows");
-                ui.add(egui::Slider::new(&mut s.launch_rows, 0..=20).custom_formatter(count)).on_hover_text("Fewer show when the screen is too short for them.");
+                ui.add(egui::Slider::new(&mut s.launch_rows, 0..=20).custom_formatter(count)).accessible_name("Rows").on_hover_text("Fewer show when the screen is too short for them.");
                 ui.end_row();
                 if s.launch_view == LaunchView::Grid {
                     ui.label("Columns");
-                    ui.add(egui::Slider::new(&mut s.launch_cols, 0..=12).custom_formatter(count));
+                    ui.add(egui::Slider::new(&mut s.launch_cols, 0..=12).custom_formatter(count)).accessible_name("Columns");
                     ui.end_row();
                 }
             });

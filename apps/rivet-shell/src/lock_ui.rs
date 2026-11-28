@@ -3,6 +3,7 @@
 //! every screen. Kept apart from the Wayland side (lock.rs) so a greeter for greetd can show
 //! the same face.
 
+use rivet_look::a11y::{Access, Role};
 use std::time::Duration;
 
 use chrono::Local;
@@ -154,7 +155,7 @@ pub fn draw(ui: &mut egui::Ui, v: &View) -> Vec<LockAct> {
         for a in all.iter().rev() {
             let c = Pos2::new(x, full.bottom() - 28.0 - size / 2.0);
             let r = Rect::from_center_size(c, Vec2::splat(size));
-            let resp = ui.interact(r, egui::Id::unique(("lock-power", *a as u8)), Sense::click());
+            let resp = ui.interact(r, egui::Id::unique(("lock-power", *a as u8)), Sense::click()).role(Role::Button, a.label());
             let asking = v.confirm == Some(*a);
             let fill = if asking { mix(v.accent, Color32::BLACK, 0.1) } else if resp.hovered() { Color32::from_white_alpha(50) } else { Color32::from_white_alpha(24) };
             p.circle_filled(c, size / 2.0, fill);

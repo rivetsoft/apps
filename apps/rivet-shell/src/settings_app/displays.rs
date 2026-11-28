@@ -4,6 +4,7 @@
 //! comp.rs), and goes back by itself unless the change is kept within a few seconds, in case
 //! a screen went dark.
 
+use rivet_look::a11y::{Access, Role};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -183,7 +184,7 @@ impl SettingsApp {
         let mut released = false;
         for i in 0..st.draft.len() {
             let r = to_screen(rect_of(&st.draft[i], sizes[i])).shrink(1.5);
-            let resp = ui.interact(r, egui::Id::unique(("display", i)), Sense::click_and_drag());
+            let resp = ui.interact(r, egui::Id::unique(("display", i)), Sense::click_and_drag()).role(Role::Button, format!("Screen {}", i + 1)).selected(st.sel == i);
             if resp.clicked() || resp.drag_started() {
                 st.sel = i;
             }
@@ -257,7 +258,7 @@ impl SettingsApp {
                             d.mode = o.modes.iter().copied().filter(|m| (m.w, m.h) == (w, h)).max_by_key(|m| m.mhz);
                         }
                     }
-                });
+                }).response.accessible_name("Resolution");
                 ui.end_row();
                 ui.label("Refresh rate");
                 let mut rates: Vec<Mode> = o.modes.iter().copied().filter(|m| (m.w, m.h) == (mode.w, mode.h)).collect();
@@ -269,7 +270,7 @@ impl SettingsApp {
                             d.mode = Some(m);
                         }
                     }
-                });
+                }).response.accessible_name("Refresh rate");
                 ui.end_row();
                 ui.label("Scale");
                 ui.horizontal(|ui| {
@@ -279,7 +280,7 @@ impl SettingsApp {
                                 d.scale = s;
                             }
                         }
-                    });
+                    }).response.accessible_name("Scale");
                     let (w, h) = d.size(o.preferred);
                     hint(ui, &format!("Looks like {w:.0} × {h:.0}"));
                 });
