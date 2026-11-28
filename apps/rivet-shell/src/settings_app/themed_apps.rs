@@ -58,4 +58,52 @@ impl SettingsApp {
             }
         });
     }
+
+    /// Qt apps, through qt6ct and qt5ct (`rivet_look::qt`): one switch, and the one step left
+    /// when qt6ct already had settings of its own.
+    pub(super) fn qt_apps_section(&mut self, ui: &mut egui::Ui) {
+        use rivet_look::qt::State;
+        // Screenshots show it installed and in use.
+        let shot = self.shot.is_some();
+        // Looked at every two seconds: a few small files.
+        let ctx = ui.ctx().clone();
+        let key = egui::Id::unique("qt-colors-state");
+        let now = ctx.input(|i| i.time);
+        let state = match ctx.data(|d| d.get_temp::<(f64, State)>(key)) {
+            Some((at, s)) if now - at < 2.0 => s,
+            _ => {
+                let s = if shot { State::Picked } else { rivet_look::qt::state() };
+                ctx.data_mut(|d| d.insert_temp(key, (now, s)));
+                s
+            }
+        };
+        section(ui, "Qt apps", &mut |ui| {
+            if state == State::Missing {
+                hint(ui, "Install qt6ct to give Qt apps such as Ladybird the theme's colors.");
+                return;
+            }
+            controls::switch(ui, &mut self.s.qt_colors, "Qt apps in the theme's colors");
+            if !self.s.qt_colors {
+                return;
+            }
+            let theirs = std::env::var("QT_QPA_PLATFORMTHEME").ok().filter(|t| !shot && !t.is_empty() && !matches!(t.as_str(), "qt5ct" | "qt6ct"));
+            if let Some(t) = theirs {
+                hint(ui, &format!("This session names {t} as Qt's platform theme, so Qt apps use that instead."));
+            } else if state == State::Other {
+                ui.horizontal(|ui| {
+                    if controls::button(ui, Icon::Plus, "Use These Colors").on_hover_text("Sets the color scheme in qt6ct. Everything else in its settings stays.").clicked() {
+                        self.note = rivet_look::qt::pick().err().map(|e| format!("Couldn't set qt6ct's color scheme: {e}"));
+                        ctx.data_mut(|d| d.remove::<(f64, State)>(key));
+                    }
+                    hint(ui, "qt6ct has colors of its own chosen.");
+                });
+            } else {
+                hint(ui, "Open Qt apps change within a few seconds. Ones open since before this was on take it when they start again.");
+            }
+            if let Some(n) = self.note.as_ref().filter(|n| n.starts_with("Couldn't set qt6ct")) {
+                ui.add_space(4.0);
+                ui.add(egui::Label::new(egui::RichText::new(format!("{n}.")).size(12.0).color(rivet_look::theme::status(ui.ctx()).danger)).wrap());
+            }
+        });
+    }
 }

@@ -237,6 +237,44 @@ pub fn apply(s: &Settings) {
     }
 }
 
+/// Qt apps: Rivet's color scheme for qt6ct and qt5ct from the palette the shell shows (its own
+/// colors when it follows none), or taken away when they're turned off. Then the platform
+/// theme the session's Qt apps are started with, to match.
+pub fn apply_qt(s: &Settings) {
+    if s.qt_colors {
+        let live = rivet_look::live::LiveLook::new();
+        let dark = s.theme != rivet_look::theme::Mode::Light;
+        let palette = rivet_look::palette::shown(live.palette(), s.follow_desktop_colors).cloned().or_else(|| rivet_look::palette::from_css(&s.own_css(dark)));
+        if let Some(p) = palette
+            && let Err(e) = rivet_look::qt::write(&p)
+        {
+            eprintln!("rivet-shell: Qt apps' colors: {e}");
+        }
+    } else {
+        rivet_look::qt::remove();
+    }
+    qt_session();
+}
+
+/// Start Qt apps with Rivet's scheme while it's in use: the ones launched from the shell, and
+/// the ones D-Bus and systemd start. A platform theme the session was already started with
+/// (named by the person, or by Softcore for the same reason) stays as it is.
+fn qt_session() {
+    static LAST: std::sync::Mutex<Option<&'static str>> = std::sync::Mutex::new(None);
+    if std::env::var_os("QT_QPA_PLATFORMTHEME").is_some() {
+        return;
+    }
+    let want = rivet_look::qt::session_theme();
+    let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if *last == want {
+        return;
+    }
+    *last = want;
+    rivet_xdg::launch::set_env("QT_QPA_PLATFORMTHEME", want);
+    // Empty is the same as none to Qt; D-Bus can't take a variable away.
+    crate::sys::spawn("dbus-update-activation-environment", &["--systemd", &format!("QT_QPA_PLATFORMTHEME={}", want.unwrap_or(""))]);
+}
+
 fn reload(a: &App) {
     if let Reload::Signal(process, signal) = a.reload {
         crate::sys::spawn("pkill", &[&format!("-{signal}"), "-x", process]);

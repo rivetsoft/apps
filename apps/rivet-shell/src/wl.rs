@@ -1023,6 +1023,7 @@ impl Shell {
         std::thread::spawn(move || {
             crate::browser::apply(&s);
             crate::themed::apply(&s);
+            crate::themed::apply_qt(&s);
         });
     }
 

@@ -299,9 +299,23 @@ pub fn exec_args(app: &DesktopApp, files: &[PathBuf]) -> Vec<String> {
     args
 }
 
+/// Variables the apps launched from here get on top of this program's own: a desktop shell
+/// sets them for the session it runs (Rivet Shell names Qt's platform theme).
+static ENV: std::sync::RwLock<Vec<(String, String)>> = std::sync::RwLock::new(Vec::new());
+
+/// Give apps launched from now on this variable, or stop giving it (None).
+pub fn set_env(key: &str, value: Option<&str>) {
+    let mut env = ENV.write().unwrap_or_else(|e| e.into_inner());
+    env.retain(|(k, _)| k != key);
+    if let Some(v) = value {
+        env.push((key.to_string(), v.to_string()));
+    }
+}
+
 fn spawn_detached(args: &[String], cwd: Option<&Path>) -> Result<(), String> {
     let mut cmd = Command::new(&args[0]);
     cmd.args(&args[1..]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    cmd.envs(ENV.read().unwrap_or_else(|e| e.into_inner()).iter().map(|(k, v)| (k, v)));
     if let Some(d) = cwd
         && d.is_dir() {
             cmd.current_dir(d);
