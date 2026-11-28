@@ -6,7 +6,7 @@
   buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
   the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard.
   With higher contrast or less motion asked for in the desktop's settings, edges and secondary
-  text get stronger and animations stop.
+  text get stronger and animations stop. In the file list, the arrow keys select the row they reach and Enter opens a folder.
 
 ## 0.1.1
 

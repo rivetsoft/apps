@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui::{self, Align, Align2, Color32, Key, Layout, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use rivet_look::a11y::{self, Access, Role};
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::theme::{r_lg, r_md, r_sm};
 use rivet_look::{fonts, palette};
@@ -612,6 +613,8 @@ impl ViewApp {
         ui.painter().rect_filled(r, r_sm(), fill);
         let col = if !enabled { v.weak_text_color().gamma_multiply(0.5) } else if on { v.strong_text_color() } else { v.text_color() };
         glyph(ui.painter(), r.shrink(8.0), g, col);
+        let resp = resp.role(Role::Button, tip.split(" (").next().unwrap_or(tip)).described(tip);
+        let resp = if matches!(g, Glyph::Details) { resp.toggled(on) } else { resp };
         resp.on_hover_text(tip).clicked() && enabled
     }
 
@@ -677,8 +680,9 @@ impl ViewApp {
                     (_, Some(s)) => format!("{:.0}%", s * 100.0),
                     _ => "Fit".to_string(),
                 };
+                let zoom_name = format!("Zoom, {pct}");
                 let b = egui::Button::new(pct).frame(false).min_size(Vec2::new(52.0, 28.0));
-                if ui.add_enabled(has, b).on_hover_text("Fit the window (0) or show at 100% (1)").clicked() {
+                if ui.add_enabled(has, b).accessible_name(zoom_name).on_hover_text("Fit the window (0) or show at 100% (1)").clicked() {
                     if self.stage.zoom == Zoom::Fit {
                         self.stage.actual_size();
                     } else {
@@ -769,11 +773,12 @@ impl ViewApp {
         let mut x = area.center().x - total / 2.0;
         let px = (cell.y * ctx.pixels_per_point() * 1.4) as u32;
         let mut go = None;
+        ui.scope_builder(a11y::area(Role::ListBox, "Pictures in this folder"), |ui| {
         for i in first..first + shown {
             let it = &self.items[i];
             let r = Rect::from_min_size(Pos2::new(x, area.top()), cell);
             x += cell.x + gap;
-            let resp = ui.interact(r, ui.scope_id().with(("strip", i)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("strip", i)), Sense::CLICK).role(Role::ListBoxOption, &it.name).selected(i == self.idx);
             ui.painter().rect_filled(r, r_sm(), palette::mix(v.panel_fill, v.extreme_bg_color, 0.6));
             if let Some(t) = self.thumbs.get(&it.path, it.size, &it.mime, it.modified, px) {
                 let size = t.size_vec2();
@@ -796,6 +801,7 @@ impl ViewApp {
                 go = Some(i);
             }
         }
+        });
         if let Some(i) = go {
             self.go(&ctx, i);
         }
@@ -871,7 +877,9 @@ impl ViewApp {
                 ctx.request_repaint_after(wait);
             }
             let tex = ready.frames[frame].0.clone();
-            self.stage.show(ui, stage_area, Shown { texture: &tex, size: [ready.width, ready.height], alpha: ready.alpha, vector: ready.vector });
+            ui.scope_builder(a11y::area(Role::Image, &item.name), |ui| {
+                self.stage.show(ui, stage_area, Shown { texture: &tex, size: [ready.width, ready.height], alpha: ready.alpha, vector: ready.vector });
+            });
             if let Some(n) = &ready.note
                 && chrome
             {
@@ -924,7 +932,7 @@ impl ViewApp {
             if !near {
                 continue;
             }
-            let resp = ui.interact(r, ui.scope_id().with(("arrow", dir)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("arrow", dir)), Sense::CLICK).role(Role::Button, if dir < 0 { "Previous picture" } else { "Next picture" });
             ui.painter().circle_filled(r.center(), 23.0, Color32::from_black_alpha(if resp.hovered() { 190 } else { 120 }));
             glyph(ui.painter(), r.shrink(14.0), if dir < 0 { Glyph::Back } else { Glyph::Forward }, Color32::from_gray(240));
             if resp.on_hover_text(if dir < 0 { "Previous (Left)" } else { "Next (Right)" }).clicked() {

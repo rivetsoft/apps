@@ -10,6 +10,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_archive::{Entry, Format};
+use rivet_look::a11y::{self, Access, Role};
 use rivet_look::icons::IconTheme;
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::palette;
@@ -501,6 +502,8 @@ impl ViceApp {
             for (label, by, w) in [("Name", Sort::Name, name_w), ("Size", Sort::Size, size_w), ("Changed", Sort::Changed, when_w)] {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(w, 24.0), Sense::click());
                 let on = self.sort.0 == by;
+                let resp = resp.role(Role::Button, format!("Sort by {label}"));
+                let resp = if on { resp.described(if self.sort.1 { "Sorted ascending" } else { "Sorted descending" }) } else { resp };
                 let col = if on { v.text_color() } else { v.weak_text_color() };
                 let end = ui.painter().text(Pos2::new(r.left() + if by == Sort::Name { 42.0 } else { 8.0 }, r.center().y), Align2::LEFT_CENTER, label, egui::FontId::proportional(12.0), col).right();
                 if on {
@@ -524,12 +527,23 @@ impl ViceApp {
         let file_tex = self.icons.texture(ui.ctx(), &["text-x-generic", "application-x-generic", "unknown"], (20.0 * ui.ctx().pixels_per_point()) as u32);
         let mut enter = None;
         let rows = self.rows.clone();
+        ui.scope_builder(a11y::area(Role::ListBox, "Archive contents"), |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW, rows.len(), |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for k in range {
                 let e = &self.entries[rows[k]];
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click());
                 let on = self.selected.contains(&e.path);
+                let detail = if e.dir { match inside(&self.entries, &e.path).0 { 1 => "Folder, 1 file".to_string(), n => format!("Folder, {n} files") } } else { format!("{}, {}", human_size(e.size), when(e.modified)) };
+                let resp = resp.role(Role::ListBoxOption, e.name()).selected(on).described(detail);
+                let typing = !ui.input(|i| i.pointer.any_down());
+                if resp.gained_focus() && typing && !on {
+                    self.selected = BTreeSet::from([e.path.clone()]);
+                    self.anchor = Some(e.path.clone());
+                }
+                if resp.has_focus() && e.dir && ui.input(|i| i.key_pressed(Key::Enter)) {
+                    enter = Some(e.path.clone());
+                }
                 if on {
                     ui.painter().rect_filled(r.shrink2(Vec2::new(0.0, 1.0)), r_sm(), palette::mix(v.panel_fill, accent, 0.26));
                 } else if resp.hovered() {
@@ -579,6 +593,7 @@ impl ViceApp {
                     }
                 }
             }
+        });
         });
         if let Some(path) = enter {
             self.go(path);
@@ -641,7 +656,7 @@ impl ViceApp {
             ui.label(egui::RichText::new(format!("Compress {what}")).color(v.weak_text_color()));
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.add(egui::TextEdit::singleline(&mut m.name).desired_width(280.0));
+                ui.add(egui::TextEdit::singleline(&mut m.name).desired_width(280.0)).accessible_name("Archive name");
                 ui.label(egui::RichText::new(m.format.ext()).color(v.weak_text_color()));
             });
             ui.add_space(10.0);

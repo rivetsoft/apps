@@ -12,6 +12,7 @@ use rivet_doc::dark::DarkLook;
 use rivet_doc::worker::{DocId, Job, Reply, Request, Worker};
 use rivet_doc::{Area, Info, Kind, Link, OpenError, OutlineItem, PageText, Target};
 use rivet_kit::mem::ByteCache;
+use rivet_look::a11y::{self, Access, Role};
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::palette;
 use rivet_look::quick::{QuickEvent, QuickPanel, QuickRow, QuickText, fuzzy_score};
@@ -801,6 +802,8 @@ fn icon_button(ui: &mut egui::Ui, icon: Icon, tip: &str, on: bool) -> egui::Resp
             line(Vec2::new(-4.5, 4.5), Vec2::new(4.5, -4.5));
         }
     }
+    let resp = resp.role(Role::Button, tip.split(" (").next().unwrap_or(tip)).described(tip);
+    let resp = if matches!(icon, Icon::Sidebar) { resp.toggled(on) } else { resp };
     resp.on_hover_text(tip)
 }
 
@@ -943,7 +946,7 @@ impl DocsApp {
                 if !self.page_field_on {
                     self.page_field = (self.current + 1).to_string();
                 }
-                let field = ui.add(egui::TextEdit::singleline(&mut self.page_field).desired_width(38.0).align(Align2::CENTER_CENTER));
+                let field = ui.add(egui::TextEdit::singleline(&mut self.page_field).desired_width(38.0).align(Align2::CENTER_CENTER)).accessible_name("Page number");
                 self.page_field_on = field.has_focus();
                 if field.lost_focus()
                     && ui.input(|i| i.key_pressed(Key::Enter))
@@ -959,7 +962,7 @@ impl DocsApp {
         let v = ui.visuals().clone();
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
-            let edit = ui.add(egui::TextEdit::singleline(&mut self.find.query).hint_text("Find in the document").desired_width(260.0));
+            let edit = ui.add(egui::TextEdit::singleline(&mut self.find.query).hint_text("Find in the document").desired_width(260.0)).accessible_name("Find in the document");
             if self.find.focus {
                 edit.request_focus();
                 self.find.focus = false;
@@ -1050,10 +1053,12 @@ impl DocsApp {
         let paper = if self.dark_pages.is_some() { v.extreme_bg_color } else { Color32::WHITE };
         let mut go = None;
         let mut wanted = Vec::new();
+        ui.scope_builder(a11y::area(Role::ListBox, "Pages"), |ui| {
         area.show_rows(ui, row_h, n, |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for p in range {
-                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
+                let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::CLICK);
+                let resp = resp.role(Role::ListBoxOption, format!("Page {}", p + 1)).selected(p == self.current);
                 let size = sizes[p];
                 let [w, h] = view::turned(size, rot);
                 let fit = (THUMB_BOX.x / w.max(1.0)).min(THUMB_BOX.y / h.max(1.0));
@@ -1080,6 +1085,7 @@ impl DocsApp {
                 }
             }
         });
+        });
         let dark = if kind == Kind::Pdf { self.dark_pages } else { None };
         for (p, w, h) in wanted {
             let key = (p, w, h, None, true);
@@ -1105,10 +1111,13 @@ impl DocsApp {
         let here = all.iter().filter(|r| r.page.is_some_and(|p| p <= self.current)).max_by_key(|r| r.page).map(|r| r.path.clone());
         let mut toggle = None;
         let mut go = None;
+        ui.scope_builder(a11y::area(Role::Tree, "Outline"), |ui| {
         egui::ScrollArea::vertical().id_salt("docs-outline").auto_shrink([false, false]).show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for row in &rows {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), Sense::click());
+                let resp = resp.role(Role::TreeItem, &row.title);
+                let resp = if row.parent { resp.expanded(self.outline_open.contains(&row.path)) } else { resp };
                 // The current section, or the entry it is folded away under.
                 let on = here.as_ref().is_some_and(|h| *h == row.path || (h.starts_with(&row.path) && !self.outline_open.contains(&row.path)));
                 if on {
@@ -1134,10 +1143,14 @@ impl DocsApp {
                 ui.painter().galley(text_at, g, col);
                 let resp = if cut { resp.on_hover_text(&row.title) } else { resp };
                 if resp.clicked() {
+                    let by_keyboard = resp.interact_pointer_pos().is_none();
                     let on_arrow = resp.interact_pointer_pos().is_some_and(|p| p.x < x + 14.0);
-                    if row.parent && (on_arrow || row.page.is_none()) {
+                    if row.parent && (on_arrow || row.page.is_none() || by_keyboard) {
                         toggle = Some(row.path.clone());
-                    } else if let Some(p) = row.page {
+                    }
+                    if !(row.parent && on_arrow)
+                        && let Some(p) = row.page
+                    {
                         go = Some(p);
                     }
                 }
@@ -1145,6 +1158,7 @@ impl DocsApp {
                     toggle = Some(row.path.clone());
                 }
             }
+        });
         });
         if let Some(t) = toggle
             && !self.outline_open.remove(&t)
@@ -1160,7 +1174,7 @@ impl DocsApp {
 impl DocsApp {
     fn pages_view(&mut self, ui: &mut egui::Ui, accent: Color32) {
         let rect = ui.available_rect_before_wrap();
-        let resp = ui.interact(rect, egui::Id::unique("docs-pages"), Sense::click_and_drag());
+        let resp = ui.interact(rect, egui::Id::unique("docs-pages"), Sense::CLICK | Sense::DRAG).role(Role::Document, self.doc.as_ref().map_or("Pages".to_string(), |d| d.name()));
         let v = ui.visuals().clone();
         let Some(d) = &self.doc else {
             let (title, under) = if let Some((_, p)) = &self.opening {
@@ -1461,7 +1475,7 @@ impl DocsApp {
             let max = lay.size.y - view.y;
             let top = track.top() + self.scroll.y / max * room;
             let thumb = Rect::from_min_size(Pos2::new(track.left(), top), Vec2::new(track.width(), h));
-            let bar = ui.interact(track.expand2(Vec2::new(3.0, 0.0)), egui::Id::unique("docs-scroll"), Sense::click_and_drag());
+            let bar = ui.interact(track.expand2(Vec2::new(3.0, 0.0)), egui::Id::unique("docs-scroll"), Sense::CLICK | Sense::DRAG).role(Role::ScrollBar, "Position in the document");
             if bar.dragged() {
                 self.scroll.y = (self.scroll.y + bar.drag_delta().y / room * max).clamp(0.0, max);
             } else if bar.clicked()
@@ -1516,7 +1530,7 @@ impl DocsApp {
             let says = if pw.wrong { "That password didn't open it. Try again." } else { "Type its password to open it." };
             ui.label(says);
             ui.add_space(10.0);
-            let edit = ui.add(egui::TextEdit::singleline(&mut pw.text).password(true).desired_width(f32::INFINITY));
+            let edit = ui.add(egui::TextEdit::singleline(&mut pw.text).password(true).desired_width(f32::INFINITY)).accessible_name("Password");
             edit.request_focus();
             ui.add_space(12.0);
             ui.horizontal(|ui| {

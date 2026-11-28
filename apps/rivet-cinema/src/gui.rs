@@ -8,6 +8,7 @@ use std::sync::OnceLock;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui::{self, Align2, Color32, CursorIcon, Key, Modifiers, Pos2, Rect, Sense, Vec2, ViewportCommand};
+use rivet_look::a11y::{self, Access, Role};
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::palette;
 use rivet_look::theme::{Mode, r_lg, r_md, r_sm};
@@ -994,8 +995,15 @@ impl PlayApp {
     /// The seek bar: where it is, chapter marks, and a frame from where the pointer is.
     fn seek_bar(&mut self, ui: &mut egui::Ui, accent: Color32) {
         let v = ui.visuals().clone();
-        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::click_and_drag());
+        let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), Sense::CLICK | Sense::DRAG);
         let len = self.st.length.max(0.0);
+        let resp = resp.role(Role::Slider, "Seek");
+        let at_secs = self.st.pos;
+        resp.ctx.accesskit_node_builder(resp.id, |n| {
+            n.set_min_numeric_value(0.0);
+            n.set_max_numeric_value(len);
+            n.set_numeric_value(at_secs);
+        });
         let track = Rect::from_center_size(r.center(), Vec2::new(r.width(), 4.0));
         let frac = if len > 0.0 { (self.st.pos / len).clamp(0.0, 1.0) as f32 } else { 0.0 };
         let p = ui.painter();
@@ -1080,7 +1088,7 @@ impl PlayApp {
         }
         let mut vol = if self.st.muted { 0.0 } else { self.st.volume };
         ui.spacing_mut().slider_width = width;
-        if ui.add(egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false)).on_hover_text(format!("Volume {}%", vol.round())).changed() {
+        if ui.add(egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false)).accessible_name("Volume").on_hover_text(format!("Volume {}%", vol.round())).changed() {
             self.set_volume(vol);
         }
     }
@@ -1096,6 +1104,7 @@ impl PlayApp {
             }
         })
         .response
+        .accessible_name(format!("Speed, {}", speed_text(speed)))
         .on_hover_text("Speed ([ and ])");
         let subs: Vec<Track> = self.st.tracks.iter().filter(|t| t.kind == "sub").cloned().collect();
         ui.menu_button("Subtitles", |ui| {
@@ -1179,7 +1188,8 @@ impl PlayApp {
     fn video(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame, accent: Color32) {
         let ctx = ui.ctx().clone();
         let rect = ui.max_rect();
-        let resp = ui.allocate_rect(rect, Sense::click());
+        let video_name = self.queue.current_path().map_or_else(|| "Video".to_string(), name_of);
+        let resp = ui.allocate_rect(rect, Sense::CLICK).role(Role::Video, video_name);
         if let Some(t) = &self.still {
             let size = t.size_vec2();
             let scale = (rect.width() / size.x).min(rect.height() / size.y);
@@ -1210,10 +1220,10 @@ impl PlayApp {
             }
         }
         let t = ctx.input(|i| i.time);
-        if ctx.input(|i| i.pointer.delta() != Vec2::ZERO || i.pointer.any_pressed()) {
+        if ctx.input(|i| i.pointer.delta() != Vec2::ZERO || i.pointer.any_pressed() || i.key_pressed(Key::Tab)) {
             self.active_at = t;
         }
-        let shown = !self.live() || !self.playing() || self.over_controls || ctx.any_popup_open() || t - self.active_at < HIDE_AFTER;
+        let shown = !self.live() || !self.playing() || self.over_controls || ctx.any_popup_open() || ctx.accesskit_node_builder(resp.id, |_| ()).is_some() || ctx.memory(|m| m.focused().is_some()) || t - self.active_at < HIDE_AFTER;
         if !shown {
             if resp.hovered() {
                 ctx.set_cursor_icon(CursorIcon::None);
@@ -1380,11 +1390,28 @@ impl PlayApp {
         let current = self.queue.current();
         let (mut play, mut remove, mut moved) = (None, None, None);
         let released = ui.input(|i| i.pointer.any_released());
+        ui.scope_builder(a11y::area(Role::ListBox, "Queue"), |ui| {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show_rows(ui, ROW, names.len(), |ui, range| {
             ui.spacing_mut().item_spacing.y = 0.0;
             for i in range {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW), Sense::click_and_drag());
                 let on = current == Some(i);
+                let resp = resp.role(Role::ListBoxOption, &names[i]).selected(on).described("Enter plays it. Delete removes it. Alt with Up or Down moves it.");
+                if resp.has_focus() {
+                    let (enter, delete, up, down) = ui.input_mut(|inp| (inp.key_pressed(Key::Enter), inp.key_pressed(Key::Delete), inp.consume_key(Modifiers::ALT, Key::ArrowUp), inp.consume_key(Modifiers::ALT, Key::ArrowDown)));
+                    if enter {
+                        play = Some(i);
+                    }
+                    if delete {
+                        remove = Some(i);
+                    }
+                    if up && i > 0 {
+                        moved = Some((i, i - 1));
+                    }
+                    if down && i + 1 < names.len() {
+                        moved = Some((i, i + 1));
+                    }
+                }
                 let bg = if on {
                     Some(palette::mix(v.panel_fill, accent, 0.22))
                 } else if resp.hovered() {
@@ -1430,6 +1457,7 @@ impl PlayApp {
                     }
                 }
             }
+        });
         });
         if released {
             self.drag_row = None;
@@ -1499,17 +1527,17 @@ impl PlayApp {
             ui.checkbox(&mut s.hardware, "Decode video with the graphics card");
             ui.label(egui::RichText::new("Turn this off if video shows blocks, green frames or nothing at all.").size(12.5).color(weak));
             ui.add_space(12.0);
-            ui.label("Audio languages");
-            ui.add(egui::TextEdit::singleline(&mut s.audio_lang).hint_text("en, fr").desired_width(200.0));
+            let audio_label = ui.label("Audio languages");
+            ui.add(egui::TextEdit::singleline(&mut s.audio_lang).hint_text("en, fr").desired_width(200.0)).labelled_by(audio_label.id);
             ui.add_space(6.0);
-            ui.label("Subtitle languages");
-            ui.add(egui::TextEdit::singleline(&mut s.sub_lang).hint_text("en").desired_width(200.0));
+            let sub_label = ui.label("Subtitle languages");
+            ui.add(egui::TextEdit::singleline(&mut s.sub_lang).hint_text("en").desired_width(200.0)).labelled_by(sub_label.id);
             ui.label(egui::RichText::new("Language codes, first choice first. A file's own choice is used when none match.").size(12.5).color(weak));
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                ui.label("Subtitle size");
+                let size_label = ui.label("Subtitle size");
                 let mut pct = s.sub_scale * 100.0;
-                if ui.add(egui::Slider::new(&mut pct, 50.0..=300.0).suffix("%").step_by(5.0)).changed() {
+                if ui.add(egui::Slider::new(&mut pct, 50.0..=300.0).suffix("%").step_by(5.0)).labelled_by(size_label.id).changed() {
                     s.sub_scale = pct / 100.0;
                 }
             });
@@ -1601,7 +1629,7 @@ impl PlayApp {
             let rect = ui.max_rect();
             ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
             ui.painter().image(id, rect, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
-            let resp = ui.allocate_rect(rect, Sense::click_and_drag());
+            let resp = ui.allocate_rect(rect, Sense::CLICK | Sense::DRAG).role(Role::Video, "Video in a small window").described("Space pauses it. Escape goes back to the full window.");
             if resp.drag_started() {
                 ui.ctx().send_viewport_cmd(ViewportCommand::StartDrag);
             }
