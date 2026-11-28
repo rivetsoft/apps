@@ -4,6 +4,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_look::theme::{self, ACCENTS, Mode, paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile};
 use rivet_look::{fonts, palette, windows};
 
+use rivet_look::a11y::{Access, Role};
 use super::menus::{Cmd, GLOBAL, LIST, shortcut_for};
 use super::*;
 use crate::settings::OnExists;
@@ -102,6 +103,7 @@ impl FtpApp {
                                 }
                                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
                                 let sel = *p == page_now;
+                                let resp = resp.role(rivet_look::a11y::Role::Tab, p.label()).selected(sel);
                                 if sel {
                                     let (fill, stroke) = selected_tile(&v, side_fill);
                                     ui.painter().rect_filled(r, r_sm(), fill);
@@ -192,6 +194,7 @@ impl FtpApp {
                                                     ui.spacing_mut().item_spacing.x = 8.0;
                                                     for (c, name) in ACCENTS {
                                                         let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+                                                        let resp = resp.role(Role::RadioButton, name).selected(self.s.accent == c);
                                                         let col = Color32::from_rgb(c[0], c[1], c[2]);
                                                         ui.painter().circle_filled(r.center(), 9.0, if manual { col } else { col.gamma_multiply(0.4) });
                                                         if self.s.accent == c {

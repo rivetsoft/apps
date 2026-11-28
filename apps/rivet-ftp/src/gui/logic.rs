@@ -878,7 +878,7 @@ impl FtpApp {
     // ---------------------------------------------------------------- keys
 
     pub(super) fn keys(&mut self, ctx: &egui::Context) {
-        if self.preview.is_some() || self.form.is_some() || self.prompt.is_some() || self.new_key.is_some() || ctx.memory(|m| m.focused().is_some()) {
+        if self.preview.is_some() || self.form.is_some() || self.prompt.is_some() || self.new_key.is_some() || ctx.memory(|m| m.focused().is_some_and(|f| f != egui::Id::unique(("pane-bg", 0u8)) && f != egui::Id::unique(("pane-bg", 1u8)))) {
             return;
         }
         let side = self.focus;

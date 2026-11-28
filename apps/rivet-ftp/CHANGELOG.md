@@ -7,6 +7,8 @@
   the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard.
   With higher contrast or less motion asked for in the desktop's settings, edges and secondary
   text get stronger and animations stop.
+  Each file list is one Tab stop that the arrow keys move through, and a screen reader reads
+  each file as you reach it.
 - **Zoom in Preview**: the wheel or a pinch zooms a picture, a double-click goes between fitting
   and 100%, and a zoomed picture can be dragged around.
 

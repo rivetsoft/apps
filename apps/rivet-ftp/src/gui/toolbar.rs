@@ -6,6 +6,8 @@ use eframe::egui::{self, Color32, Key, Pos2, Sense, Stroke, Vec2};
 use rivet_connections::Connection;
 use rivet_look::theme::{r_md, r_sm, selected_tile};
 
+use eframe::egui::accesskit::Role;
+use rivet_look::a11y::Access;
 use super::menus::{Cmd, menu_style};
 use super::*;
 use crate::settings::Tool;
@@ -20,7 +22,7 @@ impl FtpApp {
         }
         let split = layout.iter().position(|t| *t == Tool::QuickConnect).unwrap_or(layout.len());
         let (left, right) = (layout[..split].to_vec(), layout[(split + 1).min(layout.len())..].to_vec());
-        let bg = ui.interact(ui.max_rect(), egui::Id::unique("ftp-toolbar-bg"), Sense::click());
+        let bg = ui.interact(ui.max_rect(), egui::Id::unique("ftp-toolbar-bg"), Sense::CLICK).role(Role::GenericContainer, "Toolbar");
         bg.context_menu(|ui| {
             menu_style(ui);
             if ui.button("Customize Toolbar…").clicked() {
@@ -74,7 +76,7 @@ impl FtpApp {
                     if let Some(t) = &server {
                         ui.add(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(v.weak_text_color()));
                     }
-                    let r = ui.add(egui::TextEdit::singleline(&mut self.quick).id(egui::Id::unique("quick-connect")).frame(egui::Frame::NONE).hint_text("user@server  or  sftp://user@server:port/folder").desired_width(f32::INFINITY));
+                    let r = ui.add(egui::TextEdit::singleline(&mut self.quick).id(egui::Id::unique("quick-connect")).frame(egui::Frame::NONE).hint_text("user@server  or  sftp://user@server:port/folder").desired_width(f32::INFINITY)).accessible_name("Address to connect to");
                     if self.focus_quick {
                         self.focus_quick = false;
                         r.request_focus();
@@ -120,17 +122,17 @@ impl FtpApp {
                 }
             }
             Tool::Connections => {
-                if self.tool_button(ui, t, true, self.s.show_sidebar, "Saved connections (F9)").clicked() {
+                if self.tool_button(ui, t, true, self.s.show_sidebar, "Saved connections (F9)").toggled(self.s.show_sidebar).clicked() {
                     self.run(Cmd::ToggleSidebar, ctx);
                 }
             }
             Tool::Transfers => {
-                if self.tool_button(ui, t, true, self.s.show_queue, "Transfers (F8)").clicked() {
+                if self.tool_button(ui, t, true, self.s.show_queue, "Transfers (F8)").toggled(self.s.show_queue).clicked() {
                     self.run(Cmd::ToggleQueue, ctx);
                 }
             }
             Tool::ShowHidden => {
-                if self.tool_button(ui, t, true, self.s.show_hidden, "Show hidden files (Ctrl+H)").clicked() {
+                if self.tool_button(ui, t, true, self.s.show_hidden, "Show hidden files (Ctrl+H)").toggled(self.s.show_hidden).clicked() {
                     self.run(Cmd::ToggleHidden, ctx);
                 }
             }
@@ -190,7 +192,7 @@ impl FtpApp {
                 }
             }
             Tool::Preferences => {
-                if self.tool_button(ui, t, true, self.prefs_open, "Preferences (Ctrl+,)").clicked() {
+                if self.tool_button(ui, t, true, self.prefs_open, "Preferences (Ctrl+,)").toggled(self.prefs_open).clicked() {
                     self.run(Cmd::Preferences, ctx);
                 }
             }
@@ -214,7 +216,7 @@ impl FtpApp {
             let (fill, stroke) = selected_tile(&v, v.panel_fill);
             ui.painter().set(under, egui::Shape::Vec(vec![egui::Shape::rect_filled(resp.rect, r_sm(), fill), egui::Shape::rect_stroke(resp.rect, r_sm(), stroke, egui::StrokeKind::Inside)]));
         }
-        resp.on_hover_text(tip).on_disabled_hover_text(tip)
+        resp.role(Role::Button, tip.split(" (").next().unwrap_or(tip)).on_hover_text(tip).on_disabled_hover_text(tip)
     }
 
     /// The menu bar folded into one button (three bars, the same in every icon theme), like
@@ -238,6 +240,6 @@ impl FtpApp {
         for dy in [-4.5f32, 0.0, 4.5] {
             ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, fg));
         }
-        r.0.on_hover_text("Menu (Ctrl+M shows the menu bar again)");
+        r.0.role(Role::Button, "Menu").on_hover_text("Menu (Ctrl+M shows the menu bar again)");
     }
 }
