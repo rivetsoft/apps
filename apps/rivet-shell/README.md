@@ -28,6 +28,10 @@ wallpaper, with a settings window. **Just started**: not released yet; build it 
 - **Password prompt**: when an app needs administrator rights (installing software, `pkexec`),
   the shell asks for the password in its own dialog, as the session's polkit agent, unless
   another agent is already running.
+- **Clipboard history**: the text and pictures you copied lately, from the panel's Clipboard item,
+  `@clip` in the launcher or `rivet-shell msg clipboard`. Choose one to copy it again; pin,
+  remove or clear them. Passwords a password manager marks as secret are left out. Kept for the
+  session, or across restarts if you choose (Settings, Clipboard).
 - **On-screen display**: volume and brightness show as they change, from keys or anywhere else.
 - **Dock**: pinned apps, then open apps that aren't pinned; a dot under the ones with windows
   open (Softcore, niri, Hyprland); right-click an icon to pin, unpin or move it. It can auto-hide (back when the pointer

@@ -366,6 +366,27 @@ Location: `apps/rivet-shell/src/settings_app/user_page.rs`, User; the picture is
 - The panel's User item (Panels, Add Item, User): the picture in a circle. Clicking it opens
   the same Lock, Suspend, Log Out, Restart and Shut Down as the Power item.
 
+### Clipboard: what is kept, and where
+
+From `clip.rs` and the Clipboard page (`settings_app.rs`, "Keep a history of what you copy").
+
+- Rivet Shell reads the clipboard through the compositor's data-control protocol, which
+  Softcore, niri, Hyprland, Sway, river, labwc and Wayfire have. GNOME doesn't share the
+  clipboard this way, so there the Clipboard item, `@clip` and `rivet-shell msg clipboard` are
+  left out.
+- It keeps text, and pictures copied as PNG, JPEG or WebP. A copy of other things (files from a
+  file manager, rich text alone) isn't kept. A text copy larger than 1 MB or a picture larger
+  than 16 MB is skipped, and pictures that aren't pinned share 64 MB: past that the oldest go.
+- Copying the same thing again moves it to the top rather than adding it twice.
+- Password managers such as KeePassXC mark a password they copy as secret; those copies are
+  never read. A password manager that doesn't mark them can't be told apart from other text.
+- "Keep the history after a restart" saves it in `~/.local/share/rivet-shell/clipboard`, a file
+  only your account can read. Turning it off deletes that file; turning the history off forgets
+  every copy, pinned ones too.
+- `rivet-shell msg clipboard` opens the list; `rivet-shell msg clipboard 2` copies the second
+  copy in the list again (pinned ones come first); `rivet-shell msg clipboard clear` clears the
+  copies that aren't pinned. In the list, the arrow keys choose, Enter copies and Delete removes.
+
 ### Login screen (greetd)
 
 From `greeter.rs` and `rivet-shell greeter --setup`.

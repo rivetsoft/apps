@@ -185,6 +185,15 @@ impl ShotApp {
             let at = right.iter().position(|i| i == "network").unwrap_or(0);
             right.insert(at, "weather".into());
         }
+        // RIVET_SHELL_CLIP=1: the panel's Clipboard item, with a sample history (=empty: nothing
+        // copied yet). RIVET_SHELL_POPUP=clipboard opens its popup; RIVET_SHELL_QUERY=@clip
+        // with RIVET_SHELL_POPUP=launcher searches it.
+        let clip_on = std::env::var("RIVET_SHELL_CLIP").is_ok() || std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("clipboard");
+        if clip_on {
+            let right = &mut s.panels[0].zones[2];
+            let at = right.iter().position(|i| i == "network").unwrap_or(0);
+            right.insert(at, "clipboard".into());
+        }
         if std::env::var("RIVET_SHELL_POPUP").as_deref() == Ok("ai") {
             let right = &mut s.panels[0].zones[2];
             let at = right.iter().position(|i| i == "network").unwrap_or(0);
@@ -350,6 +359,7 @@ impl ShotApp {
         let _ = cc;
         let _ = std::fs::remove_dir_all(&dir);
         let query = std::env::var("RIVET_SHELL_QUERY").unwrap_or_default();
+        let query_clip = query.trim_start().starts_with("@clip");
         // Checks: popups joined to the panel (with RIVET_SHELL_LOOK's `popups=attached`).
         let attached = s.look.attach == Some(true);
         let popup = match std::env::var("RIVET_SHELL_POPUP").as_deref() {
@@ -359,6 +369,7 @@ impl ShotApp {
             Ok("control") => Some(Popup { kind: PopupKind::Control { drag: None }, anchor_x: 1050.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("network") => Some(Popup { kind: PopupKind::Network { ask: std::env::var("RIVET_SHELL_ASK").ok().map(|a| (a, "secret".into())) }, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("bluetooth") => Some(Popup { kind: PopupKind::Bluetooth, anchor_x: 1000.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
+            Ok("clipboard") => Some(Popup { kind: PopupKind::Clipboard { sel: std::env::var("RIVET_SHELL_SEL").ok().and_then(|v| v.parse().ok()) }, anchor_x: 980.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("notifications") => Some(Popup { kind: PopupKind::Notifications, anchor_x: 1010.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("ai") => Some(Popup { kind: PopupKind::Ai, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
             Ok("weather") => Some(Popup { kind: PopupKind::Weather, anchor_x: 900.0, output: String::new(), focus: false, from: None, attach: None, panel: None, join: None }),
@@ -421,6 +432,11 @@ impl ShotApp {
             auth: Some(crate::polkit::demo()),
             viz: Some(crate::viz::demo()),
             drop: None,
+            clip: if std::env::var("RIVET_SHELL_CLIP").as_deref() == Ok("empty") {
+                Some(Vec::new())
+            } else {
+                (clip_on || query_clip).then(crate::clip::sample)
+            },
             // RIVET_SHELL_PLUGIN=1: a plugin's item on the first panel (RIVET_SHELL_POPUP=plugin: its menu).
             // RIVET_SHELL_PLUGIN_SAYS=file: the "disk" item is what that file's lines say (a real
             // plugin's output, to see how the shell shows it).

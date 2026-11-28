@@ -802,6 +802,11 @@ pub struct Settings {
     pub note_secs: u32,
     pub note_max: usize,
     pub note_look: crate::style::Style,
+    /// Clipboard history: kept at all, how many copies (pinned ones aside), and saved for the
+    /// next session (off: forgotten when the shell ends).
+    pub clip_on: bool,
+    pub clip_length: u32,
+    pub clip_keep: bool,
     /// Show volume and brightness changes in a small pop-up.
     pub osd: bool,
     /// Show Caps Lock and Num Lock turning on and off there too.
@@ -990,6 +995,9 @@ impl Default for Settings {
             note_secs: 6,
             note_max: 4,
             note_look: crate::style::Style::default(),
+            clip_on: true,
+            clip_length: 50,
+            clip_keep: false,
             osd: true,
             osd_keys: true,
             osd_place: OsdPlace::Bottom,
@@ -1302,6 +1310,9 @@ impl Settings {
                 "note_secs" => self.note_secs = v.parse::<u32>().unwrap_or(6).clamp(2, 60),
                 "note_max" => self.note_max = v.parse::<usize>().unwrap_or(4).clamp(1, 8),
                 "note_look" => self.note_look = crate::style::Style::parse(v, '=', ';'),
+                "clip_on" => self.clip_on = b,
+                "clip_length" => self.clip_length = v.parse::<u32>().unwrap_or(50).clamp(*crate::clip::LENGTH.start(), *crate::clip::LENGTH.end()),
+                "clip_keep" => self.clip_keep = b,
                 "osd" => self.osd = b,
                 "comp_on" => self.comp_on = b,
                 "comp_gaps_in" => self.comp_gaps_in = v.parse::<u32>().unwrap_or(6).min(64),
@@ -1483,6 +1494,7 @@ impl Settings {
             self.idle_on, self.idle_dim, self.idle_lock, self.idle_screen_off, self.idle_suspend, self.idle_media, self.lock_on_sleep, one(&self.lock_cmd), self.lock_blur, self.lock_power
         ));
         t.push_str(&format!("osd_keys={}\nask_passwords={}\n", self.osd_keys, self.ask_passwords));
+        t.push_str(&format!("clip_on={}\nclip_length={}\nclip_keep={}\n", self.clip_on, self.clip_length, self.clip_keep));
         t.push_str(&format!(
             "osd_place={}\nosd_size={}\nosd_secs={}\nosd_color={}\nnote_place={}\nnote_width={}\nnote_secs={}\nnote_max={}\nnote_look={}\n",
             self.osd_place.name(),
@@ -1720,6 +1732,7 @@ mod tests {
         (s.wallpaper_screens, s.wall_transition, s.wall_transition_ms, s.matugen_screen, s.matugen_contrast) = (vec![("DP-2".into(), "/p/two.png".into())], Transition::Grow, 900, "DP-2".into(), 0.5);
         assert_eq!((s.wallpaper_on("DP-2"), s.wallpaper_on("DP-1"), s.matugen_picture()), ("/p/two.png", "/p/a b.jpg", "/p/two.png"));
         (s.power_style, s.power_confirm, s.power_hide) = (PowerStyle::Grid, false, vec!["suspend".into(), "logout".into()]);
+        (s.clip_on, s.clip_length, s.clip_keep) = (false, 120, true);
         s.panels.push(PanelCfg { screen: "DP-2".into(), ..PanelCfg::new_bottom() });
         let mut t = Settings::default();
         t.parse(&s.text());

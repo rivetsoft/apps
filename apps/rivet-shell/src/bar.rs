@@ -131,6 +131,7 @@ fn want(b: &Bar, id: &str) -> Option<(f32, bool)> {
             (if parts.is_empty() { SLOT } else { parts.iter().map(|p| ai_part_w(b, p)).sum::<f32>() + AI_SEP * (parts.len() - 1) as f32 + PAD * 2.0 }, false)
         }
         "notifications" => (if b.m.extra.notifying { SLOT } else { return None }, false),
+        "clipboard" => (if b.m.extra.clip.is_some() { SLOT } else { return None }, false),
         "dock" => (crate::dock_ui::width(&b.dock)?, false),
         "tray" => {
             let n = crate::tray_ui::shown(b.m).len();
@@ -184,6 +185,7 @@ fn want_down(b: &Bar, id: &str) -> Option<(f32, bool)> {
         "launcher" | "network" | "quick-settings" | "power" | "user" => (SLOT, false),
         "bluetooth" => (if st.bluetooth.is_some() { SLOT } else { return None }, false),
         "notifications" => (if b.m.extra.notifying { SLOT } else { return None }, false),
+        "clipboard" => (if b.m.extra.clip.is_some() { SLOT } else { return None }, false),
         "ai" => {
             let n = ai_parts(b).len();
             (if n == 0 { SLOT } else { n as f32 * STACK + 4.0 * (n - 1) as f32 }, false)
@@ -1356,6 +1358,14 @@ fn draw(ui: &mut egui::Ui, b: &mut Bar, id: &str, r: Rect) {
             let tip = if ex.dnd { "Do Not Disturb".to_string() } else if n == 0 { "No notifications".to_string() } else { format!("{n} notification{}", if n == 1 { "" } else { "s" }) };
             if resp.on_hover_text(tip).clicked() {
                 let a = b.popup(PopupKind::Notifications, b.at(r));
+                b.acts.push(a);
+            }
+        }
+        "clipboard" => {
+            let resp = b.button(ui, r, id);
+            glyph::clipboard(&p, r.center(), fg);
+            if resp.on_hover_text("Clipboard history").clicked() {
+                let a = b.popup(PopupKind::Clipboard { sel: None }, b.at(r));
                 b.acts.push(a);
             }
         }

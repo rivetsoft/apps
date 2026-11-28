@@ -138,6 +138,7 @@ pub const INDEX: &[Entry] = &[
     e(Page::Notifications, "Notification look", "Notification look", "cards corners radius opacity color background outline border style"),
     e(Page::Notifications, "Volume and brightness pop-up", "Volume and brightness pop-up", "osd on-screen display indicator popup position place top middle bottom size color primary secondary tertiary duration caps num lock"),
     e(Page::Notifications, "Night Light", "Night light", "warmth kelvin temperature blue light gammastep hyprsunset wlsunset"),
+    e(Page::Clipboard, "Clipboard history", "Clipboard history", "copy paste copies clipboard manager history pin remember keep restart save passwords"),
     e(Page::Notifications, "Keys", "Keyboard shortcuts", "keys bind hotkeys commands msg launcher"),
     // About
     e(Page::About, "", "About Rivet Shell", "version license"),

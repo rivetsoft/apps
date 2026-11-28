@@ -32,3 +32,5 @@ libc = "0.2.191"
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 # Keep awake (the idle-inhibit protocol); idle and the lock screen (idle-notify, session-lock).
 wayland-protocols = { version = "0.32", features = ["client", "unstable", "staging"] }
+# Clipboard history, where the compositor has ext-data-control only in its wlr form.
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }

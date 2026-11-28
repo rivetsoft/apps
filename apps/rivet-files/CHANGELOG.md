@@ -4,8 +4,9 @@
 
 - **Screen readers and the keyboard**: Orca and other screen readers can read the window's
   buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
-  the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard. With higher contrast or less motion asked for in the desktop's settings, edges
-  and secondary text get stronger and animations stop. A screen reader says each file as the
+  the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard.
+  With higher contrast or less motion asked for in the desktop's settings, edges and secondary
+  text get stronger and animations stop. A screen reader says each file as the
   arrows reach it, and reads the sidebar's places, the folder tree, Preferences and the filters.
 - **Zoom in Preview**: the wheel or a pinch zooms a picture, a double-click goes between fitting
   and 100%, and a zoomed picture can be dragged around.
