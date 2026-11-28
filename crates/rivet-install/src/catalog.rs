@@ -2,8 +2,8 @@
 //! up in the releases (a tag `NAME-vX.Y.Z` with a Linux archive for this computer), so a new
 //! app is installable here the day it's released, before Rivet Welcome itself knows its name.
 
+use crate::channel::Channel;
 use crate::releases::{Asset, Release, Version};
-use crate::settings::Channel;
 
 /// What sort of thing it is (changes what "Open" does and how it's described).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -79,7 +79,7 @@ pub fn known() -> Vec<Entry> {
             "v",
             "A file manager: Peek previews, split view, filters, bulk rename and Quick Open.",
             Kind::App,
-            include_str!("../../rivet-files/data/rivet-files.svg"),
+            include_str!("../../../apps/rivet-files/data/rivet-files.svg"),
         ),
         entry(
             "notes",
@@ -89,7 +89,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-notes-v",
             "Markdown notes in plain folders, with links, backlinks, tags, daily notes and todos.",
             Kind::App,
-            include_str!("../../rivet-notes/data/rivet-notes.svg"),
+            include_str!("../../../apps/rivet-notes/data/rivet-notes.svg"),
         ),
         entry(
             "edit",
@@ -99,7 +99,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-edit-v",
             "A lightweight code editor with tree-sitter colors, Go to File and Commands.",
             Kind::App,
-            include_str!("../../rivet-edit/data/rivet-edit.svg"),
+            include_str!("../../../apps/rivet-edit/data/rivet-edit.svg"),
         ),
         entry(
             "terminal",
@@ -109,7 +109,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-terminal-v",
             "A terminal with tabs and split panes in layouts, in your desktop's colors.",
             Kind::App,
-            include_str!("../../rivet-terminal/data/rivet-terminal.svg"),
+            include_str!("../../../apps/rivet-terminal/data/rivet-terminal.svg"),
         ),
         entry(
             "ftp",
@@ -119,7 +119,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-ftp-v",
             "Two panes, this computer and the server, with saved connections and a transfer queue.",
             Kind::App,
-            include_str!("../../rivet-ftp/data/rivet-ftp.svg"),
+            include_str!("../../../apps/rivet-ftp/data/rivet-ftp.svg"),
         ),
         entry(
             "snip",
@@ -129,7 +129,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-snip-v",
             "Crop and mark up screenshots, with arrows, text and blur.",
             Kind::App,
-            include_str!("../../rivet-snip/data/rivet-snip.svg"),
+            include_str!("../../../apps/rivet-snip/data/rivet-snip.svg"),
         ),
         entry(
             "color",
@@ -139,7 +139,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-color-v",
             "Pick a color from the screen, with its shades, harmonies, contrast and palettes.",
             Kind::App,
-            include_str!("../../rivet-color/data/rivet-color.svg"),
+            include_str!("../../../apps/rivet-color/data/rivet-color.svg"),
         ),
         entry(
             "vice",
@@ -149,7 +149,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-vice-v",
             "Look inside archives, take out all or some of what's in them, and make new ones.",
             Kind::App,
-            include_str!("../../rivet-vice/data/rivet-vice.svg"),
+            include_str!("../../../apps/rivet-vice/data/rivet-vice.svg"),
         ),
         Entry {
             held: true,
@@ -161,7 +161,7 @@ pub fn known() -> Vec<Entry> {
                 "rivet-cinema-v",
                 "Play videos and music from files and folders, with a queue, subtitles and resume.",
                 Kind::App,
-                include_str!("../../rivet-cinema/data/rivet-cinema.svg"),
+                include_str!("../../../apps/rivet-cinema/data/rivet-cinema.svg"),
             )
         },
         entry(
@@ -172,7 +172,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-calendar-v",
             "Your events by month, week or day, kept in plain folders or synced with your online calendars.",
             Kind::App,
-            include_str!("../../rivet-calendar/data/rivet-calendar.svg"),
+            include_str!("../../../apps/rivet-calendar/data/rivet-calendar.svg"),
         ),
         Entry {
             held: true,
@@ -184,7 +184,7 @@ pub fn known() -> Vec<Entry> {
                 "rivet-longshot-v",
                 "Look through the pictures in a folder, with zoom, slideshows and camera details.",
                 Kind::App,
-                include_str!("../../rivet-longshot/data/rivet-longshot.svg"),
+                include_str!("../../../apps/rivet-longshot/data/rivet-longshot.svg"),
             )
         },
         Entry {
@@ -197,7 +197,7 @@ pub fn known() -> Vec<Entry> {
                 "rivet-reader-v",
                 "Read PDFs and comics, with thumbnails, the outline, search and dark pages.",
                 Kind::App,
-                include_str!("../../rivet-reader/data/rivet-reader.svg"),
+                include_str!("../../../apps/rivet-reader/data/rivet-reader.svg"),
             )
         },
         // A login screen needs a one-time setup as root and greetd's settings changed, so even
@@ -212,7 +212,7 @@ pub fn known() -> Vec<Entry> {
                 "rivet-greeter-v",
                 "A login screen for greetd in Rivet Shell's look, over the wallpaper you chose last.",
                 Kind::Command,
-                include_str!("../../rivet-greeter/data/rivet-greeter.svg"),
+                include_str!("../../../apps/rivet-greeter/data/rivet-greeter.svg"),
             )
         },
         entry(
@@ -223,7 +223,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-fetch-v",
             "This computer at a glance in the terminal, beside Rivet the mascot.",
             Kind::Command,
-            include_str!("../../rivet-fetch/data/rivet-fetch.svg"),
+            include_str!("../../../apps/rivet-fetch/data/rivet-fetch.svg"),
         ),
         entry(
             "shell",
@@ -233,7 +233,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-shell-v",
             "A panel, dock, launcher, widgets and wallpaper for niri, Hyprland, Sway and other Wayland desktops.",
             Kind::Shell,
-            include_str!("../../rivet-shell/data/rivet-shell.svg"),
+            include_str!("../../../apps/rivet-shell/data/rivet-shell.svg"),
         ),
         entry(
             "welcome",
@@ -243,7 +243,7 @@ pub fn known() -> Vec<Entry> {
             "rivet-welcome-v",
             "This app: installs and updates the others, and tells you when there's something new.",
             Kind::Welcome,
-            include_str!("../data/rivet-welcome.svg"),
+            include_str!("../../../apps/rivet-welcome/data/rivet-welcome.svg"),
         ),
     ]
 }
@@ -365,6 +365,11 @@ fn title_from(stem: &str) -> String {
 /// The known apps, then any others the releases have (newest first, once each). Held apps
 /// are left out, even when a release of one turns up.
 pub fn with_discovered(releases: &[Release]) -> Vec<Entry> {
+    discovered(releases, false)
+}
+
+/// The same, with the held apps too when `held` (`rivetctl --held`).
+pub fn discovered(releases: &[Release], held: bool) -> Vec<Entry> {
     let mut out = known();
     for r in releases {
         let Some(i) = r.tag.rfind("-v") else { continue };
@@ -400,7 +405,7 @@ pub fn with_discovered(releases: &[Release]) -> Vec<Entry> {
             out.push(e);
         }
     }
-    out.retain(|e| !e.held);
+    out.retain(|e| held || !e.held);
     out
 }
 
@@ -422,7 +427,10 @@ mod tests {
 
     #[test]
     fn latest_is_the_newest_installable() {
-        let list = parse(include_str!("../data/demo-releases.json")).unwrap();
+        let list = parse(include_str!(
+            "../../../apps/rivet-welcome/data/demo-releases.json"
+        ))
+        .unwrap();
         let k = known();
         let files = k.iter().find(|e| e.id == "files").unwrap();
         let (r, v) = latest(files, &list, Channel::Stable).unwrap();
@@ -613,7 +621,10 @@ mod tests {
         );
         assert!(sum.is_some());
         // An edge release is never taken for an app of its own.
-        assert_eq!(with_discovered(&list).len(), known().iter().filter(|e| !e.held).count());
+        assert_eq!(
+            with_discovered(&list).len(),
+            known().iter().filter(|e| !e.held).count()
+        );
     }
 
     /// Every app utilities/rivet-dev releases is listed here by name, under the tag, archive and
@@ -648,7 +659,11 @@ mod tests {
         }
         assert_eq!(k.len(), line.trim_matches('"').split_whitespace().count());
         // Held apps (HOLD=1 on their line in apps.sh) are the ones held here.
-        let held: Vec<&str> = script.lines().filter(|l| l.contains("HOLD=1")).filter_map(|l| l.split("APP_ID=").nth(1)?.split_whitespace().next()).collect();
+        let held: Vec<&str> = script
+            .lines()
+            .filter(|l| l.contains("HOLD=1"))
+            .filter_map(|l| l.split("APP_ID=").nth(1)?.split_whitespace().next())
+            .collect();
         for e in &k {
             assert_eq!(e.held, held.contains(&e.id.as_str()), "{} held", e.id);
         }
@@ -657,7 +672,10 @@ mod tests {
 
     #[test]
     fn new_apps_are_found() {
-        let mut list = parse(include_str!("../data/demo-releases.json")).unwrap();
+        let mut list = parse(include_str!(
+            "../../../apps/rivet-welcome/data/demo-releases.json"
+        ))
+        .unwrap();
         let mut r = list[1].clone();
         r.tag = "rivet-clock-v0.1.0".into();
         r.name = "Rivet Clock 0.1.0".into();

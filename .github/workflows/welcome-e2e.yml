@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - "apps/rivet-welcome/**"
+      - "crates/rivet-install/**"
       - "crates/rivet-xdg/**"
       - "crates/rivet-look/**"
       - "crates/rivet-kit/**"
@@ -20,6 +21,7 @@ on:
     branches: [main]
     paths:
       - "apps/rivet-welcome/**"
+      - "crates/rivet-install/**"
       - "crates/rivet-xdg/**"
       - "crates/rivet-look/**"
       - "crates/rivet-kit/**"

@@ -42,6 +42,7 @@ app, or `--workspace` for everything.
 | `rivet-cal` | Calendars with no interface: the `.ics` folders, reading and writing iCalendar without losing what isn't used, repeating events, the occurrences in a span of days, subscribed feeds, and CalDAV, Google (CalDAV with a browser sign-in) and Microsoft (Graph) accounts synced both ways, all through `curl`. |
 | `rivet-archive` | Archives with no interface, by running the system's archive tools: listing, extracting all or some, compressing. Used by Files, Vice and rivet-doc. |
 | `rivet-lockscreen` | What Rivet Shell's lock screen and Rivet Greeter share: the screen's face and look, the Wayland program that shows it (session lock, layer or one full-screen window), and the `/var/lib/rivet-greeter` folder each session leaves its wallpaper and look in, with its trust rules. Checking the password is left to the program (PAM, greetd). |
+| `rivet-install` | Installing, updating and removing the apps from their GitHub releases, with no interface: the catalog, channels (Stable, Alpha, Edge, and an app's own), the releases list, downloads checked against their sums, the install and its rollback, and the lock that keeps two programs off one app. Rivet Welcome's engine; its files are Welcome's (`~/.config/rivet-welcome`, `~/.cache/rivet-welcome`). |
 | `rivet-doc` | Page-based documents with no interface: PDFs through PDFium (pdfium-render, bound at run time; `utilities/lib/pdfium.sh` fetches the pinned library), comic archives and pictures, with text, links, the outline, search and dark pages, all on one worker thread because PDFium can't be called from two at once. |
 
 Each app has its own `README.md`, `CHANGELOG.md` and `data/` (its `.desktop` file and icon).
@@ -68,6 +69,7 @@ No app depends on another app; they only depend on crates. Who uses what:
 | `rivet-cal` | Calendar |
 | `rivet-lockscreen` | Shell (its lock screen), Greeter |
 | `rivet-doc` | Reader (and meant for Files' Peek and PDF thumbnails) |
+| `rivet-install` | Welcome |
 
 What "the same in every app" means in practice is a module of `rivet-look`:
 

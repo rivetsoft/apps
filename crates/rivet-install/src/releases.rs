@@ -342,7 +342,10 @@ pub fn curl_failure(code: Option<i32>, stderr: &str, what: &str) -> String {
 /// `curl` couldn't be started at all.
 pub fn no_curl(e: std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::NotFound {
-        "curl isn't installed, and Rivet Welcome needs it to download: install curl".to_string()
+        format!(
+            "curl isn't installed, and {} needs it to download: install curl",
+            crate::host().title
+        )
     } else {
         format!("couldn't run curl: {e}")
     }
@@ -369,7 +372,7 @@ fn get(url: &str, etag: Option<&str>) -> Result<Answer, String> {
         "-H",
         "X-GitHub-Api-Version: 2022-11-28",
         "-A",
-        concat!("rivet-welcome/", env!("CARGO_PKG_VERSION")),
+        &crate::agent(),
     ]);
     if let Some(t) = etag {
         cmd.arg("-H").arg(format!("If-None-Match: {t}"));
@@ -639,7 +642,10 @@ mod tests {
 
     #[test]
     fn parses_releases() {
-        let list = parse(include_str!("../data/demo-releases.json")).unwrap();
+        let list = parse(include_str!(
+            "../../../apps/rivet-welcome/data/demo-releases.json"
+        ))
+        .unwrap();
         assert!(list.iter().any(|r| r.tag == "v0.7.0" && !r.prerelease));
         assert!(list.iter().all(|r| r.tag != "rivet-draft-v9.0.0"));
         assert!(
