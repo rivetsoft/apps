@@ -66,16 +66,6 @@ wallpaper, which it gives to matugen so every app's colors follow it. Settings i
 
 ![Rivet Shell: the panel, widgets and dock over a wallpaper](docs/screenshots/shell-wide.jpg)
 
-### <img src="apps/rivet-greeter/data/rivet-greeter.svg" width="32" alt=""> Rivet Greeter
-
-The login screen for greetd: Rivet Shell's lock screen, over the wallpaper and in the colors
-each person chose last. Rivet Shell leaves yours whenever it changes; `rivet-greeter sync` does
-it from any other desktop. Runs in cage, Sway or Softcore. **Just started:** not released yet;
-build it from source.
-[More about Rivet Greeter](apps/rivet-greeter/README.md)
-
-![Rivet Greeter: the time, who's signing in and the password field over a wallpaper](docs/screenshots/rivet-greeter-wide.png)
-
 ## The apps
 
 ### <img src="apps/rivet-files/data/rivet-files.svg" width="32" alt=""> Rivet Files
@@ -138,17 +128,6 @@ anywhere else `rivet-snip capture` takes one first.
 
 ![Rivet Snip with a marked-up screenshot](docs/screenshots/rivet-snip-wide.png)
 
-### <img src="apps/rivet-longshot/data/rivet-longshot.svg" width="32" alt=""> Rivet Long Shot
-
-A picture viewer: open a picture and step through the rest of its folder in the order Rivet
-Files shows it, with the next one already read. Zoom with the wheel, a pinch or a double-click,
-turn and flip (a JPEG saved turned keeps every pixel), slideshows, camera details and animated
-GIF, WebP and PNG. Rivet Files hands pictures to it.
-**Just started:** not released yet; build it from source.
-[More about Rivet Long Shot](apps/rivet-longshot/README.md)
-
-![Rivet Long Shot with a photo of a lake and its camera details](docs/screenshots/rivet-longshot-wide.png)
-
 ### <img src="apps/rivet-color/data/rivet-color.svg" width="32" alt=""> Rivet Color
 
 A color picker: pick a color from anywhere on the screen with a loupe over the held-still
@@ -170,16 +149,6 @@ from the right-click menu.
 
 ![Rivet Vice inside a trip archive, with folders of photos, maps and notes](docs/screenshots/rivet-vice-wide.png)
 
-### <img src="apps/rivet-cinema/data/rivet-cinema.svg" width="32" alt=""> Rivet Cinema
-
-A video and music player: files, folders and playlists in a queue, a frame from anywhere on the
-seek bar, audio tracks and subtitles, and each file started where you left it. Media keys and
-Rivet Shell's player controls work with it. It plays through libmpv, which it loads from the
-system. **Unreleased; built from source.**
-[More about Rivet Cinema](apps/rivet-cinema/README.md)
-
-![Rivet Cinema showing a video with its controls and the seek bar](docs/screenshots/rivet-cinema-wide.png)
-
 ### <img src="apps/rivet-calendar/data/rivet-calendar.svg" width="32" alt=""> Rivet Calendar
 
 A calendar kept in plain `.ics` folders that vdirsyncer and khal share: month, week, day and
@@ -199,18 +168,52 @@ desktop's accent. Choose what it shows and in what order.
 
 ![rivetfetch in Rivet Terminal, beside the mascot](docs/screenshots/rivet-fetch-wide.png)
 
+> **About the alphas.** Rivet FTP, Rivet Notes and Rivet Color are young: things may still change or break.
+> Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
+
+## Coming soon
+
+These are written and on the main branch but not released yet: no downloads until each one's
+first release. To try one now, build it from source.
+
+### <img src="apps/rivet-longshot/data/rivet-longshot.svg" width="32" alt=""> Rivet Long Shot
+
+A picture viewer that steps through a folder in the order Rivet Files shows it, with zoom,
+turning, slideshows and camera details.
+[More about Rivet Long Shot](apps/rivet-longshot/README.md)
+
+![Rivet Long Shot with a photo of a lake and its camera details](docs/screenshots/rivet-longshot-wide.png)
+
 ### <img src="apps/rivet-reader/data/rivet-reader.svg" width="32" alt=""> Rivet Reader
 
-A reader for PDFs and comics: one long scroll or a page at a time, thumbnails and the outline in
-the sidebar, search, text to select and copy, dark pages in the desktop's colors, and the page
-you left each file at.
-**Just started:** not released yet; build it from source.
+A reader for PDFs and comics, with page thumbnails, the outline, search and dark pages.
 [More about Rivet Reader](apps/rivet-reader/README.md)
 
 ![Rivet Reader reading a field guide, with the page thumbnails beside it](docs/screenshots/rivet-reader-wide.png)
 
-> **About the alphas.** Rivet FTP, Rivet Notes and Rivet Color are young: things may still change or break.
-> Their releases are marked as pre-releases. Use them on servers and notes you have backups of.
+### <img src="apps/rivet-cinema/data/rivet-cinema.svg" width="32" alt=""> Rivet Cinema
+
+A video and music player with a queue, a frame from anywhere on the seek bar, subtitles, and
+each file started where you left it.
+[More about Rivet Cinema](apps/rivet-cinema/README.md)
+
+![Rivet Cinema showing a video with its controls and the seek bar](docs/screenshots/rivet-cinema-wide.png)
+
+### <img src="apps/rivet-greeter/data/rivet-greeter.svg" width="32" alt=""> Rivet Greeter
+
+A login screen for greetd that looks like Rivet Shell's lock screen, over the wallpaper and in
+the colors each person chose last.
+[More about Rivet Greeter](apps/rivet-greeter/README.md)
+
+![Rivet Greeter: the time, who's signing in and the password field over a wallpaper](docs/screenshots/rivet-greeter-wide.png)
+
+### <img src="apps/rivetctl/data/rivetctl.svg" width="32" alt=""> rivetctl
+
+Installs, updates and removes the Rivet apps from the terminal, on the same engine as Rivet
+Welcome.
+[More about rivetctl](apps/rivetctl/README.md)
+
+![rivetctl's list of the Rivet apps in Rivet Terminal](docs/screenshots/rivetctl-wide.png)
 
 ## Rivet Welcome: keeping it all current
 

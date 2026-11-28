@@ -1,19 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Rivet Greeter: a login screen over a blue wallpaper, with a sun, a picture and the password field -->
+  <!-- Rivet Greeter: a padlock to sign in with, its shackle open and a keyhole in its face -->
   <!-- the hard shadow, offset down and right like the website's cards -->
-  <g transform="translate(5 5)" fill="#24121b" stroke="#24121b" stroke-width="4" stroke-linejoin="round">
-    <rect x="10" y="12" width="100" height="98" rx="10"/>
+  <g transform="translate(5 5)" fill="none" stroke="#24121b" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M38 56V38a24 24 0 0 1 46-9" stroke-width="16"/>
+    <rect x="18" y="54" width="86" height="58" rx="10" fill="#24121b"/>
   </g>
   <g stroke="#24121b" stroke-width="4" stroke-linejoin="round" stroke-linecap="round">
-    <rect x="10" y="12" width="100" height="98" rx="10" fill="#0084b8"/>
-    <circle cx="90" cy="32" r="9" fill="#fff270"/>
-    <path d="M10 88c20-12 36-14 52-6s30 6 48-4v22a10 10 0 0 1-10 10H20a10 10 0 0 1-10-10z" fill="#d53f8c"/>
-    <rect x="10" y="12" width="100" height="98" rx="10" fill="none"/>
-    <circle cx="60" cy="48" r="14" fill="#fff270"/>
-    <path d="M51 56a11 11 0 0 1 18 0" fill="none" stroke-width="3"/>
-    <circle cx="60" cy="44" r="4.5" fill="#24121b" stroke="none"/>
-    <rect x="30" y="72" width="60" height="14" rx="7" fill="#24121b"/>
-    <g stroke="none" fill="#fff270"><circle cx="44" cy="79" r="2.5"/><circle cx="53" cy="79" r="2.5"/><circle cx="62" cy="79" r="2.5"/><circle cx="71" cy="79" r="2.5"/></g>
-    <rect x="77" y="75" width="3" height="8" rx="1" fill="#3ecf9a" stroke="none"/>
+    <path d="M38 56V38a24 24 0 0 1 46-9" fill="none" stroke-width="16"/>
+    <path d="M38 56V38a24 24 0 0 1 46-9" fill="none" stroke="#0084b8" stroke-width="8"/>
+    <rect x="18" y="54" width="86" height="58" rx="10" fill="#fff270"/>
+    <path d="M25 63h72" stroke="#fffbd0" stroke-width="4"/>
+    <circle cx="61" cy="78" r="9" fill="#d53f8c"/>
+    <path d="M61 85v12" stroke-width="8"/>
+    <path d="M61 85v11" stroke="#d53f8c" stroke-width="3"/>
   </g>
 </svg>
