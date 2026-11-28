@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{ACCENTS, Mode, paint_tex, r_lg, r_md, r_sm, selected_tile};
 use rivet_look::{fonts, palette, windows};
 
@@ -102,6 +103,7 @@ impl NotesApp {
                                 }
                                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
                                 let sel = *p == page_now;
+                                let resp = resp.role(Role::Tab, p.label()).selected(sel);
                                 if sel {
                                     let (fill, stroke) = selected_tile(&v, side_fill);
                                     ui.painter().rect_filled(r, r_sm(), fill);
@@ -191,7 +193,7 @@ impl NotesApp {
                                                         if self.s.accent == c {
                                                             ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, ui.visuals().strong_text_color()));
                                                         }
-                                                        if resp.on_hover_text(name).clicked() && manual {
+                                                        if resp.role(Role::RadioButton, name).selected(self.s.accent == c).on_hover_text(name).clicked() && manual {
                                                             self.s.accent = c;
                                                         }
                                                     }
@@ -257,7 +259,7 @@ impl NotesApp {
                                     section(ui, "Attachments", &mut |ui| {
                                         grid(ui, "attach-grid", &mut |ui| {
                                             ui.label("Folder");
-                                            ui.add(egui::TextEdit::singleline(&mut self.s.attachments_folder).hint_text("Top of the vault").desired_width(220.0));
+                                            ui.add(egui::TextEdit::singleline(&mut self.s.attachments_folder).hint_text("Top of the vault").desired_width(220.0)).accessible_name("Attachments folder");
                                             ui.end_row();
                                         });
                                         ui.add_space(4.0);
@@ -334,7 +336,7 @@ impl NotesApp {
                                             grid(ui, "todo-grid", &mut |ui| {
                                                 ui.label("Todo tags");
                                                 let mut text = self.s.todo_tags.iter().map(|t| format!("#{t}")).collect::<Vec<_>>().join(", ");
-                                                if ui.add(egui::TextEdit::singleline(&mut text).hint_text("#task").desired_width(240.0)).changed() {
+                                                if ui.add(egui::TextEdit::singleline(&mut text).hint_text("#task").desired_width(240.0)).accessible_name("Todo tags").changed() {
                                                     self.s.todo_tags = text.split([',', ' ']).map(|t| t.trim().trim_start_matches('#').to_string()).filter(|t| !t.is_empty()).collect();
                                                 }
                                                 ui.end_row();
@@ -351,7 +353,7 @@ impl NotesApp {
                                                 ui.label("Folder");
                                                 ui.horizontal(|ui| {
                                                     ui.spacing_mut().item_spacing.x = 4.0;
-                                                    ui.add(egui::TextEdit::singleline(&mut self.s.daily_folder).hint_text("Top of the vault").desired_width(200.0));
+                                                    ui.add(egui::TextEdit::singleline(&mut self.s.daily_folder).hint_text("Top of the vault").desired_width(200.0)).accessible_name("Daily notes folder");
                                                     let btn = egui::Button::new("Choose…").corner_radius(rivet_look::theme::r_sm());
                                                     egui::containers::menu::MenuButton::from_button(btn).ui(ui, |ui| {
                                                         ui.set_min_width(200.0);

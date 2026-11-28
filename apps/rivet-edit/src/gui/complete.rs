@@ -3,6 +3,7 @@
 //! the status bar.
 
 use eframe::egui::{self, Align2, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{r_md, r_sm, r_xs, status};
 use rivet_look::fonts;
 
@@ -298,6 +299,7 @@ impl EditApp {
                 for (k, it) in &rows {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
                     let on = *k == sel;
+                    let resp = resp.role(Role::ListBoxOption, it.label.as_str()).selected(on).described(it.detail.as_str());
                     if on {
                         ui.painter().rect_filled(r, r_sm(), v.selection.bg_fill.gamma_multiply(0.28));
                     } else if resp.hovered() {

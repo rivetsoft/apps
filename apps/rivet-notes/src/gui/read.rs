@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{r_lg, r_md, r_sm, r_xs};
 use rivet_look::{builtin_icons, fonts, highlight, icons, palette};
 
@@ -85,7 +86,7 @@ impl Pen<'_> {
             match link {
                 Some(target) => {
                     let rt = rt.color(self.accent).underline();
-                    let r = ui.add(egui::Label::new(rt).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let r = ui.add(egui::Label::new(rt).sense(Sense::click())).role(Role::Link, text).on_hover_cursor(egui::CursorIcon::PointingHand);
                     let r = if target.starts_with("[[") { r.on_hover_text(format!("Open {}", target.trim_matches(['[', ']']))) } else { r.on_hover_text(target) };
                     if r.clicked() {
                         self.act = Some(if let Some(n) = target.strip_prefix("[[").and_then(|t| t.strip_suffix("]]")) {
@@ -121,7 +122,7 @@ impl Pen<'_> {
                     Inline::Link(t, to, st) => pen.words(ui, t, st, scale, Some(to)),
                     Inline::Tag(t) => {
                         let rt = egui::RichText::new(format!("#{t}")).font(pen.font(scale * 0.92)).color(pen.accent).background_color(palette::mix(pen.code_bg, pen.accent, 0.18));
-                        if ui.add(egui::Label::new(rt).sense(Sense::click())).on_hover_text("Show notes with this tag").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        if ui.add(egui::Label::new(rt).sense(Sense::click())).role(Role::Link, format!("Tag {t}")).on_hover_text("Show notes with this tag").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                             pen.act = Some(Act::Tag(t.clone()));
                         }
                         ui.label(" ");
@@ -158,7 +159,7 @@ impl Pen<'_> {
         }
         let label = if alt.is_empty() { src.to_string() } else { alt.to_string() };
         let rt = egui::RichText::new(format!("[picture: {label}]")).font(self.font(0.9)).color(self.weak).background_color(self.code_bg);
-        if ui.add(egui::Label::new(rt).sense(Sense::click())).on_hover_text(src).clicked() && !local {
+        if ui.add(egui::Label::new(rt).sense(Sense::click())).role(Role::Link, format!("Picture: {label}")).on_hover_text(src).clicked() && !local {
             self.act = Some(Act::Url(src.to_string()));
         }
     }
@@ -447,7 +448,7 @@ impl NotesApp {
         let mut go_back = back && !rd.back.is_empty();
         egui::Area::new(egui::Id::unique("reading-view")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
             ui.set_min_size(screen.size());
-            let bg = ui.interact(screen, egui::Id::unique("reading-bg"), Sense::click());
+            let bg = ui.interact(screen, egui::Id::unique("reading-bg"), Sense::CLICK).role(Role::GenericContainer, "Outside the page");
             ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(if v.dark_mode { 170 } else { 110 }));
             if bg.clicked() {
                 close = true;
@@ -455,7 +456,7 @@ impl NotesApp {
             let w = (screen.width() - 80.0).min(860.0);
             let card = Rect::from_center_size(screen.center(), Vec2::new(w, screen.height() - 36.0));
             ui.painter().rect_filled(card, r_lg(), v.extreme_bg_color);
-            let _ = ui.interact(card, egui::Id::unique("reading-card"), Sense::click());
+            let _ = ui.interact(card, egui::Id::unique("reading-card"), Sense::CLICK);
             let mut cui = ui.new_child(egui::UiBuilder::new().max_rect(card.shrink2(Vec2::new(0.0, 14.0))).layout(egui::Layout::top_down(egui::Align::Min)));
             // Top bar: back, where it is, close.
             cui.horizontal(|ui| {
@@ -485,7 +486,7 @@ impl NotesApp {
                         ui.horizontal_wrapped(|ui| {
                             for t in &tags {
                                 let rt = egui::RichText::new(format!("#{t}")).font(pen.font(0.85)).color(pen.accent).background_color(palette::mix(code_bg, accent, 0.18));
-                                if ui.add(egui::Label::new(rt).sense(Sense::click())).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                if ui.add(egui::Label::new(rt).sense(Sense::click())).role(Role::Link, format!("Tag {t}")).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                                     pen.act = Some(Act::Tag(t.clone()));
                                 }
                             }

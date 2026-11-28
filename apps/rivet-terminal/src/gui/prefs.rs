@@ -107,6 +107,7 @@ impl TermApp {
                             }
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
                             let sel = *p == page_now;
+                            resp.clone().role(Role::Tab, p.label()).selected(sel);
                             if sel {
                                 let (fill, stroke) = selected_tile(&v, side_fill);
                                 ui.painter().rect_filled(r, r_sm(), fill);
@@ -196,7 +197,7 @@ impl TermApp {
                                                         if self.s.accent == c {
                                                             ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, ui.visuals().strong_text_color()));
                                                         }
-                                                        if resp.on_hover_text(name).clicked() && manual {
+                                                        if resp.role(Role::RadioButton, name).selected(self.s.accent == c).on_hover_text(name).clicked() && manual {
                                                             self.s.accent = c;
                                                         }
                                                     }

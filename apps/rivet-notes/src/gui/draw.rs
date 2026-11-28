@@ -5,6 +5,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{paint_tex, r_lg, r_md, r_sm, selected_tile, status};
 use rivet_look::{builtin_icons, fonts, highlight, palette};
 
@@ -196,10 +197,10 @@ impl NotesApp {
         {
             let r = egui::Area::new(egui::Id::unique("notes-problem")).order(egui::Order::Foreground).anchor(Align2::CENTER_BOTTOM, Vec2::new(0.0, -18.0)).show(ctx, |ui| {
                 egui::Frame::popup(ui.style()).corner_radius(r_md()).inner_margin(egui::Margin::symmetric(14, 8)).show(ui, |ui| {
-                    ui.label(egui::RichText::new(m).color(status(ctx).danger));
+                    ui.label(egui::RichText::new(m).color(status(ctx).danger)).announce();
                 });
             });
-            if r.response.interact(Sense::click()).on_hover_text("Click to hide").clicked() {
+            if r.response.interact(Sense::CLICK).role(Role::Button, "Hide message").on_hover_text("Click to hide").clicked() {
                 self.note_msg = None;
             }
         }
@@ -266,9 +267,9 @@ impl NotesApp {
                             self.daily_note();
                         }
                     });
-                    r.on_hover_text("New note (Ctrl+N) or daily note (Ctrl+D)")
+                    r.role(Role::Button, "New").described("New note, Ctrl+N, or daily note, Ctrl+D").on_hover_text("New note (Ctrl+N) or daily note (Ctrl+D)")
                 } else {
-                    let r = ui.add_enabled(self.vault.is_some(), b).on_hover_text("New note (Ctrl+N)");
+                    let r = ui.add_enabled(self.vault.is_some(), b).role(Role::Button, "New Note").described("Ctrl+N").on_hover_text("New note (Ctrl+N)");
                     if r.clicked() {
                         self.prompt = Some(Prompt::NewNote { folder: self.current_folder.clone(), title: String::new() });
                     }
@@ -293,7 +294,7 @@ impl NotesApp {
                         if self.todo_page && !r.hovered() {
                             ui.painter().rect_stroke(r.rect, r_sm(), v.widgets.hovered.bg_stroke, egui::StrokeKind::Inside);
                         }
-                        if r.on_hover_text("Todos: every super todo in the vault").clicked() {
+                        if r.role(Role::Button, "Todos").toggled(self.todo_page).on_hover_text("Todos: every super todo in the vault").clicked() {
                             self.save_now();
                             self.todo_page = !self.todo_page;
                         }
@@ -304,7 +305,7 @@ impl NotesApp {
                         Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(v.text_color())),
                         None => egui::Button::new("Read"),
                     };
-                    if ui.add_enabled(self.doc.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text("Reading view (Ctrl+Space)").clicked() {
+                    if ui.add_enabled(self.doc.is_some(), b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).role(Role::Button, "Reading View").described("Ctrl+Space").on_hover_text("Reading view (Ctrl+Space)").clicked() {
                         self.toggle_reading(&ctx);
                     }
                     // The editing mode, beside it: a bolt in live mode, brackets in source mode.
@@ -323,7 +324,7 @@ impl NotesApp {
                     if !r.hovered() {
                         ui.painter().rect_stroke(r.rect, r_sm(), v.widgets.hovered.bg_stroke, egui::StrokeKind::Inside);
                     }
-                    if r.on_hover_text(tip).clicked() {
+                    if r.role(Role::Button, if self.s.live_mode { "Editing mode: Live" } else { "Editing mode: Source" }).described(tip).on_hover_text(tip).clicked() {
                         self.s.live_mode = !self.s.live_mode;
                         self.s.save();
                     }
@@ -367,7 +368,8 @@ impl NotesApp {
                         .align(Align2::LEFT_CENTER)
                         .hint_text("Search notes, or #tag")
                         .desired_width(f32::INFINITY),
-                );
+                )
+                .accessible_name("Search notes");
             });
         });
     }
@@ -445,7 +447,8 @@ impl NotesApp {
             let mut rects: Vec<(Rect, Rect)> = Vec::new();
             for (i, slot) in layout.slots.iter().enumerate() {
                 if i > 0 {
-                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), handle_h), Sense::drag());
+                    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), handle_h), Sense::DRAG);
+                    let resp = resp.role(Role::Splitter, "Share the room between panels");
                     let v = ui.visuals();
                     let col = if resp.hovered() || resp.dragged() { v.selection.bg_fill } else { v.widgets.noninteractive.bg_stroke.color };
                     ui.painter().line_segment([Pos2::new(r.left() + 6.0, r.center().y), Pos2::new(r.right() - 6.0, r.center().y)], Stroke::new(if resp.dragged() { 2.0 } else { 1.0 }, col));
@@ -682,6 +685,7 @@ impl NotesApp {
                 .hint_text("Untitled")
                 .desired_width(f32::INFINITY),
         );
+        let tr = tr.accessible_name("Note title");
         let tr = if tr.has_focus() { tr } else { tr.on_hover_text("Click to rename the note") };
         if tr.changed() {
             d.title_buf = Some(buf.clone());
@@ -937,6 +941,7 @@ impl NotesApp {
                 .hint_text(egui::RichText::new("Write in Markdown…").size(editor_size * 1.06 * fonts::scale()).italics().color(weak))
                 .layouter(&mut layouter)
                 .show(ui);
+            (*out.response).clone().accessible_name("Note");
             // Live mode: bullets, check boxes, quote bars and rules; a check box click ticks it.
             if let (Some(hit), Some((state, focused))) = (tick.clone(), keep) {
                 match state {
@@ -1080,7 +1085,8 @@ impl NotesApp {
                 if let Some((a, b, grip)) = target {
                     {
                         egui::Area::new(egui::Id::unique("line-grip")).order(egui::Order::Foreground).fixed_pos(grip.min).show(&ctx, |ui| {
-                            let (r, resp) = ui.allocate_exact_size(grip.size(), Sense::drag());
+                            let (r, resp) = ui.allocate_exact_size(grip.size(), Sense::DRAG);
+                            let resp = resp.role(Role::Button, if b > a { "Move these lines" } else { "Move this line" });
                             let hot = resp.hovered();
                             if hot {
                                 ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
@@ -1289,7 +1295,7 @@ impl NotesApp {
                     ui.spacing_mut().button_padding = Vec2::new(7.0, 4.0);
                     let fg = v.text_color();
                     let b = |ui: &mut egui::Ui, text: egui::RichText, tip: &str, f: Fmt| {
-                        if ui.add(egui::Button::new(text).frame_when_inactive(false).min_size(Vec2::new(28.0, 26.0)).corner_radius(r_sm())).on_hover_text(tip).clicked() {
+                        if ui.add(egui::Button::new(text).frame_when_inactive(false).min_size(Vec2::new(28.0, 26.0)).corner_radius(r_sm())).role(Role::Button, tip).on_hover_text(tip).clicked() {
                             pick.set(Some(f));
                         }
                     };
@@ -1303,7 +1309,7 @@ impl NotesApp {
                             Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(14.0)).tint(fg)),
                             None => egui::Button::new(egui::RichText::new(fallback).font(fonts::ui_font(12.5)).color(fg)),
                         };
-                        if ui.add(btn.frame_when_inactive(false).min_size(Vec2::new(28.0, 26.0)).corner_radius(r_sm())).on_hover_text(tip).clicked() {
+                        if ui.add(btn.frame_when_inactive(false).min_size(Vec2::new(28.0, 26.0)).corner_radius(r_sm())).role(Role::Button, tip).on_hover_text(tip).clicked() {
                             pick.set(Some(f));
                         }
                     };
@@ -1407,7 +1413,7 @@ impl NotesApp {
                     .corner_radius(r_md())
                     .inner_margin(egui::Margin::symmetric(12, 8))
                     .show(ui, |ui| {
-                        ui.add(egui::TextEdit::singleline(text).id(id).frame(egui::Frame::NONE).font(fonts::ui_font(15.0)).min_size(Vec2::new(0.0, 24.0)).align(Align2::LEFT_CENTER).hint_text(hint).desired_width(f32::INFINITY))
+                        ui.add(egui::TextEdit::singleline(text).id(id).frame(egui::Frame::NONE).font(fonts::ui_font(15.0)).min_size(Vec2::new(0.0, 24.0)).align(Align2::LEFT_CENTER).hint_text(hint).desired_width(f32::INFINITY)).accessible_name(hint)
                     })
                     .inner;
                 if !r.has_focus() && !r.lost_focus() {
@@ -1709,6 +1715,7 @@ fn slash_popup(ctx: &egui::Context, pos: Pos2, items: &[&crate::slash::Item], se
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for (i, it) in items.iter().enumerate() {
                     let (r, resp) = ui.allocate_exact_size(Vec2::new(280.0, row_h), Sense::click());
+                    let resp = resp.role(Role::ListBoxOption, it.label).selected(i == *sel).described(it.hint);
                     if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
                         *sel = i;
                     }
@@ -1746,6 +1753,7 @@ fn link_popup(ctx: &egui::Context, pos: Pos2, sugg: &[String], sel: &mut usize) 
             let v = ui.visuals().clone();
             for (i, name) in sugg.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(260.0, 26.0), Sense::click());
+                let resp = resp.role(Role::ListBoxOption, name.as_str()).selected(i == *sel);
                 if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
                     *sel = i;
                 }
@@ -1774,7 +1782,7 @@ fn toggle_button(ui: &mut egui::Ui, icon: &Option<egui::TextureHandle>, fallback
         Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
         None => egui::Button::new(fallback),
     };
-    ui.add_enabled(enabled, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text(tip)
+    ui.add_enabled(enabled, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).role(Role::Button, tip).on_hover_text(tip)
 }
 
 /// What's being dragged, under the pointer.
@@ -1807,7 +1815,7 @@ struct SideData {
 /// One panel's contents: the folder tree, or the tags with their notes.
 fn panel(ui: &mut egui::Ui, kind: Browse, data: &SideData, pick: &mut Option<Pick>) {
     // Right-click empty space: this panel's menu.
-    let bg = ui.interact(ui.max_rect(), egui::Id::unique(("notes-side-bg", kind == Browse::Tags)), Sense::click());
+    let bg = ui.interact(ui.max_rect(), egui::Id::unique(("notes-side-bg", kind == Browse::Tags)), Sense::CLICK).role(Role::GenericContainer, if kind == Browse::Tags { "Tags" } else { "Folders" });
     let root = &data.root;
     bg.context_menu(|ui| {
         menu_style(ui);
@@ -1915,7 +1923,11 @@ fn plain_header(ui: &mut egui::Ui, title: &str) {
 /// Returns the bar's rectangle (a drop target).
 fn slot_header(ui: &mut egui::Ui, index: usize, slot: &crate::layout::Slot, open: Option<bool>, stacked: bool, pick: &mut Option<Pick>) -> Rect {
     use crate::layout::{Layout, fold_key, title};
-    let (rect, bar) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), Sense::click());
+    let (rect, bar) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 30.0), if open.is_some() { Sense::click() } else { Sense::CLICK });
+    let bar = match open {
+        Some(o) => bar.role(Role::Button, "Fold this panel").expanded(o),
+        None => bar.role(Role::GenericContainer, "Panel title bar"),
+    };
     let v = ui.visuals().clone();
     let weak = v.weak_text_color();
     let mut x = rect.left() + 4.0;
@@ -1935,7 +1947,8 @@ fn slot_header(ui: &mut egui::Ui, index: usize, slot: &crate::layout::Slot, open
         let g = ui.painter().layout_no_wrap(text, fonts::ui_font(11.5), weak);
         let w = g.size().x + if tabs { 18.0 } else { 6.0 };
         let r = Rect::from_min_size(Pos2::new(x, rect.top() + 3.0), Vec2::new(w, rect.height() - 6.0));
-        let resp = ui.interact(r, egui::Id::unique(("panel-title", index, k)), Sense::click_and_drag());
+        let resp = ui.interact(r, egui::Id::unique(("panel-title", index, k)), if tabs { Sense::click_and_drag() } else { Sense::DRAG });
+        let resp = if tabs { resp.role(Role::Tab, title(*p)).selected(on) } else { resp.role(Role::Button, format!("Move {}", title(*p))) };
         let col = if on || !tabs { if resp.hovered() { v.strong_text_color() } else { v.text_color() } } else if resp.hovered() { v.text_color() } else { weak };
         if tabs && on {
             let (fill, stroke) = selected_tile(&v, v.panel_fill);
@@ -1985,7 +1998,7 @@ fn slot_header(ui: &mut egui::Ui, index: usize, slot: &crate::layout::Slot, open
     for dx in [-5.0f32, 0.0, 5.0] {
         ui.painter().circle_filled(r.rect.center() + Vec2::new(dx, 0.0), 1.6, weak);
     }
-    r.on_hover_text("Panel options");
+    r.role(Role::Button, "Panel Options").on_hover_text("Panel options");
     bar.context_menu(menu);
     rect
 }
@@ -2012,6 +2025,7 @@ fn folder_tree(
         let count = notes.iter().filter(|n| n.folder() == sub || n.folder().starts_with(&format!("{sub}/"))).count();
         let open_f = !collapsed.contains(sub);
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click_and_drag());
+        let resp = resp.role(Role::TreeItem, name).expanded(open_f).selected(*current == **sub);
         let here = root.join(sub);
         if drag_and_drop(ui, &resp, rect, &here, name, &here)
             && let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ui.ctx())
@@ -2067,6 +2081,7 @@ fn folder_tree(
 fn note_row(ui: &mut egui::Ui, n: &Note, depth: usize, open: bool, icon: &Option<egui::TextureHandle>, show_folder: bool, pick: &mut Option<Pick>, root: &Path) {
     let h = if show_folder { 40.0 } else { ROW_H };
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click_and_drag());
+    let resp = resp.role(Role::TreeItem, n.title.as_str()).selected(open);
     let dir = n.path.parent().unwrap_or(root).to_path_buf();
     if drag_and_drop(ui, &resp, rect, &n.path, &n.title, &dir)
         && let Some(drag) = egui::DragAndDrop::payload::<ItemDrag>(ui.ctx())
@@ -2119,6 +2134,7 @@ fn note_row(ui: &mut egui::Ui, n: &Note, depth: usize, open: bool, icon: &Option
 fn group_header(ui: &mut egui::Ui, name: &str, count: usize, open: bool, icon: &Option<egui::TextureHandle>) -> egui::Response {
     ui.add_space(4.0);
     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 26.0), Sense::click());
+    let resp = resp.role(Role::Button, format!("{name}, {count}")).expanded(open);
     let v = ui.visuals();
     let col = if resp.hovered() { v.strong_text_color() } else { v.text_color() };
     let c = Pos2::new(rect.left() + 10.0, rect.center().y);

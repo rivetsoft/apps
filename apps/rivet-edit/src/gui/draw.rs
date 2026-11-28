@@ -2,6 +2,7 @@
 //! the status bar, the welcome page and the questions.
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{paint_tex, r_lg, r_md, r_sm, selected_tile, status};
 use rivet_look::{builtin_icons, fonts, highlight, palette};
 
@@ -251,7 +252,7 @@ impl EditApp {
                         Some(t) => egui::Button::image(egui::Image::from_texture(t).fit_to_exact_size(Vec2::splat(16.0)).tint(ui.visuals().text_color())),
                         None => egui::Button::new(fallback),
                     };
-                    ui.add_enabled(on, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).on_hover_text(tip)
+                    ui.add_enabled(on, b.frame_when_inactive(false).min_size(Vec2::new(34.0, 32.0)).corner_radius(r_sm())).role(Role::Button, tip).on_hover_text(tip)
                 };
                 if !self.s.show_menubar {
                     let btn = egui::Button::new("").min_size(Vec2::new(34.0, 32.0)).frame_when_inactive(false).corner_radius(r_sm());
@@ -265,6 +266,7 @@ impl EditApp {
                         ui.separator();
                         self.menus(ui);
                     });
+                    r.0.clone().role(Role::Button, "Menu").described("Opens the menus");
                     let c = r.0.rect.center();
                     for dy in [-4.5f32, 0.0, 4.5] {
                         ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, v.text_color()));
@@ -298,6 +300,7 @@ impl EditApp {
             Some(w) => format!("Go to a file in {w}…"),
             None => "Go to a file…".into(),
         };
+        resp.clone().role(Role::Button, label.as_str()).described("Ctrl+P");
         ui.painter().text(Pos2::new(rect.left() + 34.0, rect.center().y), Align2::LEFT_CENTER, label, fonts::ui_font(13.5), v.weak_text_color());
         ui.painter().text(Pos2::new(rect.right() - 12.0, rect.center().y), Align2::RIGHT_CENTER, "Ctrl+P", fonts::ui_font(12.0), v.weak_text_color().gamma_multiply(0.8));
         if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
@@ -321,7 +324,8 @@ impl EditApp {
                 let col = if on { v.text_color() } else { v.weak_text_color() };
                 let b = egui::Button::new(egui::RichText::new(label).font(fonts::ui_font(11.5)).strong().color(col)).frame_when_inactive(false).corner_radius(r_sm());
                 let b = if on { b.fill(selected_tile(&v, v.panel_fill).0) } else { b };
-                if ui.add(b).on_hover_text(tip).clicked() {
+                let name = format!("{}{}", &label[..1], label[1..].to_lowercase());
+                if ui.add(b).role(Role::Tab, name).selected(on).on_hover_text(tip).clicked() {
                     self.side = side;
                     if side == editing::Side::Search {
                         self.search.focus = true;
@@ -374,7 +378,8 @@ impl EditApp {
             tree(ui, "", 0, &self.folders, &self.files, &self.open_dirs, &folder_icons, &icons, open_rel.as_deref(), &marks, &mut pick);
             // The space below the tree: the workspace's own menu.
             let h = (ui.available_height()).max(30.0);
-            let (_, below) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::click());
+            let (_, below) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::CLICK);
+            let below = below.role(Role::GenericContainer, "Space below the files");
             below.context_menu(|ui| {
                 let mut act = None;
                 treemenu::tree_menu(ui, "", true, &mut act);
@@ -575,6 +580,7 @@ impl EditApp {
                     .event_filter(egui::EventFilter { tab: true, horizontal_arrows: true, vertical_arrows: true, escape: true })
                     .layouter(&mut layouter)
                     .show(ui);
+                (*out.response).clone().accessible_name("Editor");
                 // The cursor's line and column, for the status bar and the gutter.
                 let cur = if vim_block && vim_visual { Some(vim_head) } else { out.cursor_range.map(|r| r.primary.index.0) };
                 if let Some(c) = cur {
@@ -611,7 +617,7 @@ impl EditApp {
                 // Git's marks between the numbers and the text; a click opens a change's box.
                 let marks = EditApp::paint_changes(ui, &out.galley, out.galley_pos, ui.clip_rect(), left + gutter - 9.0, &changes.hunks, peek_k);
                 for (k, r) in &marks {
-                    let hit = ui.interact(r.expand2(Vec2::new(4.0, 0.0)), id.with(("git-change", *k)), Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let hit = ui.interact(r.expand2(Vec2::new(4.0, 0.0)), id.with(("git-change", *k)), Sense::CLICK).on_hover_cursor(egui::CursorIcon::PointingHand).role(Role::Button, "Changed lines");
                     if hit.clicked() {
                         change_click = Some(*k);
                     }
@@ -743,8 +749,9 @@ impl EditApp {
                     words = format!("{words}  ·  {}", op.doing());
                 }
                 ui.add_space(4.0);
-                let g = ui.painter().layout_no_wrap(words, egui::TextStyle::Body.resolve(ui.style()), weak);
+                let g = ui.painter().layout_no_wrap(words.clone(), egui::TextStyle::Body.resolve(ui.style()), weak);
                 let (r, resp) = ui.allocate_exact_size(g.size() + Vec2::new(30.0, 4.0), Sense::click());
+                let resp = resp.role(Role::Button, format!("Git branch {}", words.trim()));
                 let col = if resp.hovered() {
                     ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
                     v.text_color()
@@ -759,7 +766,7 @@ impl EditApp {
             }
             if let Some((m, bad)) = self.note.as_ref().filter(|_| !cmdline_open) {
                 ui.add_space(10.0);
-                ui.label(egui::RichText::new(m).color(if *bad { status(&ctx).danger } else { weak }));
+                ui.label(egui::RichText::new(m).color(if *bad { status(&ctx).danger } else { weak })).announce();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 12.0;
@@ -889,6 +896,7 @@ impl EditApp {
         // One row: an icon, the label, and a weak note or keys on the right.
         let row = |ui: &mut egui::Ui, tex: &Option<egui::TextureHandle>, tint: bool, label: &str, note: &str, keys: &str| -> bool {
             let (rr, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
+            let resp = resp.role(Role::Button, label).described(keys);
             if resp.hovered() {
                 ui.painter().rect_filled(rr, r_md(), v.widgets.hovered.weak_bg_fill);
             }
@@ -1013,7 +1021,7 @@ impl EditApp {
                     .stroke(Stroke::new(1.5, if ui.memory(|m| m.has_focus(id)) { v.selection.bg_fill } else { Color32::TRANSPARENT }))
                     .corner_radius(r_md())
                     .inner_margin(egui::Margin::symmetric(12, 8))
-                    .show(ui, |ui| ui.add(egui::TextEdit::singleline(text).id(id).frame(egui::Frame::NONE).font(fonts::ui_font(14.5)).hint_text(hint).desired_width(f32::INFINITY)))
+                    .show(ui, |ui| ui.add(egui::TextEdit::singleline(text).id(id).frame(egui::Frame::NONE).font(fonts::ui_font(14.5)).hint_text(hint).desired_width(f32::INFINITY)).accessible_name(hint))
                     .inner;
                 if !r.has_focus() && !r.lost_focus() {
                     r.request_focus();
@@ -1243,6 +1251,7 @@ fn tree(
         let name = sub.rsplit('/').next().unwrap_or(sub);
         let is_open = open_dirs.contains(sub);
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
+        let resp = resp.role(Role::TreeItem, name).expanded(is_open);
         if resp.hovered() {
             ui.painter().rect_filled(rect, r_sm(), v.widgets.hovered.weak_bg_fill);
         }
@@ -1285,6 +1294,7 @@ fn tree(
         let name = f.rsplit('/').next().unwrap_or(f);
         let on = open == Some(f.as_str());
         let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
+        let resp = resp.role(Role::TreeItem, name).selected(on);
         if on {
             let (fill, stroke) = selected_tile(&v, v.panel_fill);
             ui.painter().rect_filled(rect, r_sm(), fill);
@@ -1312,7 +1322,7 @@ fn tree(
             Some(c) => format!("{f} · {}\nClick to preview · double-click or Ctrl+click to keep open", c.words()),
             None => format!("{f}\nClick to preview · double-click or Ctrl+click to keep open"),
         };
-        let resp = resp.on_hover_text(tip);
+        let resp = resp.described(tip.clone()).on_hover_text(tip);
         resp.context_menu(|ui| {
             let mut act = None;
             treemenu::tree_menu(ui, f, false, &mut act);
@@ -1340,5 +1350,5 @@ fn status_button(ui: &mut egui::Ui, text: &str) -> egui::Response {
         v.weak_text_color()
     };
     ui.painter().galley(r.center() - g.size() / 2.0, g, fg);
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    resp.role(Role::Button, text).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
