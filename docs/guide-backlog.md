@@ -195,8 +195,9 @@ colors and the files are `crates/rivet-look/src/qt.rs`.
   away; Qt apps already started with qt6ct show qt6ct's own colors until the next sign-in.
 - Flatpak Qt apps don't get the colors: Flatpak's Qt runtimes don't include qt6ct. They still
   follow dark or light and, where the app asks for it, the accent (Ladybird's Flatpak does).
-- Qt apps that draw their own window colors keep them. Ladybird's tabs and toolbar are its own
-  design; from the desktop it takes dark or light and the accent, which qt6ct passes on.
+- Qt apps that draw their own window colors keep them. Ladybird's tabs, toolbar and menus are its own
+  design; from the desktop it takes dark or light and the accent. Its toolbar can keep the old
+  color after a live dark-to-light switch until the window is opened again (a Ladybird bug).
 
 ### Browser colors
 

@@ -111,10 +111,8 @@ fn with_keys(text: &str, name: &str, keys: &[(&str, &str)]) -> String {
             None => missing.push(format!("{k}={v}")),
         }
     }
-    for i in start + 1..end {
-        if !lines[i].trim().is_empty() {
-            last = last.max(i);
-        }
+    if let Some(i) = (start + 1..end).rev().find(|&i| !lines[i].trim().is_empty()) {
+        last = last.max(i);
     }
     for (n, l) in missing.into_iter().enumerate() {
         lines.insert(last + 1 + n, l);
