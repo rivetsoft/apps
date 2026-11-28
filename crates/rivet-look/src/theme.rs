@@ -192,10 +192,14 @@ pub fn apply(ctx: &egui::Context, look: &Look) {
                 v.window_fill = mix(v.extreme_bg_color, fg, 0.04);
             }
             if crate::a11y::high_contrast() {
-                // Higher contrast: secondary text close to the main text, and every edge drawn.
-                let fg = v.text_color();
+                // Higher contrast: text at full strength, secondary text close to it, and every
+                // edge drawn.
+                let fg = if v.dark_mode { Color32::from_gray(248) } else { Color32::from_gray(8) };
                 let bg = v.panel_fill;
-                v.weak_text_color = Some(mix(fg, bg, 0.12));
+                for w in [&mut v.widgets.noninteractive, &mut v.widgets.inactive, &mut v.widgets.hovered, &mut v.widgets.active, &mut v.widgets.open] {
+                    w.fg_stroke.color = fg;
+                }
+                v.weak_text_color = Some(mix(fg, bg, 0.2));
                 let edge = Stroke::new(1.0, mix(bg, fg, 0.65));
                 v.window_stroke = edge;
                 v.widgets.noninteractive.bg_stroke = edge;
