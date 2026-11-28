@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use eframe::egui::{self, Align2, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{r_sm, status};
 use rivet_look::{fonts, palette};
 
@@ -116,7 +117,7 @@ fn toggle(ui: &mut egui::Ui, on: &mut bool, label: &str, tip: &str) -> bool {
         .fill(if *on { v.selection.bg_fill } else { Color32::TRANSPARENT })
         .min_size(Vec2::new(26.0, 22.0))
         .corner_radius(r_sm());
-    let r = ui.add(b).on_hover_text(tip);
+    let r = ui.add(b).role(Role::Button, tip).toggled(*on).on_hover_text(tip);
     if r.clicked() {
         *on = !*on;
     }
@@ -135,6 +136,7 @@ fn field(ui: &mut egui::Ui, text: &mut String, hint: &str, id: egui::Id, width: 
         .inner_margin(egui::Margin::symmetric(8, 4))
         .show(ui, |ui| ui.add(egui::TextEdit::singleline(text).id(id).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).font(fonts::ui_font(13.0)).min_size(Vec2::new(0.0, 18.0)).align(Align2::LEFT_CENTER).hint_text(hint).desired_width(width)))
         .inner
+        .accessible_name(hint)
 }
 
 /// A small arrow that shows or hides the replace row.
@@ -147,7 +149,7 @@ fn chevron(ui: &mut egui::Ui, open: bool, tip: &str) -> bool {
     let c = r.center();
     let pts = if open { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
     ui.painter().add(egui::Shape::convex_polygon(pts, v.weak_text_color(), Stroke::NONE));
-    resp.on_hover_text(tip).clicked()
+    resp.role(Role::Button, tip).expanded(open).on_hover_text(tip).clicked()
 }
 
 impl EditApp {
@@ -506,7 +508,7 @@ impl EditApp {
                     (None, n, None) => format!("{n} found"),
                 };
                 let col = if bar.error.is_some() || (bar.matches.is_empty() && !bar.q.text.is_empty()) { status(&ctx).danger } else { weak };
-                let lr = ui.label(egui::RichText::new(label).font(fonts::ui_font(12.0)).color(col));
+                let lr = ui.label(egui::RichText::new(label).font(fonts::ui_font(12.0)).color(col)).announce();
                 if let Some(e) = &bar.error {
                     lr.on_hover_text(e);
                 }
@@ -520,12 +522,13 @@ impl EditApp {
                     let s = Stroke::new(1.5, v.text_color());
                     ui.painter().line_segment([c + Vec2::new(-4.5, -2.0 * d), c + Vec2::new(0.0, 2.5 * d)], s);
                     ui.painter().line_segment([c + Vec2::new(0.0, 2.5 * d), c + Vec2::new(4.5, -2.0 * d)], s);
-                    resp.on_hover_text(tip).clicked()
+                    let name = if up { "Previous Match" } else { "Next Match" };
+                    resp.role(Role::Button, name).described(tip).on_hover_text(tip).clicked()
                 };
                 prev |= nav(ui, true, "Previous (Shift+Enter, Shift+F3)");
                 next |= nav(ui, false, "Next (Enter, F3)");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.add(egui::Button::new(egui::RichText::new("×").size(15.0).color(weak)).frame_when_inactive(false).min_size(Vec2::splat(24.0))).on_hover_text("Close (Esc)").clicked() {
+                    if ui.add(egui::Button::new(egui::RichText::new("×").size(15.0).color(weak)).frame_when_inactive(false).min_size(Vec2::splat(24.0))).role(Role::Button, "Close Find").on_hover_text("Close (Esc)").clicked() {
                         close = true;
                     }
                 });
@@ -736,7 +739,7 @@ impl EditApp {
             ui.horizontal(|ui| {
                 ui.add_space(21.0);
                 ui.label(egui::RichText::new(format!("In {}/", self.search.scope)).small().color(weak));
-                if ui.small_button("×").on_hover_text("Search every folder").clicked() {
+                if ui.small_button("×").role(Role::Button, "Search Every Folder").on_hover_text("Search every folder").clicked() {
                     self.search.scope.clear();
                     self.search.rerun();
                 }
@@ -779,6 +782,10 @@ impl EditApp {
                 };
                 let f = &self.search.results[k];
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 23.0), Sense::click());
+                let resp = match j {
+                    None => resp.role(Role::TreeItem, f.rel.as_str()).expanded(!self.search.folded.contains(&f.rel)),
+                    Some(j) => resp.role(Role::TreeItem, format!("Line {}: {}{}{}", f.hits[j].line, f.hits[j].pre, f.hits[j].hit, f.hits[j].post)),
+                };
                 if resp.hovered() {
                     ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
                 }

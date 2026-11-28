@@ -5,6 +5,7 @@
 use std::time::SystemTime;
 
 use eframe::egui::{self, Align2, Color32, Sense, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{r_md, r_xs};
 use rivet_look::{fonts, palette};
 
@@ -206,7 +207,7 @@ fn link_row(ui: &mut egui::Ui, name: &str, exists: bool) -> egui::Response {
     let col = if exists { v.hyperlink_color } else { v.weak_text_color() };
     let text = name.to_string();
     let r = ui.add(egui::Label::new(egui::RichText::new(text).font(fonts::ui_font(12.5)).color(col)).truncate().sense(Sense::click()));
-    r.on_hover_cursor(egui::CursorIcon::PointingHand)
+    r.role(Role::Link, name).on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 impl NotesApp {
@@ -318,7 +319,7 @@ fn icon_segment(ui: &mut egui::Ui, value: &mut bool, this: bool, icon: &Option<e
         let (fill, stroke) = rivet_look::theme::selected_tile(&v, v.extreme_bg_color);
         ui.painter().set(under, egui::Shape::Vec(vec![egui::Shape::rect_filled(r.rect, rivet_look::theme::r_sm(), fill), egui::Shape::rect_stroke(r.rect, rivet_look::theme::r_sm(), stroke, egui::StrokeKind::Inside)]));
     }
-    if r.on_hover_text(name).clicked() {
+    if r.role(Role::RadioButton, name).selected(on).on_hover_text(name).clicked() {
         *value = this;
     }
 }

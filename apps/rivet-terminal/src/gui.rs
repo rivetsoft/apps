@@ -10,6 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{self, Align2, Color32, Key, Modifiers, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::icons::{self, IconTheme};
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::theme::{r_lg, r_md, r_sm};
@@ -896,6 +897,7 @@ impl TermApp {
                     ui.separator();
                     self.menus(ui);
                 });
+                r.0.clone().role(Role::Button, "Menu").described("Opens the menus");
                 let c = r.0.rect.center();
                 for dy in [-4.5f32, 0.0, 4.5] {
                     ui.painter().line_segment([c + Vec2::new(-6.5, dy), c + Vec2::new(6.5, dy)], Stroke::new(1.8, v.text_color()));
@@ -945,7 +947,7 @@ impl TermApp {
             let c = r.center();
             ui.painter().line_segment([c + Vec2::new(-5.5, 0.0), c + Vec2::new(5.5, 0.0)], Stroke::new(1.6, v.text_color()));
             ui.painter().line_segment([c + Vec2::new(0.0, -5.5), c + Vec2::new(0.0, 5.5)], Stroke::new(1.6, v.text_color()));
-            if resp.on_hover_text("New tab (Ctrl+Shift+T)").clicked() {
+            if resp.role(Role::Button, "New Tab").described("Ctrl+Shift+T").on_hover_text("New tab (Ctrl+Shift+T)").clicked() {
                 new = true;
             }
             // On the right: a new pane, and the layout.
@@ -957,7 +959,7 @@ impl TermApp {
                     ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
                 }
                 layout_glyph(ui.painter(), r.center(), layout, v.text_color());
-                if resp.on_hover_text(format!("Layout: {} (Ctrl+Shift+L for the next)", layout.name())).clicked() {
+                if resp.role(Role::Button, format!("Layout: {}", layout.name())).described("Ctrl+Shift+L for the next").on_hover_text(format!("Layout: {} (Ctrl+Shift+L for the next)", layout.name())).clicked() {
                     self.next_layout();
                 }
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(34.0, 30.0), Sense::click());
@@ -967,7 +969,7 @@ impl TermApp {
                 let b = Rect::from_center_size(r.center(), Vec2::new(16.0, 13.0));
                 ui.painter().rect_stroke(b, 2.5, Stroke::new(1.5, v.text_color()), egui::StrokeKind::Inside);
                 ui.painter().line_segment([Pos2::new(b.center().x, b.top()), Pos2::new(b.center().x, b.bottom())], Stroke::new(1.5, v.text_color()));
-                if resp.on_hover_text("New pane beside this one (Ctrl+Shift+Enter)").clicked() {
+                if resp.role(Role::Button, "New Pane").described("Beside this one, Ctrl+Shift+Enter").on_hover_text("New pane beside this one (Ctrl+Shift+Enter)").clicked() {
                     self.split();
                 }
             });
@@ -1154,6 +1156,8 @@ impl TermApp {
                 open_url = out.open_url;
             }
             if let Some(resp) = out.response {
+                let name = if many { format!("Terminal, pane {} of {}", i + 1, shown.len()) } else { "Terminal".to_string() };
+                resp.clone().role(Role::Terminal, name).selected(many && i == focus);
                 if resp.drag_stopped() {
                     copied_on_select = view::selection_text(&p.session);
                 }
@@ -1183,7 +1187,7 @@ impl TermApp {
                 if resp.hovered() && !dragging {
                     ctx.set_cursor_icon(egui::CursorIcon::Grab);
                 }
-                let resp = resp.on_hover_text("Drag onto another pane to swap them, or out of the window to move it");
+                let resp = resp.role(Role::Button, "Move Pane").on_hover_text("Drag onto another pane to swap them, or out of the window to move it");
                 if resp.dragged() || resp.drag_stopped() {
                     held = Some((i, resp));
                 }
@@ -1384,15 +1388,15 @@ impl TermApp {
                         close = true;
                     }
                     if f.missed {
-                        ui.label(egui::RichText::new("None").small().color(rivet_look::theme::status(ui.ctx()).danger));
+                        ui.label(egui::RichText::new("None").small().color(rivet_look::theme::status(ui.ctx()).danger)).announce();
                     }
-                    if ui.small_button("↑").on_hover_text("Older (Enter)").clicked() {
+                    if ui.small_button("↑").role(Role::Button, "Previous match").on_hover_text("Older (Enter)").clicked() {
                         step = Some(true);
                     }
-                    if ui.small_button("↓").on_hover_text("Newer (Shift+Enter)").clicked() {
+                    if ui.small_button("↓").role(Role::Button, "Next match").on_hover_text("Newer (Shift+Enter)").clicked() {
                         step = Some(false);
                     }
-                    if ui.small_button("×").on_hover_text("Close (Esc)").clicked() {
+                    if ui.small_button("×").role(Role::Button, "Close Search").on_hover_text("Close (Esc)").clicked() {
                         close = true;
                     }
                     let _ = &v;

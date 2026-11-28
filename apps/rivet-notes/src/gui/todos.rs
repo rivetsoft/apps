@@ -5,6 +5,7 @@
 use chrono::{Datelike, NaiveDate};
 use eframe::egui::{self, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use eframe::egui::text::CCursor;
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{r_md, r_sm, r_xs, status};
 use rivet_look::{fonts, palette};
 
@@ -173,6 +174,7 @@ fn view_switch(ui: &mut egui::Ui, board: &mut bool, list_icon: &Option<egui::Tex
         let r = Rect::from_min_size(Pos2::new(rect.left() + 3.0 + k as f32 * 32.0, rect.top() + 3.0), Vec2::new(32.0, 26.0));
         let resp = ui.interact(r, egui::Id::unique(("todo-view", k)), Sense::click());
         let on = *board == is_board;
+        let resp = resp.role(Role::RadioButton, name).selected(on);
         if on {
             ui.painter().rect_filled(r, r_sm(), v.window_fill);
             ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color), egui::StrokeKind::Inside);
@@ -296,6 +298,7 @@ fn board_view(ui: &mut egui::Ui, rows: &[&(PathBuf, String, Item)], triggers: &[
                         }
                     });
                     let resp = ui.interact(fr.response.rect, egui::Id::unique(("card", path.to_string_lossy().into_owned(), it.line)), Sense::click_and_drag());
+                    let resp = resp.role(Role::Button, if it.title.is_empty() { "Task" } else { it.title.as_str() }).described("Opens its note");
                     if resp.hovered() && dragging.is_none() {
                         ui.painter().rect_stroke(fr.response.rect, r_md(), Stroke::new(1.0, v.selection.bg_fill.gamma_multiply(0.6)), egui::StrokeKind::Inside);
                     }
@@ -345,7 +348,8 @@ fn search_box(ui: &mut egui::Ui, query: &mut String) {
     child.add_sized(
         field.size(),
         egui::TextEdit::singleline(query).id(id).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).hint_text("Search todos").font(fonts::ui_font(13.0)).align(egui::Align2::LEFT_CENTER),
-    );
+    )
+    .accessible_name("Search todos");
     if focused {
         ui.painter().rect_stroke(r, r_md(), Stroke::new(1.5, v.selection.bg_fill), egui::StrokeKind::Outside);
     }
@@ -364,6 +368,7 @@ fn segmented<T: PartialEq + Copy>(ui: &mut egui::Ui, value: &mut T, options: &[(
         let r = Rect::from_min_size(Pos2::new(x, rect.top() + 3.0), Vec2::new(size.x, rect.height() - 6.0));
         let resp = ui.interact(r, egui::Id::unique(("seg", *label)), Sense::click());
         let on = *value == *val;
+        let resp = resp.role(Role::RadioButton, *label).selected(on);
         if on {
             ui.painter().rect_filled(r, r_sm(), v.window_fill);
             ui.painter().rect_stroke(r, r_sm(), Stroke::new(1.0, v.widgets.noninteractive.bg_stroke.color), egui::StrokeKind::Inside);
@@ -574,7 +579,7 @@ impl NotesApp {
                 ui.horizontal(|ui| {
                     let (br, bresp) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::click());
                     state_box(ui.painter(), br, &it, &v, bresp.hovered());
-                    if bresp.on_hover_text(if it.done { "Mark not done" } else { "Mark done" }).clicked() {
+                    if bresp.role(Role::CheckBox, "Done").toggled(it.done).on_hover_text(if it.done { "Mark not done" } else { "Mark done" }).clicked() {
                         change = Some(Box::new(|i: &mut Item| {
                             i.done = !i.done;
                             i.doing = false;
@@ -587,7 +592,7 @@ impl NotesApp {
                         ui.add(egui::Label::new(egui::RichText::new(title).font(fonts::ui_font(14.5)).strong().color(v.strong_text_color())).truncate());
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(egui::Button::new(egui::RichText::new("×").size(15.0).color(weak)).frame_when_inactive(false).min_size(Vec2::splat(22.0))).on_hover_text("Close (Esc)").clicked() {
+                        if ui.add(egui::Button::new(egui::RichText::new("×").size(15.0).color(weak)).frame_when_inactive(false).min_size(Vec2::splat(22.0))).role(Role::Button, "Close").on_hover_text("Close (Esc)").clicked() {
                             close = true;
                         }
                     });
@@ -619,7 +624,7 @@ impl NotesApp {
                         let (pr, _) = ui.allocate_exact_size(Vec2::new(0.0, 24.0), Sense::hover());
                         let pill = due_pill(ui.painter(), Pos2::new(pr.left(), pr.center().y), d, it.done, 14.0);
                         ui.allocate_exact_size(Vec2::new(pill.width(), 24.0), Sense::hover()).1.on_hover_text(d.format("%A %-d %B %Y").to_string());
-                        if ui.add(egui::Button::new(egui::RichText::new("×").color(weak)).frame_when_inactive(false).min_size(Vec2::splat(22.0))).on_hover_text("No due date").clicked() {
+                        if ui.add(egui::Button::new(egui::RichText::new("×").color(weak)).frame_when_inactive(false).min_size(Vec2::splat(22.0))).role(Role::Button, "Remove Due Date").on_hover_text("No due date").clicked() {
                             change = Some(Box::new(|i: &mut Item| i.due = None));
                         }
                         ui.end_row();
@@ -664,12 +669,12 @@ impl NotesApp {
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
                     for t in it.tags.iter().filter(|t| !triggers.contains(&t.to_lowercase())) {
                         let b = egui::Button::new(egui::RichText::new(format!("#{t}  ×")).size(12.5)).fill(palette::mix(v.faint_bg_color, v.selection.bg_fill, 0.35)).corner_radius(r_xs());
-                        if ui.add(b).on_hover_text("Remove this tag").clicked() {
+                        if ui.add(b).role(Role::Button, format!("Remove tag {t}")).on_hover_text("Remove this tag").clicked() {
                             let t = t.clone();
                             change = Some(Box::new(move |i: &mut Item| i.tags.retain(|x| *x != t)));
                         }
                     }
-                    let r = ui.add(egui::TextEdit::singleline(&mut pop.tag_input).hint_text("add tag").desired_width(100.0));
+                    let r = ui.add(egui::TextEdit::singleline(&mut pop.tag_input).hint_text("add tag").desired_width(100.0)).accessible_name("Add tag");
                     if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                         let add: Vec<String> = pop.tag_input.split([',', ' ']).map(|t| t.trim().trim_start_matches('#').to_string()).filter(|t| !t.is_empty()).collect();
                         pop.tag_input.clear();
@@ -697,7 +702,7 @@ impl NotesApp {
                     ui.painter().line_segment([c + Vec2::new(0.0, -5.0), c + Vec2::new(0.0, 5.0)], st);
                     ui.painter().line_segment([c + Vec2::new(-4.0, 1.0), c + Vec2::new(0.0, 5.0)], st);
                     ui.painter().line_segment([c + Vec2::new(4.0, 1.0), c + Vec2::new(0.0, 5.0)], st);
-                    if down.on_hover_text("Make it a plain todo again: drops its todo tag, due date and priority").clicked() {
+                    if down.role(Role::Button, "Make Plain Todo").described("Drops its todo tag, due date and priority").on_hover_text("Make it a plain todo again: drops its todo tag, due date and priority").clicked() {
                         let triggers = triggers.clone();
                         change = Some(Box::new(move |i: &mut Item| tasks::downgrade(i, &triggers)));
                         close = true;
@@ -837,7 +842,7 @@ impl NotesApp {
                     let on = tv.tag.as_deref().is_some_and(|x| x.eq_ignore_ascii_case(t));
                     let (fg, fill) = if on { (v.selection.stroke.color, v.selection.bg_fill) } else { (weak, palette::mix(v.extreme_bg_color, v.text_color(), 0.06)) };
                     let b = egui::Button::new(egui::RichText::new(format!("#{t}")).font(fonts::ui_font(12.0)).color(fg)).fill(fill).corner_radius(10.0).min_size(Vec2::new(0.0, 22.0));
-                    if ui.add(b).on_hover_text(if on { "Show every tag" } else { "Only this tag" }).clicked() {
+                    if ui.add(b).role(Role::Button, format!("Tag {t}")).toggled(on).on_hover_text(if on { "Show every tag" } else { "Only this tag" }).clicked() {
                         tv.tag = if on { None } else { Some(t.clone()) };
                     }
                 }
@@ -990,7 +995,7 @@ impl NotesApp {
                 job.wrap = egui::text::TextWrapping::truncate_at_width(maxw);
                 let g = p.layout_job(job);
                 p.galley(Pos2::new(x, rect.bottom() - 6.0 - g.size().y), g, weak);
-                let resp = resp.on_hover_text(format!("Open {note}"));
+                let resp = resp.role(Role::Button, if it.title.is_empty() { "Task" } else { it.title.as_str() }).described(format!("{}{note}", if it.done { "Done. " } else { "" })).on_hover_text(format!("Open {note}"));
                 if resp.clicked() {
                     if on_box {
                         toggle = Some((path.clone(), it.clone()));

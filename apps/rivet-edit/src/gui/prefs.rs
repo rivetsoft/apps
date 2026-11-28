@@ -2,6 +2,7 @@
 //! Window, Keyboard, About) beside the chosen page's settings in titled cards.
 
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{ACCENTS, Mode, paint_tex, r_lg, r_md, r_sm, r_xs, selected_tile};
 use rivet_look::{fonts, palette, windows};
 
@@ -163,6 +164,7 @@ impl EditApp {
                                 }
                                 let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
                                 let sel = *p == page_now;
+                                let resp = resp.role(Role::Tab, p.label()).selected(sel);
                                 if sel {
                                     let (fill, stroke) = selected_tile(&v, side_fill);
                                     ui.painter().rect_filled(r, r_sm(), fill);
@@ -255,7 +257,7 @@ impl EditApp {
                                                         if self.s.accent == c {
                                                             ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(2.0, ui.visuals().strong_text_color()));
                                                         }
-                                                        if resp.on_hover_text(name).clicked() && manual {
+                                                        if resp.role(Role::RadioButton, name).selected(self.s.accent == c).on_hover_text(name).clicked() && manual {
                                                             self.s.accent = c;
                                                         }
                                                     }
@@ -339,10 +341,11 @@ impl EditApp {
                                             });
                                             ui.end_row();
                                             ui.label("Size");
-                                            ui.add(egui::Slider::new(&mut self.s.code_size, 8.0..=32.0).step_by(1.0).suffix(" pt"));
+                                            ui.add(egui::Slider::new(&mut self.s.code_size, 8.0..=32.0).step_by(1.0).suffix(" pt")).accessible_name("Size");
                                             ui.end_row();
                                             ui.label("Line height");
                                             ui.add(egui::Slider::new(&mut self.s.line_height, 1.0..=2.0).step_by(0.05).fixed_decimals(2).suffix("×"))
+                                                .accessible_name("Line height")
                                                 .on_hover_text("1.00× is the font's own spacing; 1.50× adds half a line");
                                             ui.end_row();
                                         });

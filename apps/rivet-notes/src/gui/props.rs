@@ -4,6 +4,7 @@
 
 use chrono::Datelike;
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{r_md, r_sm, r_xs, status};
 use rivet_look::{fonts, palette};
 
@@ -44,7 +45,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
     let weak = v.weak_text_color();
     let mut changed = false;
     let Some(fm) = d.fm.as_mut() else {
-        if ui.add(egui::Button::new(egui::RichText::new("+  Add properties").color(weak)).frame_when_inactive(false).corner_radius(r_sm())).on_hover_text("Start a frontmatter block for this note").clicked() {
+        if ui.add(egui::Button::new(egui::RichText::new("+  Add properties").color(weak)).frame_when_inactive(false).corner_radius(r_sm())).role(Role::Button, "Add Properties").on_hover_text("Start a frontmatter block for this note").clicked() {
             let mut fm = Frontmatter::default();
             fm.set("tags", Value::List(Vec::new()));
             d.fm = Some(fm);
@@ -74,7 +75,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
         let tw = title.size().x;
         ui.painter().galley(Pos2::new(hr.left() + 22.0, hr.center().y - title.size().y / 2.0), title, v.strong_text_color());
         ui.painter().text(Pos2::new(hr.left() + 30.0 + tw, hr.center().y), Align2::LEFT_CENTER, fm.fields.iter().filter(|(k, _)| !props::hidden(k)).count().to_string(), fonts::ui_font(12.0), weak);
-        if hresp.on_hover_text(if d.props_open { "Fold the properties" } else { "Show the properties" }).clicked() {
+        if hresp.role(Role::Button, "Properties").expanded(d.props_open).on_hover_text(if d.props_open { "Fold the properties" } else { "Show the properties" }).clicked() {
             d.props_open = !d.props_open;
         }
         if !d.props_open {
@@ -98,7 +99,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
                 if let Some((ri, buf)) = d.renaming.as_mut()
                     && *ri == i
                 {
-                    let r = ui.add_sized([NAME_W, 24.0], egui::TextEdit::singleline(buf).font(fonts::ui_font(13.0)));
+                    let r = ui.add_sized([NAME_W, 24.0], egui::TextEdit::singleline(buf).font(fonts::ui_font(13.0))).accessible_name("Property name");
                     if !r.has_focus() && !r.lost_focus() {
                         r.request_focus();
                     }
@@ -119,7 +120,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
                     glyph(ui.painter(), gr, ty, weak, icons);
                     let text_r = Rect::from_min_max(Pos2::new(nr.left() + 28.0, nr.top()), Pos2::new(nr.right() - 4.0, nr.bottom()));
                     ui.painter().with_clip_rect(text_r).text(text_r.left_center(), Align2::LEFT_CENTER, &key, fonts::ui_font(13.0), palette::mix(weak, v.text_color(), 0.45));
-                    let nresp = nresp.on_hover_text(format!("{key} · {}\nClick to change its type, rename or remove it", ty.label()));
+                    let nresp = nresp.role(Role::Button, format!("Property {key}")).described(format!("{}. Opens its menu to change its type, rename or remove it", ty.label())).on_hover_text(format!("{key} · {}\nClick to change its type, rename or remove it", ty.label()));
                     let mut menu = |ui: &mut egui::Ui, acts: &mut Vec<Act>| {
                         ui.set_min_width(180.0);
                         ui.label(egui::RichText::new("Type").small().color(weak));
@@ -158,7 +159,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
                 // Remove: shown while the row is pointed at.
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let b = egui::Button::new(egui::RichText::new("×").size(15.0).color(weak)).frame_when_inactive(false).min_size(Vec2::splat(24.0)).corner_radius(r_sm());
-                    if ui.add_visible(was_hovered, b).on_hover_text("Remove this property").clicked() {
+                    if ui.add_visible(was_hovered, b).role(Role::Button, "Remove Property").on_hover_text("Remove this property").clicked() {
                         acts.push(Act::Remove(i));
                     }
                 });
@@ -181,7 +182,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
                 let (tr, tresp) = ui.allocate_exact_size(Vec2::new(26.0, 26.0), Sense::click());
                 ui.painter().rect_filled(tr, r_sm(), if tresp.hovered() { v.widgets.hovered.weak_bg_fill } else { v.extreme_bg_color });
                 glyph(ui.painter(), Rect::from_center_size(tr.center(), Vec2::splat(14.0)), t, v.text_color(), icons);
-                let tresp = tresp.on_hover_text(format!("Type: {} (click to change)", t.label()));
+                let tresp = tresp.role(Role::Button, format!("Type: {}", t.label())).on_hover_text(format!("Type: {} (click to change)", t.label()));
                 egui::Popup::menu(&tresp).show(|ui| {
                     ui.set_min_width(160.0);
                     for c in PropType::CHOICES {
@@ -191,7 +192,7 @@ pub(super) fn block(ui: &mut egui::Ui, d: &mut Doc, icons: &PropIcons) -> bool {
                         }
                     }
                 });
-                let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text("Property name").font(fonts::ui_font(13.0)).desired_width(NAME_W + 40.0));
+                let r = ui.add(egui::TextEdit::singleline(&mut name).hint_text("Property name").font(fonts::ui_font(13.0)).desired_width(NAME_W + 40.0)).accessible_name("Property name");
                 let menu_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&tresp));
                 if !r.has_focus() && !r.lost_focus() && !menu_open {
                     r.request_focus();
@@ -298,7 +299,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
         }
         (PropType::Number, Value::Text(t)) => {
             let bad = !t.trim().is_empty() && t.trim().parse::<f64>().is_err();
-            let r = ui.add(field(t, "0", 120.0, bad.then_some(danger)));
+            let r = ui.add(field(t, "0", 120.0, bad.then_some(danger))).accessible_name("Number");
             if bad {
                 r.clone().on_hover_text("Not a number");
             }
@@ -309,7 +310,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
         }
         (PropType::Date, Value::Text(t)) => {
             let bad = !t.trim().is_empty() && props::parse_date(t).is_none();
-            let r = ui.add(field(t, "YYYY-MM-DD", 150.0, bad.then_some(danger)));
+            let r = ui.add(field(t, "YYYY-MM-DD", 150.0, bad.then_some(danger))).accessible_name("Date");
             if r.changed() {
                 changed = true;
             }
@@ -321,7 +322,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
                 ui.painter().rect_filled(cr, r_sm(), v.widgets.hovered.weak_bg_fill);
             }
             glyph(ui.painter(), Rect::from_center_size(cr.center(), Vec2::splat(13.0)), PropType::Date, if cresp.hovered() { v.text_color() } else { weak }, icons);
-            let cresp = cresp.on_hover_text("Pick a date");
+            let cresp = cresp.role(Role::Button, "Pick a Date").on_hover_text("Pick a date");
             egui::Popup::menu(&cresp).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show(|ui| {
                 if let Some(day) = calendar(ui, t) {
                     *t = props::with_date(t, day);
@@ -336,7 +337,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
         (PropType::Link, Value::Text(t)) => {
             let w = (ui.available_width() - 32.0).max(60.0);
             let col = if props::is_url(t) { Some(v.hyperlink_color) } else { None };
-            if ui.add(field(t, "https://", w, col)).changed() {
+            if ui.add(field(t, "https://", w, col)).accessible_name("Link").changed() {
                 changed = true;
             }
             let ok = props::is_url(t);
@@ -344,7 +345,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
                 Some(tex) => egui::Button::image(egui::Image::from_texture(tex).fit_to_exact_size(Vec2::splat(13.0)).tint(if ok { v.text_color() } else { weak })),
                 None => egui::Button::new("↗"),
             };
-            if ui.add_enabled(ok, b.frame_when_inactive(false).min_size(Vec2::splat(24.0)).corner_radius(r_sm())).on_hover_text("Open the link").clicked() {
+            if ui.add_enabled(ok, b.frame_when_inactive(false).min_size(Vec2::splat(24.0)).corner_radius(r_sm())).role(Role::Button, "Open Link").on_hover_text("Open the link").clicked() {
                 let _ = rivet_xdg::launch::open_url(t.trim());
             }
         }
@@ -360,7 +361,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
             }
             let input = inputs.entry(key.to_string()).or_default();
             let hint = if tags { "add tag" } else { "add item" };
-            let r = ui.add(field(input, hint, 90.0, None));
+            let r = ui.add(field(input, hint, 90.0, None)).accessible_name(hint);
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
             // Backspace in an empty box takes the last one off.
             if r.has_focus() && input.is_empty() && ui.input(|i| i.key_pressed(Key::Backspace)) && !items.is_empty() {
@@ -386,7 +387,7 @@ fn value_ui(ui: &mut egui::Ui, key: &str, ty: PropType, val: &mut Value, inputs:
         // Text, and anything whose value doesn't fit its type yet.
         (_, Value::Text(t)) => {
             let w = ui.available_width();
-            if ui.add(field(t, "Empty", w, None)).changed() {
+            if ui.add(field(t, "Empty", w, None)).accessible_name("Value").changed() {
                 changed = true;
             }
         }
@@ -421,7 +422,7 @@ fn chip(ui: &mut egui::Ui, text: &str, fill: Color32, fg: Color32, weak: Color32
         ui.painter().rect_filled(xr, r_xs(), fill.gamma_multiply(1.6));
     }
     ui.painter().text(xr.center(), Align2::CENTER_CENTER, "×", fonts::ui_font(13.0), if x.hovered() || resp.hovered() { fg } else { weak });
-    x.on_hover_text("Remove").clicked()
+    x.role(Role::Button, format!("Remove {text}")).on_hover_text("Remove").clicked()
 }
 
 /// A month to pick a day from. Returns the day clicked.
@@ -437,7 +438,7 @@ pub(super) fn calendar(ui: &mut egui::Ui, value: &str) -> Option<chrono::NaiveDa
     // Month and year between the previous and next buttons.
     let (hr, _) = ui.allocate_exact_size(Vec2::new(7.0 * 32.0, 28.0), Sense::hover());
     ui.painter().text(hr.center(), Align2::CENTER_CENTER, month.format("%B %Y").to_string(), fonts::ui_font(13.5), v.strong_text_color());
-    let nav = |ui: &mut egui::Ui, r: Rect, text: &str, tip: &str| ui.put(r, egui::Button::new(egui::RichText::new(text).size(16.0)).frame_when_inactive(false).corner_radius(r_sm())).on_hover_text(tip).clicked();
+    let nav = |ui: &mut egui::Ui, r: Rect, text: &str, tip: &str| ui.put(r, egui::Button::new(egui::RichText::new(text).size(16.0)).frame_when_inactive(false).corner_radius(r_sm())).role(Role::Button, tip).on_hover_text(tip).clicked();
     if nav(ui, Rect::from_min_size(hr.min, Vec2::splat(28.0)), "‹", "Previous month") {
         month = month.checked_sub_months(chrono::Months::new(1)).unwrap_or(month);
     }
@@ -459,6 +460,7 @@ pub(super) fn calendar(ui: &mut egui::Ui, value: &str) -> Option<chrono::NaiveDa
             for k in 0..7 {
                 let day = start + chrono::Days::new(week * 7 + k);
                 let (r, resp) = ui.allocate_exact_size(cell, Sense::click());
+                let resp = resp.role(Role::Button, day.format("%A %-d %B %Y").to_string()).selected(Some(day) == picked);
                 let inner = r.shrink2(Vec2::new(2.0, 1.0));
                 let sel = Some(day) == picked;
                 if sel {

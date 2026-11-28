@@ -12,6 +12,7 @@
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_git::{Change, HunkKind};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::theme::{paint_tex, r_md, r_sm, selected_tile, status};
 use rivet_look::{fonts, palette};
 
@@ -124,7 +125,7 @@ pub(crate) fn glyph_button(ui: &mut egui::Ui, g: Glyph, tip: &str, on: bool) -> 
     }
     let col = if !on { v.weak_text_color().gamma_multiply(0.5) } else if resp.hovered() { v.text_color() } else { v.weak_text_color() };
     glyph(ui.painter(), r.shrink(5.0), g, col);
-    resp.on_hover_text(tip)
+    resp.role(Role::Button, tip).on_hover_text(tip)
 }
 
 /// The color for a kind of change: new is green, changed amber, gone or conflicted red.
@@ -218,6 +219,7 @@ impl EditApp {
                 None => format!("On {label}, not pushed to a remote yet. Click to switch branch."),
             };
             let (r, resp) = ui.allocate_exact_size(Vec2::new((ui.available_width() - 52.0).max(60.0), 24.0), Sense::click());
+            let resp = resp.role(Role::Button, format!("Git branch {label}")).described(tip.as_str());
             if resp.hovered() {
                 ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
             }
@@ -296,7 +298,7 @@ impl EditApp {
             .corner_radius(r_sm())
             .inner_margin(egui::Margin::symmetric(8, 6))
             .show(ui, |ui| {
-                ui.add(egui::TextEdit::multiline(&mut self.git.message).id(mid).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).font(fonts::ui_font(13.0)).hint_text(hint).desired_rows(2).desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::multiline(&mut self.git.message).id(mid).frame(egui::Frame::NONE).margin(egui::Margin::ZERO).font(fonts::ui_font(13.0)).hint_text(hint.clone()).desired_rows(2).desired_width(f32::INFINITY)).accessible_name(hint);
             });
         ui.add_space(6.0);
         let staged_n = st.staged().count();
@@ -362,6 +364,7 @@ impl EditApp {
                 let folded = self.git.folded.contains(list.title());
                 // The section's title, with buttons for all its files on hover.
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
+                let resp = resp.role(Role::Button, format!("{}, {n}", list.title())).expanded(!folded);
                 let hover = ui.rect_contains_pointer(rect);
                 let c = Pos2::new(rect.left() + 8.0, rect.center().y);
                 let pts = if !folded { vec![c + Vec2::new(-4.0, -2.0), c + Vec2::new(4.0, -2.0), c + Vec2::new(0.0, 3.0)] } else { vec![c + Vec2::new(-2.0, -4.0), c + Vec2::new(-2.0, 4.0), c + Vec2::new(3.0, 0.0)] };
@@ -380,7 +383,7 @@ impl EditApp {
                     let mut btn = |ui: &mut egui::Ui, g: Glyph, tip: &str, salt: &str| {
                         x -= 22.0;
                         let r = Rect::from_min_size(Pos2::new(x, rect.center().y - 11.0), Vec2::splat(22.0));
-                        let b = ui.interact(r, ui.scope_id().with(("git-sec", list.title(), salt)), Sense::click());
+                        let b = ui.interact(r, ui.scope_id().with(("git-sec", list.title(), salt)), Sense::click()).role(Role::Button, tip);
                         if b.hovered() {
                             ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
                         }
@@ -421,6 +424,7 @@ impl EditApp {
                     let (dir, name) = e.path.rsplit_once('/').unwrap_or(("", &e.path));
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click());
                     let on = open_rel.as_deref() == Some(e.path.as_str());
+                    let resp = resp.role(Role::ListBoxOption, format!("{} {}", e.path, change.words())).selected(on);
                     let hover = ui.rect_contains_pointer(rect);
                     if on {
                         let (fill, stroke) = selected_tile(&v, v.panel_fill);
@@ -456,7 +460,7 @@ impl EditApp {
                         let mut btn = |ui: &mut egui::Ui, g: Glyph, tip: &str, salt: &str| {
                             bx -= 22.0;
                             let r = Rect::from_min_size(Pos2::new(bx, rect.center().y - 11.0), Vec2::splat(22.0));
-                            let b = ui.interact(r, ui.scope_id().with(("git-row", &e.path, list.title(), salt)), Sense::click());
+                            let b = ui.interact(r, ui.scope_id().with(("git-row", &e.path, list.title(), salt)), Sense::click()).role(Role::Button, tip);
                             if b.hovered() {
                                 ui.painter().rect_filled(r, r_sm(), palette::mix(v.widgets.hovered.weak_bg_fill, v.text_color(), 0.08));
                             }
