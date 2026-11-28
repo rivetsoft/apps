@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
 use eframe::egui::{self, Align, Align2, Color32, Key, Layout, Modifiers, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use rivet_look::a11y::{self, Access, Role};
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::theme::{Mode, r_lg, r_md, r_sm, status};
 use rivet_look::{fonts, palette};
@@ -617,6 +618,7 @@ impl SnipApp {
             for t in Tool::ALL {
                 let (r, resp) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::click());
                 let on = self.tool == t && has;
+                let resp = resp.role(Role::Button, t.name()).toggled(on);
                 let fill = if on {
                     palette::mix(v.panel_fill, accent, 0.28)
                 } else if resp.hovered() && has {
@@ -679,7 +681,7 @@ impl SnipApp {
                         ui.painter().rect_filled(r, r_sm(), palette::mix(v.panel_fill, v.text_color(), 0.10));
                     }
                     turn_glyph(ui.painter(), r.shrink(8.0), redo, if can { v.text_color() } else { v.weak_text_color().gamma_multiply(0.5) });
-                    if resp.on_hover_text(tip).clicked() {
+                    if resp.role(Role::Button, if redo { "Redo" } else { "Undo" }).tip(tip).clicked() {
                         self.undo(redo);
                     }
                 }
@@ -734,16 +736,19 @@ impl SnipApp {
         let now = ui.input(|i| i.time);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
+            ui.scope_builder(a11y::area(Role::RadioGroup, "Color"), |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
             for (i, (c, name)) in COLORS.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
                 let on = self.s.color == i;
+                let resp = resp.role(Role::RadioButton, *name).selected(on);
                 if on {
                     ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(1.6, v.strong_text_color()));
                 }
                 ui.painter().circle_filled(r.center(), if on { 6.5 } else { 7.5 }, *c);
                 // White and black need an edge to show against a light or dark window.
                 ui.painter().circle_stroke(r.center(), if on { 6.5 } else { 7.5 }, Stroke::new(1.0, palette::mix(*c, v.text_color(), 0.25)));
-                if resp.on_hover_text(*name).clicked() {
+                if resp.tip(*name).clicked() {
                     self.s.color = i;
                     self.s.save();
                     // The colour of a selected mark changes with it.
@@ -755,16 +760,20 @@ impl SnipApp {
                     }
                 }
             }
+            });
             ui.add_space(10.0);
             let scale = self.scale();
+            ui.scope_builder(a11y::area(Role::RadioGroup, "Line thickness"), |ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
             for (i, (w, name)) in WIDTHS.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(Vec2::new(28.0, 22.0), Sense::click());
                 let on = self.s.width == i;
+                let resp = resp.role(Role::RadioButton, *name).selected(on);
                 if on {
                     ui.painter().rect_filled(r, r_sm(), palette::mix(v.panel_fill, v.text_color(), 0.14));
                 }
                 ui.painter().line_segment([r.left_center() + Vec2::new(6.0, 0.0), r.right_center() - Vec2::new(6.0, 0.0)], Stroke::new(w * 0.6, if on { v.strong_text_color() } else { v.text_color() }));
-                if resp.on_hover_text(*name).clicked() {
+                if resp.tip(*name).clicked() {
                     self.s.width = i;
                     self.s.save();
                     if let (Some(sel), Some(doc)) = (self.selected, self.doc.as_mut())
@@ -775,6 +784,7 @@ impl SnipApp {
                     }
                 }
             }
+            });
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if let Some(d) = &self.doc {
                     let zoom = self.zoom.map(|z| format!("{:.0}%", z * 100.0)).unwrap_or_else(|| "Fit".into());
@@ -839,7 +849,7 @@ impl SnipApp {
         let v = ui.visuals().clone();
         let accent = self.accent();
         let area = ui.available_rect_before_wrap();
-        let resp = ui.allocate_rect(area, Sense::click_and_drag());
+        let resp = ui.allocate_rect(area, Sense::CLICK | Sense::DRAG).role(Role::Canvas, "Picture");
         let Some(doc) = self.doc.as_mut() else { return };
         let crop = doc.crop;
         let margin = 18.0;

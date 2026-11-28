@@ -2,6 +2,7 @@
 //! size and take the theme's colors.
 
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Sense, Shape, Stroke, Vec2};
+use rivet_look::a11y::{Access, Role};
 use rivet_look::palette;
 use rivet_look::theme::r_sm;
 
@@ -122,6 +123,9 @@ pub fn button(ui: &mut egui::Ui, g: G, size: f32, tip: &str, on: bool, accent: C
         ui.painter().rect_filled(r, r_sm(), palette::mix(v.panel_fill, v.text_color(), 0.1));
     }
     draw(ui.painter(), r.shrink(size * 0.27), g, if on { accent } else { v.text_color() });
+    let name = tip.split(" (").next().and_then(|t| t.split(':').next()).unwrap_or(tip);
+    let resp = resp.role(Role::Button, name).described(tip);
+    let resp = if matches!(g, G::Queue | G::OnTop | G::Shuffle | G::Repeat | G::RepeatOne) { resp.toggled(on) } else { resp };
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tip)
 }
 
@@ -133,5 +137,6 @@ pub fn big_button(ui: &mut egui::Ui, playing: bool, size: f32, accent: Color32) 
     let g = if playing { G::Pause } else { G::Play };
     let inner = Rect::from_center_size(r.center() + Vec2::new(if playing { 0.0 } else { size * 0.03 }, 0.0), Vec2::splat(size * 0.4));
     draw(ui.painter(), inner, g, rivet_look::theme::StatusColors::on(accent));
+    let resp = resp.role(Role::Button, if playing { "Pause" } else { "Play" }).described("Space");
     resp.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if playing { "Pause (Space)" } else { "Play (Space)" })
 }
