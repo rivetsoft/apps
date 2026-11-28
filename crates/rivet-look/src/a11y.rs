@@ -31,6 +31,9 @@ pub trait Access: Sized {
     /// A tooltip that a screen reader says too: the name of a control that has none (an icon
     /// button), else read after its name.
     fn tip(self, text: impl Into<String>) -> Self;
+    /// Words that change while a person waits (a status note, "Copied"): a screen reader says
+    /// each new text when it's free to, without moving the keyboard.
+    fn announce(self) -> Self;
 }
 
 impl Access for Response {
@@ -73,6 +76,11 @@ impl Access for Response {
             }
         });
         self.on_hover_text(text)
+    }
+
+    fn announce(self) -> Self {
+        self.ctx.accesskit_node_builder(self.id, |n| n.set_live(egui::accesskit::Live::Polite));
+        self
     }
 }
 
@@ -158,8 +166,16 @@ pub fn ring_inside(ctx: &egui::Context, id: Id) {
     ctx.data_mut(|d| d.insert_temp(Id::unique("rivet-ring-inside"), Some(id)));
 }
 
+/// Where Shift+F10 opens the right-click menu of the control `id` this frame, when that isn't
+/// its middle: Rivet Files' file list opens the menu of the file under the keyboard.
+pub fn menu_at(ctx: &egui::Context, id: Id, at: egui::Pos2) {
+    ctx.data_mut(|d| d.insert_temp(Id::unique("rivet-menu-at"), Some((id, at))));
+}
+
 /// A ring around the control that has the keyboard, in the accent, while the keyboard is in
 /// use: Tab turns it on, a click turns it off (a ring after every click only distracts).
+/// Also the keyboard's way to a right-click menu: Shift+F10 on the control that has the
+/// keyboard is a right-click on it, so every `context_menu` opens from the keyboard too.
 #[derive(Default)]
 struct FocusRing {
     keyboard: bool,
@@ -170,14 +186,24 @@ impl egui::Plugin for FocusRing {
         "rivet-focus-ring"
     }
 
-    fn input_hook(&mut self, _ctx: &egui::Context, input: &mut egui::RawInput) {
+    fn input_hook(&mut self, ctx: &egui::Context, input: &mut egui::RawInput) {
+        let mut menu = false;
         for e in &input.events {
             match e {
                 egui::Event::Key { key: Key::Tab, pressed: true, .. } => self.keyboard = true,
+                egui::Event::Key { key: Key::F10, pressed: true, modifiers, .. } if modifiers.shift_only() => menu = true,
                 egui::Event::PointerButton { pressed: true, .. } => self.keyboard = false,
                 _ => {}
             }
         }
+        if !menu {
+            return;
+        }
+        let Some(r) = ctx.memory(|m| m.focused()).and_then(|id| ctx.read_response(id)) else { return };
+        let at = ctx.data(|d| d.get_temp::<Option<(Id, egui::Pos2)>>(Id::unique("rivet-menu-at"))).flatten().filter(|(id, _)| *id == r.id).map_or(r.interact_rect.center(), |(_, at)| at);
+        input.events.retain(|e| !matches!(e, egui::Event::Key { key: Key::F10, .. }));
+        let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
+        input.events.extend([egui::Event::PointerMoved(at), press(true), press(false)]);
     }
 
     fn on_end_pass(&mut self, ui: &mut egui::Ui) {
@@ -217,5 +243,36 @@ mod tests {
         assert_eq!(node.role(), Role::Tab);
         assert_eq!(node.label(), Some("Notes.md"));
         assert_eq!(node.is_selected(), Some(true));
+    }
+
+    /// Frames of a focused control with a right-click menu, `keys` pressed in the last one.
+    /// Gives whether the menu showed.
+    fn menu_frames(ctx: &egui::Context, keys: Vec<egui::Event>) -> bool {
+        let mut shown = false;
+        for (f, events) in [vec![], vec![], keys, vec![]].into_iter().enumerate() {
+            let mut out = ctx.run_ui(egui::RawInput { events, ..Default::default() }, |ui| {
+                let (_, r) = ui.allocate_exact_size(egui::vec2(80.0, 20.0), egui::Sense::click());
+                if f == 0 {
+                    r.request_focus();
+                }
+                r.role(Role::Button, "Item").context_menu(|ui| {
+                    shown = true;
+                    ui.label("Rename");
+                });
+            });
+            out.textures_delta.clear();
+        }
+        shown
+    }
+
+    #[test]
+    fn shift_f10_opens_the_right_click_menu_of_what_has_the_keyboard() {
+        let key = |key, modifiers| egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+        let ctx = egui::Context::default();
+        setup(&ctx, false);
+        assert!(!menu_frames(&ctx, vec![key(Key::F10, egui::Modifiers::NONE)]));
+        let ctx = egui::Context::default();
+        setup(&ctx, false);
+        assert!(menu_frames(&ctx, vec![key(Key::F10, egui::Modifiers::SHIFT)]));
     }
 }

@@ -4,7 +4,7 @@
 
 - **Screen readers and the keyboard**: Orca and other screen readers can read the window's
   buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
-  the keyboard. With higher contrast or less motion asked for in the desktop's settings, edges
+  the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard. With higher contrast or less motion asked for in the desktop's settings, edges
   and secondary text get stronger and animations stop.
 - **Rivet Cinema, a new app**: plays video and music files, folders and playlists, with a queue
   you can reorder, repeat and shuffle.

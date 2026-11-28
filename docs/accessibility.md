@@ -15,12 +15,16 @@ tool asks for the tree: egui only builds it while one is listening.
 
 - **`Access`**, a trait on `egui::Response` that names a control drawn by hand and gives it a
   role and a state: `.role(Role::Tab, name)`, `.selected(on)`, `.toggled(on)`,
-  `.expanded(open)`, `.described(text)`, and `.tip(text)` for a tooltip that is also the name
-  of an icon button.
+  `.expanded(open)`, `.described(text)`, `.tip(text)` for a tooltip that is also the name
+  of an icon button, and `.announce()` for words that change while a person waits (a status
+  note, "Copied"), which a screen reader then says without moving the keyboard.
 - **`area(role, name)`**, a `UiBuilder` that names a region (a tab strip, a sidebar, a list).
 - **The focus ring.** `a11y::setup`, which `LiveLook::frame` calls, adds an egui plugin that
   draws a ring in the accent around whatever has the keyboard, from the first Tab until the next
   click. `a11y::ring_inside` puts it inside the edge of a large area (Rivet Files' file list).
+- **Right-click menus from the keyboard.** The same plugin turns Shift+F10 into a right-click
+  on whatever has the keyboard, so every `context_menu` opens from the keyboard with no work in
+  the app. A list that is one Tab stop says which row's menu to open with `a11y::menu_at`.
 - **The desktop's wishes.** `a11y::high_contrast()` and `a11y::reduced_motion()` follow the
   desktop portal's Settings (`org.freedesktop.appearance` `contrast` and `reduced-motion`, which
   Softcore and GNOME serve, and GNOME's `enable-animations` and `high-contrast`), else the GTK
@@ -50,7 +54,7 @@ their text. Anything else that takes a click or the keyboard follows these four 
    Tab stop whose arrows move through its rows, and then the row under the keyboard is the
    list's active descendant (`set_active_descendant`), so a screen reader reads each row
    reached. Enter or Space activates what has focus; egui does this for any control with
-   `Sense::click()`. Esc closes what's on top.
+   `Sense::click()`. Esc closes what's on top. Shift+F10 opens its right-click menu.
 
 A control only for the pointer (a drag handle, the empty space behind a toolbar that opens a
 menu) shouldn't be a Tab stop: use `Sense::CLICK` or `Sense::DRAG` without `FOCUSABLE`, and

@@ -35,6 +35,7 @@ impl RivetApp {
             && let Some(list) = self.file_list_focus
         {
             resp.ctx.accesskit_node_builder(list, |n| n.set_active_descendant(resp.id.accesskit_id()));
+            rivet_look::a11y::menu_at(&resp.ctx, list, resp.rect.center());
         }
         resp
     }

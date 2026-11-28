@@ -4,7 +4,7 @@
 
 - **Screen readers and the keyboard**: Orca and other screen readers can read the window's
   buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
-  the keyboard. With higher contrast or less motion asked for in the desktop's settings, edges
+  the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard. With higher contrast or less motion asked for in the desktop's settings, edges
   and secondary text get stronger and animations stop.
 - **Rivet Long Shot, a new app**: open a picture and step through the rest of its folder with the
   arrow keys, in the order Rivet Files shows them. The pictures on either side are read ahead,
