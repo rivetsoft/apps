@@ -1,0 +1,26 @@
+[package]
+name = "rivet-lockscreen"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "What Rivet Shell's lock screen and Rivet Greeter share: the screen's face, its look, the Wayland program that shows it, and the folder each person's session leaves its wallpaper and look in for the login screen"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+rivet-kit = { path = "../rivet-kit" }
+rivet-look = { path = "../rivet-look" }
+eframe = { version = "0.37.0", default-features = false }
+# The screen's surfaces: session lock, layer shell or one full-screen window, drawn in software
+# into shared memory.
+smithay-client-toolkit = "0.20"
+wayland-client = "0.31"
+calloop = "0.14"
+calloop-wayland-source = "0.4"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+chrono = "0.4.45"
+libc = "0.2.191"
+
+[dev-dependencies]
+# The tests build alone (eframe needs a windowing backend to compile).
+eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "wayland", "x11"] }

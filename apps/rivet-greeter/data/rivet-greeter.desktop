@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Rivet Greeter
+GenericName=Login Screen
+Comment=A login screen for greetd in Rivet Shell's look, over the wallpaper each person chose last
+Exec=rivet-greeter
+Icon=rivet-greeter
+Terminal=false
+NoDisplay=true
+Categories=System;
+Keywords=rivet;greeter;greetd;login;

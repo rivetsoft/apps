@@ -16,6 +16,8 @@ path = "src/main.rs"
 rivet-kit = { path = "../../crates/rivet-kit" }
 rivet-look = { path = "../../crates/rivet-look" }
 rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
+# The lock screen, shared with Rivet Greeter, and the folder the shell leaves the greeter's look in.
+rivet-lockscreen = { path = "../../crates/rivet-lockscreen" }
 # Wallpaper thumbnails, from the desktop's shared cache.
 rivet-media = { path = "../../crates/rivet-media" }
 eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }

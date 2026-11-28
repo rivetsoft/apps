@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The login screen is its own program now**: Rivet Greeter. Rivet Shell still leaves your
+  wallpaper and look for it whenever they change, and the lock screen looks just as it did.
+  `rivet-shell greeter` keeps working for now by running `rivet-greeter` with the same words, so
+  greetd settings from 0.1.2 carry on once Rivet Greeter is installed; without it, it says how
+  to get it. Change `rivet-shell greeter` to `rivet-greeter` in `/etc/greetd/config.toml` (and
+  `--setup` is `sudo rivet-greeter --setup` now): a later release drops `rivet-shell greeter`.
 - **Screen readers and the keyboard**: Orca and other screen readers can read the window's
   buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
   the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard.

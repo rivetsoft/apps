@@ -1148,13 +1148,6 @@ impl Settings {
         s
     }
 
-    /// Settings from a settings file's text, over the defaults.
-    pub fn from_text(text: &str) -> Settings {
-        let mut s = Settings::default();
-        s.parse(text);
-        s
-    }
-
     fn parse(&mut self, text: &str) {
         let mut old = OldPanel::default();
         let mut panels: Vec<(usize, PanelCfg)> = Vec::new();
@@ -1601,23 +1594,33 @@ impl Settings {
     }
 
     /// The usual surface greys, dark and light.
-    pub const SURFACES: [[u8; 3]; 2] = [[0x30, 0x30, 0x30], [0xea, 0xea, 0xec]];
+    pub const SURFACES: [[u8; 3]; 2] = rivet_lockscreen::look::SURFACES;
 
     /// The shell's own surface colour in its dark style or its light one: the chosen one (else
     /// the usual grey), with a little of the accent when tinted. None: the usual, untouched.
     pub fn surface(&self, dark: bool) -> Option<eframe::egui::Color32> {
-        use eframe::egui::Color32;
-        let own = if dark { self.surface_dark } else { self.surface_light };
-        if own.is_none() && !self.surface_tint {
-            return None;
+        rivet_lockscreen::look::surface(self.accent, if dark { self.surface_dark } else { self.surface_light }, self.surface_tint, dark)
+    }
+
+    /// How the lock screen looks (and the login screen, which is left a copy).
+    pub fn lock_look(&self) -> rivet_lockscreen::Look {
+        rivet_lockscreen::Look {
+            theme: self.theme,
+            accent: self.accent,
+            secondary: self.secondary,
+            tertiary: self.tertiary,
+            color_use: self.color_use,
+            text_size: self.text_size,
+            font: self.font.clone(),
+            clock_format: self.clock_format.clone(),
+            blur: self.lock_blur,
+            power: self.lock_power,
+            surface_dark: self.surface_dark,
+            surface_light: self.surface_light,
+            surface_tint: self.surface_tint,
+            follow_desktop_colors: self.follow_desktop_colors,
+            own_surfaces: self.own_colors(),
         }
-        let [r, g, b] = own.unwrap_or(Self::SURFACES[if dark { 0 } else { 1 }]);
-        let base = Color32::from_rgb(r, g, b);
-        if !self.surface_tint {
-            return Some(base);
-        }
-        let [r, g, b] = self.accent;
-        Some(rivet_look::palette::mix(base, Color32::from_rgb(r, g, b), if dark { 0.12 } else { 0.07 }))
     }
 
     /// Are the colours the shell's own (its style, accent and surface), not the desktop's or a palette's?

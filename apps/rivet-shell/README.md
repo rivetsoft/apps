@@ -75,10 +75,10 @@ Start it with your session and bind a key to the launcher:
 | Hyprland | `exec-once = rivet-shell` | `bind = SUPER, SPACE, exec, rivet-shell msg launcher` |
 | Sway | `exec rivet-shell` | `bindsym $mod+space exec rivet-shell msg launcher` |
 
-The lock screen can also be your login screen, as a greeter for greetd, over the wallpaper you
-chose last. Run `sudo rivet-shell greeter --setup` once; it makes the shared folder each
-person's shell leaves its wallpaper and look in, and prints the lines for
-`/etc/greetd/config.toml` (with cage, or Sway).
+The lock screen can also be your login screen: [Rivet Greeter](../rivet-greeter/README.md) is
+the same screen as a greeter for greetd, over the wallpaper you chose last. Rivet Shell leaves
+your wallpaper and look for it whenever they change, once `sudo rivet-greeter --setup` has made
+the folder they go in. `rivet-shell greeter` still runs Rivet Greeter for now.
 
 Or run it as a systemd service, which starts it with the session and again if it stops by
 accident. This works where the compositor starts systemd's graphical session (`niri-session`,
