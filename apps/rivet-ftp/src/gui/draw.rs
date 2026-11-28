@@ -2,6 +2,8 @@
 
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_connections::Protocol;
+use eframe::egui::accesskit::Role;
+use rivet_look::a11y::Access;
 use rivet_look::fonts;
 use rivet_look::theme::{r_lg, r_md, r_sm, status};
 
@@ -30,7 +32,7 @@ impl FtpApp {
             }
             if let Some((msg, bad)) = &self.note {
                 let c = if *bad { status(&ctx).danger } else { v.weak_text_color() };
-                ui.label(egui::RichText::new(first_line(msg)).color(c)).on_hover_text(msg.as_str());
+                ui.label(egui::RichText::new(first_line(msg)).color(c)).on_hover_text(msg.as_str()).announce();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.add(egui::Button::new("Transfers").frame(false)).on_hover_text("Show transfers (F8)").clicked() {
@@ -127,7 +129,7 @@ impl FtpApp {
                         galley
                     };
                     ui.painter().with_clip_rect(text_rect).galley(Pos2::new(text_rect.left(), rect.center().y - galley.size().y / 2.0), galley, fg);
-                    let resp = resp.on_hover_ui(|ui| connection_tooltip(ui, c));
+                    let resp = resp.role(Role::Button, c.title()).selected(current).described(c.url()).on_hover_ui(|ui| connection_tooltip(ui, c));
                     // Open in another tab: a dot, like the tab's own.
                     if !current && self.tab_with(&c.name).is_some() {
                         ui.painter().circle_filled(Pos2::new(rect.right() - 10.0, rect.center().y), 3.5, status(&ctx).success);
@@ -302,6 +304,7 @@ impl FtpApp {
                     };
                     ui.painter().add(egui::Shape::convex_polygon(pts, c, Stroke::NONE));
                 }
+                let resp = resp.role(Role::Button, format!("Sort by {}", label.to_lowercase())).described(if on { if sort.desc { "Sorted from last to first" } else { "Sorted from first to last" } } else { "" });
                 if resp.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                     pick = Some(col);
                 }
@@ -338,7 +341,12 @@ impl FtpApp {
             None
         };
         // The list area: click to focus (and clear the selection), right-click for the menu.
-        let bg = ui.interact(list_rect, egui::Id::unique(("pane-bg", side as u8)), Sense::click());
+        let bg = ui.interact(list_rect, egui::Id::unique(("pane-bg", side as u8)), Sense::click()).role(Role::ListBox, if side == Side::Local { "Files on this computer" } else { "Files on the server" });
+        rivet_look::a11y::ring_inside(&ctx, bg.id);
+        ui.memory_mut(|m| m.set_focus_lock_filter(bg.id, egui::EventFilter { tab: false, horizontal_arrows: true, vertical_arrows: true, escape: false }));
+        if bg.gained_focus() {
+            self.focus = side;
+        }
         if bg.clicked() {
             self.focus = side;
             self.pane(side).selected.clear();
@@ -411,7 +419,7 @@ impl FtpApp {
             ui.set_width(ui.available_width());
             let pane = self.pane(side);
             if let Some(text) = pane.editing.as_mut() {
-                let r = ui.add(egui::TextEdit::singleline(text).frame(egui::Frame::NONE).desired_width(f32::INFINITY));
+                let r = ui.add(egui::TextEdit::singleline(text).frame(egui::Frame::NONE).desired_width(f32::INFINITY)).accessible_name("Path");
                 if r.lost_focus() {
                     if ui.input(|i| i.key_pressed(Key::Enter)) {
                         go = Some(text.clone());
@@ -465,7 +473,7 @@ impl FtpApp {
                                     go = Some(target.clone());
                                 }
                             }
-                            let rest = ui.allocate_response(Vec2::new(ui.available_width().max(24.0), 22.0), Sense::click()).on_hover_cursor(egui::CursorIcon::Text);
+                            let rest = ui.allocate_response(Vec2::new(ui.available_width().max(24.0), 22.0), Sense::click()).role(Role::Button, "Type a path").on_hover_cursor(egui::CursorIcon::Text);
                             if rest.clicked() {
                                 pane.editing = Some(path.clone());
                             }
@@ -519,11 +527,17 @@ impl FtpApp {
             }
             for i in range {
                 let e = &entries[i];
-                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::click_and_drag());
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), ROW_H), Sense::CLICK | Sense::DRAG);
                 if scroll_to == Some(i) {
                     ui.scroll_to_rect(rect, None);
                 }
                 let selected = self.pane_ref(side).selected.contains(&e.name);
+                let resp = resp.role(Role::ListBoxOption, e.name.as_str()).selected(selected);
+                let resp = if e.is_dir { resp.described("Folder") } else { resp };
+                if self.pane_ref(side).cursor == Some(i) {
+                    ctx.accesskit_node_builder(egui::Id::unique(("pane-bg", side as u8)), |n| n.set_active_descendant(resp.id.accesskit_id()));
+                    rivet_look::a11y::menu_at(&ctx, egui::Id::unique(("pane-bg", side as u8)), resp.rect.center());
+                }
                 if selected {
                     let fill = if focused { v.selection.bg_fill } else { v.selection.bg_fill.gamma_multiply(0.4) };
                     ui.painter().rect_filled(rect, r_sm(), fill);
@@ -903,6 +917,7 @@ impl FtpApp {
                     JobState::Waiting => ("Waiting".to_string(), weak),
                 };
                 let status_rect = Rect::from_min_max(Pos2::new(rect.right() - status_w, rect.top()), Pos2::new(text_right, rect.bottom()));
+                let status_text = text.clone();
                 let mut job = egui::text::LayoutJob::single_section(text, egui::TextFormat::simple(fonts::ui_font(12.0), col));
                 job.wrap = egui::text::TextWrapping::truncate_at_width(status_rect.width().max(0.0));
                 let g = ui.fonts_mut(|f| f.layout_job(job));
@@ -922,6 +937,7 @@ impl FtpApp {
                     JobState::Failed(e) => format!("From {}\nTo {}\n\n{e}", j.from, j.to),
                     _ => format!("From {}\nTo {}", j.from, j.to),
                 };
+                let resp = resp.role(Role::ListBoxOption, format!("{} {}, {}", if j.dir == Dir::Up { "Upload" } else { "Download" }, j.name, status_text));
                 let finished = j.state != JobState::Waiting;
                 let can_retry = matches!(j.state, JobState::Failed(_)) && self.transfer.is_some();
                 let resp = resp.on_hover_text(tip);
@@ -969,7 +985,7 @@ impl FtpApp {
             Some(t) => egui::Button::image(egui::Image::from_texture(&t).fit_to_exact_size(Vec2::splat(16.0)).tint(fg)),
             None => egui::Button::new(fallback),
         };
-        ui.add(b.frame_when_inactive(false).min_size(Vec2::new(26.0, 24.0)).corner_radius(r_sm())).on_hover_text(tip)
+        ui.add(b.frame_when_inactive(false).min_size(Vec2::new(26.0, 24.0)).corner_radius(r_sm())).role(Role::Button, tip.split(" (").next().unwrap_or(tip)).on_hover_text(tip)
     }
 }
 
@@ -996,7 +1012,7 @@ fn category_header(ui: &mut egui::Ui, name: &str, count: usize, open: bool, conn
     let text_rect = Rect::from_min_max(Pos2::new(rect.left() + 22.0, rect.top()), Pos2::new(n.left() - 18.0, rect.bottom()));
     ui.painter().with_clip_rect(text_rect).text(Pos2::new(text_rect.left(), rect.center().y), Align2::LEFT_CENTER, name, fonts::ui_font(13.5), col);
     ui.add_space(1.0);
-    resp.on_hover_text(if open { "Click to fold up · right-click for more" } else { "Click to open · right-click for more" })
+    resp.role(Role::Button, format!("{name}, {count} connection{}", if count == 1 { "" } else { "s" })).expanded(open).on_hover_text(if open { "Click to fold up · right-click for more" } else { "Click to open · right-click for more" })
 }
 
 /// Everything about a saved connection, for its tooltip.

@@ -7,6 +7,8 @@ use std::collections::HashMap;
 
 use eframe::egui::{self, CornerRadius, Id, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_connections::Connection;
+use eframe::egui::accesskit::Role;
+use rivet_look::a11y::Access;
 use rivet_look::fonts;
 use rivet_look::theme::{r_sm, status};
 
@@ -164,7 +166,7 @@ impl FtpApp {
         let mut pick = None;
         let mut close = None;
         let mut add = false;
-        ui.horizontal(|ui| {
+        ui.scope_builder(rivet_look::a11y::area(Role::TabList, "Connections"), |ui| ui.horizontal(|ui| {
             let n = self.tabs.len();
             let w = ((ui.available_width() - 40.0) / n as f32).clamp(90.0, 240.0);
             for i in 0..n {
@@ -177,6 +179,7 @@ impl FtpApp {
                 };
                 let title = conn.as_ref().map(|c| c.title()).unwrap_or_else(|| "Not connected".into());
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::click());
+                let resp = resp.role(Role::Tab, title.as_str()).selected(sel);
                 let v = ui.visuals().clone();
                 let bg = if sel { v.extreme_bg_color } else if resp.hovered() { v.widgets.hovered.weak_bg_fill } else { v.panel_fill };
                 ui.painter().rect_filled(rect, CornerRadius { nw: r_sm(), ne: r_sm(), sw: 0, se: 0 }, bg);
@@ -204,7 +207,7 @@ impl FtpApp {
                 job.wrap = egui::text::TextWrapping::truncate_at_width(right - rect.left() - 24.0);
                 let galley = ui.painter().layout_job(job);
                 ui.painter().galley(Pos2::new(rect.left() + 22.0, rect.center().y - galley.size().y / 2.0), galley, col);
-                let cl = ui.interact(close_rect, Id::unique(("ftp-tabclose", i)), Sense::click());
+                let cl = ui.interact(close_rect, Id::unique(("ftp-tabclose", i)), Sense::click()).role(Role::Button, format!("Close {title}"));
                 if cl.hovered() {
                     ui.painter().circle_filled(close_rect.center(), 8.0, v.widgets.hovered.bg_fill);
                 }
@@ -229,10 +232,10 @@ impl FtpApp {
                     pick = Some(i);
                 }
             }
-            if ui.button("+").on_hover_text("New tab (Ctrl+T)").clicked() {
+            if ui.button("+").on_hover_text("New tab (Ctrl+T)").role(Role::Button, "New tab").clicked() {
                 add = true;
             }
-        });
+        }));
         if let Some(i) = close {
             self.close_tab(i);
         } else if let Some(i) = pick {

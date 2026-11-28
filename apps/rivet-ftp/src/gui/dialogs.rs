@@ -27,6 +27,23 @@ fn heading(ui: &mut egui::Ui, text: &str) {
 
 /// A raised text field like Rivet's: a lifted surface, outlined in the accent while typing.
 /// True when Enter was pressed in it.
+fn field_name(id: &str) -> &'static str {
+    match id {
+        "f-name" => "Name",
+        "f-cat" => "Category",
+        "f-host" => "Address",
+        "f-port" => "Port",
+        "f-user" => "User",
+        "f-key" => "SSH key file",
+        "f-remote" => "Folder on the server",
+        "f-local" => "Folder on this computer",
+        "k-name" => "File name",
+        "k-comment" => "Comment",
+        "f-pass" | "k-pass" => "Password",
+        _ => "Text",
+    }
+}
+
 fn raised(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32, accent: Color32, focus: bool) -> bool {
     let v = ui.visuals().clone();
     let field_id = egui::Id::unique(("form-field", id));
@@ -43,7 +60,7 @@ fn raised(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32
         .show(ui, |ui| {
             // The margin (2 × 10) and the outline (2 × 1.5) are outside this width.
             ui.set_width(width - 23.0);
-            ui.add(egui::TextEdit::singleline(text).id(field_id).frame(egui::Frame::NONE).hint_text(hint).min_size(Vec2::new(0.0, 22.0)).desired_width(f32::INFINITY))
+            ui.add(egui::TextEdit::singleline(text).id(field_id).frame(egui::Frame::NONE).hint_text(hint).min_size(Vec2::new(0.0, 22.0)).desired_width(f32::INFINITY)).accessible_name(field_name(id))
         })
         .inner;
     if focus {
@@ -113,7 +130,7 @@ fn secret(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32
         .inner_margin(egui::Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.set_width(width - 23.0);
-            ui.add(egui::TextEdit::singleline(text).id(field_id).password(true).frame(egui::Frame::NONE).hint_text(hint).min_size(Vec2::new(0.0, 22.0)).desired_width(f32::INFINITY))
+            ui.add(egui::TextEdit::singleline(text).id(field_id).password(true).frame(egui::Frame::NONE).hint_text(hint).min_size(Vec2::new(0.0, 22.0)).desired_width(f32::INFINITY)).accessible_name(field_name(id))
         })
         .inner;
     resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter))
@@ -121,7 +138,7 @@ fn secret(ui: &mut egui::Ui, id: &str, text: &mut String, hint: &str, width: f32
 
 /// A text field that has the keyboard; true when Enter was pressed in it.
 fn field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> bool {
-    let r = ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY));
+    let r = ui.add(egui::TextEdit::singleline(text).hint_text(hint).desired_width(f32::INFINITY)).accessible_name(hint);
     if !r.has_focus() && !r.lost_focus() {
         r.request_focus();
     }
@@ -215,7 +232,7 @@ impl FtpApp {
                     let st = Stroke::new(1.8, ui.visuals().text_color());
                     ui.painter().line_segment([c + Vec2::new(-4.5, -2.0), c + Vec2::new(0.0, 2.5)], st);
                     ui.painter().line_segment([c + Vec2::new(0.0, 2.5), c + Vec2::new(4.5, -2.0)], st);
-                    r.0.on_hover_text("Categories in use");
+                    r.0.accessible_name("Categories in use").on_hover_text("Categories in use");
                 }
             });
             ui.add_space(8.0);

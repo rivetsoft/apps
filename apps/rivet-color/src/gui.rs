@@ -11,6 +11,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::SystemTime;
 
 use eframe::egui::{self, Align2, Color32, CornerRadius, FontId, Key, Pos2, Rect, Sense, Stroke, Vec2};
+use eframe::egui::accesskit::{Action, Role};
+use rivet_look::a11y::Access;
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::palette;
 use rivet_look::theme::{Mode, r_md, r_sm};
@@ -243,7 +245,8 @@ impl ColorApp {
                 self.pick(&ctx);
             }
             ui.add_space(6.0);
-            let edit = ui.add(egui::TextEdit::singleline(&mut self.typed).desired_width(200.0).font(FontId::monospace(14.0)).hint_text("#d53f8c"));
+            let edit = ui.add(egui::TextEdit::singleline(&mut self.typed).desired_width(200.0).font(FontId::monospace(14.0)).hint_text("#d53f8c")).accessible_name("Color code");
+            let edit = edit;
             if edit.changed()
                 && let Some(c) = parse(&self.typed)
             {
@@ -258,11 +261,12 @@ impl ColorApp {
                     self.copy(&ctx, self.color);
                 }
                 let before = self.format;
-                egui::ComboBox::from_id_salt("format").selected_text(self.format.name()).width(90.0).show_ui(ui, |ui| {
+                let combo = egui::ComboBox::from_id_salt("format").selected_text(self.format.name()).width(90.0).show_ui(ui, |ui| {
                     for f in Format::ALL {
                         ui.selectable_value(&mut self.format, f, f.name());
                     }
                 });
+                combo.response.accessible_name("Copy as");
                 if self.format != before {
                     if self.live() {
                         store::save_format(self.format);
@@ -279,7 +283,8 @@ impl ColorApp {
         let ctx = ui.ctx().clone();
         let v = ui.visuals().clone();
         let w = ui.available_width();
-        let (r, _) = ui.allocate_exact_size(Vec2::new(w, 150.0), Sense::hover());
+        let (r, big) = ui.allocate_exact_size(Vec2::new(w, 150.0), Sense::hover());
+        big.role(Role::Image, format!("Current color {}", self.color.hex()));
         ui.painter().rect(r, r_md(), c32(self.color), Stroke::new(1.0, palette::mix(v.panel_fill, v.text_color(), 0.15)), egui::StrokeKind::Inside);
         let ink = c32(self.color.ink());
         ui.painter().text(r.left_bottom() + Vec2::new(14.0, -12.0), Align2::LEFT_BOTTOM, self.color.hex(), FontId::monospace(20.0), ink);
@@ -287,6 +292,7 @@ impl ColorApp {
         for f in Format::ALL {
             let text = self.color.format(f);
             let (row, resp) = ui.allocate_exact_size(Vec2::new(w, 28.0), Sense::click());
+            let resp = resp.role(Role::Button, format!("Copy {} {text}", f.name()));
             if resp.hovered() {
                 ui.painter().rect_filled(row, r_sm(), v.widgets.hovered.weak_bg_fill);
                 ui.painter().text(row.right_center() - Vec2::new(10.0, 0.0), Align2::RIGHT_CENTER, "Copy", FontId::proportional(12.0), v.weak_text_color());
@@ -303,7 +309,7 @@ impl ColorApp {
         heading(ui, "Contrast");
         for (name, bg) in [("On white", Rgb(255, 255, 255)), ("On black", Rgb(0, 0, 0))] {
             let ratio = self.color.contrast(bg);
-            let (row, _) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::hover());
+            let (row, rr) = ui.allocate_exact_size(Vec2::new(w, 30.0), Sense::hover());
             let chip = Rect::from_min_size(row.left_center() - Vec2::new(0.0, 12.0), Vec2::new(44.0, 24.0));
             ui.painter().rect(chip, r_sm(), c32(bg), Stroke::new(1.0, palette::mix(v.panel_fill, v.text_color(), 0.15)), egui::StrokeKind::Inside);
             ui.painter().text(chip.center(), Align2::CENTER_CENTER, "Aa", FontId::proportional(14.0), c32(self.color));
@@ -315,6 +321,7 @@ impl ColorApp {
                 _ => ("Too faint for text", false),
             };
             let words = format!("{ratio:.1}:1  {grade}");
+            rr.role(Role::Label, format!("Contrast {name}: {words}"));
             ui.painter().text(row.right_center(), Align2::RIGHT_CENTER, words, FontId::proportional(13.0), if good { v.text_color() } else { v.weak_text_color() });
         }
         ui.add_space(12.0);
@@ -383,7 +390,7 @@ impl ColorApp {
             ui.add_space(6.0);
             let title = if self.chosen < n { self.palettes[self.chosen].name.clone() } else if !desktop.is_empty() { "Desktop colors".into() } else { "No palettes".into() };
             let before = self.chosen;
-            egui::ComboBox::from_id_salt("palette").selected_text(title).width(170.0).show_ui(ui, |ui| {
+            let combo = egui::ComboBox::from_id_salt("palette").selected_text(title).width(170.0).show_ui(ui, |ui| {
                 for (i, p) in self.palettes.iter().enumerate() {
                     ui.selectable_value(&mut self.chosen, i, &p.name);
                 }
@@ -391,6 +398,7 @@ impl ColorApp {
                     ui.selectable_value(&mut self.chosen, n, "Desktop colors");
                 }
             });
+            combo.response.accessible_name("Palette");
             if self.chosen != before {
                 self.renaming = None;
                 self.confirm_delete = false;
@@ -427,7 +435,7 @@ impl ColorApp {
         if let Some(name) = self.renaming.as_mut() {
             let mut done = false;
             ui.horizontal(|ui| {
-                let r = ui.add(egui::TextEdit::singleline(name).desired_width(220.0));
+                let r = ui.add(egui::TextEdit::singleline(name).desired_width(220.0)).accessible_name("Palette name");
                 r.request_focus();
                 if r.lost_focus() || ui.button("Rename").clicked() {
                     done = true;
@@ -550,7 +558,7 @@ impl ColorApp {
                 (format!("{} in the history · {}", count(self.history.len(), "color", "colors"), count(self.palettes.len(), "palette", "palettes")), v.weak_text_color())
             }
         };
-        ui.label(egui::RichText::new(text).size(12.5).color(color));
+        ui.label(egui::RichText::new(text).size(12.5).color(color)).announce();
     }
 }
 
@@ -611,6 +619,28 @@ fn gradient(ui: &mut egui::Ui, name: &str, value: &mut f32, whole: f32, at: impl
         *value = ((p.x - bar.left()) / bar.width()).clamp(0.0, 1.0) * whole;
         changed = true;
     }
+    let step = whole / 100.0;
+    let (focused, id) = (resp.has_focus(), resp.id);
+    let nudge = ui.input(|i| {
+        let keys = focused as i32 * (i.key_pressed(Key::ArrowRight) as i32 + i.key_pressed(Key::ArrowUp) as i32 - i.key_pressed(Key::ArrowLeft) as i32 - i.key_pressed(Key::ArrowDown) as i32);
+        keys + i.num_accesskit_action_requests(id, Action::Increment) as i32 - i.num_accesskit_action_requests(id, Action::Decrement) as i32
+    });
+    if nudge != 0 {
+        *value = (*value + step * nudge as f32).clamp(0.0, whole);
+        changed = true;
+    }
+    let shown = if whole > 1.0 { format!("{} degrees", value.round()) } else { format!("{} percent", (*value * 100.0).round()) };
+    ui.ctx().accesskit_node_builder(resp.id, |n| {
+        n.set_role(Role::Slider);
+        n.set_label(name);
+        n.set_numeric_value((*value / step).round() as f64);
+        n.set_min_numeric_value(0.0);
+        n.set_max_numeric_value(100.0);
+        n.set_numeric_value_step(1.0);
+        n.set_value(shown);
+        n.add_action(Action::Increment);
+        n.add_action(Action::Decrement);
+    });
     let t = *value / whole;
     let c = Pos2::new(bar.left() + bar.width() * t, bar.center().y);
     ui.painter().circle(c, 8.0, c32(at(t)), Stroke::new(2.0, Color32::WHITE));
@@ -623,6 +653,7 @@ fn gradient(ui: &mut egui::Ui, name: &str, value: &mut f32, whole: f32, at: impl
 fn swatch(ui: &mut egui::Ui, c: Rgb, size: Vec2, marked: bool) -> egui::Response {
     let v = ui.visuals().clone();
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
+    let resp = resp.role(Role::Button, c.hex());
     let lift = if resp.hovered() { -2.0 } else { 0.0 };
     let r = r.translate(Vec2::new(0.0, lift));
     ui.painter().rect(r, r_sm(), c32(c), Stroke::new(1.0, palette::mix(v.panel_fill, v.text_color(), 0.15)), egui::StrokeKind::Inside);

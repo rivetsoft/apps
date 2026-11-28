@@ -12,6 +12,8 @@ use std::time::SystemTime;
 use eframe::egui::{
     self, Align, Color32, Key, Layout, Modifiers, Rect, RichText, Sense, Stroke, Vec2,
 };
+use eframe::egui::accesskit::Role;
+use rivet_look::a11y::Access;
 use rivet_look::icons::{self, IconTheme};
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::theme::{Mode, r_md, r_sm, status};
@@ -450,7 +452,7 @@ impl WelcomeApp {
                 } else {
                     v.weak_text_color()
                 };
-                ui.label(RichText::new(line).font(fonts::ui_font(12.5)).color(color));
+                ui.label(RichText::new(line).font(fonts::ui_font(12.5)).color(color)).announce();
             });
             if wide {
                 ui.add_space(18.0);
@@ -497,7 +499,7 @@ impl WelcomeApp {
             .corner_radius(r_md())
             .inner_margin(egui::Margin::same(3))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.scope_builder(rivet_look::a11y::area(Role::TabList, "View"), |ui| ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
                     for (view, label) in [(View::Apps, "Apps"), (View::Settings, "Settings")] {
                         let on = self.view == view;
@@ -515,11 +517,12 @@ impl WelcomeApp {
                             .stroke(Stroke::NONE)
                             .corner_radius(r_sm())
                             .min_size(Vec2::new(72.0, 26.0));
-                        if ui.add(b).clicked() {
+                        let resp = ui.add(b).role(Role::Tab, label).selected(on);
+                        if resp.clicked() {
                             self.view = view;
                         }
                     }
-                });
+                }));
             });
     }
 
@@ -641,7 +644,8 @@ impl WelcomeApp {
         {
             ui.horizontal_top(|ui| {
                 let icon = 48.0;
-                let (r, _) = ui.allocate_exact_size(Vec2::splat(icon), Sense::hover());
+                let (r, icon_resp) = ui.allocate_exact_size(Vec2::splat(icon), Sense::hover());
+                icon_resp.role(Role::Image, format!("{} icon", row.entry.title));
                 if let Some(t) = tex {
                     let tint = if soon {
                         Color32::from_white_alpha(150)
@@ -836,7 +840,7 @@ impl WelcomeApp {
             });
             if let Some(stage) = &job {
                 ui.add_space(8.0);
-                bar(ui, stage.fraction(), accent);
+                bar(ui, stage.fraction(), accent, &format!("{} progress", row.entry.title));
                 ui.add_space(2.0);
                 ui.label(
                     RichText::new(stage.label())
@@ -879,7 +883,8 @@ impl WelcomeApp {
                 ui.add(
                     egui::Label::new(RichText::new(text).font(fonts::ui_font(12.0)).color(c))
                         .wrap(),
-                );
+                )
+                .announce();
             }
         }
     }
@@ -923,17 +928,18 @@ impl WelcomeApp {
                         ui.add_space(6.0);
                         ui.horizontal(|ui| {
                             ui.add_enabled_ui(self.s.tray, |ui| {
-                                ui.label("Look for updates");
+                                let check_label = ui.label("Look for updates");
                                 let name = |h: u32| match h {
                                     0 => "only when I sign in".to_string(),
                                     24 => "every day".to_string(),
                                     h => format!("every {h} hours"),
                                 };
-                                egui::ComboBox::from_id_salt("check-hours").selected_text(name(self.s.check_hours)).show_ui(ui, |ui| {
+                                let combo = egui::ComboBox::from_id_salt("check-hours").selected_text(name(self.s.check_hours)).show_ui(ui, |ui| {
                                     for h in [0, 3, 6, 12, 24] {
                                         ui.selectable_value(&mut self.s.check_hours, h, name(h));
                                     }
                                 });
+                                combo.response.labelled_by(check_label.id);
                             });
                         });
                     });
@@ -1023,8 +1029,14 @@ fn tag(ui: &mut egui::Ui, text: &str, color: Color32) {
 }
 
 /// A thin progress bar.
-fn bar(ui: &mut egui::Ui, f: f32, accent: Color32) {
-    let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
+fn bar(ui: &mut egui::Ui, f: f32, accent: Color32, name: &str) {
+    let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 6.0), Sense::hover());
+    let resp = resp.role(Role::ProgressIndicator, name);
+    ui.ctx().accesskit_node_builder(resp.id, |n| {
+        n.set_min_numeric_value(0.0);
+        n.set_max_numeric_value(100.0);
+        n.set_numeric_value((f.clamp(0.0, 1.0) * 100.0).round() as f64);
+    });
     let v = ui.visuals();
     ui.painter()
         .rect_filled(r, 3.0, palette::mix(v.panel_fill, v.text_color(), 0.12));

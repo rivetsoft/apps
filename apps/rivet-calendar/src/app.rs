@@ -8,6 +8,8 @@ use chrono::{Datelike, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Tim
 use eframe::egui::{self, Align2, Color32, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use rivet_cal::oauth::{Client, Provider};
 use rivet_cal::{Event, Occurrence, Store, Watch, When};
+use eframe::egui::accesskit::Role;
+use rivet_look::a11y::Access;
 use rivet_look::fonts::ui_font;
 use rivet_look::live::{Choice, LiveLook};
 use rivet_look::palette::mix;
@@ -889,10 +891,10 @@ impl CalendarApp {
                 self.day = Local::now().date_naive();
                 self.mini = self.day.with_day(1).unwrap_or(self.day);
             }
-            if ui.button("‹").on_hover_text("Back (Left)").clicked() {
+            if ui.button("‹").on_hover_text("Back (Left)").role(Role::Button, "Previous").clicked() {
                 self.step(-1);
             }
-            if ui.button("›").on_hover_text("On (Right)").clicked() {
+            if ui.button("›").on_hover_text("On (Right)").role(Role::Button, "Next").clicked() {
                 self.step(1);
             }
             ui.add_space(6.0);
@@ -911,7 +913,7 @@ impl CalendarApp {
             let status = reading.or_else(|| self.job.as_ref().map(|(w, _)| w.clone()).filter(|w| !w.is_empty())).or_else(|| self.note.clone());
             if let Some(t) = status {
                 ui.add_space(10.0);
-                if ui.add(egui::Label::new(egui::RichText::new(t).size(12.5).color(v.weak_text_color())).sense(Sense::click())).on_hover_text("Click to dismiss").clicked() {
+                if ui.add(egui::Label::new(egui::RichText::new(&t).size(12.5).color(v.weak_text_color())).sense(Sense::click())).on_hover_text("Click to dismiss").role(Role::Button, format!("{t}. Dismiss")).announce().clicked() {
                     self.note = None;
                 }
             }
@@ -923,7 +925,7 @@ impl CalendarApp {
                 ui.add_space(8.0);
                 // The views, as one row of choices.
                 for (view, label, key) in [(View::Agenda, "Agenda", "A"), (View::Month, "Month", "M"), (View::Week, "Week", "W"), (View::Day, "Day", "D")] {
-                    if ui.selectable_label(self.s.view == view, label).on_hover_text(key).clicked() {
+                    if ui.selectable_label(self.s.view == view, label).on_hover_text(key).role(Role::Tab, label).selected(self.s.view == view).clicked() {
                         self.set_view(view);
                     }
                 }
@@ -938,10 +940,10 @@ impl CalendarApp {
             ui.label(egui::RichText::new(self.mini.format("%B %Y").to_string()).font(ui_font(13.5)).color(v.strong_text_color()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
-                if ui.small_button("›").clicked() {
+                if ui.small_button("›").role(Role::Button, "Next month").clicked() {
                     self.mini = add_months(self.mini, 1);
                 }
-                if ui.small_button("‹").clicked() {
+                if ui.small_button("‹").role(Role::Button, "Previous month").clicked() {
                     self.mini = add_months(self.mini, -1);
                 }
             });
@@ -963,7 +965,7 @@ impl CalendarApp {
             for col in 0..7 {
                 let d = first + Duration::days(row * 7 + col);
                 let r = Rect::from_center_size(Pos2::new(line.left() + cell * (col as f32 + 0.5), line.center().y), Vec2::splat(24.0));
-                let resp = ui.interact(r, egui::Id::unique(("mini", d)), Sense::click());
+                let resp = ui.interact(r, egui::Id::unique(("mini", d)), Sense::click()).role(Role::Button, d.format("%A %-d %B %Y").to_string()).selected(d == self.day);
                 let p = ui.painter();
                 if d == today {
                     p.circle_filled(r.center(), 11.0, accent);
@@ -990,7 +992,7 @@ impl CalendarApp {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("CALENDARS").font(ui_font(10.5)).color(v.weak_text_color().gamma_multiply(0.85)));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let plus = ui.small_button("+").on_hover_text("New Calendar or Subscription");
+                let plus = ui.small_button("+").on_hover_text("New Calendar or Subscription").role(Role::Button, "New calendar or subscription");
                 let color = COLORS[self.store.calendars.len() % COLORS.len()];
                 egui::Popup::menu(&plus).show(|ui| {
                     if ui.button("New Calendar…").clicked() {
@@ -1064,6 +1066,8 @@ impl CalendarApp {
                 }
                 _ => String::new(),
             };
+            let resp = resp.role(Role::CheckBox, if cal.feed.is_some() || !cal.read_only { cal.name.clone() } else { format!("{} (read only)", cal.name) }).toggled(shown);
+            let resp = if tip.is_empty() { resp } else { resp.described(tip.replace('\n', ". ")) };
             let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
             let resp = if tip.is_empty() { resp } else { resp.on_hover_text(tip) };
             if resp.clicked() {
@@ -1169,6 +1173,8 @@ impl CalendarApp {
             let g = one_line(p, &title, 11.5, v.text_color(), r.width() - 18.0 - tw);
             p.galley(Pos2::new(r.left() + 17.0 + tw, r.center().y - g.size().y / 2.0), g, v.text_color());
         }
+        let name = if o.all_day { format!("All day, {title}") } else { format!("{} {title}", clock(o.start.time(), self.s.clock_24)) };
+        let resp = resp.role(Role::Button, name);
         let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
         match self.in_calendars(o) {
             Some(t) => resp.on_hover_text(t),
@@ -1198,7 +1204,7 @@ impl CalendarApp {
             for col in 0..7 {
                 let d = first + Duration::days(row * 7 + col);
                 let r = Rect::from_min_size(Pos2::new(area.left() + cw * col as f32, area.top() + head + ch * row as f32), Vec2::new(cw, ch));
-                let resp = ui.interact(r, egui::Id::unique(("month-cell", d)), Sense::click());
+                let resp = ui.interact(r, egui::Id::unique(("month-cell", d)), Sense::CLICK).role(Role::GridCell, d.format("%A %-d %B %Y").to_string()).selected(d == self.day);
                 let p = ui.painter();
                 if d == self.day {
                     p.rect_filled(r.shrink(1.0), r_sm(), mix(v.panel_fill, accent, 0.08));
@@ -1222,7 +1228,7 @@ impl CalendarApp {
                 }
                 if mine.len() > fits {
                     let mr = Rect::from_min_size(Pos2::new(r.left() + 4.0, r.top() + 28.0 + fits as f32 * (CHIP + 2.0)), Vec2::new(r.width() - 8.0, CHIP));
-                    let more = ui.interact(mr, egui::Id::unique(("more", d)), Sense::click());
+                    let more = ui.interact(mr, egui::Id::unique(("more", d)), Sense::click()).role(Role::Button, format!("{} more events on {}", mine.len() - fits, d.format("%A %-d %B")));
                     ui.painter().text(Pos2::new(mr.left() + 6.0, mr.center().y), Align2::LEFT_CENTER, format!("{} more", mine.len() - fits), ui_font(11.5), if more.hovered() { v.text_color() } else { v.weak_text_color() });
                     if more.on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
                         go_day = Some(d);
@@ -1311,7 +1317,7 @@ impl CalendarApp {
                 ui.painter().vline(x0, grid.y_range(), line);
                 let colr = Rect::from_min_size(Pos2::new(x0, grid.top()), Vec2::new(col, grid.height()));
                 // Double-click an empty hour: a new event there.
-                let bg = ui.interact(colr, egui::Id::unique(("day-col", d)), Sense::click());
+                let bg = ui.interact(colr, egui::Id::unique(("day-col", d)), Sense::CLICK).role(Role::GenericContainer, d.format("%A %-d %B").to_string());
                 if bg.double_clicked()
                     && let Some(p) = bg.interact_pointer_pos()
                 {
@@ -1346,6 +1352,8 @@ impl CalendarApp {
                         let when = format!("{} – {}", clock(o.start.time(), self.s.clock_24), clock(o.end.time(), self.s.clock_24));
                         clip.text(Pos2::new(r.left() + 6.0, r.top() + 6.0 + gh), Align2::LEFT_TOP, when, ui_font(10.5), ink.gamma_multiply(0.85));
                     }
+                    let when = format!("{} to {}", clock(o.start.time(), self.s.clock_24), clock(o.end.time(), self.s.clock_24));
+                    let resp = resp.role(Role::Button, format!("{when}, {title}"));
                     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                     let resp = match self.in_calendars(o) {
                         Some(t) => resp.on_hover_text(t),
@@ -1391,7 +1399,8 @@ impl CalendarApp {
             let mut last: Option<NaiveDate> = None;
             for o in &all {
                 let d = o.start.date().max(self.day);
-                if last != Some(d) {
+                let new_day = last != Some(d);
+                if new_day {
                     last = Some(d);
                     ui.add_space(10.0);
                     let label = if d == today { format!("Today · {}", d.format("%A %-d %B")) } else { d.format("%A %-d %B").to_string() };
@@ -1422,6 +1431,9 @@ impl CalendarApp {
                         ui.painter().galley(Pos2::new(r.left() + 152.0 + gw, r.center().y - lg.size().y / 2.0), lg, v.weak_text_color());
                     }
                 }
+                let title = self.store.event(o).map(|e| if e.summary.trim().is_empty() { "Untitled event".to_string() } else { e.summary.clone() }).unwrap_or_default();
+                let day = if new_day { format!("{}, ", d.format("%A %-d %B")) } else { String::new() };
+                let resp = resp.role(Role::Button, format!("{day}{when}, {title}"));
                 let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
                 let resp = match self.in_calendars(o) {
                     Some(t) => resp.on_hover_text(t),
@@ -1453,29 +1465,29 @@ impl CalendarApp {
         let shown = windows::show(ctx, &mut win, &chrome, area, Vec2::new(380.0, 420.0), |ui| {
             let v = ui.visuals().clone();
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 8.0);
-            let title_field = ui.add(egui::TextEdit::singleline(&mut ed.title).hint_text("Title").font(ui_font(17.0)).desired_width(f32::INFINITY));
+            let title_field = ui.add(egui::TextEdit::singleline(&mut ed.title).hint_text("Title").font(ui_font(17.0)).desired_width(f32::INFINITY)).accessible_name("Title");
             if ed.focus {
                 ed.focus = false;
                 title_field.request_focus();
             }
             ui.add_space(2.0);
             egui::Grid::new("event-fields").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                ui.label("All day");
-                ui.checkbox(&mut ed.all_day, "");
+                let l = ui.label("All day");
+                ui.checkbox(&mut ed.all_day, "").labelled_by(l.id);
                 ui.end_row();
                 ui.label("Starts");
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut ed.start_date).desired_width(104.0).hint_text("2026-11-24"));
+                    ui.add(egui::TextEdit::singleline(&mut ed.start_date).desired_width(104.0).hint_text("2026-11-24")).accessible_name("Start date");
                     if !ed.all_day {
-                        ui.add(egui::TextEdit::singleline(&mut ed.start_time).desired_width(74.0).hint_text(if h24 { "09:00" } else { "9:00 AM" }));
+                        ui.add(egui::TextEdit::singleline(&mut ed.start_time).desired_width(74.0).hint_text(if h24 { "09:00" } else { "9:00 AM" })).accessible_name("Start time");
                     }
                 });
                 ui.end_row();
                 ui.label("Ends");
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut ed.end_date).desired_width(104.0).hint_text("2026-11-24"));
+                    ui.add(egui::TextEdit::singleline(&mut ed.end_date).desired_width(104.0).hint_text("2026-11-24")).accessible_name("End date");
                     if !ed.all_day {
-                        ui.add(egui::TextEdit::singleline(&mut ed.end_time).desired_width(74.0).hint_text(if h24 { "10:00" } else { "10:00 AM" }));
+                        ui.add(egui::TextEdit::singleline(&mut ed.end_time).desired_width(74.0).hint_text(if h24 { "10:00" } else { "10:00 AM" })).accessible_name("End time");
                     }
                 });
                 ui.end_row();
@@ -1485,7 +1497,7 @@ impl CalendarApp {
                     for (dir, n) in &writable {
                         ui.selectable_value(&mut ed.cal, dir.clone(), n);
                     }
-                });
+                }).response.accessible_name("Calendar");
                 ui.end_row();
                 ui.label("Repeats");
                 egui::ComboBox::from_id_salt("event-repeat").selected_text(ed.repeat.label()).width(200.0).show_ui(ui, |ui| {
@@ -1497,13 +1509,13 @@ impl CalendarApp {
                         let label = r.label();
                         ui.selectable_value(&mut ed.repeat, r, label);
                     }
-                });
+                }).response.accessible_name("Repeats");
                 ui.end_row();
                 ui.label("Place");
-                ui.add(egui::TextEdit::singleline(&mut ed.location).desired_width(f32::INFINITY).hint_text("Optional"));
+                ui.add(egui::TextEdit::singleline(&mut ed.location).desired_width(f32::INFINITY).hint_text("Optional")).accessible_name("Place");
                 ui.end_row();
             });
-            ui.add(egui::TextEdit::multiline(&mut ed.notes).desired_rows(4).desired_width(f32::INFINITY).hint_text("Notes"));
+            ui.add(egui::TextEdit::multiline(&mut ed.notes).desired_rows(4).desired_width(f32::INFINITY).hint_text("Notes")).accessible_name("Notes");
             // A repeating event: is this change for all of them or this one?
             let repeating = ed.was.as_ref().is_some_and(|(e, _, _)| e.rrule.is_some() || e.recurrence_id.is_some());
             if repeating {
@@ -1600,13 +1612,14 @@ impl CalendarApp {
         let shown = windows::show(ctx, &mut self.cal_win, &chrome, area, Vec2::new(320.0, 200.0), |ui| {
             ui.spacing_mut().item_spacing = Vec2::new(8.0, 10.0);
             if let Some(url) = &mut ce.feed {
-                ui.add(egui::TextEdit::singleline(url).hint_text("webcal:// or https:// address").desired_width(f32::INFINITY));
+                ui.add(egui::TextEdit::singleline(url).hint_text("webcal:// or https:// address").desired_width(f32::INFINITY)).accessible_name("Feed address");
             }
             let hint = if ce.feed.is_some() { "Name (the feed's own when left empty)" } else { "Name" };
-            ui.add(egui::TextEdit::singleline(&mut ce.name).hint_text(hint).desired_width(f32::INFINITY));
+            ui.add(egui::TextEdit::singleline(&mut ce.name).hint_text(hint).desired_width(f32::INFINITY)).accessible_name("Name");
             ui.horizontal(|ui| {
-                for c in COLORS {
+                for (n, c) in COLORS.into_iter().enumerate() {
                     let (r, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+                    let resp = resp.role(Role::RadioButton, format!("Color {}", n + 1)).selected(ce.color == c);
                     ui.painter().circle_filled(r.center(), 10.0, rgb(c));
                     if ce.color == c {
                         ui.painter().circle_stroke(r.center(), 12.0, Stroke::new(2.0, ui.visuals().text_color()));
@@ -1757,16 +1770,16 @@ impl CalendarApp {
                 None => {
                     egui::Grid::new("account-fields").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
                         ui.label("Server");
-                        ui.add(egui::TextEdit::singleline(&mut ae.url).hint_text("nextcloud.example.org").desired_width(260.0));
+                        ui.add(egui::TextEdit::singleline(&mut ae.url).hint_text("nextcloud.example.org").desired_width(260.0)).accessible_name("Server");
                         ui.end_row();
                         ui.label("User name");
-                        ui.add(egui::TextEdit::singleline(&mut ae.user).desired_width(260.0));
+                        ui.add(egui::TextEdit::singleline(&mut ae.user).desired_width(260.0)).accessible_name("User name");
                         ui.end_row();
                         ui.label("Password");
-                        ui.add(egui::TextEdit::singleline(&mut ae.pass).password(true).desired_width(260.0));
+                        ui.add(egui::TextEdit::singleline(&mut ae.pass).password(true).desired_width(260.0)).accessible_name("Password");
                         ui.end_row();
                         ui.label("Name");
-                        ui.add(egui::TextEdit::singleline(&mut ae.name).hint_text("Optional").desired_width(260.0));
+                        ui.add(egui::TextEdit::singleline(&mut ae.name).hint_text("Optional").desired_width(260.0)).accessible_name("Name");
                         ui.end_row();
                     });
                     weak(ui, "For iCloud and Fastmail, use an app password made on their website. The password is kept in your keyring.");
@@ -1777,7 +1790,7 @@ impl CalendarApp {
                     ui.add_enabled_ui(!waiting, |ui| {
                         egui::Grid::new("account-fields").num_columns(2).spacing([12.0, 10.0]).show(ui, |ui| {
                             ui.label("Name");
-                            ui.add(egui::TextEdit::singleline(&mut ae.name).hint_text("Your address, if left empty").desired_width(270.0));
+                            ui.add(egui::TextEdit::singleline(&mut ae.name).hint_text("Your address, if left empty").desired_width(270.0)).accessible_name("Name");
                             ui.end_row();
                             if builtin {
                                 ui.label("");
@@ -1786,11 +1799,11 @@ impl CalendarApp {
                             }
                             if ae.own {
                                 ui.label("Client ID");
-                                ui.add(egui::TextEdit::singleline(&mut ae.client_id).desired_width(270.0));
+                                ui.add(egui::TextEdit::singleline(&mut ae.client_id).desired_width(270.0)).accessible_name("Client ID");
                                 ui.end_row();
                                 if p.wants_secret() {
                                     ui.label("Client secret");
-                                    ui.add(egui::TextEdit::singleline(&mut ae.client_secret).password(true).desired_width(270.0));
+                                    ui.add(egui::TextEdit::singleline(&mut ae.client_secret).password(true).desired_width(270.0)).accessible_name("Client secret");
                                     ui.end_row();
                                 }
                             }
@@ -1911,7 +1924,7 @@ impl CalendarApp {
                     for (dir, n) in &writable {
                         ui.selectable_value(&mut im.cal, dir.clone(), n);
                     }
-                });
+                }).response.accessible_name("Into");
             });
             ui.label(egui::RichText::new("An event already in that calendar is replaced by the file's.").color(v.weak_text_color()).size(12.5));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
