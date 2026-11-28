@@ -216,6 +216,9 @@ pub struct Shell {
     weather_gen: u64,
     tray: crate::tray::TrayLive,
     tray_gen: u64,
+    /// The clipboard history, read on its own thread.
+    clip: crate::clip::ClipLive,
+    clip_gen: u64,
     apps: Vec<rivet_xdg::launch::DesktopApp>,
     popup: Option<Popup>,
     comp: Compositor,
@@ -335,6 +338,10 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         }
     });
     let wake_tx = std::sync::Mutex::new(tx.clone());
+    let clip_tx = tx.clone();
+    let clip = crate::clip::ClipLive::start(settings.clip_on, settings.clip_length, settings.clip_keep, move || {
+        let _ = clip_tx.send(Msg::Wake);
+    });
     let tray = crate::tray::TrayLive::new(move || {
         if let Ok(t) = wake_tx.lock() {
             let _ = t.send(Msg::Wake);
@@ -396,6 +403,8 @@ pub fn run(settings: Settings, ipc: Channel<Msg>, tx: Sender<Msg>) -> Result<(),
         weather_gen: 0,
         tray,
         tray_gen: 0,
+        clip,
+        clip_gen: 0,
         apps: load_apps(),
         popup: None,
         comp,
@@ -1138,6 +1147,17 @@ impl Shell {
                     ("brightness", "up" | "down") => self.act(Act::Brightness(arg == "up")),
                     ("brightness", n) if n.parse::<u32>().is_ok() => self.act(Act::SetBrightness(n.parse().unwrap_or(50))),
                     ("media" | "player", "") => self.open_popup(Popup::at(PopupKind::Media, f32::NAN, "")),
+                    // The clipboard history, where there is one: its popup, a copy in its list
+                    // (1 is the first) put back on the clipboard, or the copies not pinned cleared.
+                    ("clipboard" | "clip", _) if self.clip.get().is_none() => {}
+                    ("clipboard" | "clip", "") => self.open_popup(Popup::at(PopupKind::Clipboard { sel: None }, f32::NAN, "")),
+                    ("clipboard" | "clip", "clear") => self.clip.run(crate::clip::Job::Clear),
+                    ("clipboard" | "clip", n) if n.parse::<usize>().is_ok_and(|n| n > 0) => {
+                        let list = self.clip.get().unwrap_or_default();
+                        if let Some(c) = crate::clip::shown(&list).get(n.parse::<usize>().unwrap_or(1) - 1) {
+                            self.clip.run(crate::clip::Job::Restore(c.id));
+                        }
+                    }
                     ("media", "play-pause" | "next" | "previous" | "play" | "pause" | "stop") => {
                         let c: &'static str = match arg {
                             "next" => "next",
@@ -1323,6 +1343,12 @@ impl Shell {
             let pop = self.popup.as_ref().is_some_and(|p| p.kind == PopupKind::Ai);
             self.redraw_kinds(if pop { &[Kind::Panel, Kind::Popup] } else { &[Kind::Panel] });
         }
+        let cg = self.clip.generation();
+        if cg != self.clip_gen {
+            self.clip_gen = cg;
+            let pop = self.popup.as_ref().is_some_and(|p| matches!(p.kind, PopupKind::Clipboard { .. } | PopupKind::Launcher { .. }));
+            self.redraw_kinds(if pop { &[Kind::Panel, Kind::Popup] } else { &[Kind::Panel] });
+        }
         let wg = self.weather.generation();
         if wg != self.weather_gen {
             self.weather_gen = wg;
@@ -1471,6 +1497,9 @@ impl Shell {
         let dock_shape = old.dock_apps != s.dock_apps || old.dock_icon != s.dock_icon || old.dock_reserve != s.dock_reserve || old.dock_open_apps != s.dock_open_apps || old.dock_hide != s.dock_hide;
         if old.notifications != s.notifications {
             self.set_notifications();
+        }
+        if (old.clip_on, old.clip_length, old.clip_keep) != (s.clip_on, s.clip_length, s.clip_keep) {
+            self.clip.run(crate::clip::Job::Set { on: s.clip_on, length: s.clip_length, keep: s.clip_keep });
         }
         if old.ask_passwords != s.ask_passwords {
             self.set_polkit();
@@ -1801,6 +1830,7 @@ impl Shell {
             auth: if kind == Kind::Popup { self.polkit.as_ref().and_then(|a| a.view()) } else { None },
             viz: self.viz.able().then(|| if matches!(kind, Kind::Panel | Kind::Popup) { self.viz.get() } else { Vec::new() }),
             drop: if kind == Kind::Dock { self.drag_in.as_ref().map(|d| ui::DockDrop { pos: d.pos, mimes: d.mimes.clone() }) } else { None },
+            clip: if matches!(kind, Kind::Panel | Kind::Popup) { self.clip.get() } else { None },
         };
         let join_was = self.popup.as_ref().and_then(|p| p.join);
         let Shell { surfs, s: settings, apps, popup, comp, walls, compositor, blur_mgr, blur_cap, qh, .. } = self;
@@ -2117,6 +2147,7 @@ impl Shell {
                 sys::media(cmd);
                 self.live.refresh(false);
             }
+            Act::Clip(job) => self.clip.run(job),
             Act::MediaSeek(secs) => {
                 sys::media_seek(secs);
                 self.live.refresh(false);

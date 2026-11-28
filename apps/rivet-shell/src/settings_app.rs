@@ -65,6 +65,8 @@ enum Page {
     Widgets,
     Launcher,
     Notifications,
+    /// The clipboard history.
+    Clipboard,
     Displays,
     Idle,
     Plugins,
@@ -74,7 +76,7 @@ enum Page {
 }
 
 impl Page {
-    const ALL: [Page; 18] = [Page::User, Page::Wallpaper, Page::Appearance, Page::Applications, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
+    const ALL: [Page; 19] = [Page::User, Page::Wallpaper, Page::Appearance, Page::Applications, Page::Network, Page::Bluetooth, Page::Vpn, Page::Sound, Page::Panel, Page::Dock, Page::Widgets, Page::Launcher, Page::Notifications, Page::Clipboard, Page::Displays, Page::Idle, Page::Plugins, Page::Softcore, Page::About];
     /// The pages in the sidebar's order, as shown there.
     fn in_order() -> Vec<Page> {
         nav::GROUPS.iter().flat_map(|(_, pages)| pages.iter().copied()).filter(|p| p.shown()).collect()
@@ -117,6 +119,7 @@ impl Page {
             Page::Widgets => "Widgets",
             Page::Launcher => "Launcher",
             Page::Notifications => "Notifications",
+            Page::Clipboard => "Clipboard",
             Page::Displays => "Displays",
             Page::Idle => "Idle & Lock",
             Page::Plugins => "Plugins",
@@ -657,6 +660,7 @@ impl eframe::App for SettingsApp {
                             Page::Widgets => self.widgets_page(ui),
                             Page::Launcher => self.launcher_page(ui),
                             Page::Notifications => self.notifications_page(ui),
+                            Page::Clipboard => self.clipboard_page(ui),
                             Page::Displays => self.displays_page(ui, accent),
                             Page::Idle => self.idle_page(ui),
                             Page::Plugins => self.plugins_page(ui),
@@ -903,6 +907,29 @@ impl SettingsApp {
         self.panels_editor(ui);
     }
 
+    fn clipboard_page(&mut self, ui: &mut egui::Ui) {
+        section(ui, "Clipboard history", &mut |ui| {
+            controls::master(ui, &mut self.s.clip_on, "Keep a history of what you copy");
+            hint(ui, "Passwords from your password manager are never kept. Turning this off forgets every copy, pinned ones too.");
+            controls::rule(ui);
+            let on = self.s.clip_on;
+            let s = &mut self.s;
+            ui.add_enabled_ui(on, |ui| {
+                grid(ui, "shell-clip", &mut |ui| {
+                    ui.label("Copies to keep");
+                    ui.add(egui::Slider::new(&mut s.clip_length, crate::clip::LENGTH));
+                    ui.end_row();
+                });
+                hint(ui, "Pinned copies don't count toward this.");
+                ui.add_space(8.0);
+                controls::switch(ui, &mut s.clip_keep, "Keep the history after a restart");
+                hint(ui, "It's saved on this computer, readable only by your account.");
+            });
+            controls::rule(ui);
+            hint(ui, "Add the Clipboard item on the Panels page, or type @clip in the launcher.");
+        });
+    }
+
     fn notifications_page(&mut self, ui: &mut egui::Ui) {
         section(ui, "Notifications", &mut |ui| {
             controls::master(ui, &mut self.s.notifications, "Show apps' notifications");
@@ -989,6 +1016,7 @@ impl SettingsApp {
                 ("rivet-shell msg brightness up | down", "Brightness"),
                 ("rivet-shell msg media play-pause | next | previous", "Music and video"),
                 ("rivet-shell msg dnd", "Do Not Disturb"),
+                ("rivet-shell msg clipboard", "The clipboard history"),
                 ("rivet-shell msg wallpaper random | next | previous", "Another wallpaper"),
                 ("rivet-shell msg power", "The power menu"),
                 ("rivet-shell msg lock", "Lock the screen"),
