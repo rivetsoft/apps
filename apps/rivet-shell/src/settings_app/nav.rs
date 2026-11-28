@@ -10,7 +10,7 @@ use super::Page;
 use crate::glyph;
 
 /// The pages under a small heading each; About sits apart at the end.
-pub(super) const GROUPS: &[(&str, &[Page])] = &[("Account", &[Page::User]), ("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance, Page::Applications]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
+pub(super) const GROUPS: &[(&str, &[Page])] = &[("Account", &[Page::User]), ("Connections", &[Page::Network, Page::Bluetooth, Page::Vpn]), ("Look", &[Page::Wallpaper, Page::Appearance, Page::Applications]), ("Desktop", &[Page::Panel, Page::Dock, Page::Widgets, Page::Launcher]), ("System", &[Page::Displays, Page::Sound, Page::Notifications, Page::Clipboard, Page::Idle, Page::Plugins, Page::Softcore]), ("", &[Page::About])];
 
 /// What a page is for, under its title.
 pub(super) fn about(page: Page) -> &'static str {
@@ -30,6 +30,7 @@ pub(super) fn about(page: Page) -> &'static str {
         Page::Notifications => "Notifications, on-screen volume and brightness, and Night Light",
         Page::Displays => "Resolution, scale, rotation and arrangement of each screen",
         Page::Idle => "What happens when the computer is idle, and the lock screen",
+        Page::Clipboard => "What you copied lately, to copy again",
         Page::Plugins => "Plugins that add to the shell, and commands that run on events",
         Page::Softcore => "The compositor's windows, columns, keyboard, pointer and key bindings",
         Page::About => "",
@@ -81,6 +82,7 @@ pub(super) fn icon(p: &egui::Painter, page: Page, c: Pos2, col: Color32) {
         }
         Page::Launcher => glyph::grid(p, c, col),
         Page::Notifications => glyph::bell(p, c, col, false),
+        Page::Clipboard => glyph::clipboard(p, c, col),
         Page::Displays => {
             // A screen on its stand.
             p.rect_stroke(Rect::from_center_size(c - Vec2::new(0.0, 1.5), Vec2::new(15.0, 10.5)), 2.5, s, egui::StrokeKind::Inside);

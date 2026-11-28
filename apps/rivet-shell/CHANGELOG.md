@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Clipboard history**: add the Clipboard item to a panel to see the text and pictures you
+  copied lately, and click one to copy it again. Pin the ones you want to keep, remove one or
+  clear the rest. Type `@clip` in the launcher to search them, or bind a key to
+  `rivet-shell msg clipboard`. Passwords your password manager marks as secret are never kept,
+  and the history is forgotten when the shell ends unless you choose to keep it on the new
+  Clipboard page in Settings. It needs a compositor that shares the clipboard (Softcore, niri,
+  Hyprland, Sway and others; not GNOME).
+
 - **Floating windows in quick settings**: under Softcore, the Floating Windows switch floats the
   windows of the workspace you are on or puts them back in columns, and shows which one it is
   as you move between workspaces.

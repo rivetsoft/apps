@@ -111,6 +111,8 @@ pub enum PopupKind {
     Weather,
     /// The notification history (and later perhaps more beside it).
     Notifications,
+    /// The clipboard history (`sel`: the copy chosen with the arrow keys).
+    Clipboard { sel: Option<usize> },
     /// Sound devices and apps (`drag`: a volume being dragged).
     Sound { drag: Option<(u64, u32)> },
     /// A plugin's menu.
@@ -163,7 +165,7 @@ impl Popup {
     }
     /// Whether it needs the keyboard (the launcher's search; Esc for the others).
     pub fn wants_keyboard(&self) -> bool {
-        matches!(self.kind, PopupKind::Launcher { .. } | PopupKind::Network { .. } | PopupKind::Auth { .. } | PopupKind::Hud { .. } | PopupKind::WidgetEdit)
+        matches!(self.kind, PopupKind::Launcher { .. } | PopupKind::Network { .. } | PopupKind::Auth { .. } | PopupKind::Hud { .. } | PopupKind::WidgetEdit | PopupKind::Clipboard { .. })
     }
 }
 
@@ -214,6 +216,9 @@ pub struct Extra {
     pub auth: Option<crate::polkit::View>,
     /// Files being dragged over the dock.
     pub drop: Option<DockDrop>,
+    /// The clipboard history, newest first (None: off, or the compositor doesn't share the
+    /// clipboard).
+    pub clip: Option<Vec<crate::clip::Clip>>,
 }
 
 /// Files being dragged over the dock: where the pointer is on it, and the files' types once
@@ -372,6 +377,8 @@ pub enum Act {
     Auth(String),
     /// Jump to this many seconds into what's playing.
     MediaSeek(u32),
+    /// Put a copy back on the clipboard, pin it, remove it…
+    Clip(crate::clip::Job),
 }
 
 /// What's asked of a sub panel.
@@ -422,6 +429,8 @@ pub struct Kit {
     icon_key: String,
     /// Tray icons made from apps' pixels (by item, icon and recolouring).
     pub tray_tex: std::collections::HashMap<(String, u64, bool), egui::TextureHandle>,
+    /// The clipboard history's thumbnails, by copy.
+    clip_tex: std::collections::HashMap<u64, egui::TextureHandle>,
     live: bool,
     /// The person's picture, once looked for (None inside: they have none).
     avatar: Option<Option<egui::TextureHandle>>,
@@ -429,7 +438,7 @@ pub struct Kit {
 
 impl Kit {
     pub fn new(live: bool) -> Kit {
-        Kit { look: LiveLook::new().without_watcher(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), face: Face::Base, live, avatar: None }
+        Kit { look: LiveLook::new().without_watcher(), icons: IconTheme::new(&rivet_look::icons::detect_system_theme()), icon_key: String::new(), tray_tex: Default::default(), clip_tex: Default::default(), face: Face::Base, live, avatar: None }
     }
 
     /// The person's picture (as on the lock screen), read the first time it's asked for.
@@ -457,6 +466,24 @@ impl Kit {
         let v = ctx.global_style().visuals.clone();
         let accent = self.look.accent(&s.choice());
         self.icons.set_builtin(Some(rivet_look::builtin_icons::BuiltinColors { accent, bg: v.extreme_bg_color, fg: v.text_color(), dark: v.dark_mode }));
+    }
+
+    /// A picture's thumbnail from the clipboard history, made the first time it shows.
+    pub fn clip_thumb(&mut self, ctx: &egui::Context, id: u64, pic: &crate::clip::Picture) -> Option<egui::TextureHandle> {
+        if let Some(t) = self.clip_tex.get(&id) {
+            return Some(t.clone());
+        }
+        let (w, h, px) = &pic.thumb;
+        if px.len() != (*w * *h * 4) as usize || *w == 0 {
+            return None;
+        }
+        // Copies come and go: the oldest thumbnails aren't worth keeping track of.
+        if self.clip_tex.len() > 200 {
+            self.clip_tex.clear();
+        }
+        let t = ctx.load_texture(format!("rivet-clip-{id}"), egui::ColorImage::from_rgba_unmultiplied([*w as usize, *h as usize], px), egui::TextureOptions::LINEAR);
+        self.clip_tex.insert(id, t.clone());
+        Some(t)
     }
 
     pub fn accent(&self, s: &Settings) -> Color32 {
@@ -1208,6 +1235,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Ai => Vec2::new(340.0, crate::ai_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Weather => Vec2::new(340.0, crate::weather_ui::popup_height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Notifications => Vec2::new(crate::notes_pop::WIDTH, crate::notes_pop::height(m, ui.ctx()).min(full.height() - inset - MARGIN - 8.0)),
+        PopupKind::Clipboard { .. } => Vec2::new(crate::clip_pop::WIDTH, crate::clip_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Sound { .. } => Vec2::new(360.0, crate::sound_pop::height(m).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::Plugin { id } => Vec2::new(PLUGIN_W, plugin_menu_height(m, id).min(full.height() - inset - MARGIN - 8.0)),
         PopupKind::TrayMenu { path, .. } => Vec2::new(260.0, crate::tray_ui::menu_height(m, path).min(full.height() - inset - MARGIN - 8.0)),
@@ -1297,6 +1325,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::DockMenu { .. } | PopupKind::TrayMenu { .. } | PopupKind::Downloads | PopupKind::TrashMenu { .. } => 6.0,
         PopupKind::Control { .. } => crate::quick::PAD,
         PopupKind::Notifications => crate::notes_pop::PAD,
+        PopupKind::Clipboard { .. } => crate::clip_pop::PAD,
         PopupKind::Auth { .. } => crate::auth_pop::PAD,
         PopupKind::Media => crate::media_pop::PAD,
         _ => 14.0,
@@ -1316,6 +1345,7 @@ pub fn popup(ui: &mut egui::Ui, pop: &mut Popup, m: &mut Model, kit: &mut Kit) {
         PopupKind::Ai => crate::ai_pop::popup(&mut child, m, kit),
         PopupKind::Weather => crate::weather_ui::popup(&mut child, m, kit),
         PopupKind::Notifications => crate::notes_pop::popup(&mut child, m, kit),
+        PopupKind::Clipboard { sel } => crate::clip_pop::popup(&mut child, sel, m, kit),
         PopupKind::Sound { drag } => crate::sound_pop::popup(&mut child, drag, m, kit),
         PopupKind::TrayMenu { key, path } => crate::tray_ui::menu(&mut child, key, path, m),
         PopupKind::Plugin { id } => plugin_menu(&mut child, id, m, kit),

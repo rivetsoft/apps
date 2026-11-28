@@ -73,26 +73,49 @@ enum Entry<'a> {
     Plugin { pid: String, id: String, name: String, sub: String, icon: String, query: String },
     /// A command's word (`@ftp`), for the plugin called `sub`: choosing it types it.
     Keyword { word: String, name: String, sub: String, icon: String },
+    /// A copy in the clipboard history (`@clip`): choosing it puts it back on the clipboard.
+    Clip { id: u64, name: String, sub: String, pic: Option<std::sync::Arc<crate::clip::Picture>> },
+}
+
+/// The clipboard history's command, shown while there is a history.
+const CLIP_WORD: &str = "clip";
+const CLIP_NAME: &str = "Clipboard History";
+const CLIP_ICON: &str = "edit-paste";
+
+/// The commands there are, as their word, name and icon: the clipboard history's, then the
+/// plugins'.
+fn commands(m: &Model) -> Vec<(String, String, String)> {
+    let clip = m.extra.clip.is_some().then(|| (CLIP_WORD.to_string(), CLIP_NAME.to_string(), CLIP_ICON.to_string()));
+    clip.into_iter().chain(m.extra.plugins.iter().filter(|(_, it)| !it.keyword.is_empty()).map(|(_, it)| (it.keyword.clone(), it.name.clone(), it.icon.clone()))).collect()
 }
 
 impl Entry<'_> {
     fn name(&self) -> &str {
         match self {
             Entry::App(a) => &a.name,
-            Entry::Plugin { name, .. } | Entry::Keyword { name, .. } => name,
+            Entry::Plugin { name, .. } | Entry::Keyword { name, .. } | Entry::Clip { name, .. } => name,
         }
     }
     /// A second, weaker part after the name (a list's rows show it).
     fn sub(&self) -> &str {
         match self {
             Entry::App(_) => "",
-            Entry::Plugin { sub, .. } | Entry::Keyword { sub, .. } => sub,
+            Entry::Plugin { sub, .. } | Entry::Keyword { sub, .. } | Entry::Clip { sub, .. } => sub,
+        }
+    }
+    /// A picture's width over its height, for its thumbnail (None: a square icon).
+    fn aspect(&self) -> Option<f32> {
+        match self {
+            Entry::Clip { pic: Some(p), .. } if p.thumb.1 > 0 => Some(p.thumb.0 as f32 / p.thumb.1 as f32),
+            _ => None,
         }
     }
     fn icon(&self, ctx: &egui::Context, kit: &mut Kit, px: f32) -> Option<egui::TextureHandle> {
         match self {
             Entry::App(a) => kit.app_icon(ctx, a, px),
             Entry::Plugin { icon, .. } | Entry::Keyword { icon, .. } => kit.named_icon(ctx, icon, px).or_else(|| kit.named_icon(ctx, "application-x-executable", px)),
+            Entry::Clip { id, pic: Some(p), .. } => kit.clip_thumb(ctx, *id, p),
+            Entry::Clip { .. } => kit.named_icon(ctx, "text-x-generic", px).or_else(|| kit.named_icon(ctx, CLIP_ICON, px)),
         }
     }
     /// Choosing it: the app starts, or the plugin is told (with what was typed).
@@ -101,6 +124,7 @@ impl Entry<'_> {
             Entry::App(a) => vec![Act::Launch(a.id.clone())],
             Entry::Keyword { .. } => Vec::new(),
             Entry::Plugin { pid, id, query, .. } => vec![Act::Plugin(pid.clone(), crate::plugins::Event::new("launch", &[("id", id), ("query", query)])), Act::Close],
+            Entry::Clip { id, .. } => vec![Act::Clip(crate::clip::Job::Restore(*id)), Act::Close],
         }
     }
 }
@@ -129,7 +153,7 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     // Commands' entries have a second line: always a list.
     let list = m.s.launch_view == LaunchView::List || command.is_some();
     let icon = m.s.launch_icon.clamp(24, 64) as f32;
-    let has_words = m.extra.plugins.iter().any(|(_, it)| !it.keyword.is_empty());
+    let has_words = !commands(m).is_empty();
     let hint = match (m.s.launch_calc, has_words) {
         (true, true) => "Search apps, type a sum, or @ for commands…",
         (true, false) => "Search apps, or type a sum…",
@@ -198,6 +222,21 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
     let typed = query.trim().to_string();
     let entry = |pid: &str, row: &crate::plugins::LaunchRow, words: &str| Entry::Plugin { pid: pid.to_string(), id: row.id.clone(), name: if words.is_empty() { row.label.clone() } else { format!("{} “{words}”", row.label) }, sub: row.sub.clone(), icon: row.icon.clone(), query: words.to_string() };
     match &command {
+        // The clipboard history: newest first under the pinned copies, or the ones the words find.
+        Some((word, rest)) if word == CLIP_WORD && m.extra.clip.is_some() => {
+            let list = m.extra.clip.as_deref().unwrap_or_default();
+            for (k, c) in crate::clip::shown(list).into_iter().enumerate() {
+                let score = if rest.is_empty() { Some(-(k as i32)) } else { quick::fuzzy_score(&c.line(200), rest) };
+                let Some(score) = score else { continue };
+                let when = chrono::DateTime::from_timestamp(c.at, 0).map(|t| crate::ui::ago(t.with_timezone(&chrono::Local))).unwrap_or_default();
+                let pic = match &c.body {
+                    crate::clip::Body::Image(p) => Some(p.clone()),
+                    crate::clip::Body::Text(_) => None,
+                };
+                ranked.push((score, Entry::Clip { id: c.id, name: c.line(120), sub: if c.pinned { format!("Pinned · {when}") } else { when }, pic }));
+            }
+            ranked.sort_by_key(|r| std::cmp::Reverse(r.0));
+        }
         Some((word, rest)) => match m.extra.plugins.iter().find(|(_, it)| !word.is_empty() && &it.keyword == word) {
             // One plugin's entries: all of them, or the ones the words find; an entry that
             // takes words comes last with them.
@@ -214,8 +253,8 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
             }
             // The words there are, as far as it's typed.
             None => {
-                for (_, it) in m.extra.plugins.iter().filter(|(_, it)| !it.keyword.is_empty() && it.keyword.starts_with(word.as_str())) {
-                    ranked.push((0, Entry::Keyword { word: it.keyword.clone(), name: format!("@{}", it.keyword), sub: it.name.clone(), icon: it.icon.clone() }));
+                for (w, name, icon) in commands(m).into_iter().filter(|(w, ..)| w.starts_with(word.as_str())) {
+                    ranked.push((0, Entry::Keyword { name: format!("@{w}"), word: w, sub: name, icon }));
                 }
             }
         },
@@ -387,7 +426,13 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
                     mark(ui.painter(), r, chosen, resp.hovered());
                     let ir = Rect::from_center_size(Pos2::new(r.left() + 10.0 + li / 2.0, r.center().y), Vec2::splat(li));
                     if let Some(t) = a.icon(ui.ctx(), kit, li) {
-                        ui.painter().image(t.id(), ir, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
+                        // A picture's thumbnail keeps its shape inside the icon's square.
+                        let tr = match a.aspect() {
+                            Some(k) if k >= 1.0 => Rect::from_center_size(ir.center(), Vec2::new(li, li / k)),
+                            Some(k) => Rect::from_center_size(ir.center(), Vec2::new(li * k, li)),
+                            None => ir,
+                        };
+                        ui.painter().image(t.id(), tr, Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)), Color32::WHITE);
                     }
                     let end = r.right() - if star.is_some() { 30.0 } else { 0.0 };
                     let room = end - ir.right() - 24.0 - if chosen { 44.0 } else { 0.0 };
@@ -467,7 +512,8 @@ pub fn launcher(ui: &mut egui::Ui, query: &mut String, sel: &mut usize, focus: b
         }
         if ranked.is_empty() {
             let text = match &command {
-                Some((word, _)) if m.extra.plugins.iter().any(|(_, it)| !word.is_empty() && &it.keyword == word) => "No matches",
+                Some((word, _)) if word == CLIP_WORD && m.extra.clip.as_ref().is_some_and(|l| l.is_empty()) => "Text and pictures you copy appear here",
+                Some((word, _)) if commands(m).iter().any(|(w, ..)| !word.is_empty() && w == word) => "No matches",
                 Some(_) if !has_words => "No commands yet: plugins add them",
                 Some(_) => "No command by that name",
                 None => "No apps match",
@@ -618,9 +664,9 @@ fn locked(query: &str, m: &Model) -> Option<(String, String, String)> {
         Some((w, _)) => (w.to_lowercase(), true),
         None => (q.to_lowercase(), false),
     };
-    let words = || m.extra.plugins.iter().map(|(_, it)| &it.keyword).filter(|k| !k.is_empty());
-    let (_, it) = m.extra.plugins.iter().find(|(_, it)| !word.is_empty() && it.keyword == word)?;
-    (spaced || words().all(|k| *k == word || !k.starts_with(word.as_str()))).then(|| (word.clone(), it.name.clone(), it.icon.clone()))
+    let cmds = commands(m);
+    let (_, name, icon) = cmds.iter().find(|(w, ..)| !word.is_empty() && *w == word)?;
+    (spaced || cmds.iter().all(|(k, ..)| *k == word || !k.starts_with(word.as_str()))).then(|| (word.clone(), name.clone(), icon.clone()))
 }
 
 /// Puts the search field's cursor after its first `chars` characters, next frame.

@@ -357,6 +357,16 @@ pub fn dock(p: &egui::Painter, c: Pos2, col: Color32, accent: Color32) {
     p.line_segment([c + Vec2::new(-9.0, 3.5), c + Vec2::new(9.0, 3.5)], Stroke::new(1.6, col));
 }
 
+/// A clipboard: a board with its clip at the top and lines of writing.
+pub fn clipboard(p: &egui::Painter, c: Pos2, col: Color32) {
+    let s = Stroke::new(1.5, col);
+    p.rect_stroke(Rect::from_center_size(c + Vec2::new(0.0, 1.0), Vec2::new(12.0, 14.0)), 2.0, s, egui::StrokeKind::Middle);
+    p.rect_filled(Rect::from_center_size(c + Vec2::new(0.0, -6.0), Vec2::new(6.0, 3.5)), 1.0, col);
+    for dy in [0.0, 3.5] {
+        p.line_segment([c + Vec2::new(-3.0, dy), c + Vec2::new(3.0, dy)], Stroke::new(1.3, col));
+    }
+}
+
 /// A puzzle piece of sorts: a plugin.
 pub fn plugin(p: &egui::Painter, c: Pos2, col: Color32) {
     let s = Stroke::new(1.5, col);
@@ -381,6 +391,7 @@ pub fn item(p: &egui::Painter, id: &str, c: Pos2, col: Color32, accent: Color32,
         "weather" => crate::weather_ui::icon(p, c, 18.0, crate::weather::Sky::PartlyCloudy, true, col, accent),
         "battery" => battery(p, c, 70, false, col, accent),
         "notifications" => bell(p, c, col, false),
+        "clipboard" => clipboard(p, c, col),
         "quick-settings" => quick(p, c, col, quick_icon),
         "power" => power(p, c, col),
         "tray" => tray(p, c, col, accent),

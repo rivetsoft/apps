@@ -49,6 +49,7 @@ pub const ITEMS: &[(&str, &str, &str)] = &[
     ("dock", "Dock", "Pinned and open apps, the same as the dock's"),
     ("tray", "System Tray", "Apps' status icons (chat, sync, games…)"),
     ("notifications", "Notifications", "A bell, with a dot when there are new notifications"),
+    ("clipboard", "Clipboard", "What you copied lately. Click to copy something again."),
     ("quick-settings", "Quick Settings", "Sliders, toggles and the notification history"),
     ("power", "Power Menu", "Lock, suspend, log out, restart, shut down"),
     ("spacer", "Spacer", "Blank space between items. Add as many as you like, each with its own width."),
