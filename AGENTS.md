@@ -27,6 +27,7 @@ app, or `--workspace` for everything.
 | `apps/rivet-longshot` | `rivet-longshot` | The picture viewer: opens a picture and steps through its folder in Files' order, with zoom, turning (saved losslessly where it can be), slideshows, camera details and animations. Rivet Files hands pictures to it. Held back from release (`HOLD=1`); built from source. |
 | `apps/rivet-reader` | `rivet-reader` | The document reader: PDFs (through PDFium, loaded at run time), comic books and pictures, continuous or a page at a time, with thumbnails, the outline, search, text selection, links, dark pages and the last page per file. Held back from release (`HOLD=1`); built from source. |
 | `apps/rivet-greeter` | `rivet-greeter` | The login screen for greetd: Rivet Shell's lock screen (`rivet-lockscreen`) over the wallpaper and look each person's session leaves in `/var/lib/rivet-greeter`, in cage, Sway or Softcore. `--setup` makes that folder; `sync` fills it from a desktop without Rivet Shell. Signs in through greetd, so no PAM of its own. Held back from release (`HOLD=1`); built from source. |
+| `apps/rivetctl` | `rivetctl` | Rivet Welcome for the terminal: a full-screen list (ratatui) and commands to install, update, remove, switch channel and build apps from source, plus `rivetctl mcp`, an MCP server over stdio for AI assistants. Runs on `rivet-install`, so it shares Welcome's state and lock. No window, so no `rivet-look` or `rivet-kit`. Held back from release (`HOLD=1`); built from source. |
 | `apps/rivet-fetch` | `rivetfetch` | A fastfetch-style summary of the computer in the terminal, beside the mascot drawn from his pixel art. No window, so it uses `rivet-xdg` but not `rivet-look` or `rivet-kit`. Unreleased; built from source. |
 
 | Crate | What it holds |
@@ -60,7 +61,7 @@ No app depends on another app; they only depend on crates. Who uses what:
 
 | Crate | Used by |
 | --- | --- |
-| `rivet-look`, `rivet-kit`, `rivet-xdg` | every app |
+| `rivet-look`, `rivet-kit`, `rivet-xdg` | every app (Fetch and rivetctl: `rivet-xdg` only) |
 | `rivet-mem` | through `rivet-kit`, `rivet-look` and `rivet-media`; Fetch directly. `alloc::setup()`: Shell, Files, Terminal, Long Shot, Reader, Cinema |
 | `rivet-media` | Files, FTP, Shell, Long Shot, Cinema (with `mpv`) |
 | `rivet-term` | Terminal (and meant for Edit's panel) |
@@ -69,7 +70,7 @@ No app depends on another app; they only depend on crates. Who uses what:
 | `rivet-cal` | Calendar |
 | `rivet-lockscreen` | Shell (its lock screen), Greeter |
 | `rivet-doc` | Reader (and meant for Files' Peek and PDF thumbnails) |
-| `rivet-install` | Welcome |
+| `rivet-install` | Welcome, rivetctl |
 
 What "the same in every app" means in practice is a module of `rivet-look`:
 

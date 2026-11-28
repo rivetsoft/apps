@@ -13,6 +13,7 @@
 #   apps/rivet-longshot    Rivet Long Shot (looks through the pictures in a folder)
 #   apps/rivet-reader    Rivet Reader (reads PDFs and comics; the documents are crates/rivet-doc)
 #   apps/rivet-cinema    Rivet Cinema (video and music player, through libmpv loaded at run time)
+#   apps/rivetctl      rivetctl (installs, updates and builds the apps from the terminal; MCP)
 #   crates/*           pieces the apps share
 # Plain `cargo build` / `cargo run` builds Rivet Files; use `-p rivet-ftp` or
 # `-p rivet-notes` for the others, or `--workspace` for everything.

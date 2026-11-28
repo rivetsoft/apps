@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- An app given a channel of its own in rivetctl, the new terminal installer, keeps that channel
+  here too, and when rivetctl is installing an app, Rivet Welcome says so rather than waiting.
 - **Screen readers and the keyboard**: Orca and other screen readers can read the window's
   buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
   the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard.
