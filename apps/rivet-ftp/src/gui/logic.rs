@@ -149,7 +149,8 @@ impl FtpApp {
         fonts::set_scale(size / fonts::BASE_SIZE);
         let (mode, accent, pal) = self.look();
         let pal = pal.cloned();
-        let key = format!("{mode:?}{accent:?}{pal:?}{size}");
+        rivet_look::a11y::setup(ctx, self.shot.is_none());
+        let key = format!("{mode:?}{accent:?}{pal:?}{size}{}", rivet_look::a11y::generation());
         if self.look_key.as_ref() == Some(&key) {
             return;
         }

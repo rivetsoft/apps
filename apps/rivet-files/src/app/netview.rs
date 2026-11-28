@@ -2,6 +2,7 @@
 //! connected shares, and "Connect to Server…". All slow work (finding servers,
 //! listing shares, connecting) runs on background threads.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Id, Key, Pos2, Rect, Sense, Vec2};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver};
@@ -206,6 +207,7 @@ impl RivetApp {
             // A tile grid like the icon view.
             let tile = |ui: &mut egui::Ui, tex: &Option<egui::TextureHandle>, title: &str, sub: &str, id: Id| -> egui::Response {
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(250.0, 58.0), Sense::click());
+                let resp = resp.role(Role::Button, title).described(sub);
                 if resp.hovered() {
                     ui.painter().rect_filled(rect, r_sm(), v.widgets.hovered.weak_bg_fill);
                 }
@@ -279,7 +281,7 @@ impl RivetApp {
                     let resp = tile(ui, &share_icon, name, "Connected", Id::unique(folder));
                     // An eject button on the tile.
                     let er = Rect::from_center_size(Pos2::new(resp.rect.right() - 18.0, resp.rect.center().y), Vec2::splat(24.0));
-                    let eresp = ui.interact(er, Id::unique(("net-eject", folder)), Sense::click()).on_hover_text("Disconnect");
+                    let eresp = ui.interact(er, Id::unique(("net-eject", folder)), Sense::click()).role(Role::Button, "Disconnect").on_hover_text("Disconnect");
                     if eresp.hovered() {
                         ui.painter().circle_filled(er.center(), 12.0, v.widgets.hovered.bg_fill);
                     }

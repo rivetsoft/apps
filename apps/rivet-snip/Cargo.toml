@@ -18,7 +18,7 @@ rivet-look = { path = "../../crates/rivet-look" }
 # The file picker (Open, Save As) and, where a program can't take a screenshot itself, the
 # desktop's own.
 rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
-eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
 # Reading the picture handed over (a compositor's PNG, or any picture opened with it).
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 # The local time, for a saved picture's name.

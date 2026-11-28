@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Screen readers and the keyboard**: Orca and other screen readers can read the window's
+  buttons, menus, check boxes and text fields, and Tab shows a ring around the control that has
+  the keyboard. Shift+F10 opens the right-click menu of the control that has the keyboard.
+  With higher contrast or less motion asked for in the desktop's settings, edges and secondary
+  text get stronger and animations stop.
 - **Clipboard history**: add the Clipboard item to a panel to see the text and pictures you
   copied lately, and click one to copy it again. Pin the ones you want to keep, remove one or
   clear the rest. Type `@clip` in the launcher to search them, or bind a key to

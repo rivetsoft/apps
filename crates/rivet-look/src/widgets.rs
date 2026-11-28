@@ -2,6 +2,8 @@
 
 use eframe::egui::{self, Stroke, Vec2};
 
+use crate::a11y::{Access, Role};
+
 /// Return was pressed for a dialog's highlighted button. True only when no control in the
 /// dialog has the keyboard: a focused button, checkbox or text field takes Return itself, so
 /// Tab to Cancel and Return cancels. Ask before drawing the dialog. It is false in the frame
@@ -16,8 +18,9 @@ pub fn return_default(ctx: &egui::Context) -> bool {
 }
 
 /// A small flat button with a drawn up / down chevron (looks the same in every icon theme).
+/// Its name is "Move up" or "Move down"; a tooltip from [`Access::tip`] names it otherwise.
 pub fn arrow_button(ui: &mut egui::Ui, up: bool, enabled: bool) -> egui::Response {
-    let resp = ui.add_enabled(enabled, egui::Button::new("").frame_when_inactive(false).min_size(Vec2::new(24.0, 22.0)));
+    let resp = ui.add_enabled(enabled, egui::Button::new("").frame_when_inactive(false).min_size(Vec2::new(24.0, 22.0))).role(Role::Button, if up { "Move up" } else { "Move down" });
     let c = resp.rect.center();
     let col = if enabled { ui.visuals().text_color() } else { ui.visuals().weak_text_color().gamma_multiply(0.5) };
     let (dy, tip) = if up { (-2.5, 2.5) } else { (2.5, -2.5) };
@@ -27,9 +30,10 @@ pub fn arrow_button(ui: &mut egui::Ui, up: bool, enabled: bool) -> egui::Respons
     resp
 }
 
-/// A small flat button with a drawn trash can (red on hover).
+/// A small flat button with a drawn trash can (red on hover). Its name is "Remove"; a tooltip
+/// from [`Access::tip`] names it otherwise.
 pub fn trash_button(ui: &mut egui::Ui) -> egui::Response {
-    let resp = ui.add(egui::Button::new("").frame_when_inactive(false).min_size(Vec2::new(24.0, 22.0)));
+    let resp = ui.add(egui::Button::new("").frame_when_inactive(false).min_size(Vec2::new(24.0, 22.0))).role(Role::Button, "Remove");
     let c = resp.rect.center();
     let col = if resp.hovered() { crate::theme::status(ui.ctx()).danger } else { ui.visuals().text_color() };
     let s = Stroke::new(1.5, col);

@@ -1,5 +1,6 @@
 //! Pop-up dialogs: rename, new item, delete confirmations, open with, properties, preferences.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Id, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use std::path::Path;
 
@@ -25,9 +26,10 @@ fn select_stem(ctx: &egui::Context, id: Id, text: &str, is_dir: bool) {
 }
 
 /// An on/off switch (a pill with a sliding knob), in the accent color when on.
-pub(super) fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool) -> egui::Response {
+pub(super) fn switch(ui: &mut egui::Ui, on: &mut bool, enabled: bool, label: &str) -> egui::Response {
     let size = Vec2::new(40.0, 22.0);
-    let (rect, mut resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
+    let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
+    let mut resp = resp.role(Role::Switch, label).toggled(*on);
     if enabled && resp.clicked() {
         *on = !*on;
         resp.mark_changed();
@@ -168,6 +170,7 @@ impl RivetApp {
                 let avail = f.available();
                 let chosen = *format == f;
                 let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), if avail { Sense::click() } else { Sense::hover() });
+                let resp = resp.role(Role::RadioButton, f.ext().trim_start_matches('.')).toggled(chosen).described(if avail { f.hint().to_string() } else { "Not installed on this system".into() });
                 if chosen {
                     let (fill, stroke) = super::selected_tile(&v, v.window_fill);
                     ui.painter().rect(rect, super::r_sm(), fill, stroke, egui::StrokeKind::Inside);
@@ -776,6 +779,8 @@ impl RivetApp {
                     }
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), Sense::click());
                     let selected = *chosen == Some(*i);
+                    let resp = resp.role(Role::ListBoxOption, name.as_str()).selected(selected);
+                    let resp = if *is_default { resp.described("Default") } else { resp };
                     if selected {
                         let (fill, stroke) = super::selected_tile(&v, v.window_fill);
                         ui.painter().rect_filled(rect, super::r_sm(), fill);
@@ -925,7 +930,7 @@ impl RivetApp {
             let half = track.width() / 2.0;
             for (i, label) in ["Basic", "Permissions"].into_iter().enumerate() {
                 let r = Rect::from_min_size(track.min + Vec2::new(half * i as f32, 0.0), Vec2::new(half, track.height())).shrink(3.0);
-                let resp = ui.interact(r, ui.scope_id().with(("props-tab", i)), Sense::click());
+                let resp = ui.interact(r, ui.scope_id().with(("props-tab", i)), Sense::click()).role(Role::Tab, label).selected(st.tab == i as u8);
                 if st.tab == i as u8 {
                     let (fill, stroke) = super::selected_tile(&v, card_fill);
                     ui.painter().rect_filled(r, super::r_sm(), fill);
@@ -1178,6 +1183,7 @@ impl RivetApp {
                             }
                             let (r, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), Sense::click());
                             let sel = *t == tab_now;
+                            let resp = resp.role(Role::Tab, t.label()).selected(sel);
                             if sel {
                                 let (fill, stroke) = super::selected_tile(&v, side_fill);
                                 ui.painter().rect_filled(r, super::r_sm(), fill);
@@ -1290,6 +1296,7 @@ impl RivetApp {
                                 ui.spacing_mut().item_spacing.x = 8.0;
                                 for (c, name) in ACCENTS {
                                     let (r, resp) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::click());
+                                    let resp = resp.role(Role::RadioButton, name).toggled(self.s.accent == c);
                                     let col = Color32::from_rgb(c[0], c[1], c[2]);
                                     let col = if manual { col } else { col.gamma_multiply(0.4) };
                                     ui.painter().circle_filled(r.center(), 9.0, col);
@@ -1603,7 +1610,7 @@ impl RivetApp {
                                         ui.label(about);
                                     });
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        flipped = switch(ui, on, enabled).changed();
+                                        flipped = switch(ui, on, enabled, title).changed();
                                     });
                                 });
                                 flipped

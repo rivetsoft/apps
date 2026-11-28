@@ -17,6 +17,7 @@
 
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
+use crate::a11y::{self, Access, Role};
 use crate::tabdrag::{self, TabDrag};
 use crate::theme::{paint_tex, r_md, r_sm};
 use crate::{fonts, palette};
@@ -146,7 +147,7 @@ impl TabStrip {
         let tabs_rect = Rect::from_min_max(strip.min, Pos2::new(strip.max.x - arrows_w, strip.max.y));
         ui.allocate_rect(strip, Sense::hover());
 
-        let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        let mut inner = ui.new_child(a11y::area(Role::TabList, "Tabs").max_rect(tabs_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
         let wheel = if ui.rect_contains_pointer(tabs_rect) { ctx.input(|i| i.smooth_scroll_delta.y + i.smooth_scroll_delta.x) } else { 0.0 };
         let bring = ctx.data(|d| d.get_temp::<usize>(shown_id)) != Some(active);
         ctx.data_mut(|d| d.insert_temp(shown_id, active));
@@ -214,7 +215,12 @@ impl TabStrip {
                     if resp.double_clicked() {
                         events.push(TabEvent::Keep(i));
                     }
-                    let resp = resp.on_hover_text(t.tip.clone().unwrap_or_else(|| t.label.clone()));
+                    let mut resp = resp.role(Role::Tab, t.label.as_str()).selected(on).on_hover_text(t.tip.clone().unwrap_or_else(|| t.label.clone()));
+                    if t.dirty {
+                        resp = resp.described("Changes not saved");
+                    } else if let Some(tip) = t.tip.as_ref().filter(|tip| **tip != t.label) {
+                        resp = resp.described(tip.as_str());
+                    }
                     if resp.clicked() {
                         events.push(if over_x { TabEvent::Close(i) } else { TabEvent::Select(i) });
                     }
@@ -264,7 +270,8 @@ impl TabStrip {
                 let d = if left { -1.0 } else { 1.0 };
                 ui.painter().line_segment([c + Vec2::new(-2.5 * d, -5.0), c + Vec2::new(2.5 * d, 0.0)], Stroke::new(1.6, col));
                 ui.painter().line_segment([c + Vec2::new(2.5 * d, 0.0), c + Vec2::new(-2.5 * d, 5.0)], Stroke::new(1.6, col));
-                on && resp.on_hover_text(if left { "Scroll the tabs left" } else { "Scroll the tabs right" }).clicked()
+                let tip = if left { "Scroll the tabs left" } else { "Scroll the tabs right" };
+                on && resp.role(Role::Button, tip).on_hover_text(tip).clicked()
             };
             let x = strip.right();
             if arrow(x - 44.0, true, off > 0.5) {

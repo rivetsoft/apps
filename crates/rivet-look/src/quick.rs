@@ -4,6 +4,7 @@
 
 use eframe::egui::{self, Align2, Color32, Id, Key, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
+use crate::a11y::{self, Access, Role};
 use crate::fonts::ui_font;
 use crate::theme::{paint_tex, r_lg, r_sm, selected_tile};
 
@@ -78,6 +79,8 @@ impl QuickPanel {
         let backdrop = Color32::from_black_alpha(if ctx.global_style().visuals.dark_mode { 90 } else { 50 });
         let before = self.query.clone();
         let tall = rows.iter().any(|r| matches!(r, QuickRow::Item { .. }));
+        let mut search: Option<egui::Response> = None;
+        let mut chosen: Option<egui::Id> = None;
         let r = egui::Modal::new(id).area(area).frame(frame).backdrop_color(backdrop).show(ctx, |ui| {
             ui.set_width(w);
             let v = ui.visuals().clone();
@@ -97,6 +100,7 @@ impl QuickPanel {
                     .desired_width(f32::INFINITY)
                     .hint_text(text.hint);
                 let o = edit.show(ui);
+                search = Some(egui::Response::clone(&o.response).role(Role::SearchInput, text.hint));
                 if self.focus {
                     o.response.request_focus();
                     // The cursor at the end (after text was filled in, e.g. by Tab).
@@ -117,8 +121,24 @@ impl QuickPanel {
             let max_rows = if tall { 8.0 } else { 11.0 };
             egui::ScrollArea::vertical().max_height(row_h * max_rows + 4.0).auto_shrink([false, true]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = if tall { 2.0 } else { 1.0 };
+                ui.scope_builder(a11y::area(Role::ListBox, text.hint), |ui| {
                 for (i, row) in rows.iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
+                    let resp = match row {
+                        QuickRow::Item { name, sub, .. } => resp.role(Role::ListBoxOption, name.as_str()).described(sub.as_str()),
+                        QuickRow::Command { group, label, keys, state } => {
+                            let r = resp.role(Role::ListBoxOption, format!("{group}: {label}"));
+                            let r = if keys.is_empty() { r } else { r.described(keys.as_str()) };
+                            match state {
+                                Some(on) => r.toggled(*on),
+                                None => r,
+                            }
+                        }
+                    }
+                    .selected(i == self.sel);
+                    if i == self.sel {
+                        chosen = Some(resp.id);
+                    }
                     if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
                         self.sel = i;
                     }
@@ -179,6 +199,7 @@ impl QuickPanel {
                         out = Some(QuickEvent::Pick(i));
                     }
                 }
+                });
             });
             if rows.is_empty() && !self.query.trim().is_empty() {
                 ui.add_space(6.0);
@@ -194,6 +215,11 @@ impl QuickPanel {
                 ui.label(egui::RichText::new(text.legend).size(11.5).color(weak));
             });
         });
+        // The keyboard stays in the search box while the arrows move the highlight, so the
+        // highlighted row is the box's active descendant: a screen reader says each row reached.
+        if let (Some(s), Some(row)) = (&search, chosen) {
+            ctx.accesskit_node_builder(s.id, |n| n.set_active_descendant(row.accesskit_id()));
+        }
         if self.query != before {
             self.sel = 0;
         }

@@ -293,7 +293,6 @@ pub struct RivetApp {
     /// The file list's keyboard stop, and whether focus is being moved with the keyboard
     /// (then a focus ring shows where it is).
     file_list_focus: Option<egui::Id>,
-    kb_nav: bool,
     prefs_rect: Option<Rect>,
     path_editing: bool,
     path_text: String,
@@ -590,7 +589,6 @@ impl RivetApp {
             status_cache: Default::default(),
             prefs_busy_last: false,
             file_list_focus: None,
-            kb_nav: false,
             prefs_rect: None,
             path_editing: false,
             path_text: String::new(),
@@ -924,8 +922,9 @@ impl RivetApp {
     }
 
     fn apply_visuals(&mut self, ctx: &egui::Context) {
+        rivet_look::a11y::setup(ctx, self.screenshot.is_none());
         let pal = palette::shown(self.palette.as_ref(), self.s.follow_desktop_colors).cloned();
-        let key = format!("{:?}{:?}{:?}{}{}", self.s.theme, self.s.accent, pal, crate::fonts::scale(), self.s.terminal);
+        let key = format!("{:?}{:?}{:?}{}{}{}", self.s.theme, self.s.accent, pal, crate::fonts::scale(), self.s.terminal, rivet_look::a11y::generation());
         if self.applied_visuals.as_ref() == Some(&key) {
             return;
         }
@@ -1670,30 +1669,6 @@ impl RivetApp {
     fn open_about(&mut self) {
         self.prefs_tab = PrefsTab::About;
         self.open_prefs();
-    }
-
-    /// A clear accent ring around whatever has keyboard focus, shown once Tab is used and
-    /// hidden again on the next mouse press.
-    fn focus_ring(&mut self, ctx: &egui::Context) {
-        let (tabbed, pressed) = ctx.input(|i| {
-            (i.events.iter().any(|e| matches!(e, egui::Event::Key { key: Key::Tab, pressed: true, .. })), i.pointer.any_pressed())
-        });
-        if tabbed {
-            self.kb_nav = true;
-        }
-        if pressed {
-            self.kb_nav = false;
-        }
-        if !self.kb_nav {
-            return;
-        }
-        let Some(id) = ctx.memory(|m| m.focused()) else { return };
-        let Some(r) = ctx.read_response(id) else { return };
-        let accent = accent_color(&self.s);
-        // The file list's ring sits just inside its edge; small controls get one just outside.
-        let (rect, radius) = if Some(id) == self.file_list_focus { (r.interact_rect.shrink(2.0), r_lg()) } else { (r.interact_rect.expand(2.0), r_sm()) };
-        let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("focus-ring")));
-        painter.rect_stroke(rect, radius, Stroke::new(2.0, accent), StrokeKind::Outside);
     }
 
     fn open_prefs(&mut self) {
@@ -2539,7 +2514,6 @@ impl eframe::App for RivetApp {
             self.window_focus = false;
         }
         self.keyboard(&ctx, cols);
-        self.focus_ring(&ctx);
         self.drag_overlay(&ctx);
         self.process_actions(&ctx);
 

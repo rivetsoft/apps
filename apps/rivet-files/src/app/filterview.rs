@@ -1,5 +1,6 @@
 //! The Filters sidebar view and the strip above the files that says a filter is on.
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
 use super::{RivetApp, r_md, r_sm};
@@ -88,6 +89,7 @@ impl RivetApp {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 // The funnel opens the Filters sidebar.
                 let (r, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+                let resp = resp.role(Role::Button, "Show the filters");
                 if resp.hovered() {
                     ui.painter().rect_filled(r, r_sm(), v.widgets.hovered.weak_bg_fill);
                     ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -143,7 +145,7 @@ impl RivetApp {
         ui.painter().text(Pos2::new(hr.left() + 28.0, hr.center().y), egui::Align2::LEFT_CENTER, "Filters", crate::fonts::ui_font(13.5), v.text_color());
         // Close (×), at the right of the header.
         let cr = Rect::from_center_size(Pos2::new(hr.right() - 12.0, hr.center().y), Vec2::splat(24.0));
-        let cresp = ui.interact(cr, ui.scope_id().with("filters-close"), Sense::click()).on_hover_text("Close (Esc)");
+        let cresp = ui.interact(cr, ui.scope_id().with("filters-close"), Sense::click()).role(Role::Button, "Close").on_hover_text("Close (Esc)");
         if cresp.hovered() {
             ui.painter().circle_filled(cr.center(), 11.0, v.widgets.hovered.weak_bg_fill);
         }
@@ -187,10 +189,11 @@ impl RivetApp {
         let (bar, _) = ui.allocate_exact_size(Vec2::new(w, 44.0), Sense::hover());
         ui.painter().rect_filled(bar, r_md(), v.widgets.inactive.weak_bg_fill);
         let bw = bar.width() / 3.0;
-        for (i, (scope, _)) in rows.iter().take(3).enumerate() {
+        for (i, (scope, label)) in rows.iter().take(3).enumerate() {
             let r = Rect::from_min_size(bar.min + Vec2::new(bw * i as f32, 0.0), Vec2::new(bw, bar.height())).shrink(4.0);
             let resp = ui.interact(r, ui.scope_id().with(("filter-scope", i)), Sense::click());
             let sel = *scope == pick;
+            let resp = resp.role(Role::Tab, label.as_str()).selected(sel);
             if sel {
                 let (fill, stroke) = super::selected_tile(&v, v.widgets.inactive.weak_bg_fill);
                 ui.painter().rect_filled(r, r_sm(), fill);
@@ -248,7 +251,7 @@ impl RivetApp {
                 let title = rows.iter().find(|(s, _)| *s == pick).map(|(_, l)| l.clone()).unwrap_or_default();
                 ui.add(egui::Label::new(egui::RichText::new(title).strong()).truncate());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    super::dialogs::switch(ui, &mut f.enabled, true).on_hover_text(if f.enabled { "On" } else { "Off" });
+                    super::dialogs::switch(ui, &mut f.enabled, true, "Use these filters").on_hover_text(if f.enabled { "On" } else { "Off" });
                 });
             });
             let heading = |ui: &mut egui::Ui, t: &str| {
@@ -265,6 +268,7 @@ impl RivetApp {
                     for t in pair {
                         let on = f.types.contains(t);
                         let (r, resp) = ui.allocate_exact_size(Vec2::new(cw, 26.0), Sense::click());
+                        let resp = resp.role(Role::CheckBox, t.label()).toggled(on);
                         if on {
                             let (fill, stroke) = super::selected_tile(&v, card);
                             ui.painter().rect_filled(r, r_sm(), fill);
@@ -297,7 +301,7 @@ impl RivetApp {
             let pw = seg.width() / parts.len() as f32;
             for (i, (mode, label)) in parts.iter().enumerate() {
                 let r = Rect::from_min_size(seg.min + Vec2::new(pw * i as f32, 0.0), Vec2::new(pw, seg.height())).shrink(2.0);
-                let resp = ui.interact(r, ui.scope_id().with(("name-mode", i)), Sense::click());
+                let resp = ui.interact(r, ui.scope_id().with(("name-mode", i)), Sense::click()).role(Role::RadioButton, *label).toggled(f.name_mode == *mode);
                 if f.name_mode == *mode {
                     let (fill, stroke) = super::selected_tile(&v, v.widgets.inactive.weak_bg_fill);
                     ui.painter().rect_filled(r, r_sm() - 1, fill);

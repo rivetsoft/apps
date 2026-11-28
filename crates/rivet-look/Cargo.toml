@@ -9,7 +9,7 @@ publish = false
 
 [dependencies]
 rivet-mem = { path = "../rivet-mem" }
-rivet-xdg = { path = "../rivet-xdg" }
+rivet-xdg = { path = "../rivet-xdg", features = ["portal"] }
 eframe = { version = "0.37.0", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 resvg = { version = "0.50.0", default-features = false }

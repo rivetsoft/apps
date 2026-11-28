@@ -17,7 +17,7 @@ rivet-kit = { path = "../../crates/rivet-kit" }
 rivet-look = { path = "../../crates/rivet-look" }
 # Picking a color through the desktop portal, where the compositor has no picker of its own.
 rivet-xdg = { path = "../../crates/rivet-xdg", features = ["portal"] }
-eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
 # The shell plugin's lines, and niri's answer.
 serde_json = "1.0.154"
 # The picker with the loupe: a layer-shell surface over each screen, drawn into shared memory.

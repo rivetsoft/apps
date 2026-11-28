@@ -1,6 +1,7 @@
 //! Zen mode (the files fill the window; the toolbar, sidebar and Peek slide in when the
 //! pointer reaches their edge) and Quick Open (Ctrl+P: a fuzzy jump-anywhere bar).
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Align2, Color32, Id, Key, Pos2, Rect, Sense, Stroke, Vec2};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -555,7 +556,7 @@ impl RivetApp {
                 let shown = sp.shown.clone();
                 for (i, s) in shown.iter().enumerate() {
                     let (rect, resp) = ui.allocate_exact_size(Vec2::new(ui.available_width(), row_h), Sense::click());
-                    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+                    let resp = resp.role(Role::ListBoxOption, s.name.as_str()).described(s.sub.as_str()).selected(i == sp.sel).on_hover_cursor(egui::CursorIcon::PointingHand);
                     if resp.hovered() && ui.input(|i| i.pointer.delta() != Vec2::ZERO) {
                         sp.sel = i;
                     }

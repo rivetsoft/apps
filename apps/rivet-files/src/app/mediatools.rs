@@ -1,5 +1,6 @@
 //! The Media tools windows (need ffmpeg): Convert To… and Resize…
 
+use rivet_look::a11y::{Access, Role};
 use eframe::egui::{self, Id, Key, Vec2};
 use std::path::PathBuf;
 
@@ -43,7 +44,7 @@ pub(super) fn header(ui: &mut egui::Ui, title: &str, close_icon: &Option<egui::T
         ui.label(egui::RichText::new(title).heading());
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (r, resp) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
-            let resp = resp.on_hover_text("Close (Esc)");
+            let resp = resp.role(Role::Button, "Close").on_hover_text("Close (Esc)");
             let fg = if resp.hovered() {
                 ui.painter().circle_filled(r.center(), 13.0, danger);
                 super::StatusColors::on(danger)

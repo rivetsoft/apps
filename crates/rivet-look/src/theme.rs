@@ -191,6 +191,23 @@ pub fn apply(ctx: &egui::Context, look: &Look) {
                 v.widgets.inactive.bg_stroke = Stroke::new(1.0, line);
                 v.window_fill = mix(v.extreme_bg_color, fg, 0.04);
             }
+            if crate::a11y::high_contrast() {
+                // Higher contrast: secondary text close to the main text, and every edge drawn.
+                let fg = v.text_color();
+                let bg = v.panel_fill;
+                v.weak_text_color = Some(mix(fg, bg, 0.12));
+                let edge = Stroke::new(1.0, mix(bg, fg, 0.65));
+                v.window_stroke = edge;
+                v.widgets.noninteractive.bg_stroke = edge;
+                v.widgets.inactive.bg_stroke = edge;
+                v.widgets.hovered.bg_stroke = Stroke::new(1.5, fg);
+                v.widgets.active.bg_stroke = Stroke::new(1.5, fg);
+                v.widgets.open.bg_stroke = edge;
+            }
+            if crate::a11y::reduced_motion() {
+                st.animation_time = 0.0;
+                st.scroll_animation = egui::style::ScrollAnimation::none();
+            }
             st.spacing.item_spacing = Vec2::new(6.0, 4.0);
             st.spacing.button_padding = Vec2::new(6.0, 3.0);
             st.spacing.interact_size.y = 24.0;

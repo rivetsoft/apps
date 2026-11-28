@@ -17,6 +17,6 @@ rivet-kit = { path = "../../crates/rivet-kit" }
 rivet-look = { path = "../../crates/rivet-look" }
 rivet-term = { path = "../../crates/rivet-term" }
 rivet-xdg = { path = "../../crates/rivet-xdg" }
-eframe = { version = "0.37.0", default-features = false, features = ["clipboard", "default_fonts", "glow", "wayland", "x11"] }
+eframe = { version = "0.37.0", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"] }
 # Reading the clipboard for Ctrl+Shift+V (the same one egui uses).
 arboard = { version = "3.7", default-features = false, features = ["wayland-data-control"] }

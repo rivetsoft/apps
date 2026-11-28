@@ -79,7 +79,8 @@ impl TabDrag {
     pub fn load(mut self, ctx: &egui::Context) -> TabDrag {
         self.state = ctx.data(|d| d.get_temp::<State>(self.id)).unwrap_or_default();
         (self.now, self.pointer) = ctx.input(|i| (i.time, i.pointer.interact_pos()));
-        self.state.slides.retain(|s| self.now - s.2 < SLIDE);
+        let slide = if crate::a11y::reduced_motion() { 0.0 } else { SLIDE };
+        self.state.slides.retain(|s| self.now - s.2 < slide);
         self.loaded = true;
         if !self.state.slides.is_empty() || self.state.held.is_some() {
             ctx.request_repaint();

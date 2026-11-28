@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use super::{paint_tex, r_sm, Action, DragFiles, RivetApp};
 use crate::model::{Entry, Location, Tab};
+use rivet_look::a11y::{Access, Role};
 use crate::settings::ViewMode;
 
 /// Width of a column (the last one takes whatever room is left).
@@ -275,6 +276,7 @@ impl RivetApp {
                 let e = e.clone();
                 let selected = self.tab().selected.contains(&e.path);
                 let resp = ui.interact(row.shrink2(Vec2::new(4.0, 0.0)), Id::unique(("item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = self.item_access(resp, &e, selected, vi);
                 self.column_row(ui, ctx, row, &e, selected, false, resp.hovered(), z);
                 self.drop_highlight(ui, row.shrink2(Vec2::new(4.0, 0.0)), &resp, e.is_dir);
                 self.click_item(vi, ctx, &resp);
@@ -299,6 +301,7 @@ impl RivetApp {
             let width = ui.available_width();
             let total_h = (n as f32 * row_h + 8.0).max(ui.available_height());
             let (rect, bg) = ui.allocate_exact_size(Vec2::new(width, total_h), Sense::click());
+            let bg = bg.role(Role::ListBox, dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| dir.display().to_string()));
             if bg.clicked() {
                 jump.to = Some((dir.to_path_buf(), None));
             }
@@ -326,6 +329,7 @@ impl RivetApp {
                 }
                 let hit = row.shrink2(Vec2::new(4.0, 0.0));
                 let resp = ui.interact(hit, Id::unique(("col-item", self.pane_salt, &e.path)), Sense::CLICK | Sense::DRAG);
+                let resp = resp.role(Role::ListBoxOption, e.name.as_str()).selected(on_path);
                 self.column_row(ui, ctx, row, e, false, on_path, resp.hovered(), z);
                 self.drop_highlight(ui, hit, &resp, e.is_dir);
                 let open = if self.s.single_click { resp.clicked() && !m.command && !m.shift } else { resp.double_clicked() };

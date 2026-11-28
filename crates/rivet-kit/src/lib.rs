@@ -1,5 +1,6 @@
 //! Tools shared by the Rivet apps for checks and screenshots.
 
+pub mod access;
 pub mod headless;
 pub mod scale;
 pub mod soft;
