@@ -225,6 +225,20 @@ pub fn known() -> Vec<Entry> {
             Kind::Command,
             include_str!("../../../apps/rivet-fetch/data/rivet-fetch.svg"),
         ),
+        // The terminal's Rivet Welcome: installs and updates the apps, and serves them over MCP.
+        Entry {
+            held: true,
+            ..entry(
+                "rivetctl",
+                "rivetctl",
+                "rivetctl",
+                "rivetctl",
+                "rivetctl-v",
+                "Install, update and build the Rivet apps from the terminal, or let an AI assistant do it.",
+                Kind::Command,
+                include_str!("../../../apps/rivetctl/data/rivetctl.svg"),
+            )
+        },
         entry(
             "shell",
             "Rivet Shell",
@@ -642,18 +656,31 @@ mod tests {
                 .iter()
                 .find(|e| e.id == id)
                 .unwrap_or_else(|| panic!("{id} is released but Rivet Welcome doesn't list it"));
-            let (prefix, bin) = match id {
-                "files" => ("v".to_string(), "rivet".to_string()),
-                "fetch" => ("rivet-fetch-v".to_string(), "rivetfetch".to_string()),
-                _ => (format!("rivet-{id}-v"), format!("rivet-{id}")),
+            let (prefix, bin, dist) = match id {
+                "files" => (
+                    "v".to_string(),
+                    "rivet".to_string(),
+                    "rivet-files".to_string(),
+                ),
+                "fetch" => (
+                    "rivet-fetch-v".to_string(),
+                    "rivetfetch".to_string(),
+                    "rivet-fetch".to_string(),
+                ),
+                "rivetctl" => (
+                    "rivetctl-v".to_string(),
+                    "rivetctl".to_string(),
+                    "rivetctl".to_string(),
+                ),
+                _ => (
+                    format!("rivet-{id}-v"),
+                    format!("rivet-{id}"),
+                    format!("rivet-{id}"),
+                ),
             };
             assert_eq!(
                 (e.tag_prefix.as_str(), e.bin.as_str(), e.dist.as_str()),
-                (
-                    prefix.as_str(),
-                    bin.as_str(),
-                    format!("rivet-{id}").as_str()
-                ),
+                (prefix.as_str(), bin.as_str(), dist.as_str()),
                 "{id}"
             );
         }

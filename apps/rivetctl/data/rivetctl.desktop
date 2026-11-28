@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=rivetctl
+GenericName=App Installer
+Comment=Install, update and build the Rivet apps from the terminal
+Exec=rivetctl
+Icon=rivetctl
+Terminal=true
+NoDisplay=true
+Categories=System;ConsoleOnly;PackageManager;
+Keywords=rivet;install;update;apps;mcp;
